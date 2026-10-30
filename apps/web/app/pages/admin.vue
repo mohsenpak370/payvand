@@ -2,15 +2,27 @@
 useSeoMeta({ title: 'Admin — Payvand' })
 definePageMeta({ middleware: 'auth' })
 
-const { fetchStats, fetchUsers, deleteUser } = useAdminApi()
+const { fetchStats, fetchUsers, fetchPayments, deleteUser } = useAdminApi()
 
 const stats = ref<AdminStats | null>(null)
 const rows = ref<AdminUser[]>([])
+const total = ref(0)
+const pageSize = 20
+const offset = ref(0)
 const search = ref('')
 const loading = ref(true)
 const busy = ref(false)
 const forbidden = ref(false)
 const failure = ref('')
+
+// The feed reads the chain, so it loads and fails apart from the SQL data:
+// a flaky RPC must not blank the account table.
+const feed = ref<PaymentsPage | null>(null)
+const feedLoading = ref(false)
+const feedFailure = ref('')
+
+const pageFrom = computed(() => (total.value === 0 ? 0 : offset.value + 1))
+const pageTo = computed(() => Math.min(offset.value + pageSize, total.value))
 
 /** ofetch surfaces the HTTP status in one of several shapes. */
 function statusOf(error: unknown): number | undefined {
@@ -28,7 +40,13 @@ async function load() {
   loading.value = true
   try {
     stats.value = await fetchStats()
-    rows.value = await fetchUsers(search.value.trim() || undefined)
+    const page = await fetchUsers(
+      search.value.trim() || undefined,
+      pageSize,
+      offset.value
+    )
+    rows.value = page.items
+    total.value = page.total
     forbidden.value = false
   } catch (error) {
     if (statusOf(error) === 403) {
@@ -41,8 +59,34 @@ async function load() {
   }
 }
 
+async function loadFeed() {
+  feedFailure.value = ''
+  feedLoading.value = true
+  try {
+    feed.value = await fetchPayments(20)
+  } catch (error) {
+    feedFailure.value = apiErrorMessage(
+      error,
+      'Could not read recent payments from the cluster.'
+    )
+  } finally {
+    feedLoading.value = false
+  }
+}
+
 async function searchNow() {
+  offset.value = 0
   await load()
+}
+
+function pageDown() {
+  offset.value = Math.max(0, offset.value - pageSize)
+  load()
+}
+
+function pageUp() {
+  offset.value += pageSize
+  load()
 }
 
 async function remove(row: AdminUser) {
@@ -54,6 +98,11 @@ async function remove(row: AdminUser) {
   busy.value = true
   try {
     await deleteUser(row.id)
+    // Stepping back a page keeps the table from going empty after the
+    // last row on a later page is deleted.
+    if (rows.value.length === 1 && offset.value > 0) {
+      offset.value = Math.max(0, offset.value - pageSize)
+    }
     await load()
   } catch (error) {
     failure.value = apiErrorMessage(error, 'Could not delete that account.')
@@ -66,7 +115,28 @@ function formatDate(seconds: number): string {
   return new Date(seconds * 1000).toLocaleDateString()
 }
 
-onMounted(load)
+function formatDateTime(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString()
+}
+
+function short(address: string): string {
+  return address.length > 12
+    ? `${address.slice(0, 4)}…${address.slice(-4)}`
+    : address
+}
+
+function statusColor(status: string): 'success' | 'warning' | 'neutral' {
+  return status === 'settled'
+    ? 'success'
+    : status === 'pending' || status === 'missing'
+      ? 'warning'
+      : 'neutral'
+}
+
+onMounted(() => {
+  load()
+  loadFeed()
+})
 </script>
 
 <template>
@@ -111,6 +181,113 @@ onMounted(load)
             </div>
           </UCard>
         </div>
+
+        <UCard>
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h2 class="text-base font-semibold">
+                  Recent payments
+                </h2>
+                <p class="text-xs text-muted">
+                  {{
+                    feed
+                      ? `${feed.total} invoice${feed.total === 1 ? '' : 's'} on ${networkLabel(feed.cluster)}`
+                      : 'Read live from the cluster'
+                  }}
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-refresh-cw"
+                label="Refresh"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :loading="feedLoading"
+                @click="loadFeed"
+              />
+            </div>
+          </template>
+
+          <UAlert
+            v-if="feedFailure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Cluster unavailable"
+            :description="feedFailure"
+          />
+          <p
+            v-else-if="feedLoading && !feed"
+            class="py-6 text-center text-sm text-muted"
+          >
+            Reading the cluster…
+          </p>
+          <p
+            v-else-if="feed && feed.items.length === 0"
+            class="py-6 text-center text-sm text-muted"
+          >
+            No payments on chain yet.
+          </p>
+          <table
+            v-else-if="feed"
+            class="w-full text-sm"
+          >
+            <thead>
+              <tr class="border-b text-left text-muted">
+                <th class="py-2 font-medium">
+                  When
+                </th>
+                <th class="py-2 font-medium">
+                  Seller
+                </th>
+                <th class="py-2 text-right font-medium">
+                  Amount
+                </th>
+                <th class="py-2 font-medium">
+                  Memo
+                </th>
+                <th class="py-2 font-medium">
+                  Status
+                </th>
+                <th class="py-2 font-medium">
+                  Paid by
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="payment in feed.items"
+                :key="payment.id"
+                class="border-b last:border-0"
+              >
+                <td class="whitespace-nowrap py-2 text-muted">
+                  {{ formatDateTime(payment.settled_at_unix || payment.created_at_unix) }}
+                </td>
+                <td class="py-2 font-mono text-xs">
+                  {{ short(payment.seller) }}
+                </td>
+                <td class="py-2 text-right">
+                  {{ lamportsToSol(payment.amount_lamports) }}
+                </td>
+                <td class="max-w-[12rem] truncate py-2">
+                  {{ payment.memo || '—' }}
+                </td>
+                <td class="py-2">
+                  <UBadge
+                    :color="statusColor(payment.status)"
+                    variant="subtle"
+                  >
+                    {{ statusLabel(payment.status) }}
+                  </UBadge>
+                </td>
+                <td class="py-2 font-mono text-xs">
+                  {{ payment.settled_by ? short(payment.settled_by) : '—' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </UCard>
 
         <UCard>
           <form
@@ -214,6 +391,31 @@ onMounted(load)
               </tr>
             </tbody>
           </table>
+
+          <div
+            v-if="total > pageSize"
+            class="mt-4 flex items-center justify-between gap-3 text-sm text-muted"
+          >
+            <span>{{ pageFrom }}–{{ pageTo }} of {{ total }} accounts</span>
+            <div class="flex gap-2">
+              <UButton
+                label="Previous"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :disabled="offset === 0 || loading"
+                @click="pageDown"
+              />
+              <UButton
+                label="Next"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :disabled="pageTo >= total || loading"
+                @click="pageUp"
+              />
+            </div>
+          </div>
         </UCard>
       </template>
     </div>

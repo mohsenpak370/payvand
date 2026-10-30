@@ -293,6 +293,51 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
         .collect())
 }
 
+/// `declare_id!` of the program in `apps/contracts/programs/payvand` —
+/// the sole owner of payment accounts.
+pub const PAYVAND_PROGRAM_ID: &str = "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J";
+
+/// Every payment account the cluster holds for this program, undecodable
+/// accounts skipped.
+pub struct AllPayments {
+    pub records: Vec<PaymentRecord>,
+    pub cluster: String,
+    pub endpoint: String,
+}
+
+/// Invoices live only on chain — the API keeps no copy — so listing them
+/// means asking the program for its accounts (`get_program_accounts`).
+/// That scan is fine while the platform is small; revisit if the account
+/// count ever grows into the thousands.
+pub async fn fetch_all_payments() -> ApiResult<AllPayments> {
+    let cluster = default_cluster();
+    let endpoint = resolve_endpoint(None, &cluster)?;
+    let program_id = Pubkey::from_str(PAYVAND_PROGRAM_ID)
+        .map_err(|error| ApiError::Internal(format!("bad program id: {error}")))?;
+
+    let rpc = RpcClient::new(endpoint.clone());
+    let accounts = match rpc.get_program_accounts(&program_id).await {
+        Ok(accounts) => accounts,
+        Err(error) => {
+            tracing::info!(%error, "payment list not readable");
+            return Err(ApiError::Internal(
+                "The cluster did not return the payment list. Try again.".into(),
+            ));
+        }
+    };
+
+    let records = accounts
+        .into_iter()
+        .filter_map(|(pubkey, account)| {
+            decode_payment(&account.data).map(|payment| {
+                record_from_chain(pubkey, payment, cluster.clone(), endpoint.clone())
+            })
+        })
+        .collect();
+
+    Ok(AllPayments { records, cluster, endpoint })
+}
+
 /// Cluster used when a status request omits `?cluster=`: `SOLANA_CLUSTER`
 /// from the shared `.env`, falling back to devnet.
 fn default_cluster() -> String {

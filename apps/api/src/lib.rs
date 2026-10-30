@@ -50,6 +50,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/stats", get(admin::stats))
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
+        .route("/api/admin/payments", get(admin::list_payments))
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
@@ -83,7 +84,8 @@ async fn index() -> Json<serde_json::Value> {
             "/api/discounts/{id}",
             "/api/admin/stats",
             "/api/admin/users",
-            "/api/admin/users/{id}"
+            "/api/admin/users/{id}",
+            "/api/admin/payments"
         ]
     }))
 }

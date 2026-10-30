@@ -14,6 +14,31 @@ export interface AdminUser {
   codes: number
 }
 
+export interface UserPage {
+  items: AdminUser[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface AdminPayment {
+  id: string
+  seller: string
+  amount_lamports: number
+  memo: string
+  status: 'pending' | 'settled' | 'missing'
+  settled_by: string | null
+  created_at_unix: number
+  settled_at_unix: number
+}
+
+export interface PaymentsPage {
+  items: AdminPayment[]
+  total: number
+  cluster: string
+  endpoint: string
+}
+
 /**
  * Admin endpoints. Access is decided by the API (`ADMIN_EMAILS`), not by
  * the client — every call can still come back 403 and the page must handle
@@ -34,10 +59,22 @@ export function useAdminApi() {
     })
   }
 
-  async function fetchUsers(search?: string): Promise<AdminUser[]> {
-    return await $fetch<AdminUser[]>(`${base}/api/admin/users`, {
+  async function fetchUsers(
+    search: string | undefined,
+    limit: number,
+    offset: number
+  ): Promise<UserPage> {
+    return await $fetch<UserPage>(`${base}/api/admin/users`, {
       headers: headers(),
-      query: search ? { search } : {}
+      query: { ...(search ? { search } : {}), limit, offset }
+    })
+  }
+
+  /** Live invoices, read from the cluster — may fail when the RPC does. */
+  async function fetchPayments(limit = 20): Promise<PaymentsPage> {
+    return await $fetch<PaymentsPage>(`${base}/api/admin/payments`, {
+      headers: headers(),
+      query: { limit }
     })
   }
 
@@ -48,5 +85,5 @@ export function useAdminApi() {
     })
   }
 
-  return { fetchStats, fetchUsers, deleteUser }
+  return { fetchStats, fetchUsers, fetchPayments, deleteUser }
 }

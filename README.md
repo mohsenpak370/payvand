@@ -144,8 +144,9 @@ GET  /api/discounts          -> the signed-in account's discount codes
 POST /api/discounts          -> creates a code {code, percent_off}
 POST /api/discounts/validate -> prices an invoice with a code
 GET  /api/admin/stats        -> account/session/code/reset counts (admin)
-GET  /api/admin/users        -> accounts + live session and code counts (admin)
+GET  /api/admin/users        -> one page of accounts; ?search=&limit=&offset= (admin)
 DELETE /api/admin/users/{id} -> removes an account and everything it owns (admin)
+GET  /api/admin/payments     -> recent on-chain invoices, newest first (admin)
 DELETE /api/discounts/{id}   -> removes a code
 ```
 

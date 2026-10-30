@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::{self, User};
 use crate::db::SharedDb;
-use crate::payments::{ApiError, ApiResult};
+use crate::payments::{ApiError, ApiResult, PaymentRecord, PaymentStatus};
 
 /// True when the address is listed in `ADMIN_EMAILS`.
 /// Comparison happens on the normalized (trimmed, lowercased) form.
@@ -73,7 +73,14 @@ pub async fn stats(
 #[derive(Debug, Deserialize)]
 pub struct UserListQuery {
     pub search: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
+
+/// One page of the account table: bounded so a large table can never turn
+/// into one enormous response.
+const DEFAULT_PAGE: i64 = 20;
+const MAX_PAGE: i64 = 100;
 
 /// One row of the admin user table: the account plus what it currently
 /// holds (live sessions, discount codes).
@@ -91,38 +98,67 @@ const LIST_SQL_HEAD: &str = "SELECT u.id, u.email, u.wallet, u.created_at,
         (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?1),
         (SELECT COUNT(*) FROM discount_codes d WHERE d.user_id = u.id)
     FROM users u";
-const LIST_SQL_TAIL: &str = " ORDER BY u.created_at DESC LIMIT 200";
+// The tails differ because the parameter numbers do: `now` is ?1, the
+// search pattern (when present) takes the next slot, then limit and offset.
+const LIST_SQL_TAIL_PLAIN: &str = " ORDER BY u.created_at DESC LIMIT ?2 OFFSET ?3";
+const LIST_SQL_TAIL_SEARCH: &str = " ORDER BY u.created_at DESC LIMIT ?3 OFFSET ?4";
+
+/// One page of accounts plus the total, so the UI can paginate.
+#[derive(Debug, Serialize)]
+pub struct UserPage {
+    pub items: Vec<AdminUser>,
+    pub total: i64,
+    pub limit: i64,
+    pub offset: i64,
+}
 
 pub async fn list_users(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
     Query(query): Query<UserListQuery>,
-) -> ApiResult<Json<Vec<AdminUser>>> {
+) -> ApiResult<Json<UserPage>> {
     require_admin(&state.db, &headers).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
     let now = auth::unix_now();
 
-    let search = query
+    let limit = query.limit.unwrap_or(DEFAULT_PAGE).clamp(1, MAX_PAGE);
+    let offset = query.offset.unwrap_or(0).max(0);
+
+    // Literal substring match: wildcards from the input are stripped
+    // rather than interpreted.
+    let pattern = query
         .search
         .as_deref()
         .map(str::trim)
-        .filter(|term| !term.is_empty());
+        .filter(|term| !term.is_empty())
+        .map(|term| format!("%{}%", term.replace(['%', '_'], " ")));
 
-    let mut rows = match search {
-        Some(term) => {
-            // Literal substring match: wildcards from the input are stripped
-            // rather than interpreted.
-            let pattern = format!("%{}%", term.replace(['%', '_'], " "));
-            let sql = format!("{LIST_SQL_HEAD} WHERE u.email LIKE ?2{LIST_SQL_TAIL}");
+    let total = match &pattern {
+        Some(pattern) => {
+            let mut rows = connection
+                .query(
+                    "SELECT COUNT(*) FROM users u WHERE u.email LIKE ?1",
+                    [pattern.as_str()],
+                )
+                .await
+                .map_err(auth::internal)?;
+            first_count(&mut rows).await?
+        }
+        None => scalar(&connection, "SELECT COUNT(*) FROM users").await?,
+    };
+
+    let mut rows = match &pattern {
+        Some(pattern) => {
+            let sql = format!("{LIST_SQL_HEAD} WHERE u.email LIKE ?2{LIST_SQL_TAIL_SEARCH}");
             connection
-                .query(&sql, (now, pattern))
+                .query(&sql, (now, pattern.as_str(), limit, offset))
                 .await
                 .map_err(auth::internal)?
         }
         None => {
-            let sql = format!("{LIST_SQL_HEAD}{LIST_SQL_TAIL}");
+            let sql = format!("{LIST_SQL_HEAD}{LIST_SQL_TAIL_PLAIN}");
             connection
-                .query(&sql, [now])
+                .query(&sql, (now, limit, offset))
                 .await
                 .map_err(auth::internal)?
         }
@@ -139,7 +175,91 @@ pub async fn list_users(
             codes: row.get(5).map_err(auth::internal)?,
         });
     }
-    Ok(Json(users))
+    Ok(Json(UserPage {
+        items: users,
+        total,
+        limit,
+        offset,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaymentListQuery {
+    pub limit: Option<i64>,
+}
+
+/// One row of the admin feed: the invoice exactly as the chain knows it.
+#[derive(Debug, Serialize)]
+pub struct AdminPayment {
+    pub id: String,
+    pub seller: String,
+    pub amount_lamports: u64,
+    pub memo: String,
+    pub status: PaymentStatus,
+    pub settled_by: Option<String>,
+    pub created_at_unix: i64,
+    pub settled_at_unix: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaymentsPage {
+    pub items: Vec<AdminPayment>,
+    pub total: usize,
+    pub cluster: String,
+    pub endpoint: String,
+}
+
+impl From<PaymentRecord> for AdminPayment {
+    fn from(record: PaymentRecord) -> Self {
+        Self {
+            id: record.id,
+            seller: record.seller,
+            amount_lamports: record.amount_lamports,
+            memo: record.memo,
+            status: record.status,
+            settled_by: record.settled_by,
+            created_at_unix: record.created_at_unix,
+            settled_at_unix: record.settled_at_unix,
+        }
+    }
+}
+
+/// The pure part of the feed — newest first, capped, deterministic even
+/// when several invoices share a second — so it is testable without a cluster.
+fn shape_feed(mut records: Vec<PaymentRecord>, limit: usize) -> (Vec<AdminPayment>, usize) {
+    let total = records.len();
+    records.sort_by(|a, b| {
+        b.created_at_unix
+            .cmp(&a.created_at_unix)
+            .then_with(|| b.settled_at_unix.cmp(&a.settled_at_unix))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    records.truncate(limit);
+    (
+        records.into_iter().map(AdminPayment::from).collect(),
+        total,
+    )
+}
+
+/// `GET /api/admin/payments` — live transaction activity, read straight
+/// from the cluster. The admin check comes before any RPC work, so an
+/// outsider never makes the chain do anything on their behalf.
+pub async fn list_payments(
+    State(state): State<crate::AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PaymentListQuery>,
+) -> ApiResult<Json<PaymentsPage>> {
+    require_admin(&state.db, &headers).await?;
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+
+    let all = crate::payments::fetch_all_payments().await?;
+    let (items, total) = shape_feed(all.records, limit as usize);
+    Ok(Json(PaymentsPage {
+        items,
+        total,
+        cluster: all.cluster,
+        endpoint: all.endpoint,
+    }))
 }
 
 pub async fn delete_user(
@@ -279,35 +399,121 @@ mod tests {
         let all = list_users(
             StateExtractor(state.clone()),
             admin_headers.clone(),
-            QueryExtractor(UserListQuery { search: None }),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: None,
+                offset: None,
+            }),
         )
         .await
         .expect("list");
-        assert_eq!(all.0.len(), 2);
+        assert_eq!(all.0.items.len(), 2);
+        assert_eq!(all.0.total, 2);
+        assert_eq!(all.0.limit, DEFAULT_PAGE);
         let found = list_users(
             StateExtractor(state.clone()),
             admin_headers.clone(),
             QueryExtractor(UserListQuery {
                 search: Some("pleb".into()),
+                limit: None,
+                offset: None,
             }),
         )
         .await
         .expect("search");
-        assert_eq!(found.0.len(), 1);
-        assert_eq!(found.0[0].email, "pleb@example.com");
-        assert_eq!(found.0[0].sessions, 1);
+        assert_eq!(found.0.items.len(), 1);
+        assert_eq!(found.0.total, 1);
+        assert_eq!(found.0.items[0].email, "pleb@example.com");
+        assert_eq!(found.0.items[0].sessions, 1);
+
+        // Pagination: pages walk the list without losing the total, and the
+        // bounds are clamped rather than trusted.
+        let page0 = list_users(
+            StateExtractor(state.clone()),
+            admin_headers.clone(),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: Some(1),
+                offset: Some(0),
+            }),
+        )
+        .await
+        .expect("page 0");
+        assert_eq!(page0.0.items.len(), 1);
+        assert_eq!(page0.0.total, 2);
+        let page1 = list_users(
+            StateExtractor(state.clone()),
+            admin_headers.clone(),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: Some(1),
+                offset: Some(1),
+            }),
+        )
+        .await
+        .expect("page 1");
+        assert_eq!(page1.0.items.len(), 1);
+        assert_eq!(page1.0.total, 2);
+        let clamped = list_users(
+            StateExtractor(state.clone()),
+            admin_headers.clone(),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: Some(9_999),
+                offset: Some(-4),
+            }),
+        )
+        .await
+        .expect("clamped");
+        assert_eq!(clamped.0.limit, MAX_PAGE);
+        assert_eq!(clamped.0.offset, 0);
+
+        // The feed: the chain check is refused before any RPC is attempted,
+        // and its pure part orders and caps the records correctly.
+        let anonymous_feed = list_payments(
+            StateExtractor(state.clone()),
+            HeaderMap::new(),
+            QueryExtractor(PaymentListQuery { limit: None }),
+        )
+        .await;
+        assert!(matches!(anonymous_feed, Err(ApiError::Unauthorized)));
+        let denied_feed = list_payments(
+            StateExtractor(state.clone()),
+            user_headers.clone(),
+            QueryExtractor(PaymentListQuery { limit: None }),
+        )
+        .await;
+        assert!(matches!(denied_feed, Err(ApiError::Forbidden(_))));
+        let (items, total) = shape_feed(
+            vec![
+                payment_fixture("aaa", 100, 0),
+                payment_fixture("bbb", 300, 400),
+                payment_fixture("ccc", 200, 0),
+            ],
+            2,
+        );
+        assert_eq!(total, 3, "total counts every invoice, not just the page");
+        assert_eq!(items[0].id, "bbb", "newest first");
+        assert_eq!(items[1].id, "ccc");
+        assert_eq!(items[0].status, PaymentStatus::Settled);
+        assert_eq!(items[0].settled_by.as_deref(), Some("Payer111111"));
+        assert!(items[0].memo == "memo for bbb");
 
         // A non-admin cannot list anything.
         let denied_list = list_users(
             StateExtractor(state.clone()),
             user_headers.clone(),
-            QueryExtractor(UserListQuery { search: None }),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: None,
+                offset: None,
+            }),
         )
         .await;
         assert!(matches!(denied_list, Err(ApiError::Forbidden(_))));
 
         // Deleting the pleb removes the account and its session.
-        let pleb_id = found.0[0].id.clone();
+        let pleb_id = found.0.items[0].id.clone();
         let _ = delete_user(
             StateExtractor(state.clone()),
             admin_headers.clone(),
@@ -318,11 +524,16 @@ mod tests {
         let after = list_users(
             StateExtractor(state.clone()),
             admin_headers.clone(),
-            QueryExtractor(UserListQuery { search: None }),
+            QueryExtractor(UserListQuery {
+                search: None,
+                limit: None,
+                offset: None,
+            }),
         )
         .await
         .expect("list");
-        assert_eq!(after.0.len(), 1);
+        assert_eq!(after.0.items.len(), 1);
+        assert_eq!(after.0.total, 1);
         assert_eq!(stats_after_delete(&state).await, 1);
 
         // Unknown id: 404. Own account: refused.
@@ -333,7 +544,7 @@ mod tests {
         )
         .await;
         assert!(matches!(missing, Err(ApiError::NotFound(_))));
-        let boss_id = after.0[0].id.clone();
+        let boss_id = after.0.items[0].id.clone();
         let self_delete = delete_user(
             StateExtractor(state.clone()),
             admin_headers.clone(),
@@ -370,6 +581,29 @@ mod tests {
 
         std::env::remove_var("ADMIN_EMAILS");
         let _ = std::fs::remove_file(path);
+    }
+
+    /// A payment account as the chain would hand it over.
+    fn payment_fixture(id: &str, created: i64, settled: i64) -> PaymentRecord {
+        PaymentRecord {
+            id: id.to_string(),
+            status: if settled > 0 {
+                PaymentStatus::Settled
+            } else {
+                PaymentStatus::Pending
+            },
+            payment_pda: id.to_string(),
+            seller: "Seller111111".into(),
+            seller_user: None,
+            reference: "Reference111".into(),
+            amount_lamports: 1_000_000,
+            memo: format!("memo for {id}"),
+            cluster: "devnet".into(),
+            endpoint: "https://api.devnet.solana.com".into(),
+            settled_by: (settled > 0).then(|| "Payer111111".into()),
+            created_at_unix: created,
+            settled_at_unix: settled,
+        }
     }
 
     async fn stats_after_delete(state: &crate::AppState) -> i64 {
