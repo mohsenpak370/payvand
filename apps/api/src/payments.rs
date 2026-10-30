@@ -20,6 +20,10 @@ pub enum ApiError {
     #[error("authentication required")]
     Unauthorized,
     #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
+    NotFound(String),
+    #[error("{0}")]
     Internal(String),
 }
 
@@ -28,6 +32,8 @@ impl axum::response::IntoResponse for ApiError {
         let status = match &self {
             Self::BadRequest(_) => axum::http::StatusCode::BAD_REQUEST,
             Self::Unauthorized => axum::http::StatusCode::UNAUTHORIZED,
+            Self::Forbidden(_) => axum::http::StatusCode::FORBIDDEN,
+            Self::NotFound(_) => axum::http::StatusCode::NOT_FOUND,
             Self::Internal(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         let body = axum::Json(serde_json::json!({ "error": self.to_string() }));

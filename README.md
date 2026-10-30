@@ -143,6 +143,9 @@ POST /api/payments/watch     -> status of many payment addresses at once
 GET  /api/discounts          -> the signed-in account's discount codes
 POST /api/discounts          -> creates a code {code, percent_off}
 POST /api/discounts/validate -> prices an invoice with a code
+GET  /api/admin/stats        -> account/session/code/reset counts (admin)
+GET  /api/admin/users        -> accounts + live session and code counts (admin)
+DELETE /api/admin/users/{id} -> removes an account and everything it owns (admin)
 DELETE /api/discounts/{id}   -> removes a code
 ```
 
@@ -164,6 +167,18 @@ old sessions die with the old password. Locally the API has no SMTP
 configured, so the reset link is printed to its console (the equivalent of
 Django's console backend); with `EMAIL_HOST` set it is delivered over SMTP —
 Gmail SMTP with an app password is the free production setup.
+
+### Admin
+
+The admin panel lives at `/admin` in the web app and is backed by three
+`/api/admin/*` endpoints. Access is **configuration, not schema**: the API
+matches the signed-in account's address against `ADMIN_EMAILS` (comma
+separated), so granting or revoking access never needs a migration — add or
+remove an address and redeploy. Every admin endpoint re-checks the session
+first (401 when signed out) and then the address (403 otherwise). The panel
+shows platform counts and the account list with live session and discount
+code counts, and can delete an account along with its sessions, codes and
+pending reset links; deleting your own account is refused.
 
 `POST /api/payments` requires a valid session. `GET /api/payments/{pda}` is
 public on purpose — a scanner must be able to read an invoice before deciding
@@ -220,6 +235,7 @@ on startup.
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | api | —            | SMTP credentials — a free Gmail app password works |
 | `EMAIL_USE_TLS`                 | api          | `true`          | STARTTLS on the SMTP connection          |
 | `DEFAULT_FROM_EMAIL`            | api          | SMTP user       | Sender address                           |
+| `ADMIN_EMAILS`                  | api          | — (nobody)      | Comma-separated addresses allowed into `/api/admin/*` |
 
 Never put a wallet secret key or a seed phrase anywhere in this repository. The
 Nuxt module deliberately strips `payer` and `payerSecretKey` from its public

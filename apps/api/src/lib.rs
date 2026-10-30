@@ -1,5 +1,6 @@
 //! Axum router shared by the local server and the Vercel function.
 
+pub mod admin;
 pub mod auth;
 pub mod db;
 pub mod discounts;
@@ -46,6 +47,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
         .route("/api/payments/{id}", get(get_payment))
+        .route("/api/admin/stats", get(admin::stats))
+        .route("/api/admin/users", get(admin::list_users))
+        .route("/api/admin/users/{id}", delete(admin::delete_user))
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
@@ -76,7 +80,10 @@ async fn index() -> Json<serde_json::Value> {
             "/api/payments/{id}",
             "/api/discounts",
             "/api/discounts/validate",
-            "/api/discounts/{id}"
+            "/api/discounts/{id}",
+            "/api/admin/stats",
+            "/api/admin/users",
+            "/api/admin/users/{id}"
         ]
     }))
 }

@@ -396,7 +396,7 @@ async fn read_user_row(rows: &mut libsql::Rows) -> ApiResult<Option<User>> {
     }
 }
 
-fn nullable_text(row: &libsql::Row, index: i32) -> ApiResult<Option<String>> {
+pub(crate) fn nullable_text(row: &libsql::Row, index: i32) -> ApiResult<Option<String>> {
     match row.get::<libsql::Value>(index).map_err(internal)? {
         libsql::Value::Null => Ok(None),
         libsql::Value::Text(text) => Ok(Some(text)),
