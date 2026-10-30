@@ -1,0 +1,111 @@
+// https://nuxt.com/docs/api/configuration/nuxt-config
+
+// The cluster the app targets is set in `.env` (`SOLANA_CLUSTER`), not here:
+// 'localnet' for a local `solana-test-validator`, 'devnet' for testing,
+// 'mainnet' for real payments. Nuxt's CLI loads `.env` before this file is
+// evaluated; without the variable we fall back to devnet.
+type SolanaCluster = 'localnet' | 'devnet' | 'testnet' | 'mainnet'
+const SOLANA_CLUSTERS: readonly string[] = ['localnet', 'devnet', 'testnet', 'mainnet']
+const rawCluster = process.env.SOLANA_CLUSTER || 'devnet'
+if (!SOLANA_CLUSTERS.includes(rawCluster)) {
+  throw new Error(`SOLANA_CLUSTER=${rawCluster} is not one of: ${SOLANA_CLUSTERS.join(', ')}`)
+}
+const solanaCluster = rawCluster as SolanaCluster
+
+// The module has no built-in endpoint for localnet, so point it at the
+// validator explicitly. An explicit NUXT_PUBLIC_SOLANA_ENDPOINT always wins.
+const solanaEndpoint
+  = process.env.NUXT_PUBLIC_SOLANA_ENDPOINT
+    || (solanaCluster === 'localnet' ? 'http://127.0.0.1:8899' : undefined)
+
+export default defineNuxtConfig({
+  modules: ['@nuxt/eslint', '@nuxt/ui', '@vue-solana/nuxt'],
+
+  devtools: {
+    enabled: true
+  },
+
+  css: ['~/assets/css/main.css'],
+
+  runtimeConfig: {
+    public: {
+      // Empty means same origin. In dev Nitro proxies /api to the Axum
+      // server below; in production set NUXT_PUBLIC_API_BASE to the API's
+      // origin (it is deployed as its own Vercel project).
+      apiBase: '',
+      cluster: solanaCluster
+    }
+  },
+
+  routeRules: {
+    '/': { prerender: true },
+    // Both flows talk to a connected wallet and a camera, so they only make
+    // sense in the browser. The Solana plugin is client-only.
+    '/sell': { ssr: false },
+    '/pay': { ssr: false },
+    // Budget state lives in the wallet + localStorage, same reason.
+    '/budget': { ssr: false }
+  },
+
+  // Listen on every interface so a phone on the same network can open the
+  // app for testing (port 3001: 3000 is taken by another local project).
+  // HTTPS matters beyond politeness: browsers only expose the camera
+  // (getUserMedia) in a secure context, so plain http:// on the LAN IP
+  // cannot scan QR codes.
+  devServer: {
+    host: '0.0.0.0',
+    port: 3001,
+    https: {
+      key: './.certs/dev-key.pem',
+      cert: './.certs/dev.pem'
+    }
+  },
+
+  compatibilityDate: '2026-06-30',
+
+  nitro: {
+    // `pnpm dev` forwards API calls to the local Axum server. The prefixes
+    // are listed explicitly instead of a single `/api` rule: Nuxt Icon also
+    // serves its collections from `/api/_nuxt_icon/*`, and a blanket `/api`
+    // proxy would swallow those requests and force the CDN fallback.
+    devProxy: {
+      '/api/auth': {
+        target: 'http://127.0.0.1:8787/api/auth',
+        changeOrigin: true
+      },
+      '/api/payments': {
+        target: 'http://127.0.0.1:8787/api/payments',
+        changeOrigin: true
+      },
+      '/api/discounts': {
+        target: 'http://127.0.0.1:8787/api/discounts',
+        changeOrigin: true
+      },
+      '/api/health': {
+        target: 'http://127.0.0.1:8787/api/health',
+        changeOrigin: true
+      }
+    }
+  },
+
+  vite: {
+    optimizeDeps: {
+      // Both are CommonJS and only load in the browser.
+      include: ['jsqr', 'qrcode']
+    }
+  },
+
+  eslint: {
+    config: {
+      stylistic: {
+        commaDangle: 'never',
+        braceStyle: '1tbs'
+      }
+    }
+  },
+
+  solana: {
+    cluster: solanaCluster,
+    ...(solanaEndpoint ? { endpoint: solanaEndpoint } : {})
+  }
+})

@@ -1,0 +1,28 @@
+[package]
+name = "payvand"
+version = "0.1.0"
+description = "On-chain payment records for Payvand QR payments"
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "payvand"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+# `init-if-needed` lets the buyer's settle transaction create the invoice
+# account itself, so opening a payment code never requires a seller signature.
+anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

@@ -1,0 +1,24 @@
+# Files excluded from Vercel uploads (web project only — the upload tree is
+# this directory).
+# NOTE: when this file exists it REPLACES the .gitignore fallback, so every
+# local-only path must be listed here explicitly.
+
+# Node / Nuxt build outputs
+node_modules
+.nuxt
+.nitro
+.output
+.cache
+dist
+
+# Local config and secrets
+.vercel
+.env
+.env.*
+.certs
+
+# Logs / editor noise
+logs
+*.log
+.DS_Store
+.idea

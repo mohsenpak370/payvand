@@ -1,0 +1,611 @@
+{
+  "address": "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J",
+  "metadata": {
+    "name": "payvand",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "On-chain payment records for Payvand QR payments"
+  },
+  "instructions": [
+    {
+      "name": "close_budget",
+      "docs": [
+        "Reclaim whatever is left in the budget and retire the session key.",
+        "One wallet signature — the buyer gets every lamport back."
+      ],
+      "discriminator": [
+        205,
+        29,
+        212,
+        191,
+        194,
+        200,
+        168,
+        24
+      ],
+      "accounts": [
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_payment",
+      "docs": [
+        "Seller reclaims the rent lamports locked in a settled invoice. This is",
+        "optional housekeeping — it is the one signature a seller may ever make,",
+        "and only when they want the rent back."
+      ],
+      "discriminator": [
+        172,
+        106,
+        77,
+        250,
+        247,
+        169,
+        156,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment.seller",
+                "account": "Payment"
+              },
+              {
+                "kind": "account",
+                "path": "payment.reference",
+                "account": "Payment"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_budget",
+      "docs": [
+        "Buyer funds this month's spending budget and registers a session key.",
+        "This is the ONE wallet signature the whole feature needs: afterwards",
+        "the session key — an app-generated keypair stored on the device — can",
+        "settle invoices from the pot without touching the wallet again."
+      ],
+      "discriminator": [
+        187,
+        44,
+        51,
+        199,
+        222,
+        25,
+        238,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "docs": [
+            "Main wallet: the one signature the buyer ever makes."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "session_key",
+          "docs": [
+            "the only key allowed to spend from the budget afterwards."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "monthly_limit",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "pay_from_budget",
+      "docs": [
+        "Silent payment: the session key settles an invoice straight out of the",
+        "buyer's budget — no wallet popup, because the only signature here is",
+        "the local session key's. The pot pays the seller and refunds the",
+        "invoice rent it just advanced from the session key's float.",
+        "",
+        "The monthly cap and the pot balance are both enforced here, and the",
+        "amount still rides in the payment PDA's seeds, so a QR code can only",
+        "ever be settled for exactly the price it shows — the same guarantee",
+        "`settle_payment` gives."
+      ],
+      "discriminator": [
+        87,
+        89,
+        2,
+        139,
+        214,
+        154,
+        248,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "session_key",
+          "docs": [
+            "Session key: fee payer and invoice-rent payer (refunded from the",
+            "budget in this same transaction). Never the buyer's wallet."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "budget.buyer",
+                "account": "Budget"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "reference"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "docs": [
+            "allowed to receive the lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "reference",
+          "docs": [
+            "seed and an address watchers can look up."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "memo",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "settle_payment",
+      "docs": [
+        "Buyer pays an invoice. The invoice account is created (and funded by",
+        "the buyer) inside this same transaction, so the seller never has to",
+        "sign anything to open a payment code — the QR is just an address plus",
+        "its details.",
+        "",
+        "`amount` is part of the PDA seeds, which is what keeps this safe: an",
+        "invoice can only ever be settled at the exact amount that was encoded",
+        "into the QR code, because any other amount derives a different account",
+        "address than the one the seller is watching."
+      ],
+      "discriminator": [
+        129,
+        7,
+        163,
+        250,
+        122,
+        226,
+        158,
+        249
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for the invoice account (rent) and the transfer itself."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "reference"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "docs": [
+            "account allowed to receive the lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "reference",
+          "docs": [
+            "used as a PDA seed and as an address that watchers can look up."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "memo",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Budget",
+      "discriminator": [
+        35,
+        151,
+        58,
+        65,
+        187,
+        148,
+        119,
+        218
+      ]
+    },
+    {
+      "name": "Payment",
+      "discriminator": [
+        227,
+        231,
+        51,
+        26,
+        244,
+        88,
+        4,
+        148
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidAmount",
+      "msg": "Payment amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "MemoTooLong",
+      "msg": "Memo exceeds the maximum length"
+    },
+    {
+      "code": 6002,
+      "name": "AlreadySettled",
+      "msg": "This payment has already been settled"
+    },
+    {
+      "code": 6003,
+      "name": "SellerMismatch",
+      "msg": "The seller account does not match the payment record"
+    },
+    {
+      "code": 6004,
+      "name": "NotPending",
+      "msg": "The payment is not in the expected state"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidSeller",
+      "msg": "The seller address is not valid"
+    },
+    {
+      "code": 6006,
+      "name": "BudgetExhausted",
+      "msg": "The monthly spending limit has been reached"
+    },
+    {
+      "code": 6007,
+      "name": "InsufficientBudget",
+      "msg": "The budget does not hold enough SOL for this payment"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidSessionKey",
+      "msg": "The session key is not the one registered for this budget"
+    }
+  ],
+  "types": [
+    {
+      "name": "Budget",
+      "docs": [
+        "The buyer's monthly spending pot: lamports held by the program plus the",
+        "rules that make the session key's signatures safe. Seeded by the buyer's",
+        "wallet, so there is exactly one per buyer."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "docs": [
+              "Main wallet — funds, refills and closes the pot. The only wallet",
+              "that ever signs for this feature."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "session_key",
+            "docs": [
+              "App-generated key allowed to spend from the pot without the wallet."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "monthly_limit",
+            "docs": [
+              "Ceiling for one calendar month, in lamports."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "spent",
+            "docs": [
+              "Spent so far in `month_index`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "month_index",
+            "docs": [
+              "`year * 12 + month` that `spent` belongs to; a new month resets it."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Payment",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "seller",
+            "docs": [
+              "Who is being paid."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reference",
+            "docs": [
+              "Free-form lookup key chosen when the invoice was opened."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Price in lamports."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "memo",
+            "docs": [
+              "Human readable invoice note."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "PaymentState"
+              }
+            }
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Set once the invoice has been settled."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Settled"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+# Taskfile — https://taskfile.dev
+#
+# The repo-root `package.json` forwards the same commands for anyone without
+# `task` installed; this file is the fuller set. Run `task` (or `task --list`)
+# to see everything.
+
+version: "3"
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install the web app's dependencies (pnpm)
+    dir: apps/web
+    cmds:
+      - pnpm install
+
+  dev:
+    desc: Nuxt dev server on http://localhost:3000
+    dir: apps/web
+    cmds:
+      - pnpm dev
+
+  api:
+    desc: Axum API on http://127.0.0.1:8787 (loads apps/web/.env)
+    cmds:
+      - cargo run --manifest-path apps/api/Cargo.toml --bin server
+
+  build:
+    desc: Production build of the web app
+    dir: apps/web
+    cmds:
+      - pnpm build
+
+  preview:
+    desc: Serve the production build locally
+    dir: apps/web
+    cmds:
+      - pnpm preview
+
+  lint:
+    desc: ESLint over the web app
+    cmds:
+      - pnpm lint
+
+  typecheck:
+    desc: nuxt typecheck over the web app
+    cmds:
+      - pnpm typecheck
+
+  test:api:
+    desc: Rust tests for the API
+    cmds:
+      - cargo test --manifest-path apps/api/Cargo.toml
+
+  test:contracts:
+    desc: Rust tests for the Anchor program
+    cmds:
+      - cargo test --manifest-path apps/contracts/Cargo.toml
+
+  verify:
+    desc: Full local check — lint, typecheck, both Rust test suites
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test:api
+      - task: test:contracts
+
+  anchor:build:
+    desc: Build the program and sync the IDL into the web app
+    cmds:
+      - pnpm anchor:build
+
+  anchor:deploy:
+    desc: Deploy the program to the cluster in Anchor.toml
+    cmds:
+      - pnpm anchor:deploy
+
+  anchor:keys:
+    desc: Show the program ids Anchor has on disk
+    cmds:
+      - pnpm anchor:keys
+
+  deploy:web:
+    desc: Deploy the web app to Vercel production
+    dir: apps/web
+    cmds:
+      - VERCEL_TOKEN=$(cat ../../.vercel-token) vercel deploy --prod --yes
+
+  deploy:api:
+    desc: Deploy the API to Vercel production
+    dir: apps/api
+    cmds:
+      - VERCEL_TOKEN=$(cat ../../.vercel-token) vercel deploy --prod --yes

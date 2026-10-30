@@ -1,0 +1,54 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Rust / Anchor
+.anchor
+target
+test-ledger
+**/*.rs.bk
+
+# Local SQLite database created by the API
+data/
+
+# Vercel
+.vercel
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+# Local env files — the .env.example rule lives at the end of this file
+
+# Local development notes (wallet addresses, balances, funding routes)
+DEV.md
+
+# Local dev HTTPS certificates (mkcert) — never commit private keys
+.certs/
+.vercel-token
+.turso-credentials
+
+# Local env files (this negation must come last — an earlier .env* rule
+# would otherwise re-ignore the committed example)
+.env*
+!.env.example
+
+# Freebuff's local project marker (machine-specific)
+.freebuff/
+
+# pnpm's self-manager lockfile for the root task package (regenerated on
+# every root `pnpm <script>` run). Leading slash: the app's real lockfile
+# at apps/web/pnpm-lock.yaml must stay committed.
+/pnpm-lock.yaml

@@ -1,0 +1,49 @@
+[package]
+name = "payvand-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89.0"
+description = "Payvand API: payment request payloads and on-chain settlement status"
+# Two bins are auto-discovered: src/main.rs (the Vercel function, named
+# after the package — @vercel/rust zero-config builds exactly this one) and
+# src/bin/server.rs (the local dev server, `pnpm api`). The builder invokes
+# this default bin, so it must stay the Vercel entrypoint.
+default-run = "payvand-server"
+
+# Its own workspace so the Anchor workspace never has to resolve the
+# server's Solana RPC client dependencies.
+[workspace]
+
+[lib]
+name = "payvand_server"
+path = "src/lib.rs"
+
+# Declared explicitly because @vercel/rust resolves the bin to build from
+# this section (a bare src/main.rs makes it guess `--bin main`).
+[[bin]]
+name = "payvand-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+vercel_runtime = { version = "2.4", features = ["axum"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+solana-rpc-client = "3"
+solana-pubkey = "3"
+sha2 = "0.10"
+libsql = "0.10"
+argon2 = "0.6"
+getrandom = "0.4"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
