@@ -296,6 +296,31 @@ pub async fn signin(
     Ok(Json(auth::AuthResponse { user, token }))
 }
 
+/// Detach the wallet. Email and password keep working, and wallet
+/// sign-in stops immediately until it is linked again.
+pub async fn unlink(
+    State(state): State<crate::AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    let user = auth::require_user(&state.db, &headers).await?;
+    if user.wallet.is_none() {
+        return Err(ApiError::BadRequest(
+            "No wallet is linked to this account.".into(),
+        ));
+    }
+
+    let connection = state.db.connect().map_err(auth::internal)?;
+    connection
+        .execute("UPDATE users SET wallet = NULL WHERE id = ?1", [user.id.clone()])
+        .await
+        .map_err(auth::internal)?;
+
+    let user = auth::read_user(&connection, &user.id)
+        .await?
+        .ok_or_else(|| ApiError::Internal("the account could not be read back".into()))?;
+    Ok(Json(serde_json::json!({ "user": user })))
+}
+
 #[derive(Debug, Serialize)]
 pub struct MyTransaction {
     pub id: String,
@@ -615,6 +640,73 @@ mod tests {
         )
         .await;
         assert!(matches!(feed, Err(ApiError::BadRequest(_))));
+
+        // 10. Switching: linking a different wallet replaces the first one,
+        //     and the old wallet can no longer open a session.
+        let (address2, key2) = wallet_fixture(11);
+        let switch_challenge = challenge(
+            StateExtractor(state.clone()),
+            JsonExtractor(ChallengeRequest {
+                address: address2.clone(),
+                purpose: ChallengePurpose::Link,
+            }),
+        )
+        .await
+        .expect("switch challenge")
+        .0;
+        let switched = link(
+            StateExtractor(state.clone()),
+            headers.clone(),
+            JsonExtractor(WalletSignatureRequest {
+                address: address2.clone(),
+                signature: sign_base58(&key2, &switch_challenge.message),
+            }),
+        )
+        .await
+        .expect("switch");
+        let new_wallet: Option<String> = switched
+            .0
+            .get("user")
+            .and_then(|user| user.get("wallet"))
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
+        assert_eq!(new_wallet.as_deref(), Some(address2.as_str()));
+
+        let old_still_works = {
+            let issued = challenge(
+                StateExtractor(state.clone()),
+                JsonExtractor(ChallengeRequest {
+                    address: address.clone(),
+                    purpose: ChallengePurpose::Signin,
+                }),
+            )
+            .await
+            .expect("old wallet challenge")
+            .0;
+            signin(
+                StateExtractor(state.clone()),
+                JsonExtractor(WalletSignatureRequest {
+                    address: address.clone(),
+                    signature: sign_base58(&key, &issued.message),
+                }),
+            )
+            .await
+        };
+        assert!(matches!(old_still_works, Err(ApiError::BadRequest(_))));
+
+        // 11. Unlink detaches the wallet; anonymous callers cannot.
+        let anon_unlink = unlink(
+            StateExtractor(state.clone()),
+            HeaderMap::new(),
+        )
+        .await;
+        assert!(matches!(anon_unlink, Err(ApiError::Unauthorized)));
+        let removed = unlink(StateExtractor(state.clone()), headers.clone())
+            .await
+            .expect("unlink");
+        assert!(removed.0["user"]["wallet"].is_null());
+        let unlink_again = unlink(StateExtractor(state.clone()), headers.clone()).await;
+        assert!(matches!(unlink_again, Err(ApiError::BadRequest(_))));
 
         let _ = std::fs::remove_file(path);
     }

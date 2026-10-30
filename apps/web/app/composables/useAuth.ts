@@ -194,6 +194,19 @@ export function useAuth() {
     return response.user
   }
 
+  /** Detaches the wallet; email and password keep working. */
+  async function unlinkWallet(): Promise<AuthUser> {
+    const response = await $fetch<{ user: AuthUser }>(`${base}/api/auth/wallet/unlink`, {
+      method: 'POST',
+      headers: headers()
+    })
+    user.value = response.user
+    if (import.meta.client) {
+      localStorage.setItem(USER_KEY, JSON.stringify(response.user))
+    }
+    return response.user
+  }
+
   /** Opens a session for the account the wallet is linked to. */
   async function signinWithWallet(address: string, signature: string): Promise<AuthUser> {
     const response = await $fetch<AuthResponse>(`${base}/api/auth/wallet/signin`, {
@@ -256,6 +269,7 @@ export function useAuth() {
     restore,
     walletChallenge,
     linkWallet,
+    unlinkWallet,
     signinWithWallet,
     myTransactions
   }

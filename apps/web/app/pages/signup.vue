@@ -15,6 +15,11 @@ const busy = ref(false)
 
 const nextPath = computed(() => safeNextPath(route.query.next))
 
+/** An explicit `?next=` (a deep link the visitor asked for) still wins. */
+const explicitNext = computed(
+  () => typeof route.query.next === 'string' && route.query.next.length > 0
+)
+
 onMounted(async () => {
   if (await ensureSession()) {
     await router.replace(nextPath.value)
@@ -39,7 +44,13 @@ async function submit() {
   busy.value = true
   try {
     await signup(email.value, password.value)
-    await router.replace(nextPath.value)
+    // Brand-new accounts start on the profile, where the wallet gets
+    // connected — unless the visitor came from a specific page.
+    if (explicitNext.value) {
+      await router.replace(nextPath.value)
+    } else {
+      await router.replace({ path: '/profile', query: { welcome: '1' } })
+    }
   } catch (error) {
     failure.value = apiErrorMessage(error, 'Could not create the account.')
   } finally {
@@ -51,7 +62,7 @@ async function submit() {
 <template>
   <UPageSection
     title="Create your account"
-    description="Email and password for now — you can attach a Solana wallet to the same account later."
+    description="Email and password for now — right after signup we take you to your profile to connect a Solana wallet."
   >
     <div class="mx-auto max-w-md">
       <UCard>

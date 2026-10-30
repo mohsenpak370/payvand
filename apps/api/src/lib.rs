@@ -48,6 +48,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/wallet/challenge", post(wallet::challenge))
         .route("/api/auth/wallet/link", post(wallet::link))
         .route("/api/auth/wallet/signin", post(wallet::signin))
+        .route("/api/auth/wallet/unlink", post(wallet::unlink))
         .route("/api/me/transactions", get(wallet::transactions))
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
@@ -84,6 +85,7 @@ async fn index() -> Json<serde_json::Value> {
             "/api/auth/wallet/challenge",
             "/api/auth/wallet/link",
             "/api/auth/wallet/signin",
+            "/api/auth/wallet/unlink",
             "/api/me/transactions",
             "/api/payments",
             "/api/payments/watch",

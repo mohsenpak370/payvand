@@ -5,12 +5,27 @@ import type { TransactionsResponse } from '~/composables/useAuth'
 useSeoMeta({ title: 'Profile — Payvand' })
 definePageMeta({ middleware: 'auth' })
 
-const { user, walletChallenge, linkWallet, myTransactions } = useAuth()
+const route = useRoute()
+const { user, walletChallenge, linkWallet, unlinkWallet, myTransactions } = useAuth()
 const { publicKey, connected, connecting, canSignMessage } = useSolanaWallet()
 const { execute: signMessage, loading: signing } = useSolanaSignMessage()
 const budgetApi = useBudget()
 
 const linkedWallet = computed(() => user.value?.wallet ?? null)
+
+/** Fresh signups arrive as /profile?welcome=1 with this nudge to answer. */
+const showWelcome = computed(
+  () => route.query.welcome === '1' && !linkedWallet.value
+)
+
+/** A connected wallet that is not the linked one can replace it. */
+const switchNeeded = computed(
+  () =>
+    connected.value
+    && !!publicKey.value
+    && !!linkedWallet.value
+    && publicKey.value !== linkedWallet.value
+)
 
 /** Linking: connect → ask the API for text → sign it → attach. */
 const linkFailure = ref('')
@@ -35,6 +50,28 @@ async function linkWalletNow() {
     )
   } finally {
     linking.value = false
+  }
+}
+
+/** Detach the wallet — email and password keep working. */
+const unlinking = ref(false)
+const unlinkFailure = ref('')
+
+async function unlinkWalletNow() {
+  const confirmed = window.confirm(
+    'Unlink this wallet?\n\nWallet sign-in stops until you link it again, and its transactions disappear from this page. Your email and password keep working.'
+  )
+  if (!confirmed) return
+
+  unlinkFailure.value = ''
+  unlinking.value = true
+  try {
+    await unlinkWallet()
+    await refreshTransactions()
+  } catch (error) {
+    unlinkFailure.value = apiErrorMessage(error, 'Could not unlink the wallet.')
+  } finally {
+    unlinking.value = false
   }
 }
 
@@ -161,6 +198,15 @@ onMounted(() => {
         </template>
 
         <div class="flex flex-col gap-4">
+          <UAlert
+            v-if="showWelcome"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-party-popper"
+            title="Welcome to Payvand — one last step"
+            description="Connect your Solana wallet below. One signature, no transaction — it lets you sign in with your wallet and keeps your payments together."
+          />
+
           <WalletConnect />
 
           <UAlert
@@ -182,12 +228,30 @@ onMounted(() => {
           />
 
           <UAlert
+            v-if="linkedWallet && switchNeeded && publicKey"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-repeat"
+            title="A different wallet is connected"
+            :description="`Linked: ${shorten(linkedWallet)} · Connected: ${shorten(publicKey)}. Switch if this account should use the connected one.`"
+          />
+
+          <UAlert
             v-if="linkFailure"
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
             title="Could not link the wallet"
             :description="linkFailure"
+          />
+
+          <UAlert
+            v-if="unlinkFailure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Could not unlink the wallet"
+            :description="unlinkFailure"
           />
 
           <UButton
@@ -198,6 +262,32 @@ onMounted(() => {
             :disabled="!canSignMessage"
             @click="linkWalletNow"
           />
+
+          <UButton
+            v-if="switchNeeded && publicKey && canSignMessage"
+            label="Switch to this wallet"
+            icon="i-lucide-repeat"
+            :loading="linking || signing"
+            @click="linkWalletNow"
+          />
+
+          <div
+            v-if="linkedWallet"
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-3"
+          >
+            <p class="text-xs text-muted">
+              Unlinking stops wallet sign-in; your email and password keep working.
+            </p>
+            <UButton
+              label="Unlink wallet"
+              icon="i-lucide-unlink"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              :loading="unlinking"
+              @click="unlinkWalletNow"
+            />
+          </div>
         </div>
       </UCard>
 
