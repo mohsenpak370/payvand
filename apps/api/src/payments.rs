@@ -294,7 +294,7 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
 }
 
 /// `declare_id!` of the program in `apps/contracts/programs/payvand` —
-/// the sole owner of payment accounts.
+/// the sole owner of payment and budget accounts.
 pub const PAYVAND_PROGRAM_ID: &str = "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J";
 
 /// Every payment account the cluster holds for this program, undecodable
@@ -305,11 +305,27 @@ pub struct AllPayments {
     pub endpoint: String,
 }
 
+/// The two account kinds the program owns that a scan must tell apart:
+/// invoices, and the monthly budgets that can pay them.
+pub struct ProgramScan {
+    pub payments: Vec<PaymentRecord>,
+    pub budgets: Vec<BudgetAccount>,
+    pub cluster: String,
+    pub endpoint: String,
+}
+
+/// The identity half of a `Budget` account — enough to know which session
+/// key is authorised to spend from a buyer's allowance.
+pub struct BudgetAccount {
+    pub buyer: Pubkey,
+    pub session_key: Pubkey,
+}
+
 /// Invoices live only on chain — the API keeps no copy — so listing them
 /// means asking the program for its accounts (`get_program_accounts`).
 /// That scan is fine while the platform is small; revisit if the account
 /// count ever grows into the thousands.
-pub async fn fetch_all_payments() -> ApiResult<AllPayments> {
+pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     let cluster = default_cluster();
     let endpoint = resolve_endpoint(None, &cluster)?;
     let program_id = Pubkey::from_str(PAYVAND_PROGRAM_ID)
@@ -319,23 +335,44 @@ pub async fn fetch_all_payments() -> ApiResult<AllPayments> {
     let accounts = match rpc.get_program_accounts(&program_id).await {
         Ok(accounts) => accounts,
         Err(error) => {
-            tracing::info!(%error, "payment list not readable");
+            tracing::info!(%error, "program accounts not readable");
             return Err(ApiError::Internal(
                 "The cluster did not return the payment list. Try again.".into(),
             ));
         }
     };
 
-    let records = accounts
-        .into_iter()
-        .filter_map(|(pubkey, account)| {
-            decode_payment(&account.data).map(|payment| {
-                record_from_chain(pubkey, payment, cluster.clone(), endpoint.clone())
-            })
-        })
-        .collect();
+    let mut payments = Vec::new();
+    let mut budgets = Vec::new();
+    for (pubkey, account) in accounts {
+        if let Some(payment) = decode_payment(&account.data) {
+            payments.push(record_from_chain(
+                pubkey,
+                payment,
+                cluster.clone(),
+                endpoint.clone(),
+            ));
+        } else if let Some(budget) = decode_budget(&account.data) {
+            budgets.push(budget);
+        }
+    }
 
-    Ok(AllPayments { records, cluster, endpoint })
+    Ok(ProgramScan {
+        payments,
+        budgets,
+        cluster,
+        endpoint,
+    })
+}
+
+/// The payment half of a program scan (the admin feed needs nothing else).
+pub async fn fetch_all_payments() -> ApiResult<AllPayments> {
+    let scan = fetch_program_scan().await?;
+    Ok(AllPayments {
+        records: scan.payments,
+        cluster: scan.cluster,
+        endpoint: scan.endpoint,
+    })
 }
 
 /// Cluster used when a status request omits `?cluster=`: `SOLANA_CLUSTER`
@@ -400,11 +437,31 @@ fn decode_payment(data: &[u8]) -> Option<OnchainPayment> {
     })
 }
 
-/// `sha256("account:Payment")[..8]`, the discriminator Anchor prefixes to
+/// `sha256("account:<Name>")[..8]`, the discriminator Anchor prefixes to
 /// every `#[account]`.
 fn account_discriminator() -> [u8; 8] {
-    let digest = Sha256::digest(b"account:Payment");
+    discriminator_for("Payment")
+}
+
+/// Discriminator of any Anchor account, for telling the program's account
+/// kinds apart in a scan.
+fn discriminator_for(name: &str) -> [u8; 8] {
+    let digest = Sha256::digest(format!("account:{name}").as_bytes());
     digest[..8].try_into().expect("8 byte slice")
+}
+
+/// Borsh layout of the `Budget` account: discriminator, buyer, session key,
+/// then the allowance fields the chain enforces. Only the identities matter
+/// to the API — the amounts are read from the chain by the client.
+fn decode_budget(data: &[u8]) -> Option<BudgetAccount> {
+    let mut reader = Reader::new(data);
+    if reader.take(8)? != discriminator_for("Budget") {
+        return None;
+    }
+    Some(BudgetAccount {
+        buyer: reader.pubkey()?,
+        session_key: reader.pubkey()?,
+    })
 }
 
 struct Reader<'a> {
@@ -451,7 +508,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-fn parse_pubkey(value: &str, field: &str) -> ApiResult<Pubkey> {
+pub(crate) fn parse_pubkey(value: &str, field: &str) -> ApiResult<Pubkey> {
     Pubkey::from_str(value).map_err(|_| bad(format!("{field} is not a valid solana address")))
 }
 

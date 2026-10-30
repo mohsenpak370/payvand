@@ -46,6 +46,18 @@ const SCHEMA: &[&str] = &[
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL
     )",
+    // One live sign-in/link challenge per address, single use, short lived.
+    "CREATE TABLE IF NOT EXISTS wallet_challenges (
+        address    TEXT PRIMARY KEY,
+        purpose    TEXT NOT NULL,
+        nonce      TEXT NOT NULL,
+        message    TEXT NOT NULL,
+        issued_at  INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    )",
+    // A wallet belongs to at most one account.
+    "CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_unique_idx \
+     ON users(wallet) WHERE wallet IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS password_resets_user_id_idx ON password_resets(user_id)",
 ];
 

@@ -5,6 +5,46 @@ export interface AuthUser {
   created_at: number
 }
 
+export interface WalletChallenge {
+  message: string
+  purpose: 'link' | 'signin'
+  expires_at: number
+}
+
+export interface MyTransaction {
+  id: string
+  direction: 'sent' | 'received'
+  counterparty: string
+  amount_lamports: number
+  memo: string
+  status: 'pending' | 'settled' | 'missing'
+  created_at_unix: number
+  settled_at_unix: number
+}
+
+export interface TransactionsResponse {
+  wallet: string
+  items: MyTransaction[]
+  total: number
+  cluster: string
+}
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+/** Solana's base58 — the encoding the API expects signatures in. */
+export function base58Encode(bytes: Uint8Array): string {
+  let zeros = 0
+  while (zeros < bytes.length && bytes[zeros] === 0) zeros++
+  let value = 0n
+  for (const byte of bytes) value = (value << 8n) | BigInt(byte)
+  let out = ''
+  while (value > 0n) {
+    out = BASE58_ALPHABET[Number(value % 58n)] + out
+    value /= 58n
+  }
+  return '1'.repeat(zeros) + out
+}
+
 interface AuthResponse {
   user: AuthUser
   token: string
@@ -29,9 +69,9 @@ let inflight: Promise<boolean> | null = null
 /**
  * Email + password accounts backed by the Axum API.
  *
- * The session is an opaque bearer token in `localStorage`. `users.wallet` is
- * still null for everyone — it is the slot for adding Solana wallet sign-in
- * to the same account later.
+ * The session is an opaque bearer token in `localStorage`. `users.wallet`
+ * holds the Solana address linked from the profile page — once linked, the
+ * same account can also be opened by signing a challenge with that wallet.
  */
 export function useAuth() {
   const config = useRuntimeConfig()
@@ -129,6 +169,48 @@ export function useAuth() {
     })
   }
 
+  /** Step 1 of wallet sign-in/link: the exact text the wallet must sign. */
+  async function walletChallenge(
+    address: string,
+    purpose: 'link' | 'signin'
+  ): Promise<WalletChallenge> {
+    return await $fetch<WalletChallenge>(`${base}/api/auth/wallet/challenge`, {
+      method: 'POST',
+      body: { address, purpose }
+    })
+  }
+
+  /** Attaches the signed wallet to the account that is signed in now. */
+  async function linkWallet(address: string, signature: string): Promise<AuthUser> {
+    const response = await $fetch<{ user: AuthUser }>(`${base}/api/auth/wallet/link`, {
+      method: 'POST',
+      headers: headers(),
+      body: { address, signature }
+    })
+    user.value = response.user
+    if (import.meta.client) {
+      localStorage.setItem(USER_KEY, JSON.stringify(response.user))
+    }
+    return response.user
+  }
+
+  /** Opens a session for the account the wallet is linked to. */
+  async function signinWithWallet(address: string, signature: string): Promise<AuthUser> {
+    const response = await $fetch<AuthResponse>(`${base}/api/auth/wallet/signin`, {
+      method: 'POST',
+      body: { address, signature }
+    })
+    persist(response)
+    return response.user
+  }
+
+  /** This account's on-chain transactions, for its linked wallet. */
+  async function myTransactions(): Promise<TransactionsResponse> {
+    return await $fetch<TransactionsResponse>(`${base}/api/me/transactions`, {
+      headers: headers()
+    })
+  }
+
   /**
    * Restores the stored session and checks it against the server. Resolves
    * `false` when there is no usable account, so route middleware can bounce
@@ -162,7 +244,21 @@ export function useAuth() {
     return result
   }
 
-  return { user, token, signup, signin, signout, forgotPassword, resetPassword, ensureSession, restore }
+  return {
+    user,
+    token,
+    signup,
+    signin,
+    signout,
+    forgotPassword,
+    resetPassword,
+    ensureSession,
+    restore,
+    walletChallenge,
+    linkWallet,
+    signinWithWallet,
+    myTransactions
+  }
 }
 
 /**

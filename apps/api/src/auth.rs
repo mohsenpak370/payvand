@@ -327,7 +327,7 @@ async fn resolve_session(db: &SharedDb, token: &str) -> ApiResult<Option<User>> 
     }
 }
 
-async fn issue_session(connection: &libsql::Connection, user_id: &str) -> ApiResult<String> {
+pub(crate) async fn issue_session(connection: &libsql::Connection, user_id: &str) -> ApiResult<String> {
     let token = random_id();
     let now = unix_now();
     connection
@@ -346,7 +346,7 @@ async fn issue_session(connection: &libsql::Connection, user_id: &str) -> ApiRes
     Ok(token)
 }
 
-async fn read_user(connection: &libsql::Connection, id: &str) -> ApiResult<Option<User>> {
+pub(crate) async fn read_user(connection: &libsql::Connection, id: &str) -> ApiResult<Option<User>> {
     let mut rows = connection
         .query(
             "SELECT id, email, wallet, created_at FROM users WHERE id = ?",

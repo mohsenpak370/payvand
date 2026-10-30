@@ -98,6 +98,13 @@ async function onSignOut() {
           class="hidden items-center gap-1 lg:flex"
         >
           <template v-if="user">
+            <UButton
+              to="/profile"
+              label="Profile"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-circle-user-round"
+            />
             <span
               class="text-muted inline-flex max-w-40 items-center gap-1.5 rounded-full bg-elevated/50 px-2.5 py-1 text-xs"
             >
@@ -172,6 +179,15 @@ async function onSignOut() {
               />
               <span class="truncate">{{ user.email }}</span>
             </span>
+            <UButton
+              to="/profile"
+              label="Profile"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-circle-user-round"
+              block
+              class="justify-start"
+            />
             <UButton
               label="Sign out"
               color="neutral"

@@ -6,6 +6,7 @@ pub mod db;
 pub mod discounts;
 pub mod email;
 pub mod payments;
+pub mod wallet;
 
 use axum::extract::{Path, Query, State};
 use axum::http::{header, Method};
@@ -44,6 +45,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/reset-password", post(auth::reset_password))
         .route("/api/auth/signout", post(auth::signout))
         .route("/api/auth/me", get(auth::me))
+        .route("/api/auth/wallet/challenge", post(wallet::challenge))
+        .route("/api/auth/wallet/link", post(wallet::link))
+        .route("/api/auth/wallet/signin", post(wallet::signin))
+        .route("/api/me/transactions", get(wallet::transactions))
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
         .route("/api/payments/{id}", get(get_payment))
@@ -76,6 +81,10 @@ async fn index() -> Json<serde_json::Value> {
             "/api/auth/reset-password",
             "/api/auth/signout",
             "/api/auth/me",
+            "/api/auth/wallet/challenge",
+            "/api/auth/wallet/link",
+            "/api/auth/wallet/signin",
+            "/api/me/transactions",
             "/api/payments",
             "/api/payments/watch",
             "/api/payments/{id}",
