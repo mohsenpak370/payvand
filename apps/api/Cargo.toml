@@ -42,6 +42,9 @@ sha2 = "0.10"
 libsql = "0.10"
 argon2 = "0.6"
 getrandom = "0.4"
+# rustls (not native-tls/openssl) so the Vercel Linux builder needs no
+# system TLS headers.
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "pool", "builder", "hostname", "rustls-tls"] }
 
 [profile.release]
 codegen-units = 1

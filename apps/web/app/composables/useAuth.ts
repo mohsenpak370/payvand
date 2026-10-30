@@ -109,6 +109,27 @@ export function useAuth() {
   }
 
   /**
+   * Starts password recovery. The API answers the same generic message for
+   * every address, so success only means "the request was accepted" — the
+   * page must never claim that an email was definitely sent.
+   */
+  async function forgotPassword(email: string): Promise<string> {
+    const response = await $fetch<{ ok: boolean, message: string }>(
+      `${base}/api/auth/forgot-password`,
+      { method: 'POST', body: { email } }
+    )
+    return response.message
+  }
+
+  /** Exchanges the emailed one-time token for a new password. */
+  async function resetPassword(token: string, password: string): Promise<void> {
+    await $fetch(`${base}/api/auth/reset-password`, {
+      method: 'POST',
+      body: { token, password }
+    })
+  }
+
+  /**
    * Restores the stored session and checks it against the server. Resolves
    * `false` when there is no usable account, so route middleware can bounce
    * the visitor to /signin.
@@ -141,7 +162,7 @@ export function useAuth() {
     return result
   }
 
-  return { user, token, signup, signin, signout, ensureSession, restore }
+  return { user, token, signup, signin, signout, forgotPassword, resetPassword, ensureSession, restore }
 }
 
 /**

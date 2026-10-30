@@ -74,6 +74,15 @@ async function submit() {
             />
           </UFormField>
 
+          <p class="-mt-2 text-right text-sm">
+            <NuxtLink
+              to="/forgot-password"
+              class="text-primary font-medium"
+            >
+              Forgot password?
+            </NuxtLink>
+          </p>
+
           <UAlert
             v-if="failure"
             color="error"

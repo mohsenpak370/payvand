@@ -133,6 +133,8 @@ Useful endpoints once the API is up:
 GET  /health                 -> {"ok":true}
 POST /api/auth/signup        -> creates an account, returns a session token
 POST /api/auth/signin        -> returns a new session token
+POST /api/auth/forgot-password -> emails a one-time reset link (generic reply)
+POST /api/auth/reset-password -> sets the new password, revokes all sessions
 POST /api/auth/signout       -> revokes the bearer session
 GET  /api/auth/me            -> the signed-in account
 POST /api/payments           -> validates a request, returns the QR payload
@@ -151,6 +153,17 @@ client keeps the token in `localStorage` and sends it as
 `Authorization: Bearer <token>`; the server stores only the SHA-256 digest of
 each token, so a leaked database dump cannot be replayed as a live session.
 Sessions last 30 days.
+
+Sign-up is deliberately instant — no email confirmation stands between a new
+visitor and the app. Email only appears in **password recovery**:
+`POST /api/auth/forgot-password` answers the same generic message whether or
+not the address has an account (no account enumeration) and emails a
+one-hour, single-use link. `POST /api/auth/reset-password` swaps the
+password, consumes the link, and revokes every session of the account —
+old sessions die with the old password. Locally the API has no SMTP
+configured, so the reset link is printed to its console (the equivalent of
+Django's console backend); with `EMAIL_HOST` set it is delivered over SMTP —
+Gmail SMTP with an app password is the free production setup.
 
 `POST /api/payments` requires a valid session. `GET /api/payments/{pda}` is
 public on purpose — a scanner must be able to read an invoice before deciding
@@ -201,6 +214,12 @@ on startup.
 | `SOLANA_RPC_URL`                | api          | cluster default | RPC endpoint the API uses for status reads |
 | `DATABASE_URL`                  | api          | `data/payvand.db` | libSQL server URL; unset means embedded SQLite |
 | `LIBSQL_AUTH_TOKEN`             | api          | —               | Required when `DATABASE_URL` is remote   |
+| `FRONTEND_BASE_URL`             | api          | `http://localhost:3000` | Origin that password-reset links point at |
+| `EMAIL_HOST`                    | api          | — (console)     | SMTP host; unset prints the email to the API console |
+| `EMAIL_PORT`                    | api          | `587`           | SMTP port                               |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | api | —            | SMTP credentials — a free Gmail app password works |
+| `EMAIL_USE_TLS`                 | api          | `true`          | STARTTLS on the SMTP connection          |
+| `DEFAULT_FROM_EMAIL`            | api          | SMTP user       | Sender address                           |
 
 Never put a wallet secret key or a seed phrase anywhere in this repository. The
 Nuxt module deliberately strips `payer` and `payerSecretKey` from its public

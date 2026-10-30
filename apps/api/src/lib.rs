@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod db;
 pub mod discounts;
+pub mod email;
 pub mod payments;
 
 use axum::extract::{Path, Query, State};
@@ -38,6 +39,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/health", get(health))
         .route("/api/auth/signup", post(auth::signup))
         .route("/api/auth/signin", post(auth::signin))
+        .route("/api/auth/forgot-password", post(auth::forgot_password))
+        .route("/api/auth/reset-password", post(auth::reset_password))
         .route("/api/auth/signout", post(auth::signout))
         .route("/api/auth/me", get(auth::me))
         .route("/api/payments", post(create_payment))
@@ -64,6 +67,8 @@ async fn index() -> Json<serde_json::Value> {
             "/api/health",
             "/api/auth/signup",
             "/api/auth/signin",
+            "/api/auth/forgot-password",
+            "/api/auth/reset-password",
             "/api/auth/signout",
             "/api/auth/me",
             "/api/payments",

@@ -39,6 +39,7 @@ DEV.md
 .certs/
 .vercel-token
 .turso-credentials
+.email-credentials
 
 # Local env files (this negation must come last — an earlier .env* rule
 # would otherwise re-ignore the committed example)

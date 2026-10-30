@@ -40,6 +40,13 @@ const SCHEMA: &[&str] = &[
         UNIQUE (user_id, code)
     )",
     "CREATE INDEX IF NOT EXISTS discount_codes_user_id_idx ON discount_codes(user_id)",
+    "CREATE TABLE IF NOT EXISTS password_resets (
+        token_hash TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    )",
+    "CREATE INDEX IF NOT EXISTS password_resets_user_id_idx ON password_resets(user_id)",
 ];
 
 #[derive(Debug)]
