@@ -73,10 +73,18 @@ pub fn send(to: &str, subject: &str, body: &str) -> Result<(), String> {
         .body(body.to_string())
         .map_err(|error| format!("could not build the message: {error}"))?;
 
-    let mut builder = if use_tls {
+    let mut builder = if !use_tls {
+        SmtpTransport::builder_dangerous(&host)
+    } else if port == 465 {
+        // SMTPS: implicit TLS from the first byte (port 465).
         SmtpTransport::relay(&host).map_err(|error| format!("SMTP setup failed: {error}"))?
     } else {
-        SmtpTransport::builder_dangerous(&host)
+        // Explicit TLS: connect in plaintext and upgrade with STARTTLS —
+        // the submission style Gmail uses on port 587. `relay()` would be
+        // wrong here: it speaks SMTPS and dies on the server's plaintext
+        // banner.
+        SmtpTransport::starttls_relay(&host)
+            .map_err(|error| format!("SMTP setup failed: {error}"))?
     };
     builder = builder.port(port);
     if !username.is_empty() {
