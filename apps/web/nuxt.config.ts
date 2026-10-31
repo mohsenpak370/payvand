@@ -91,7 +91,7 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       // Both are CommonJS and only load in the browser.
-      include: ['jsqr', 'qrcode']
+      include: ['jsqr']
     }
   },
 
