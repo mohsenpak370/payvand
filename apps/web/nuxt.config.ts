@@ -106,6 +106,7 @@ export default defineNuxtConfig({
 
   solana: {
     cluster: solanaCluster,
+    autoConnect: true,
     ...(solanaEndpoint ? { endpoint: solanaEndpoint } : {})
   }
 })
