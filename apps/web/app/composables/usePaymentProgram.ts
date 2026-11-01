@@ -1,7 +1,7 @@
 import {
   AccountRole,
   address,
-  appendTransactionMessageInstruction,
+  appendTransactionMessageInstructions,
   compileTransaction,
   createTransactionMessage,
   getAddressDecoder,
@@ -17,6 +17,9 @@ import {
 import idl from '~/assets/payvand.idl.json'
 
 const PAYMENT_SEED = new TextEncoder().encode('payment')
+
+/** The SPL Memo program — present on every Solana cluster. */
+export const MEMO_PROGRAM_ID = address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
 type IdlType = 'u64' | 'u8' | 'string' | 'pubkey'
 
@@ -39,9 +42,16 @@ interface IdlInstruction {
   args: IdlArgDef[]
 }
 
+interface IdlError {
+  code: number
+  name: string
+  msg?: string
+}
+
 interface ProgramIdl {
   address: string
   instructions: IdlInstruction[]
+  errors?: IdlError[]
 }
 
 const programIdl = idl as unknown as ProgramIdl
@@ -150,11 +160,34 @@ export function createReference(): Address {
 }
 
 /**
- * Compiles `instruction` into wire bytes, which is what
+ * A Memo-program instruction carrying a human readable description. Wallets
+ * render it in the approval screen and on explorers, so an Anchor
+ * instruction is never just an opaque blob of hex.
+ */
+export function buildMemoInstruction(memo: string, signer: Address): Instruction {
+  return {
+    programAddress: MEMO_PROGRAM_ID,
+    accounts: [{ address: signer, role: AccountRole.READONLY_SIGNER }],
+    data: new TextEncoder().encode(memo)
+  }
+}
+
+/**
+ * Plain-language text for an Anchor custom error code from the IDL, or null
+ * when the code is not one of the program's own errors.
+ */
+export function describeProgramErrorCode(code: number): string | null {
+  const known = programIdl.errors?.find(error => error.code === code)
+  return known?.msg ?? known?.name ?? null
+}
+
+/**
+ * Compiles `instruction` (or a list of them, e.g. the instruction plus a
+ * memo) into wire bytes, which is what
  * `useSolanaSignAndSendTransaction()` accepts.
  */
 export async function compileWireTransaction(params: {
-  instruction: Instruction
+  instruction: Instruction | Instruction[]
   payer: Address
   rpc: {
     getLatestBlockhash: () => {
@@ -166,14 +199,15 @@ export async function compileWireTransaction(params: {
 }) {
   const { value: latestBlockhash } = await params.rpc.getLatestBlockhash().send()
 
+  const instructions = Array.isArray(params.instruction)
+    ? params.instruction
+    : [params.instruction]
+
   const message = setTransactionMessageLifetimeUsingBlockhash(
     latestBlockhash,
     setTransactionMessageFeePayer(
       params.payer,
-      appendTransactionMessageInstruction(
-        params.instruction,
-        createTransactionMessage({ version: 0 })
-      )
+      appendTransactionMessageInstructions(instructions, createTransactionMessage({ version: 0 }))
     )
   )
 

@@ -9,10 +9,16 @@ import {
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
+  getTransactionDecoder,
   type Address,
   type KeyPairSigner
 } from '@vue-solana/nuxt/kit'
-import { PAYVAND_PROGRAM_ID, buildInstruction } from './usePaymentProgram'
+import {
+  PAYVAND_PROGRAM_ID,
+  buildInstruction,
+  describeProgramErrorCode
+} from './usePaymentProgram'
+import type { compileWireTransaction } from './usePaymentProgram'
 
 const BUDGET_SEED = new TextEncoder().encode('budget')
 const SESSION_STORAGE_PREFIX = 'payvand.session.v1.'
@@ -21,6 +27,16 @@ const SESSION_STORAGE_PREFIX = 'payvand.session.v1.'
 const BUDGET_SPACE = 97
 /** Mirrors `PAYMENT_SPACE` in the program: 8 + 32 + 32 + 8 + 4 + 96 + 1 + 32 + 8 + 8 + 1. */
 const PAYMENT_SPACE = 230
+/**
+ * Mirrors `SESSION_FEE_FLOAT` in the program — lamports parked on the
+ * session key so its silent transactions can pay their own fees.
+ */
+const SESSION_FEE_FLOAT = 10_000_000
+/**
+ * Network fee for one signature (5000 lamports), plus a small margin for
+ * price movement — what `open_budget` costs above the lamports it moves.
+ */
+const TRANSACTION_FEE_LAMPORTS = 10_000
 
 export interface BudgetState {
   /** The buyer's budget PDA. */
@@ -158,6 +174,85 @@ export function useBudget() {
   }
 
   /**
+   * What one `open_budget` signature must move out of the buyer's wallet:
+   * the pot top-up, the session key's fee float, the budget account's rent
+   * (only when it does not exist yet) and the transaction fee. Mirrors the
+   * transfers the program performs, so the UI can warn *before* the wallet
+   * is asked to sign something that would fail pre-flight.
+   */
+  async function openBudgetCost(
+    buyer: Address,
+    monthlyLimit: number,
+    sessionAddress: Address
+  ): Promise<{ topUp: number, feeFloat: number, rent: number, fee: number, total: number }> {
+    const existing = await loadBudget(buyer)
+    const rent = existing ? 0 : await rentMinimum(BUDGET_SPACE)
+    const pot = existing ? await availablePot(existing) : 0
+    const topUp = Math.max(0, monthlyLimit - pot)
+    const sessionLamports = Number(
+      (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
+    )
+    const feeFloat = Math.max(0, SESSION_FEE_FLOAT - sessionLamports)
+    const fee = TRANSACTION_FEE_LAMPORTS
+    return { topUp, feeFloat, rent, fee, total: topUp + feeFloat + rent + fee }
+  }
+
+  /**
+   * Runs the compiled transaction through the cluster's simulator (no
+   * signature needed) and throws a user-facing message when it would fail.
+   * Wallets simulate too — when theirs fails the approval screen turns into
+   * a scary "cannot simulate" warning and the send dies with a generic
+   * wallet error — so a transaction that reaches the wallet is one that
+   * actually succeeds.
+   */
+  async function preflight(
+    wire: Awaited<ReturnType<typeof compileWireTransaction>>
+  ): Promise<void> {
+    const simulation = await client.rpc
+      .simulateTransaction(getBase64EncodedWireTransaction(getTransactionDecoder().decode(wire)), {
+        encoding: 'base64',
+        commitment: 'confirmed',
+        sigVerify: false,
+        replaceRecentBlockhash: true
+      })
+      .send()
+    const err = simulation.value.err
+    if (err === null) return
+
+    // Kit's RPC hands the custom code back as a bigint — Number() it so
+    // the IDL lookup (numeric codes) can match.
+    const custom
+      = typeof err === 'object'
+        && err !== null
+        && 'InstructionError' in err
+        && Array.isArray(err.InstructionError)
+        ? (err.InstructionError[1] as { Custom?: number | bigint } | undefined)?.Custom
+        : undefined
+    const anchorMessage
+      = custom !== undefined ? describeProgramErrorCode(Number(custom)) : null
+    if (anchorMessage) {
+      throw new Error(anchorMessage)
+    }
+    // Anchor's built-in errors (ConstraintSeeds, AccountNotInitialized, …)
+    // are not in the IDL table, but their message is in the logs.
+    const anchorLog = simulation.value.logs?.find(line => line.includes('Error Message:'))
+    const loggedMessage = anchorLog?.match(/Error Message: (.+?)\.?$/)?.[1]
+    if (loggedMessage) {
+      throw new Error(loggedMessage)
+    }
+    if (simulation.value.logs?.some(line => line.includes('insufficient lamports'))) {
+      throw new Error(
+        'This wallet does not hold enough SOL for that limit. Lower it or top the wallet up first.'
+      )
+    }
+    throw new Error(
+      'The transaction would be rejected on-chain, so it was not sent. '
+      + 'If you have no budget yet, the limit must be greater than 0; '
+      + 'otherwise reload the page and try again.'
+    )
+  }
+
+  /**
    * Why the next payment cannot ride the budget, or `null` when it can be
    * settled silently with no wallet popup.
    */
@@ -244,6 +339,8 @@ export function useBudget() {
     loadBudget,
     remainingThisMonth,
     availablePot,
+    openBudgetCost,
+    preflight,
     silentPaymentObstacle,
     sendSilentPayment
   }

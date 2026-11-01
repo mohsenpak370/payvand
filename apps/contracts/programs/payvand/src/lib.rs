@@ -153,6 +153,9 @@ pub mod payvand {
         budget.monthly_limit = monthly_limit;
         budget.spent = 0;
         budget.month_index = current_month_index()?;
+        // close_budget validates `bump = budget.bump`; without this the
+        // stored bump stays 0 and closing can never pass its seeds check.
+        budget.bump = ctx.bumps.budget;
         Ok(())
     }
 

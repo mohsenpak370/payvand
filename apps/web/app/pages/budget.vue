@@ -13,6 +13,7 @@ const budgetApi = useBudget()
 const limitSol = ref('2')
 const busy = ref(false)
 const failure = ref('')
+const failureTitle = ref('Something went wrong')
 const success = ref('')
 const budget = ref<BudgetState | null>(null)
 const budgetPot = ref(0)
@@ -39,6 +40,40 @@ async function refresh() {
 watch(publicKey, refresh, { immediate: true })
 
 /**
+ * vue-solana wallet errors carry a string code (`USER_REJECTED`,
+ * `RPC_FAILURE`, …) — the same source pay.vue reads `txError?.code` from.
+ */
+function solanaErrorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined
+  const { code } = error as { code: unknown }
+  return typeof code === 'string' ? code : undefined
+}
+
+/**
+ * Turns whatever went wrong into something a person can act on. The raw
+ * wallet error for a doomed transaction is a bare "Internal error" — the
+ * whole reason this flow pre-flights before the popup now.
+ */
+function describeFailure(error: unknown): string {
+  switch (solanaErrorCode(error)) {
+    case 'USER_REJECTED':
+      return 'You rejected the request in your wallet.'
+    case 'RPC_FAILURE':
+      return 'Your wallet could not submit the transaction. If it warned that it could not simulate '
+        + 'the transaction, the wallet most likely lacks SOL for this limit — check its balance, then try again.'
+    case 'TRANSACTION_TIMEOUT':
+      return 'The network is taking longer than usual to confirm. Check your wallet activity before retrying.'
+    default:
+      return error instanceof Error && error.message ? error.message : 'The wallet rejected the request.'
+  }
+}
+
+function recordFailure(error: unknown) {
+  failureTitle.value = solanaErrorCode(error) ?? 'Transaction not sent'
+  failure.value = describeFailure(error)
+}
+
+/**
  * The one signature this feature ever asks for: funds the pot to the limit,
  * tops up the session key's fee float, and registers (or rotates) the
  * session key that will pay silently afterwards.
@@ -48,6 +83,7 @@ async function saveLimit() {
   if (!buyer) return
 
   failure.value = ''
+  failureTitle.value = 'Something went wrong'
   success.value = ''
   const limit = solToLamports(Number(limitSol.value))
   if (!Number.isFinite(limit) || limit <= 0) {
@@ -58,12 +94,46 @@ async function saveLimit() {
   busy.value = true
   try {
     const session = await ensureSessionSigner(buyer)
+
+    // 1. Would this wallet actually be able to fund the signature? A wallet
+    //    that cannot cover it reports a useless "cannot simulate" warning
+    //    and a bare "Internal error" after approval — so say what is
+    //    missing while we can still show numbers.
+    const cost = await budgetApi.openBudgetCost(buyer, limit, session.address)
+    const balance = Number(
+      (await client.rpc.getBalance(buyer, { commitment: 'confirmed' }).send()).value
+    )
+    if (balance < cost.total) {
+      failureTitle.value = 'Not enough SOL'
+      failure.value
+        = `This wallet holds ${lamportsToSol(balance)} SOL, but enabling a ${lamportsToSol(limit)} SOL budget needs about ${lamportsToSol(cost.total)} SOL in one signature `
+          + `(${lamportsToSol(cost.topUp)} into the pot, ${lamportsToSol(cost.feeFloat)} session-key fee float, `
+          + `${lamportsToSol(cost.rent)} account rent, ${lamportsToSol(cost.fee)} network fee). `
+          + 'Lower the limit or top up the wallet — on devnet, https://faucet.solana.com sends free test SOL.'
+      return
+    }
+
+    // 2. Build it with a memo so the wallet and explorers can describe it,
+    //    then simulate it before the popup: a transaction that reaches the
+    //    wallet is one that will actually succeed.
     const instruction = buildInstruction(
       'open_budget',
       { monthly_limit: limit },
       { buyer, budget: await deriveBudgetPda(buyer), session_key: session.address }
     )
-    const wire = await compileWireTransaction({ instruction, payer: buyer, rpc: client.rpc })
+    const memo = buildMemoInstruction(
+      budget.value
+        ? `Payvand: top up monthly budget to ${lamportsToSol(limit)} SOL`
+        : `Payvand: enable monthly budget of ${lamportsToSol(limit)} SOL`,
+      buyer
+    )
+    const wire = await compileWireTransaction({
+      instruction: [instruction, memo],
+      payer: buyer,
+      rpc: client.rpc
+    })
+    await budgetApi.preflight(wire)
+
     await execute(wire, {
       confirm: true,
       confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
@@ -73,7 +143,7 @@ async function saveLimit() {
       : 'Budget enabled. Payments inside it now need no wallet approval at all.'
     await refresh()
   } catch (error) {
-    failure.value = error instanceof Error ? error.message : 'The wallet rejected the request.'
+    recordFailure(error)
   } finally {
     busy.value = false
   }
@@ -85,7 +155,12 @@ async function closeBudget() {
   if (!buyer) return
 
   failure.value = ''
+  failureTitle.value = 'Something went wrong'
   success.value = ''
+  if (!budget.value) {
+    failure.value = 'There is no budget to close yet.'
+    return
+  }
   busy.value = true
   try {
     const instruction = buildInstruction(
@@ -93,7 +168,13 @@ async function closeBudget() {
       {},
       { budget: await deriveBudgetPda(buyer), buyer }
     )
-    const wire = await compileWireTransaction({ instruction, payer: buyer, rpc: client.rpc })
+    const memo = buildMemoInstruction('Payvand: close budget and reclaim all funds', buyer)
+    const wire = await compileWireTransaction({
+      instruction: [instruction, memo],
+      payer: buyer,
+      rpc: client.rpc
+    })
+    await budgetApi.preflight(wire)
     await execute(wire, {
       confirm: true,
       confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
@@ -102,7 +183,7 @@ async function closeBudget() {
     success.value = 'Budget closed — everything left went back to your wallet.'
     await refresh()
   } catch (error) {
-    failure.value = error instanceof Error ? error.message : 'Could not close the budget.'
+    recordFailure(error)
   } finally {
     busy.value = false
   }
@@ -235,7 +316,7 @@ async function closeBudget() {
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
-          title="Something went wrong"
+          :title="failureTitle"
           :description="failure"
         />
         <UAlert
