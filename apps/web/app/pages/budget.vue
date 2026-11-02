@@ -123,8 +123,8 @@ async function saveLimit() {
     )
     const memo = buildMemoInstruction(
       budget.value
-        ? `Payvand: top up monthly budget to ${lamportsToSol(limit)} SOL`
-        : `Payvand: enable monthly budget of ${lamportsToSol(limit)} SOL`,
+        ? `Payvand: top up your own budget account to ${lamportsToSol(limit)} SOL (still your funds)`
+        : `Payvand: keep ${lamportsToSol(limit)} SOL as your monthly budget (still your funds, withdrawable anytime)`,
       buyer
     )
     const wire = await compileWireTransaction({
@@ -140,7 +140,9 @@ async function saveLimit() {
     })
     success.value = budget.value
       ? 'Budget updated — your limit and pot are in sync again.'
-      : 'Budget enabled. Payments inside it now need no wallet approval at all.'
+      : 'Budget enabled. Your SOL now sits in an account derived from your wallet that only your '
+        + 'private keys control — payments inside the limit need no approval, and "Close budget" '
+        + 'withdraws every remaining lamport back to your wallet at any time.'
     await refresh()
   } catch (error) {
     recordFailure(error)
@@ -193,7 +195,7 @@ async function closeBudget() {
 <template>
   <UPageSection
     title="Monthly spending budget"
-    description="Set your limit once a month — your wallet signs only that one time. After that, payments inside the limit go through instantly, with no approval popups."
+    description="Set your limit once a month — your wallet signs only that one time. The limit moves into an account derived from your own wallet, so only your private keys control it: payments inside it go through with no approval popups, and you can withdraw the whole amount back to your wallet at any moment."
   >
     <UCard>
       <template #header>
@@ -243,8 +245,10 @@ async function closeBudget() {
           </div>
 
           <p class="text-sm text-muted">
-            The limit resets on the 1st of each month. The pot keeps whatever you did not
-            spend, and every lamport is still yours: closing the budget returns all of it.
+            Your pot is held in a program-derived account — derived from, and spendable only
+            with, your wallet's private key. Nothing is sent to anyone: the limit resets on the
+            1st of each month, the pot keeps whatever you did not spend, and closing the budget
+            withdraws every lamport back to your wallet.
           </p>
 
           <UFormField
@@ -299,8 +303,11 @@ async function closeBudget() {
           />
 
           <p class="text-sm text-muted">
-            This is the only wallet approval the feature needs: it funds your pot for the
-            month and creates the session key that signs future payments on this device.
+            This is the only wallet approval the feature needs. Your limit is not sent anywhere:
+            it moves into an account derived from your wallet that only your private keys control,
+            and the session key that signs future payments stays on this device. Payments inside
+            the limit then go through with no popups, and you can withdraw the whole pot back at
+            any moment.
           </p>
         </template>
 
