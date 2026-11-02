@@ -53,6 +53,13 @@ interface AuthResponse {
 const TOKEN_KEY = 'payvand.token'
 const USER_KEY = 'payvand.user'
 
+/**
+ * The session probe must never pin the router: the dev proxy holds
+ * requests to a stopped API forever instead of failing fast, so a hung
+ * probe would leave every protected page blank.
+ */
+const SESSION_CHECK_TIMEOUT_MS = 5000
+
 /** Mirrors `MIN_PASSWORD_LEN` in the Axum API. */
 export const MIN_PASSWORD_LENGTH = 8
 
@@ -225,6 +232,17 @@ export function useAuth() {
   }
 
   /**
+   * True only when the server explicitly rejected the token. A network
+   * failure (API restarting, dev proxy hiccup) says nothing about the
+   * session and must never log the visitor out.
+   */
+  function isAuthRejection(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) return false
+    const { status, statusCode } = error as { status?: number, statusCode?: number }
+    return status === 401 || statusCode === 401
+  }
+
+  /**
    * Restores the stored session and checks it against the server. Resolves
    * `false` when there is no usable account, so route middleware can bounce
    * the visitor to /signin.
@@ -239,16 +257,23 @@ export function useAuth() {
       if (!token.value) return false
       try {
         const me = await $fetch<AuthUser>(`${base}/api/auth/me`, {
-          headers: headers()
+          headers: headers(),
+          signal: AbortSignal.timeout(SESSION_CHECK_TIMEOUT_MS)
         })
         user.value = me
         if (import.meta.client) {
           localStorage.setItem(USER_KEY, JSON.stringify(me))
         }
         return true
-      } catch {
-        clear()
-        return false
+      } catch (error) {
+        // Only an explicit 401 means the session is dead. Anything else is
+        // a transport problem: keep the cached session so a flaky API
+        // cannot flash the login page over a still-valid account.
+        if (isAuthRejection(error)) {
+          clear()
+          return false
+        }
+        return Boolean(user.value || token.value)
       }
     })()
 

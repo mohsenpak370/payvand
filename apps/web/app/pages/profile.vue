@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BudgetState } from '~/composables/useBudget'
 import type { TransactionsResponse } from '~/composables/useAuth'
+import type { Address } from '@vue-solana/nuxt/kit'
 
 useSeoMeta({ title: 'Profile — Payvand' })
 definePageMeta({ middleware: 'auth' })
@@ -75,11 +76,21 @@ async function unlinkWalletNow() {
   }
 }
 
-/** Monthly allowance, read from the connected wallet's budget account. */
+/** Monthly allowance, read from the linked (or connected) wallet's budget account. */
 const budget = ref<BudgetState | null>(null)
 const budgetPot = ref(0)
 const budgetLoading = ref(false)
 const budgetError = ref('')
+
+/**
+ * The allowance belongs to the account's linked wallet — public on-chain
+ * state that needs no browser connection. Only fall back to the transient
+ * browser wallet when nothing is linked yet.
+ */
+const allowanceAddress = computed<Address | null>(
+  // The API stores the linked wallet as a validated base58 address.
+  () => (linkedWallet.value as Address | null) ?? publicKey.value
+)
 
 const spentThisMonth = computed(() => {
   const state = budget.value
@@ -103,11 +114,12 @@ async function refreshBudget() {
   budget.value = null
   budgetPot.value = 0
   budgetError.value = ''
-  if (!publicKey.value) return
+  const address = allowanceAddress.value
+  if (!address) return
 
   budgetLoading.value = true
   try {
-    const loaded = await budgetApi.loadBudget(publicKey.value)
+    const loaded = await budgetApi.loadBudget(address)
     budget.value = loaded
     if (loaded) budgetPot.value = await budgetApi.availablePot(loaded)
   } catch (error) {
@@ -118,7 +130,7 @@ async function refreshBudget() {
   }
 }
 
-watch(publicKey, refreshBudget)
+watch(allowanceAddress, refreshBudget, { immediate: true })
 
 /** On-chain history for the linked wallet. */
 const transactions = ref<TransactionsResponse | null>(null)
@@ -164,7 +176,6 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
 }
 
 onMounted(() => {
-  refreshBudget()
   refreshTransactions()
 })
 </script>
@@ -306,7 +317,7 @@ onMounted(() => {
 
         <div class="flex flex-col gap-4">
           <p
-            v-if="!connected"
+            v-if="!allowanceAddress"
             class="text-sm text-muted"
           >
             Connect a wallet to see and set its allowance.

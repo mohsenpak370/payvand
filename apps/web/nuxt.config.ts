@@ -44,7 +44,11 @@ export default defineNuxtConfig({
     '/sell': { ssr: false },
     '/pay': { ssr: false },
     // Budget state lives in the wallet + localStorage, same reason.
-    '/budget': { ssr: false }
+    '/budget': { ssr: false },
+    // The allowance card reads the chain through the client-only Solana
+    // plugin (useSolanaClient throws during SSR) and the session itself
+    // lives in localStorage — there is nothing to render on the server.
+    '/profile': { ssr: false }
   },
 
   // Listen on every interface so a phone on the same network can open the
