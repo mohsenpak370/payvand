@@ -184,10 +184,14 @@ onMounted(() => {
   <UPageSection
     title="Profile"
     :description="`Signed in as ${user?.email ?? ''}`"
+    :ui="{ description: 'break-words' }"
   >
-    <div class="mx-auto flex max-w-3xl flex-col gap-6">
+    <!-- `min-w-0` here and on the cards: in a flex column each item defaults to
+         `min-width: auto`, so a long unbreakable token (wallet address, memo)
+         would widen the whole page instead of wrapping or truncating. -->
+    <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6">
       <!-- Wallet: connect it, then link it to this account. -->
-      <UCard>
+      <UCard class="min-w-0">
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <div>
@@ -226,8 +230,16 @@ onMounted(() => {
             variant="subtle"
             icon="i-lucide-wallet-cards"
             title="Linked to your account"
-            :description="`This wallet signs you in: ${linkedWallet}`"
-          />
+          >
+            <!--
+              The address has no spaces to break at, so it is allowed to break
+              mid-token; otherwise it pushes the whole card wider than a phone.
+            -->
+            <template #description>
+              This wallet signs you in:
+              <span class="break-all">{{ linkedWallet }}</span>
+            </template>
+          </UAlert>
 
           <UAlert
             v-else-if="connected && publicKey"
@@ -303,7 +315,7 @@ onMounted(() => {
       </UCard>
 
       <!-- Monthly allowance. -->
-      <UCard>
+      <UCard class="min-w-0">
         <template #header>
           <div>
             <h2 class="text-base font-semibold">
@@ -364,17 +376,17 @@ onMounted(() => {
 
           <!-- The status: allowance exists. -->
           <template v-else>
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <div class="flex flex-col gap-1">
-                <span class="text-2xl font-semibold">{{ lamportsToSol(budget.monthlyLimit) }}</span>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+              <div class="flex min-w-0 flex-col gap-1">
+                <span class="text-xl font-semibold sm:text-2xl">{{ lamportsToSol(budget.monthlyLimit) }}</span>
                 <span class="text-sm text-muted">Monthly limit (SOL)</span>
               </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-2xl font-semibold">{{ lamportsToSol(spentThisMonth) }}</span>
+              <div class="flex min-w-0 flex-col gap-1">
+                <span class="text-xl font-semibold sm:text-2xl">{{ lamportsToSol(spentThisMonth) }}</span>
                 <span class="text-sm text-muted">Spent this month</span>
               </div>
-              <div class="flex flex-col gap-1">
-                <span class="text-2xl font-semibold text-success">{{ lamportsToSol(remaining) }}</span>
+              <div class="flex min-w-0 flex-col gap-1">
+                <span class="text-success text-xl font-semibold sm:text-2xl">{{ lamportsToSol(remaining) }}</span>
                 <span class="text-sm text-muted">Remaining</span>
               </div>
             </div>
@@ -410,7 +422,7 @@ onMounted(() => {
       </UCard>
 
       <!-- Transactions. -->
-      <UCard>
+      <UCard class="min-w-0">
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <div>
@@ -477,10 +489,15 @@ onMounted(() => {
             v-else-if="transactions"
             class="flex flex-col divide-y divide-default"
           >
+            <!--
+              `min-w-0` lets the row shrink below the memo's full width: the
+              memo is truncated, but its nowrap text would otherwise set this
+              flex item's automatic minimum and widen the whole card.
+            -->
             <li
               v-for="item in transactions.items"
               :key="item.id"
-              class="flex items-center gap-3 py-2"
+              class="flex min-w-0 items-center gap-3 py-2"
             >
               <UIcon
                 :name="item.direction === 'received' ? 'i-lucide-arrow-down-left' : 'i-lucide-arrow-up-right'"

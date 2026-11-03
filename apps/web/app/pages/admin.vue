@@ -144,7 +144,13 @@ onMounted(() => {
     title="Admin"
     description="Platform oversight: accounts, live sessions and discount codes."
   >
-    <div class="mx-auto flex max-w-4xl flex-col gap-6">
+    <!--
+      `min-w-0` on this column and on the cards below: in a flex column each
+      item defaults to `min-width: auto`, so a table's minimum width is
+      otherwise pushed up through every card and widens the page instead of
+      scrolling inside it.
+    -->
+    <div class="mx-auto flex w-full max-w-4xl min-w-0 flex-col gap-6">
       <UAlert
         v-if="forbidden"
         color="error"
@@ -182,7 +188,7 @@ onMounted(() => {
           </UCard>
         </div>
 
-        <UCard>
+        <UCard class="min-w-0">
           <template #header>
             <div class="flex items-center justify-between gap-3">
               <div>
@@ -229,74 +235,82 @@ onMounted(() => {
           >
             No payments on chain yet.
           </p>
-          <table
+          <!--
+            Six columns cannot fit a phone, so the table keeps a readable
+            width and scrolls sideways inside the card instead of stretching
+            the page. `overflow-x-auto` also stops the table's minimum width
+            from forcing every ancestor wider than the viewport.
+          -->
+          <div
             v-else-if="feed"
-            class="w-full text-sm"
+            class="overflow-x-auto"
           >
-            <thead>
-              <tr class="border-b text-left text-muted">
-                <th class="py-2 font-medium">
-                  When
-                </th>
-                <th class="py-2 font-medium">
-                  Seller
-                </th>
-                <th class="py-2 text-right font-medium">
-                  Amount
-                </th>
-                <th class="py-2 font-medium">
-                  Memo
-                </th>
-                <th class="py-2 font-medium">
-                  Status
-                </th>
-                <th class="py-2 font-medium">
-                  Paid by
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="payment in feed.items"
-                :key="payment.id"
-                class="border-b last:border-0"
-              >
-                <td class="whitespace-nowrap py-2 text-muted">
-                  {{ formatDateTime(payment.settled_at_unix || payment.created_at_unix) }}
-                </td>
-                <td class="py-2 font-mono text-xs">
-                  {{ short(payment.seller) }}
-                </td>
-                <td class="py-2 text-right">
-                  {{ lamportsToSol(payment.amount_lamports) }}
-                </td>
-                <td class="max-w-[12rem] truncate py-2">
-                  {{ payment.memo || '—' }}
-                </td>
-                <td class="py-2">
-                  <UBadge
-                    :color="statusColor(payment.status)"
-                    variant="subtle"
-                  >
-                    {{ statusLabel(payment.status) }}
-                  </UBadge>
-                </td>
-                <td class="py-2 font-mono text-xs">
-                  {{ payment.settled_by ? short(payment.settled_by) : '—' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            <table class="w-full min-w-[44rem] text-sm">
+              <thead>
+                <tr class="border-b text-left text-muted">
+                  <th class="py-2 pr-3 font-medium">
+                    When
+                  </th>
+                  <th class="py-2 pr-3 font-medium">
+                    Seller
+                  </th>
+                  <th class="py-2 pr-3 text-right font-medium">
+                    Amount
+                  </th>
+                  <th class="py-2 pr-3 font-medium">
+                    Memo
+                  </th>
+                  <th class="py-2 pr-3 font-medium">
+                    Status
+                  </th>
+                  <th class="py-2 font-medium">
+                    Paid by
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="payment in feed.items"
+                  :key="payment.id"
+                  class="border-b last:border-0"
+                >
+                  <td class="py-2 pr-3 whitespace-nowrap text-muted">
+                    {{ formatDateTime(payment.settled_at_unix || payment.created_at_unix) }}
+                  </td>
+                  <td class="py-2 pr-3 font-mono text-xs">
+                    {{ short(payment.seller) }}
+                  </td>
+                  <td class="py-2 pr-3 text-right">
+                    {{ lamportsToSol(payment.amount_lamports) }}
+                  </td>
+                  <td class="max-w-[12rem] truncate py-2 pr-3">
+                    {{ payment.memo || '—' }}
+                  </td>
+                  <td class="py-2 pr-3">
+                    <UBadge
+                      :color="statusColor(payment.status)"
+                      variant="subtle"
+                    >
+                      {{ statusLabel(payment.status) }}
+                    </UBadge>
+                  </td>
+                  <td class="py-2 font-mono text-xs">
+                    {{ payment.settled_by ? short(payment.settled_by) : '—' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </UCard>
 
-        <UCard>
+        <UCard class="min-w-0">
           <form
             class="mb-4 flex gap-2"
             @submit.prevent="searchNow"
           >
             <UInput
               v-model="search"
-              class="flex-1"
+              class="min-w-0 flex-1"
               placeholder="Search by email…"
               icon="i-lucide-search"
             />
@@ -330,71 +344,73 @@ onMounted(() => {
             No accounts match.
           </p>
 
-          <table
+          <div
             v-else
-            class="w-full text-sm"
+            class="overflow-x-auto"
           >
-            <thead>
-              <tr class="border-b text-left text-muted">
-                <th class="py-2 font-medium">
-                  Account
-                </th>
-                <th class="py-2 font-medium">
-                  Signed up
-                </th>
-                <th class="py-2 text-right font-medium">
-                  Sessions
-                </th>
-                <th class="py-2 text-right font-medium">
-                  Codes
-                </th>
-                <th class="py-2 text-right font-medium">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in rows"
-                :key="row.id"
-                class="border-b last:border-0"
-              >
-                <td class="py-2">
-                  <div>{{ row.email }}</div>
-                  <div
-                    v-if="row.wallet"
-                    class="text-xs text-muted"
-                  >
-                    {{ row.wallet }}
-                  </div>
-                </td>
-                <td class="py-2 text-muted">
-                  {{ formatDate(row.created_at) }}
-                </td>
-                <td class="py-2 text-right">
-                  {{ row.sessions }}
-                </td>
-                <td class="py-2 text-right">
-                  {{ row.codes }}
-                </td>
-                <td class="py-2 text-right">
-                  <UButton
-                    icon="i-lucide-trash-2"
-                    color="error"
-                    variant="subtle"
-                    size="xs"
-                    label="Delete"
-                    :loading="busy"
-                    @click="remove(row)"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            <table class="w-full min-w-[32rem] text-sm">
+              <thead>
+                <tr class="border-b text-left text-muted">
+                  <th class="py-2 pr-3 font-medium">
+                    Account
+                  </th>
+                  <th class="py-2 pr-3 font-medium">
+                    Signed up
+                  </th>
+                  <th class="py-2 pr-3 text-right font-medium">
+                    Sessions
+                  </th>
+                  <th class="py-2 pr-3 text-right font-medium">
+                    Codes
+                  </th>
+                  <th class="py-2 text-right font-medium">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in rows"
+                  :key="row.id"
+                  class="border-b last:border-0"
+                >
+                  <td class="py-2 pr-3">
+                    <div>{{ row.email }}</div>
+                    <div
+                      v-if="row.wallet"
+                      class="text-muted text-xs"
+                    >
+                      {{ row.wallet }}
+                    </div>
+                  </td>
+                  <td class="py-2 pr-3 whitespace-nowrap text-muted">
+                    {{ formatDate(row.created_at) }}
+                  </td>
+                  <td class="py-2 pr-3 text-right">
+                    {{ row.sessions }}
+                  </td>
+                  <td class="py-2 pr-3 text-right">
+                    {{ row.codes }}
+                  </td>
+                  <td class="py-2 text-right">
+                    <UButton
+                      icon="i-lucide-trash-2"
+                      color="error"
+                      variant="subtle"
+                      size="xs"
+                      label="Delete"
+                      :loading="busy"
+                      @click="remove(row)"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <div
             v-if="total > pageSize"
-            class="mt-4 flex items-center justify-between gap-3 text-sm text-muted"
+            class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted"
           >
             <span>{{ pageFrom }}–{{ pageTo }} of {{ total }} accounts</span>
             <div class="flex gap-2">
