@@ -3,6 +3,8 @@ import { MIN_PASSWORD_LENGTH } from '~/composables/useAuth'
 
 useSeoMeta({ title: 'Create account — Payvand' })
 
+definePageMeta({ layout: 'auth', header: false, footer: false })
+
 const route = useRoute()
 const router = useRouter()
 const { signup, ensureSession } = useAuth()
@@ -60,79 +62,81 @@ async function submit() {
 </script>
 
 <template>
-  <UPageSection
-    title="Create your account"
-    description="Email and password for now — right after signup we take you to your profile to connect a Solana wallet."
-  >
-    <div class="mx-auto max-w-md">
-      <UCard>
-        <form
-          class="flex flex-col gap-4"
-          @submit.prevent="submit"
-        >
-          <UFormField label="Email">
-            <UInput
-              v-model="email"
-              type="email"
-              name="email"
-              autocomplete="email"
-              class="w-full"
-              placeholder="you@example.com"
-            />
-          </UFormField>
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+      Create your account
+    </h1>
+    <p class="text-muted mt-2 text-sm leading-relaxed">
+      One login for the codes you create and the payments you take. Right
+      after signup we take you to your profile to connect a Solana wallet.
+    </p>
 
-          <UFormField
-            :label="`Password (at least ${MIN_PASSWORD_LENGTH} characters)`"
-          >
-            <UInput
-              v-model="password"
-              type="password"
-              name="new-password"
-              autocomplete="new-password"
-              class="w-full"
-              placeholder="Choose a password"
-            />
-          </UFormField>
+    <form
+      class="mt-8 flex flex-col gap-4"
+      @submit.prevent="submit"
+    >
+      <UFormField label="Email">
+        <UInput
+          v-model="email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          class="w-full"
+          placeholder="you@example.com"
+        />
+      </UFormField>
 
-          <UFormField label="Confirm password">
-            <UInput
-              v-model="confirm"
-              type="password"
-              name="confirm-password"
-              autocomplete="new-password"
-              class="w-full"
-              placeholder="Repeat it"
-            />
-          </UFormField>
+      <UFormField
+        label="Password"
+        :help="`At least ${MIN_PASSWORD_LENGTH} characters.`"
+      >
+        <UInput
+          v-model="password"
+          type="password"
+          name="new-password"
+          autocomplete="new-password"
+          class="w-full"
+          placeholder="Choose a password"
+        />
+      </UFormField>
 
-          <UAlert
-            v-if="failure"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            title="Could not create the account"
-            :description="failure"
-          />
+      <UFormField label="Confirm password">
+        <UInput
+          v-model="confirm"
+          type="password"
+          name="confirm-password"
+          autocomplete="new-password"
+          class="w-full"
+          placeholder="Re-enter your password"
+        />
+      </UFormField>
 
-          <UButton
-            type="submit"
-            label="Create account"
-            icon="i-lucide-user-plus"
-            :loading="busy"
-            block
-          />
+      <UAlert
+        v-if="failure"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :description="failure"
+      />
 
-          <p class="text-center text-sm text-muted">
-            Already have an account?
-            <NuxtLink
-              :to="{ path: '/signin', query: { next: nextPath } }"
-              class="text-primary font-medium"
-            >
-              Sign in
-            </NuxtLink>
-          </p>
-        </form>
-      </UCard>
-    </div>
-  </UPageSection>
+      <UButton
+        type="submit"
+        label="Create account"
+        icon="i-lucide-user-plus"
+        size="lg"
+        :loading="busy"
+        block
+      />
+    </form>
+
+    <p class="text-muted mt-6 text-center text-sm">
+      Already have an account?
+      <NuxtLink
+        :to="{ path: '/signin', query: { next: nextPath } }"
+        class="text-primary font-medium"
+      >
+        Sign in
+      </NuxtLink>
+    </p>
+  </div>
 </template>

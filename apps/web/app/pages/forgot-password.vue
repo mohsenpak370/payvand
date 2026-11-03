@@ -1,6 +1,8 @@
 <script setup lang="ts">
 useSeoMeta({ title: 'Forgot password — Payvand' })
 
+definePageMeta({ layout: 'auth', header: false, footer: false })
+
 const { forgotPassword } = useAuth()
 
 const email = ref('')
@@ -29,65 +31,66 @@ async function submit() {
 </script>
 
 <template>
-  <UPageSection
-    title="Reset your password"
-    description="We'll email you a one-time link to choose a new password. The link is valid for one hour."
-  >
-    <div class="mx-auto max-w-md">
-      <UCard>
-        <form
-          class="flex flex-col gap-4"
-          @submit.prevent="submit"
-        >
-          <UFormField label="Email">
-            <UInput
-              v-model="email"
-              type="email"
-              name="email"
-              autocomplete="email"
-              class="w-full"
-              placeholder="you@example.com"
-            />
-          </UFormField>
+  <div>
+    <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+      Reset your password
+    </h1>
+    <p class="text-muted mt-2 text-sm leading-relaxed">
+      We'll email you a one-time link to choose a new password. The link is
+      valid for one hour.
+    </p>
 
-          <UAlert
-            v-if="sent"
-            color="success"
-            variant="subtle"
-            icon="i-lucide-mail-check"
-            title="Check your inbox"
-            :description="sent"
-          />
+    <form
+      class="mt-8 flex flex-col gap-4"
+      @submit.prevent="submit"
+    >
+      <UFormField label="Email">
+        <UInput
+          v-model="email"
+          type="email"
+          name="email"
+          autocomplete="email"
+          class="w-full"
+          placeholder="you@example.com"
+        />
+      </UFormField>
 
-          <UAlert
-            v-if="failure"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            title="Could not send the link"
-            :description="failure"
-          />
+      <UAlert
+        v-if="sent"
+        color="success"
+        variant="subtle"
+        icon="i-lucide-mail-check"
+        title="Check your inbox"
+        :description="sent"
+      />
 
-          <UButton
-            type="submit"
-            label="Send reset link"
-            icon="i-lucide-send"
-            :loading="busy"
-            :disabled="!!sent"
-            block
-          />
+      <UAlert
+        v-if="failure"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :description="failure"
+      />
 
-          <p class="text-center text-sm text-muted">
-            Remembered it?
-            <NuxtLink
-              to="/signin"
-              class="text-primary font-medium"
-            >
-              Back to sign in
-            </NuxtLink>
-          </p>
-        </form>
-      </UCard>
-    </div>
-  </UPageSection>
+      <UButton
+        type="submit"
+        label="Send reset link"
+        icon="i-lucide-send"
+        size="lg"
+        :loading="busy"
+        :disabled="!!sent"
+        block
+      />
+    </form>
+
+    <p class="text-muted mt-8 text-center text-sm">
+      Remembered it?
+      <NuxtLink
+        to="/signin"
+        class="text-primary font-medium"
+      >
+        Back to sign in
+      </NuxtLink>
+    </p>
+  </div>
 </template>

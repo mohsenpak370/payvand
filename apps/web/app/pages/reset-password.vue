@@ -1,6 +1,8 @@
 <script setup lang="ts">
 useSeoMeta({ title: 'Choose a new password — Payvand' })
 
+definePageMeta({ header: false, footer: false })
+
 const route = useRoute()
 const { resetPassword } = useAuth()
 

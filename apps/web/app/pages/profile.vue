@@ -379,11 +379,21 @@ onMounted(() => {
               </div>
             </div>
 
-            <UProgress
-              :value="spentPercent"
-              :max="100"
-              size="sm"
-            />
+            <!-- Usage meter, labelled so it never reads as a loading spinner. -->
+            <div
+              v-if="spentPercent > 0"
+              class="flex flex-col gap-1.5"
+            >
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted">Used this month</span>
+                <span class="font-medium">{{ spentPercent }}%</span>
+              </div>
+              <UProgress
+                :value="spentPercent"
+                :max="100"
+                size="sm"
+              />
+            </div>
 
             <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
               <span>Pot available: {{ lamportsToSol(budgetPot) }} SOL</span>

@@ -25,11 +25,36 @@ useSeoMeta({
 
 const { cluster } = useRuntimeConfig().public
 const { user, signout } = useAuth()
+const { isAdmin } = useAdminAccess()
+
+// The auth pages carry their own brand row and want no chrome, so they opt
+// out of the app header and footer with `header: false` / `footer: false`
+// in their page meta.
+const route = useRoute()
+const showHeader = computed(() => route.meta.header !== false)
+const showFooter = computed(() => route.meta.footer !== false)
 
 async function onSignOut() {
   await signout()
   await navigateTo('/')
 }
+
+/**
+ * The account menu: what used to be the Profile / email / Sign out cluster
+ * in the header. `Admin` joins it only once the API has confirmed the
+ * account is listed in `ADMIN_EMAILS`.
+ */
+const accountMenu = computed(() => [
+  [
+    { label: 'Profile', icon: 'i-lucide-circle-user-round', to: '/profile' },
+    ...(isAdmin.value
+      ? [{ label: 'Admin', icon: 'i-lucide-shield-check', to: '/admin' }]
+      : [])
+  ],
+  [
+    { label: 'Sign out', icon: 'i-lucide-log-out', onSelect: onSignOut }
+  ]
+])
 </script>
 
 <template>
@@ -41,7 +66,7 @@ async function onSignOut() {
       default slot only on desktop, #right only on desktop, and #body only
       inside the menu.
     -->
-    <UHeader>
+    <UHeader v-if="showHeader">
       <!-- Logo, product name and cluster. -->
       <template #left>
         <div class="flex items-center gap-2">
@@ -98,29 +123,17 @@ async function onSignOut() {
           class="hidden items-center gap-1 lg:flex"
         >
           <template v-if="user">
-            <UButton
-              to="/profile"
-              label="Profile"
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-circle-user-round"
-            />
-            <span
-              class="text-muted inline-flex max-w-40 items-center gap-1.5 rounded-full bg-elevated/50 px-2.5 py-1 text-xs"
-            >
-              <UIcon
-                name="i-lucide-user-round"
-                class="size-3.5 shrink-0"
+            <!-- Account: email on the trigger, everything else in the menu. -->
+            <UDropdownMenu :items="accountMenu">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-circle-user-round"
+                trailing-icon="i-lucide-chevrons-up-down"
+                :label="user.email"
+                class="max-w-56"
               />
-              <span class="truncate">{{ user.email }}</span>
-            </span>
-            <UButton
-              label="Sign out"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-log-out"
-              @click="onSignOut"
-            />
+            </UDropdownMenu>
           </template>
           <template v-else>
             <UButton
@@ -189,6 +202,16 @@ async function onSignOut() {
               class="justify-start"
             />
             <UButton
+              v-if="isAdmin"
+              to="/admin"
+              label="Admin"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-shield-check"
+              block
+              class="justify-start"
+            />
+            <UButton
               label="Sign out"
               color="neutral"
               variant="soft"
@@ -222,29 +245,45 @@ async function onSignOut() {
       </template>
     </UHeader>
 
-    <UMain>
-      <NuxtPage />
+    <!--
+      The auth pages render neither header nor footer, so nothing occupies
+      the header's 4rem. Zeroing the variable for them lets UMain and the
+      auth layout fill the viewport instead of stopping 4rem short with an
+      empty band where the footer used to be.
+    -->
+    <UMain :style="showHeader ? undefined : { '--ui-header-height': '0px' }">
+      <!--
+        NuxtPage does not render layouts on its own — without NuxtLayout
+        around it, `layout: 'auth'` on the sign-in/sign-up pages would be
+        ignored (and Nuxt warns NUXT_E4007). Routes without a matching
+        layout render straight through.
+      -->
+      <NuxtLayout>
+        <NuxtPage />
+      </NuxtLayout>
     </UMain>
 
-    <USeparator icon="i-lucide-scan-line" />
+    <template v-if="showFooter">
+      <USeparator icon="i-lucide-scan-line" />
 
-    <UFooter>
-      <template #left>
-        <p class="text-sm text-muted">
-          Payvand • Simple payments on Solana • © {{ new Date().getFullYear() }}
-        </p>
-      </template>
+      <UFooter>
+        <template #left>
+          <p class="text-sm text-muted">
+            Payvand • Simple payments on Solana • © {{ new Date().getFullYear() }}
+          </p>
+        </template>
 
-      <template #right>
-        <UButton
-          to="https://solana.com/docs"
-          target="_blank"
-          icon="i-lucide-book-open"
-          aria-label="Solana docs"
-          color="neutral"
-          variant="ghost"
-        />
-      </template>
-    </UFooter>
+        <template #right>
+          <UButton
+            to="https://solana.com/docs"
+            target="_blank"
+            icon="i-lucide-book-open"
+            aria-label="Solana docs"
+            color="neutral"
+            variant="ghost"
+          />
+        </template>
+      </UFooter>
+    </template>
   </UApp>
 </template>

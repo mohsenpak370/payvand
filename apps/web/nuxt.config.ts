@@ -88,6 +88,12 @@ export default defineNuxtConfig({
       '/api/health': {
         target: 'http://127.0.0.1:8787/api/health',
         changeOrigin: true
+      },
+      // Admin routes, so /admin and the header's account menu work in dev
+      // the same way they do against the deployed API.
+      '/api/admin': {
+        target: 'http://127.0.0.1:8787/api/admin',
+        changeOrigin: true
       }
     }
   },
