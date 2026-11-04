@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BudgetState } from '~/composables/useBudget'
 import type { TransactionsResponse } from '~/composables/useAuth'
-import type { SavedPayment } from '~/composables/usePaymentApi'
+import type { PaymentQrPayload, SavedPayment } from '~/composables/usePaymentApi'
 import type { Address } from '@vue-solana/nuxt/kit'
 
 useSeoMeta({ title: 'Profile — Payvand' })
@@ -153,6 +153,12 @@ const savedCards = computed(() => savedPayments.value.flatMap((item) => {
     return []
   }
 }))
+
+/** What the buyer pays: a saved code may carry its own discount. */
+const cardPrice = (code: PaymentQrPayload) =>
+  code.discount
+    ? discountedLamports(code.amount_lamports, code.discount.percent_off)
+    : code.amount_lamports
 
 async function refreshSavedPayments() {
   savedFailure.value = ''
@@ -518,7 +524,11 @@ onMounted(() => {
                   {{ card.code.name || 'Payment' }}
                 </p>
                 <p class="text-sm font-semibold">
-                  {{ lamportsToSol(card.code.amount_lamports) }} SOL
+                  {{ lamportsToSol(cardPrice(card.code)) }} SOL
+                  <span
+                    v-if="card.code.discount"
+                    class="ml-1 text-xs font-normal text-muted line-through"
+                  >{{ lamportsToSol(card.code.amount_lamports) }} SOL</span>
                 </p>
                 <p
                   v-if="card.code.description || card.code.memo"

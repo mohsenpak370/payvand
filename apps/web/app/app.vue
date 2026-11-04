@@ -117,7 +117,7 @@ const accountMenu = computed(() => [
             Create a payment
           </NuxtLink>
           <NuxtLink
-            to="/pay"
+            to="/scan"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
             Scan and pay
@@ -180,7 +180,7 @@ const accountMenu = computed(() => [
             class="justify-start"
           />
           <UButton
-            to="/pay"
+            to="/scan"
             label="Scan and pay"
             color="neutral"
             variant="soft"

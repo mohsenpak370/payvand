@@ -31,7 +31,8 @@ account can later also sign in with a Solana wallet.
 ```
 apps/web/            Nuxt app (run `pnpm dev` from the repo root)
   app/pages/sell.vue     Seller: create invoice + render QR (requires an account)
-  app/pages/pay.vue      Buyer: scan QR + pay (requires an account)
+  app/pages/pay.vue      Buyer: the shared, printable payment page (name, price, QR)
+  app/pages/scan.vue     Buyer: scan a QR in the app and pay from this device
   app/pages/signin.vue   Email + password sign-in
   app/pages/signup.vue   Create an account
   app/assets/payvand.idl.json   Copy of the Anchor IDL used by the client

@@ -13,7 +13,7 @@ use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 
 use crate::auth;
-use crate::payments::{bad, ApiError, ApiResult};
+use crate::payments::{bad, ApiError, ApiResult, PaymentDiscount};
 
 /// Codes per account — small on purpose so the list stays a list, not a system.
 const MAX_CODES_PER_USER: usize = 20;
@@ -78,6 +78,31 @@ fn validate_percent(percent_off: u32) -> ApiResult<u32> {
 pub fn discounted_lamports(price_lamports: u64, percent_off: u32) -> u64 {
     let percent_off = percent_off.min(99);
     (u128::from(price_lamports) * u128::from(100 - percent_off) / 100) as u64
+}
+
+/// Resolves a code a seller attached while creating an invoice. Scoped to the
+/// seller's own list: the request body can name a code, never pick a discount.
+pub async fn resolve_for_seller(
+    db: &libsql::Database,
+    user_id: &str,
+    raw: &str,
+) -> ApiResult<PaymentDiscount> {
+    let code = normalize_code(raw)?;
+    let connection = db.connect().map_err(auth::internal)?;
+
+    let mut rows = connection
+        .query(
+            "SELECT percent_off FROM discount_codes WHERE user_id = ?1 AND code = ?2",
+            (user_id, code.clone()),
+        )
+        .await
+        .map_err(auth::internal)?;
+
+    let percent_off = match rows.next().await.map_err(auth::internal)? {
+        Some(row) => read_percent(&row, 0)?,
+        None => return Err(bad(format!("You have no discount code called {code}."))),
+    };
+    Ok(PaymentDiscount { code, percent_off })
 }
 
 /// The signed-in account's codes, newest first.

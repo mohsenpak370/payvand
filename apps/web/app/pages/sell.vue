@@ -28,6 +28,30 @@ const codeBusy = ref(false)
 const codeFailure = ref('')
 const priceLamports = ref(0)
 const paidCode = ref<string | null>(null)
+// A code carried by the invoice itself: written into its QR, priced here from
+// the seller's own list, and applied by the buyer's screen without typing.
+// `NONE` rather than '': the select control reserves the empty string for its
+// placeholder and refuses it as an option value.
+const NONE = 'none'
+const discountCode = ref(NONE)
+
+const selectedDiscount = computed(
+  () => discounts.value.find(code => code.code === discountCode.value) ?? null
+)
+
+const previewLamports = computed(() =>
+  selectedDiscount.value
+    ? discountedLamports(lamports.value, selectedDiscount.value.percent_off)
+    : lamports.value
+)
+
+const discountOptions = computed(() => [
+  { label: 'No discount', value: NONE },
+  ...discounts.value.map(code => ({
+    label: `${code.code} · ${code.percent_off}% off`,
+    value: code.code
+  }))
+])
 
 const canAddCode = computed(() =>
   !codeBusy.value
@@ -87,6 +111,7 @@ async function createPayment() {
       memo: memo.value,
       name: name.value.trim(),
       description: description.value.trim(),
+      discount_code: selectedDiscount.value?.code,
       cluster
     })
 
@@ -291,6 +316,20 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <UFormField
+            v-if="discounts.length"
+            label="Discount"
+            :help="selectedDiscount
+              ? `Buyers pay ${lamportsToSol(previewLamports)} SOL — ${selectedDiscount.percent_off}% off, applied for them.`
+              : 'Optional — ride one of your codes along with this QR so buyers get it without typing it.'"
+          >
+            <USelect
+              v-model="discountCode"
+              :items="discountOptions"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField
             label="Name"
             help="The heading your customer sees above the amount — like “Coffee for two”."
           >
@@ -426,6 +465,13 @@ onBeforeUnmount(() => {
               {{ lamportsToSol(record.amount_lamports) }} SOL
               <template v-if="record.memo"> · {{ record.memo }}</template>
             </span>
+            <UBadge
+              v-if="record.discount"
+              color="success"
+              variant="subtle"
+            >
+              {{ record.discount.percent_off }}% off
+            </UBadge>
             <UBadge
               v-if="paidCode"
               color="success"

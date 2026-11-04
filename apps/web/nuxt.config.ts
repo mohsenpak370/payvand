@@ -43,6 +43,7 @@ export default defineNuxtConfig({
     // sense in the browser. The Solana plugin is client-only.
     '/sell': { ssr: false },
     '/pay': { ssr: false },
+    '/scan': { ssr: false },
     // Budget state lives in the wallet + localStorage, same reason.
     '/budget': { ssr: false },
     // The allowance card reads the chain through the client-only Solana
@@ -104,8 +105,12 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      // Both are CommonJS and only load in the browser.
-      include: ['jsqr']
+      // All three are CommonJS and only load in the browser. `qrcode` is not
+      // imported by this app: `useSolanaQrCode` pulls it in with a dynamic
+      // import from @vue-solana/core, and without pre-bundling Vite serves
+      // that file raw, where `require` does not exist and the QR never
+      // appears.
+      include: ['jsqr', 'qrcode']
     }
   },
 

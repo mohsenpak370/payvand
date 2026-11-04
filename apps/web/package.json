@@ -17,6 +17,7 @@
     "@vue-solana/nuxt": "^4.1.0",
     "jsqr": "^1.4.0",
     "nuxt": "^4.6.2",
+    "qrcode": "1.5.4",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

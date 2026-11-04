@@ -117,9 +117,15 @@ async fn create_payment(
     Json(request): Json<CreatePaymentRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let user = auth::require_user(&state.db, &headers).await?;
+    let discount_code = request.discount_code.clone();
     let mut payment = payments::create_payment(request)?;
     // The buyer's scan-to-pay screen asks the API for this seller's codes.
-    payment.seller_user = Some(user.id);
+    payment.seller_user = Some(user.id.clone());
+    // A code attached to the invoice is priced here, before the payload is
+    // built, so the buyer's screen can apply it without anyone typing it.
+    if let Some(code) = discount_code {
+        payment.discount = Some(discounts::resolve_for_seller(&state.db, &user.id, &code).await?);
+    }
     let qr_payload = payment.qr_payload();
     Ok(Json(
         serde_json::json!({ "payment": payment, "qrPayload": qr_payload }),

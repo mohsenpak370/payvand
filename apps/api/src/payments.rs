@@ -66,6 +66,15 @@ pub enum PaymentStatus {
     Missing,
 }
 
+/// A discount baked into an invoice when the seller created it. The buyer's
+/// screen applies it on its own: the code is never typed, and the page that
+/// shows the card never displays it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentDiscount {
+    pub code: String,
+    pub percent_off: u32,
+}
+
 /// The single shape the API returns, also embedded in the QR payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentRecord {
@@ -86,6 +95,9 @@ pub struct PaymentRecord {
     pub name: String,
     /// Seller's longer description, with the same caveat as `name`.
     pub description: String,
+    /// The code attached while creating the invoice, if any. Chain reads carry
+    /// none: the discount lives in the payload, not in the account.
+    pub discount: Option<PaymentDiscount>,
     pub cluster: String,
     pub endpoint: String,
     pub settled_by: Option<String>,
@@ -107,6 +119,7 @@ impl PaymentRecord {
             memo: &self.memo,
             name: &self.name,
             description: &self.description,
+            discount: self.discount.as_ref(),
             cluster: &self.cluster,
             endpoint: &self.endpoint,
         })
@@ -129,6 +142,9 @@ struct QrPayload<'a> {
     name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     description: &'a str,
+    /// Skipped when absent, so an ordinary invoice scans exactly as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    discount: Option<&'a PaymentDiscount>,
     cluster: &'a str,
     endpoint: &'a str,
 }
@@ -145,6 +161,11 @@ pub struct CreatePaymentRequest {
     pub name: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Optional code to bake into this invoice. The handler resolves it to a
+    /// percentage against the signed-in seller's own codes, so the body can
+    /// name a code but never choose the discount.
+    #[serde(default)]
+    pub discount_code: Option<String>,
     pub cluster: String,
     pub endpoint: Option<String>,
 }
@@ -193,6 +214,7 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         memo: request.memo,
         name,
         description,
+        discount: None,
         cluster: request.cluster,
         endpoint,
         settled_by: None,
@@ -240,6 +262,7 @@ fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRec
         memo: String::new(),
         name: String::new(),
         description: String::new(),
+        discount: None,
         cluster,
         endpoint,
         settled_by: None,
@@ -270,6 +293,7 @@ fn record_from_chain(
         memo: payment.memo,
         name: String::new(),
         description: String::new(),
+        discount: None,
         cluster,
         endpoint,
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
@@ -567,6 +591,7 @@ mod tests {
             memo: "coffee".to_string(),
             name: None,
             description: None,
+            discount_code: None,
             cluster: "devnet".to_string(),
             endpoint: None,
         }
@@ -629,6 +654,24 @@ mod tests {
             serde_json::from_str(&record.qr_payload()).expect("payload is json");
         assert!(payload.get("name").is_none());
         assert!(payload.get("description").is_none());
+        assert!(payload.get("discount").is_none());
+    }
+
+    #[test]
+    fn carries_an_attached_discount_into_the_payload() {
+        let mut record = create_payment(sample_request()).expect("valid request");
+        record.discount = Some(PaymentDiscount {
+            code: "SAVE10".to_string(),
+            percent_off: 10,
+        });
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert_eq!(payload["discount"]["code"], "SAVE10");
+        assert_eq!(payload["discount"]["percent_off"], 10);
+        // The invoice keeps its full price: the discount prices it, it does
+        // not rewrite the amount the address was derived from.
+        assert_eq!(payload["amount_lamports"], 1_000_000);
     }
 
     #[test]

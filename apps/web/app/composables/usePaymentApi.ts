@@ -11,6 +11,8 @@ export interface PaymentRecord {
   /** Empty on records read back from chain, which stores neither field. */
   name: string
   description: string
+  /** The code attached while creating the invoice; null on chain reads. */
+  discount?: PaymentDiscount | null
   cluster: string
   endpoint: string
   seller_user: string | null
@@ -27,6 +29,8 @@ export interface CreatePaymentInput {
   memo: string
   name?: string
   description?: string
+  /** Code to bake into the invoice, priced against the seller's own codes. */
+  discount_code?: string
   cluster: string
   endpoint?: string
 }
@@ -55,6 +59,8 @@ export interface PaymentQrPayload {
   memo: string
   name?: string
   description?: string
+  /** Attached at creation: the buyer's screen applies it without typing. */
+  discount?: PaymentDiscount | null
   cluster: string
   endpoint: string
   /** The seller's account id, so the buyer's screen can price their codes. */
@@ -63,6 +69,12 @@ export interface PaymentQrPayload {
 
 export interface DiscountCode {
   id: string
+  code: string
+  percent_off: number
+}
+
+/** A discount an invoice carries in its own code. */
+export interface PaymentDiscount {
   code: string
   percent_off: number
 }

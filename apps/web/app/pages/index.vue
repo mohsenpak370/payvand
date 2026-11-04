@@ -22,7 +22,7 @@ const ctaTitle = computed(() =>
         size: 'xl'
       }, {
         label: 'Scan and pay',
-        to: '/pay',
+        to: '/scan',
         icon: 'i-lucide-scan-line',
         size: 'xl',
         color: 'neutral',

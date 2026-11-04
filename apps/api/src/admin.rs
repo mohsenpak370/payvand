@@ -600,6 +600,7 @@ mod tests {
             memo: format!("memo for {id}"),
             name: String::new(),
             description: String::new(),
+            discount: None,
             cluster: "devnet".into(),
             endpoint: "https://api.devnet.solana.com".into(),
             settled_by: (settled > 0).then(|| "Payer111111".into()),

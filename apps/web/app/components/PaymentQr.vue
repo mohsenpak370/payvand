@@ -46,7 +46,7 @@ watch(
 <template>
   <div
     v-if="qrWithLogo"
-    class="rounded-lg bg-white p-3"
+    class="mx-auto w-fit rounded-lg bg-white p-3"
     v-html="qrWithLogo"
   />
   <p
