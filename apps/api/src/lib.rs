@@ -6,6 +6,7 @@ pub mod db;
 pub mod discounts;
 pub mod email;
 pub mod payments;
+pub mod saved;
 pub mod wallet;
 
 use axum::extract::{Path, Query, State};
@@ -53,6 +54,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
         .route("/api/payments/{id}", get(get_payment))
+        .route("/api/saved-payments", get(saved::list).post(saved::save))
         .route("/api/admin/stats", get(admin::stats))
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
@@ -90,6 +92,7 @@ async fn index() -> Json<serde_json::Value> {
             "/api/payments",
             "/api/payments/watch",
             "/api/payments/{id}",
+            "/api/saved-payments",
             "/api/discounts",
             "/api/discounts/validate",
             "/api/discounts/{id}",

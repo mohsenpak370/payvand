@@ -40,6 +40,17 @@ const SCHEMA: &[&str] = &[
         UNIQUE (user_id, code)
     )",
     "CREATE INDEX IF NOT EXISTS discount_codes_user_id_idx ON discount_codes(user_id)",
+    // A saved payment keeps a copy of the code that already *is* the invoice:
+    // the API does not know invoices, only what the account wants to see again.
+    "CREATE TABLE IF NOT EXISTS saved_payments (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        payment_id TEXT NOT NULL,
+        payload    TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (user_id, payment_id)
+    )",
+    "CREATE INDEX IF NOT EXISTS saved_payments_user_id_idx ON saved_payments(user_id)",
     "CREATE TABLE IF NOT EXISTS password_resets (
         token_hash TEXT PRIMARY KEY,
         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

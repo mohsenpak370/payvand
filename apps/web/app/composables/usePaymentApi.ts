@@ -8,6 +8,9 @@ export interface PaymentRecord {
   reference: string
   amount_lamports: number
   memo: string
+  /** Empty on records read back from chain, which stores neither field. */
+  name: string
+  description: string
   cluster: string
   endpoint: string
   seller_user: string | null
@@ -22,6 +25,8 @@ export interface CreatePaymentInput {
   reference: string
   amount_lamports: number
   memo: string
+  name?: string
+  description?: string
   cluster: string
   endpoint?: string
 }
@@ -29,6 +34,15 @@ export interface CreatePaymentInput {
 export interface CreatePaymentResponse {
   payment: PaymentRecord
   qrPayload: string
+}
+
+/** A payment code kept on the account, so the profile can open it again. */
+export interface SavedPayment {
+  id: string
+  payment_id: string
+  /** The code itself — the invoice lives here, not in the API. */
+  payload: string
+  created_at_unix: number
 }
 
 /** Contents of the JSON blob the seller encodes into the QR code. */
@@ -39,6 +53,8 @@ export interface PaymentQrPayload {
   reference: string
   amount_lamports: number
   memo: string
+  name?: string
+  description?: string
   cluster: string
   endpoint: string
   /** The seller's account id, so the buyer's screen can price their codes. */
@@ -154,6 +170,19 @@ export function usePaymentApi() {
     return await $fetch(`${base}/api/payments/${id}`, { params })
   }
 
+  /** Keeps a payment code on the signed-in account; saving twice is a no-op. */
+  async function savePayment(payload: string): Promise<SavedPayment> {
+    return await $fetch(`${base}/api/saved-payments`, {
+      method: 'POST',
+      body: { payload },
+      headers: authHeaders()
+    })
+  }
+
+  async function listSavedPayments(): Promise<SavedPayment[]> {
+    return await $fetch(`${base}/api/saved-payments`, { headers: authHeaders() })
+  }
+
   /** Many payment addresses in one round trip — used by the seller screen. */
   async function watchPayments(
     pdas: string[],
@@ -201,6 +230,8 @@ export function usePaymentApi() {
   return {
     createPayment,
     getPayment,
+    savePayment,
+    listSavedPayments,
     watchPayments,
     listDiscounts,
     createDiscount,

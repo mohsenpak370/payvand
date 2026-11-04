@@ -11,6 +11,8 @@ const api = usePaymentApi()
 const { publicKey, connected } = useSolanaWallet()
 
 const amountSol = ref('0.01')
+const name = ref('')
+const description = ref('')
 const memo = ref('Coffee')
 const busy = ref(false)
 const failure = ref('')
@@ -61,6 +63,14 @@ async function createPayment() {
     failure.value = 'The note is too long — please shorten it.'
     return
   }
+  if (name.value.trim().length > 64) {
+    failure.value = 'The name is too long — please shorten it.'
+    return
+  }
+  if (description.value.trim().length > 160) {
+    failure.value = 'The description is too long — please shorten it.'
+    return
+  }
 
   busy.value = true
   try {
@@ -75,6 +85,8 @@ async function createPayment() {
       reference,
       amount_lamports: lamports.value,
       memo: memo.value,
+      name: name.value.trim(),
+      description: description.value.trim(),
       cluster
     })
 
@@ -122,7 +134,13 @@ async function refreshStatus() {
     const settledIndex = results.findIndex(result => result.status === 'settled')
     const settled = settledIndex >= 0 ? results[settledIndex] : undefined
     if (settled) {
-      record.value = settled
+      // The chain knows the memo but not the name or description, so keep
+      // this invoice's own copy once the settled record replaces it.
+      record.value = {
+        ...settled,
+        name: settled.name || current.name,
+        description: settled.description || current.description
+      }
       paidCode.value = targets[settledIndex]?.code ?? null
       return
     }
@@ -183,8 +201,10 @@ function reset() {
 }
 
 const copiedCode = ref(false)
+const copiedLink = ref(false)
 const payloadBox = ref<HTMLElement>()
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
+let linkTimer: ReturnType<typeof setTimeout> | undefined
 
 /**
  * Copying is the whole point of showing the code, so a refused clipboard must
@@ -212,6 +232,22 @@ async function copyPayload() {
   }, 2_000)
 }
 
+/** The public page this invoice opens — the link to share with the buyer. */
+const shareLink = computed(() => (qrPayload.value ? paymentUrl(qrPayload.value) : ''))
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(shareLink.value)
+  } catch {
+    return
+  }
+  copiedLink.value = true
+  clearTimeout(linkTimer)
+  linkTimer = setTimeout(() => {
+    copiedLink.value = false
+  }, 2_000)
+}
+
 let timer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
@@ -222,6 +258,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   clearTimeout(copiedTimer)
+  clearTimeout(linkTimer)
 })
 </script>
 
@@ -254,14 +291,40 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <UFormField
+            label="Name"
+            help="The heading your customer sees above the amount — like “Coffee for two”."
+          >
+            <UInput
+              v-model="name"
+              class="w-full"
+              placeholder="What is this payment?"
+              :maxlength="64"
+            />
+          </UFormField>
+
+          <UFormField
+            label="Description"
+            help="Optional detail under the name — what is included, where, when."
+          >
+            <UTextarea
+              v-model="description"
+              :rows="2"
+              class="w-full"
+              placeholder="Two flat whites at the corner shop"
+              :maxlength="160"
+            />
+          </UFormField>
+
+          <UFormField
             label="Memo"
-            help="A short note your customer will see — like “Coffee for two”."
+            help="Recorded on chain with the payment, so wallets and explorers show it too."
           >
             <UTextarea
               v-model="memo"
               :rows="2"
               class="w-full"
-              placeholder="What is this payment for?"
+              placeholder="Coffee"
+              :maxlength="96"
             />
           </UFormField>
 
@@ -315,6 +378,41 @@ onBeforeUnmount(() => {
             :payload="qrPayload"
             :size="320"
           />
+
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <UButton
+              :to="shareLink"
+              target="_blank"
+              rel="noopener"
+              label="Open payment page"
+              icon="i-lucide-external-link"
+            />
+            <UButton
+              :icon="copiedLink ? 'i-lucide-check' : 'i-lucide-link'"
+              :label="copiedLink ? 'Link copied' : 'Copy link'"
+              color="neutral"
+              variant="soft"
+              @click="copyLink"
+            />
+          </div>
+
+          <div
+            v-if="record.name || record.description"
+            class="text-center"
+          >
+            <p
+              v-if="record.name"
+              class="text-base font-medium"
+            >
+              {{ record.name }}
+            </p>
+            <p
+              v-if="record.description"
+              class="mt-0.5 text-sm text-muted"
+            >
+              {{ record.description }}
+            </p>
+          </div>
 
           <div class="flex items-center gap-2">
             <UBadge

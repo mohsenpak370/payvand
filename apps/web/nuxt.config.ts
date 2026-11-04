@@ -81,6 +81,10 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/payments',
         changeOrigin: true
       },
+      '/api/saved-payments': {
+        target: 'http://127.0.0.1:8787/api/saved-payments',
+        changeOrigin: true
+      },
       '/api/discounts': {
         target: 'http://127.0.0.1:8787/api/discounts',
         changeOrigin: true

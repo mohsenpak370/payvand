@@ -598,6 +598,8 @@ mod tests {
             reference: "Reference111".into(),
             amount_lamports: 1_000_000,
             memo: format!("memo for {id}"),
+            name: String::new(),
+            description: String::new(),
             cluster: "devnet".into(),
             endpoint: "https://api.devnet.solana.com".into(),
             settled_by: (settled > 0).then(|| "Payer111111".into()),

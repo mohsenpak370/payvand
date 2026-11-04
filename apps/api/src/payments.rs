@@ -10,6 +10,14 @@ use thiserror::Error;
 /// Mirrors `PAYMENT_MAX_MEMO` in `apps/contracts/programs/payvand`.
 pub const MAX_MEMO_LEN: usize = 96;
 
+/// Title shown above the amount on the customer's screen.
+pub const MAX_NAME_LEN: usize = 64;
+
+/// Longer explanation shown under the title. Bounded because both fields ride
+/// in the QR payload: every extra character makes the code denser and harder
+/// for a phone camera to read.
+pub const MAX_DESCRIPTION_LEN: usize = 160;
+
 /// Version tag carried in the QR payload so scanners can evolve the format.
 pub const QR_PAYLOAD_VERSION: u8 = 1;
 
@@ -73,6 +81,11 @@ pub struct PaymentRecord {
     pub reference: String,
     pub amount_lamports: u64,
     pub memo: String,
+    /// Seller's title for the payment; empty for records read back from chain,
+    /// which stores no such fields.
+    pub name: String,
+    /// Seller's longer description, with the same caveat as `name`.
+    pub description: String,
     pub cluster: String,
     pub endpoint: String,
     pub settled_by: Option<String>,
@@ -92,6 +105,8 @@ impl PaymentRecord {
             reference: &self.reference,
             amount_lamports: self.amount_lamports,
             memo: &self.memo,
+            name: &self.name,
+            description: &self.description,
             cluster: &self.cluster,
             endpoint: &self.endpoint,
         })
@@ -108,6 +123,12 @@ struct QrPayload<'a> {
     reference: &'a str,
     amount_lamports: u64,
     memo: &'a str,
+    // Skipped when empty so a payment without them keeps the code as sparse
+    // (and as easy to scan) as it was before these fields existed.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    description: &'a str,
     cluster: &'a str,
     endpoint: &'a str,
 }
@@ -120,6 +141,10 @@ pub struct CreatePaymentRequest {
     pub reference: String,
     pub amount_lamports: u64,
     pub memo: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
     pub cluster: String,
     pub endpoint: Option<String>,
 }
@@ -144,6 +169,17 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         return Err(bad(format!("memo must be at most {MAX_MEMO_LEN} bytes")));
     }
 
+    let name = request.name.unwrap_or_default().trim().to_string();
+    if name.len() > MAX_NAME_LEN {
+        return Err(bad(format!("name must be at most {MAX_NAME_LEN} bytes")));
+    }
+    let description = request.description.unwrap_or_default().trim().to_string();
+    if description.len() > MAX_DESCRIPTION_LEN {
+        return Err(bad(format!(
+            "description must be at most {MAX_DESCRIPTION_LEN} bytes"
+        )));
+    }
+
     let endpoint = resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?;
 
     Ok(PaymentRecord {
@@ -155,6 +191,8 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         reference: request.reference,
         amount_lamports: request.amount_lamports,
         memo: request.memo,
+        name,
+        description,
         cluster: request.cluster,
         endpoint,
         settled_by: None,
@@ -200,6 +238,8 @@ fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRec
         reference: String::new(),
         amount_lamports: 0,
         memo: String::new(),
+        name: String::new(),
+        description: String::new(),
         cluster,
         endpoint,
         settled_by: None,
@@ -228,6 +268,8 @@ fn record_from_chain(
         reference: payment.reference.to_string(),
         amount_lamports: payment.amount,
         memo: payment.memo,
+        name: String::new(),
+        description: String::new(),
         cluster,
         endpoint,
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
@@ -523,6 +565,8 @@ mod tests {
             reference: "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J".to_string(),
             amount_lamports: 1_000_000,
             memo: "coffee".to_string(),
+            name: None,
+            description: None,
             cluster: "devnet".to_string(),
             endpoint: None,
         }
@@ -542,6 +586,64 @@ mod tests {
             ..sample_request()
         };
         assert!(create_payment(request).is_err());
+    }
+
+    #[test]
+    fn keeps_a_name_and_description_for_the_buyer() {
+        let request = CreatePaymentRequest {
+            name: Some("  Coffee for two  ".to_string()),
+            description: Some("Two flat whites at the corner shop".to_string()),
+            ..sample_request()
+        };
+        let record = create_payment(request).expect("valid request");
+        assert_eq!(record.name, "Coffee for two");
+        assert_eq!(record.description, "Two flat whites at the corner shop");
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert_eq!(payload["name"], "Coffee for two");
+        assert_eq!(payload["description"], "Two flat whites at the corner shop");
+    }
+
+    #[test]
+    fn still_accepts_requests_without_a_name_or_description() {
+        let request: CreatePaymentRequest = serde_json::from_value(serde_json::json!({
+            "payment_pda": "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J",
+            "seller": "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J",
+            "reference": "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J",
+            "amount_lamports": 1_000_000,
+            "memo": "coffee",
+            "cluster": "devnet"
+        }))
+        .expect("an older client's request still deserializes");
+
+        let record = create_payment(request).expect("valid request");
+        assert!(record.name.is_empty());
+        assert!(record.description.is_empty());
+    }
+
+    #[test]
+    fn omits_an_empty_name_and_description_from_the_payload() {
+        let record = create_payment(sample_request()).expect("valid request");
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert!(payload.get("name").is_none());
+        assert!(payload.get("description").is_none());
+    }
+
+    #[test]
+    fn rejects_an_overlong_name_or_description() {
+        let long_name = CreatePaymentRequest {
+            name: Some("n".repeat(MAX_NAME_LEN + 1)),
+            ..sample_request()
+        };
+        assert!(create_payment(long_name).is_err());
+
+        let long_description = CreatePaymentRequest {
+            description: Some("d".repeat(MAX_DESCRIPTION_LEN + 1)),
+            ..sample_request()
+        };
+        assert!(create_payment(long_description).is_err());
     }
 
     #[test]

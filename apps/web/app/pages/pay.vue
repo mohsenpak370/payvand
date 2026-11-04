@@ -9,6 +9,8 @@ useSeoMeta({ title: 'Pay — Payvand' })
 // connect a wallet and pay. Sign-in only unlocks the silent budget path.
 
 const api = usePaymentApi()
+const { user, ensureSession } = useAuth()
+const route = useRoute()
 const { client } = useSolanaClient()
 const { publicKey, connected, canSignTransaction } = useSolanaWallet()
 const { execute, status: txStatus, error: txError, loading: txLoading } = useSolanaSignAndSendTransaction()
@@ -33,6 +35,50 @@ const activePda = ref<string | null>(null)
 const payableLamports = computed(() =>
   discount.value?.discounted_lamports ?? payload.value?.amount_lamports ?? 0
 )
+
+// Name and description ride in the code itself: the chain stores only the
+// memo, so a record read back by id comes without them.
+const paymentName = computed(() => record.value?.name || payload.value?.name || '')
+const paymentDescription = computed(
+  () => record.value?.description || payload.value?.description || ''
+)
+const paymentMemo = computed(() => record.value?.memo || payload.value?.memo || '')
+
+// Saving keeps a copy of this code on the signed-in account. The page itself
+// stays public, so the link works for whoever it is shared with.
+const savedToProfile = ref(false)
+const saving = ref(false)
+const saveError = ref('')
+
+// Signing in must come back to this exact payment, code included.
+const signinLink = computed(() => ({ path: '/signin', query: { next: route.fullPath } }))
+
+async function refreshSaved() {
+  savedToProfile.value = false
+  const current = payload.value
+  if (!user.value || !current) return
+  try {
+    const saved = await api.listSavedPayments()
+    savedToProfile.value = saved.some(item => item.payment_id === current.id)
+  } catch {
+    // Not worth an error of its own: the save button reports its own failures.
+  }
+}
+
+async function saveToProfile() {
+  const current = payload.value
+  if (!current) return
+  saving.value = true
+  saveError.value = ''
+  try {
+    await api.savePayment(JSON.stringify(current))
+    savedToProfile.value = true
+  } catch (error) {
+    saveError.value = apiErrorMessage(error, 'Could not save this payment.')
+  } finally {
+    saving.value = false
+  }
+}
 
 // Monthly budget: when it can cover the price, the payment is signed by the
 // local session key instead of the wallet — no popup at all.
@@ -108,6 +154,7 @@ async function load(raw: string) {
     record.value = status
     activePda.value = parsed.id
     await refreshBudget()
+    await refreshSaved()
   } catch (error) {
     scanError.value = error instanceof Error ? error.message : 'Could not read that code.'
   }
@@ -224,16 +271,22 @@ function reset() {
   discount.value = null
   discountInput.value = ''
   discountError.value = ''
+  savedToProfile.value = false
+  saveError.value = ''
 }
 
 let timer: ReturnType<typeof setInterval> | undefined
 
-onMounted(() => {
+onMounted(async () => {
   // Arriving from a scanned QR: the link carries the invoice payload.
-  const embedded = useRoute().query.p
+  const embedded = route.query.p
   if (typeof embedded === 'string' && embedded.length > 0) {
-    load(embedded)
+    await load(embedded)
   }
+
+  // Anyone can pay, but only a signed-in visitor can save the code.
+  await ensureSession()
+  await refreshSaved()
 
   timer = setInterval(async () => {
     const pda = activePda.value
@@ -335,6 +388,12 @@ onBeforeUnmount(() => {
           class="flex flex-col gap-4"
         >
           <div class="rounded-xl border border-default p-4">
+            <p
+              v-if="paymentName"
+              class="text-sm font-medium"
+            >
+              {{ paymentName }}
+            </p>
             <p class="text-2xl font-semibold">
               {{ lamportsToSol(record.status === 'settled' ? record.amount_lamports : payableLamports) }} SOL
               <span
@@ -344,8 +403,17 @@ onBeforeUnmount(() => {
                 {{ lamportsToSol(payload.amount_lamports) }} SOL
               </span>
             </p>
-            <p class="mt-1 text-sm text-muted">
-              {{ record.memo || payload.memo || 'No memo' }}
+            <p
+              v-if="paymentDescription"
+              class="mt-1 text-sm text-muted"
+            >
+              {{ paymentDescription }}
+            </p>
+            <p
+              v-else
+              class="mt-1 text-sm text-muted"
+            >
+              {{ paymentMemo || 'No memo' }}
             </p>
             <div
               v-if="discount"
@@ -433,6 +501,51 @@ onBeforeUnmount(() => {
               paid by {{ record.settled_by }}
             </span>
           </div>
+
+          <!--
+            Saving is optional and belongs to the viewer, not the invoice: the
+            same page stays open to anyone the link is shared with.
+          -->
+          <UButton
+            v-if="savedToProfile"
+            to="/profile"
+            label="Saved — open it in your profile"
+            icon="i-lucide-bookmark-check"
+            color="success"
+            variant="soft"
+            size="sm"
+            class="self-start"
+          />
+          <UButton
+            v-else-if="user"
+            label="Save this payment to my profile"
+            icon="i-lucide-bookmark-plus"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            class="self-start"
+            :loading="saving"
+            @click="saveToProfile"
+          />
+          <UButton
+            v-else
+            :to="signinLink"
+            label="Sign in to save this payment"
+            icon="i-lucide-log-in"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            class="self-start"
+          />
+
+          <UAlert
+            v-if="saveError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Could not save the payment"
+            :description="saveError"
+          />
 
           <UAlert
             v-if="budgetState && !budgetObstacle"

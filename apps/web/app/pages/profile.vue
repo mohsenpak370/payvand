@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BudgetState } from '~/composables/useBudget'
 import type { TransactionsResponse } from '~/composables/useAuth'
+import type { SavedPayment } from '~/composables/usePaymentApi'
 import type { Address } from '@vue-solana/nuxt/kit'
 
 useSeoMeta({ title: 'Profile — Payvand' })
@@ -11,6 +12,7 @@ const { user, walletChallenge, linkWallet, unlinkWallet, myTransactions } = useA
 const { publicKey, connected, connecting, canSignMessage } = useSolanaWallet()
 const { execute: signMessage, loading: signing } = useSolanaSignMessage()
 const budgetApi = useBudget()
+const paymentApi = usePaymentApi()
 
 const linkedWallet = computed(() => user.value?.wallet ?? null)
 
@@ -137,6 +139,33 @@ const transactions = ref<TransactionsResponse | null>(null)
 const txLoading = ref(false)
 const txFailure = ref('')
 
+// Payment codes this account saved. The code is the invoice, so everything
+// shown on a card comes out of the payload the API kept.
+const savedPayments = ref<SavedPayment[]>([])
+const savedLoading = ref(false)
+const savedFailure = ref('')
+
+const savedCards = computed(() => savedPayments.value.flatMap((item) => {
+  try {
+    return [{ ...item, code: parseQrPayload(item.payload), link: paymentUrl(item.payload) }]
+  } catch {
+    // A code that no longer parses is not worth showing.
+    return []
+  }
+}))
+
+async function refreshSavedPayments() {
+  savedFailure.value = ''
+  savedLoading.value = true
+  try {
+    savedPayments.value = await paymentApi.listSavedPayments()
+  } catch (error) {
+    savedFailure.value = apiErrorMessage(error, 'Could not load your saved payments.')
+  } finally {
+    savedLoading.value = false
+  }
+}
+
 async function refreshTransactions() {
   if (!linkedWallet.value) {
     transactions.value = null
@@ -177,6 +206,7 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
 
 onMounted(() => {
   refreshTransactions()
+  refreshSavedPayments()
 })
 </script>
 
@@ -418,6 +448,101 @@ onMounted(() => {
               />
             </div>
           </template>
+        </div>
+      </UCard>
+
+      <!-- Saved payment codes. -->
+      <UCard class="min-w-0">
+        <template #header>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold">
+                Saved payments
+              </h2>
+              <p class="text-sm text-muted">
+                Codes you saved — open one to share it or pay it again.
+              </p>
+            </div>
+            <UButton
+              icon="i-lucide-refresh-cw"
+              label="Refresh"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              :loading="savedLoading"
+              @click="refreshSavedPayments"
+            />
+          </div>
+        </template>
+
+        <div class="flex flex-col gap-3">
+          <UAlert
+            v-if="savedFailure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Could not load saved payments"
+            :description="savedFailure"
+          />
+
+          <p
+            v-else-if="savedLoading && !savedPayments.length"
+            class="py-4 text-center text-sm text-muted"
+          >
+            Loading saved payments…
+          </p>
+
+          <p
+            v-else-if="!savedPayments.length"
+            class="py-4 text-center text-sm text-muted"
+          >
+            Nothing saved yet — open a payment link and press “Save this payment”.
+          </p>
+
+          <ul
+            v-else
+            class="grid gap-3 sm:grid-cols-2"
+          >
+            <li
+              v-for="card in savedCards"
+              :key="card.id"
+              class="flex min-w-0 items-start gap-3 rounded-xl border border-default p-3"
+            >
+              <PaymentQr
+                :payload="card.payload"
+                :size="96"
+                class="shrink-0"
+              />
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <p class="text-sm font-medium break-words">
+                  {{ card.code.name || 'Payment' }}
+                </p>
+                <p class="text-sm font-semibold">
+                  {{ lamportsToSol(card.code.amount_lamports) }} SOL
+                </p>
+                <p
+                  v-if="card.code.description || card.code.memo"
+                  class="text-xs text-muted break-words"
+                >
+                  {{ card.code.description || card.code.memo }}
+                </p>
+                <p class="text-xs text-muted break-words">
+                  {{ networkLabel(card.code.cluster) }} · {{ formatDate(card.created_at_unix) }}
+                </p>
+                <UButton
+                  :to="card.link"
+                  target="_blank"
+                  rel="noopener"
+                  label="Open payment"
+                  icon="i-lucide-external-link"
+                  color="neutral"
+                  variant="soft"
+                  size="xs"
+                  class="mt-1 self-start"
+                />
+              </div>
+            </li>
+          </ul>
         </div>
       </UCard>
 
