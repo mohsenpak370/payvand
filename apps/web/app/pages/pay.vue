@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
             v-if="!payload"
             label="Or paste the code text"
           >
-            <div class="flex w-full gap-2">
+            <div class="flex w-full flex-col gap-2">
               <UTextarea
                 v-model="manualPayload"
                 :rows="3"
@@ -312,6 +312,7 @@ onBeforeUnmount(() => {
                 label="Load"
                 color="neutral"
                 variant="soft"
+                class="self-start"
                 @click="load(manualPayload)"
               />
             </div>

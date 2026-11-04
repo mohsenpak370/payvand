@@ -182,6 +182,36 @@ function reset() {
   priceLamports.value = 0
 }
 
+const copiedCode = ref(false)
+const payloadBox = ref<HTMLElement>()
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Copying is the whole point of showing the code, so a refused clipboard must
+ * not fail silently: the payload is selected instead, leaving one keystroke.
+ */
+async function copyPayload() {
+  try {
+    await navigator.clipboard.writeText(qrPayload.value)
+  } catch {
+    const code = payloadBox.value?.querySelector('code')
+    if (code) {
+      const range = document.createRange()
+      range.selectNodeContents(code)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+    }
+    return
+  }
+
+  copiedCode.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    copiedCode.value = false
+  }, 2_000)
+}
+
 let timer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
@@ -191,6 +221,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  clearTimeout(copiedTimer)
 })
 </script>
 
@@ -323,6 +354,32 @@ onBeforeUnmount(() => {
               </dd>
             </div>
           </dl>
+
+          <!--
+            The same text the pay page accepts pasted in, so a customer who
+            cannot scan the QR can still pay. `break-all` matters: the payload
+            is one unbroken JSON string, and without it the card would grow to
+            the payload's width instead of wrapping inside the card.
+          -->
+          <div ref="payloadBox">
+            <div class="mb-1.5 flex items-center justify-between gap-3">
+              <span class="text-sm font-medium">Payment code</span>
+              <UButton
+                :icon="copiedCode ? 'i-lucide-check' : 'i-lucide-copy'"
+                :label="copiedCode ? 'Copied' : 'Copy code'"
+                color="neutral"
+                variant="soft"
+                size="xs"
+                @click="copyPayload"
+              />
+            </div>
+            <code class="block w-full rounded-md border border-default bg-elevated/40 px-2.5 py-2 font-mono text-xs break-all whitespace-pre-wrap">
+              {{ qrPayload }}
+            </code>
+            <p class="mt-1.5 text-xs text-muted">
+              If the QR cannot be scanned, your customer can paste this on the pay page.
+            </p>
+          </div>
         </div>
 
         <div
