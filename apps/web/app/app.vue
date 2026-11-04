@@ -69,50 +69,59 @@ const accountMenu = computed(() => [
     <UHeader v-if="showHeader">
       <!-- Logo, product name and cluster. -->
       <template #left>
-        <div class="flex items-center gap-2">
-          <NuxtLink
-            to="/"
-            aria-label="Payvand home"
-            class="focus-visible:outline-3 outline-primary/25 flex items-center gap-2 rounded-md p-1 -ms-1"
+        <NuxtLink
+          to="/"
+          aria-label="Payvand home"
+          class="focus-visible:outline-3 outline-primary/25 flex items-center gap-2 rounded-md p-1 -ms-1"
+        >
+          <img
+            src="/logo.png"
+            alt=""
+            width="356"
+            height="368"
+            class="h-7 w-auto shrink-0"
           >
-            <img
-              src="/logo.png"
-              alt=""
-              width="356"
-              height="368"
-              class="h-7 w-auto shrink-0"
+          <!--
+            The cluster pill hangs off the name's top-right corner instead of
+            standing beside it, matching the brand row on the auth pages, so
+            the cluster reads as a tag on the name rather than a third item.
+          -->
+          <span class="relative font-semibold">
+            Payvand
+            <UBadge
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              class="absolute -top-2 start-full ms-1"
             >
-            <span class="font-semibold">Payvand</span>
-          </NuxtLink>
-
-          <UBadge
-            color="neutral"
-            variant="subtle"
-            size="sm"
-          >
-            {{ cluster }}
-          </UBadge>
-        </div>
+              {{ cluster }}
+            </UBadge>
+          </span>
+        </NuxtLink>
       </template>
 
-      <!-- Centred on desktop; `hidden lg:flex` comes from the theme. -->
+      <!--
+        Centred on desktop; `hidden lg:flex` comes from the theme. Plain text
+        links rather than buttons: these are navigation, and a hover underline
+        reads as one without the button chrome competing with Sign up.
+      -->
       <template #default>
         <nav
           aria-label="Primary"
-          class="flex items-center gap-1"
+          class="flex items-center gap-6"
         >
-          <UButton
+          <NuxtLink
             to="/sell"
-            label="Sell"
-            color="neutral"
-            variant="ghost"
-          />
-          <UButton
+            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
+            Create a payment
+          </NuxtLink>
+          <NuxtLink
             to="/pay"
-            label="Pay"
-            color="neutral"
-            variant="ghost"
-          />
+            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
+            Scan and pay
+          </NuxtLink>
         </nav>
       </template>
 
@@ -163,7 +172,7 @@ const accountMenu = computed(() => [
         >
           <UButton
             to="/sell"
-            label="Sell"
+            label="Create a payment"
             color="neutral"
             variant="soft"
             icon="i-lucide-qr-code"
@@ -172,7 +181,7 @@ const accountMenu = computed(() => [
           />
           <UButton
             to="/pay"
-            label="Pay"
+            label="Scan and pay"
             color="neutral"
             variant="soft"
             icon="i-lucide-scan-line"

@@ -12,7 +12,7 @@ const ctaTitle = computed(() =>
 <template>
   <div>
     <UPageHero
-      title="Easily pay on Solana"
+      title="Simple payments on Solana"
       :ui="{ title: 'leading-tight' }"
       description="A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it."
       :links="[{
