@@ -3,6 +3,7 @@ import type { BudgetState } from '~/composables/useBudget'
 import type { TransactionsResponse } from '~/composables/useAuth'
 import type { PaymentQrPayload, SavedPayment } from '~/composables/usePaymentApi'
 import type { Address } from '@vue-solana/nuxt/kit'
+import type { FiatCurrency } from '~/composables/useFiat'
 
 useSeoMeta({ title: 'Profile — Payvand' })
 definePageMeta({ middleware: 'auth' })
@@ -15,6 +16,19 @@ const budgetApi = useBudget()
 const paymentApi = usePaymentApi()
 
 const linkedWallet = computed(() => user.value?.wallet ?? null)
+
+// The money prices are shown in. Charges stay in SOL; this only changes the
+// hint next to them, everywhere in the app.
+const { currency, setCurrency } = useCurrencyPreference()
+const rates = useSolRates()
+const currencyChoice = computed({
+  get: () => currency.value,
+  set: (next: FiatCurrency) => setCurrency(next)
+})
+const rateHint = computed(() => {
+  const rate = rates.value?.[currency.value]
+  return rate ? formatFiat(rate, currency.value) : null
+})
 
 /** Fresh signups arrive as /profile?welcome=1 with this nudge to answer. */
 const showWelcome = computed(
@@ -347,6 +361,36 @@ onMounted(() => {
               @click="unlinkWalletNow"
             />
           </div>
+        </div>
+      </UCard>
+
+      <!-- Currency of the hints shown next to every price. -->
+      <UCard class="min-w-0">
+        <template #header>
+          <div>
+            <h2 class="text-base font-semibold">
+              Currency
+            </h2>
+            <p class="text-sm text-muted">
+              Payments are charged in SOL. This is the money shown next to a price.
+            </p>
+          </div>
+        </template>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <UFormField label="Show prices in">
+            <USelect
+              v-model="currencyChoice"
+              :items="CURRENCY_OPTIONS"
+              class="w-56"
+            />
+          </UFormField>
+          <p
+            v-if="rateHint"
+            class="text-sm text-muted tabular-nums"
+          >
+            1 SOL ≈ {{ rateHint }}
+          </p>
         </div>
       </UCard>
 

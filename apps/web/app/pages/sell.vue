@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { address } from '@vue-solana/nuxt/kit'
 import type { DiscountCode, PaymentRecord } from '~/composables/usePaymentApi'
+import type { FiatCurrency } from '~/composables/useFiat'
 
 useSeoMeta({ title: 'Sell — Payvand' })
 
@@ -11,6 +12,18 @@ const api = usePaymentApi()
 const { publicKey, connected } = useSolanaWallet()
 
 const amountSol = ref('0.01')
+// Sellers think in the money they charge; the chain takes SOL. The amount can
+// be typed in either, and the other one is shown next to it, but every invoice
+// is created in lamports.
+const { currency, setCurrency } = useCurrencyPreference()
+const rates = useSolRates()
+const priceInFiat = ref(false)
+const fiatAmount = ref('')
+const amountUnits = [
+  { label: 'SOL', value: 'sol' },
+  { label: 'USD', value: 'usd' },
+  { label: 'EUR', value: 'eur' }
+]
 // The amount field opens a calculator: sellers often price from arithmetic
 // rather than a number they already know.
 const calculatorOpen = ref(false)
@@ -63,7 +76,31 @@ const canAddCode = computed(() =>
   && Number(newPercent.value) <= 99
 )
 
-const lamports = computed(() => solToLamports(Number(amountSol.value)))
+const lamports = computed(() =>
+  priceInFiat.value
+    ? lamportsFromFiat(Number(fiatAmount.value), rates.value, currency.value)
+    : solToLamports(Number(amountSol.value))
+)
+// The price in the other unit — what the seller checks the number against.
+const fiatHint = computed(() => fiatFromLamports(lamports.value, rates.value, currency.value))
+
+/** SOL, or the currency the price is typed in. Picking a currency also makes it the default. */
+const amountUnit = computed<'sol' | FiatCurrency>({
+  get: () => (priceInFiat.value ? currency.value : 'sol'),
+  set: (next) => {
+    if (next === 'sol') {
+      // Carry the number over so switching unit never changes the price.
+      if (priceInFiat.value) amountSol.value = String(Number((lamports.value / 1_000_000_000).toFixed(9)))
+      priceInFiat.value = false
+      return
+    }
+    const rate = rates.value?.[next]
+    const equivalent = rate ? (lamports.value / 1_000_000_000) * rate : 0
+    fiatAmount.value = equivalent ? String(Number(equivalent.toFixed(2))) : ''
+    priceInFiat.value = true
+    setCurrency(next)
+  }
+})
 // Creating a code needs the seller's address, never a signature: the invoice
 // address is derived locally and the account only comes into existence (and
 // is only funded) when the customer pays.
@@ -73,7 +110,8 @@ const statusColor = (status: string) =>
   status === 'settled' ? 'success' : status === 'missing' || status === 'pending' ? 'warning' : 'neutral'
 
 function applyAmount(amount: string) {
-  amountSol.value = amount
+  if (priceInFiat.value) fiatAmount.value = amount
+  else amountSol.value = amount
 }
 
 async function createPayment() {
@@ -311,15 +349,36 @@ onBeforeUnmount(() => {
         </template>
 
         <div class="flex flex-col gap-4">
-          <UFormField label="Amount (SOL)">
+          <UFormField
+            label="Amount"
+            :help="priceInFiat
+              ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
+              : 'What the customer pays.'"
+          >
             <div class="flex items-stretch gap-2">
               <UInput
+                v-if="priceInFiat"
+                v-model="fiatAmount"
+                type="number"
+                min="0"
+                step="0.01"
+                class="min-w-0 flex-1"
+                placeholder="5.00"
+              />
+              <UInput
+                v-else
                 v-model="amountSol"
                 type="number"
                 min="0"
                 step="0.001"
                 class="min-w-0 flex-1"
                 placeholder="0.01"
+              />
+              <USelect
+                v-model="amountUnit"
+                :items="amountUnits"
+                class="w-24"
+                aria-label="Unit of the amount"
               />
               <UButton
                 icon="i-lucide-calculator"
@@ -385,7 +444,12 @@ onBeforeUnmount(() => {
 
           <div class="flex items-center justify-between gap-3 text-sm text-muted">
             <span>{{ networkLabel(cluster) }}</span>
-            <span>{{ lamportsToSol(lamports) }} SOL</span>
+            <span class="tabular-nums">
+              {{ lamportsToSol(lamports) }} SOL
+              <template v-if="fiatHint">
+                ({{ fiatHint }})
+              </template>
+            </span>
           </div>
 
           <UAlert
@@ -649,7 +713,7 @@ onBeforeUnmount(() => {
 
     <CalculatorModal
       v-model:open="calculatorOpen"
-      :initial="amountSol"
+      :initial="priceInFiat ? fiatAmount : amountSol"
       @apply="applyAmount"
     />
   </UPageSection>
