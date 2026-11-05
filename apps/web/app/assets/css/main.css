@@ -40,3 +40,27 @@
   --color-blue-900: #192567;
   --color-blue-950: #060B19; /* logo background navy */
 }
+
+/*
+ * A printed payment is the receipt, so it prints as the page looks — page
+ * background, bordered card, coloured text — instead of being washed out to a
+ * blank sheet. Browsers drop backgrounds from print jobs unless told to keep
+ * them, and `print-color-adjust` is what tells them.
+ *
+ * The page margin is zeroed so that background can reach the paper edge; the
+ * sheet keeps its own padding well inside the printable area, so nothing
+ * important lands where a printer cannot reach.
+ */
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -145,18 +145,14 @@ watch(() => props.source, (next) => {
 useSeoMeta({
   title: () => (paymentName.value ? `${paymentName.value} — Payvand` : 'Payment — Payvand')
 })
-
-// Printing from the dark theme would put an ink-hungry slab on paper: the
-// page prints on white regardless of the theme in use.
-useHead({ bodyAttrs: { class: 'print:bg-white' } })
 </script>
 
 <template>
-  <div class="flex min-h-[100svh] flex-col print:min-h-0 print:bg-white print:text-black">
-    <main class="flex flex-1 items-center justify-center px-5 py-10 print:py-0">
+  <div class="flex min-h-[100svh] flex-col print:min-h-[100vh] print:bg-default">
+    <main class="flex flex-1 items-center justify-center px-5 py-10 print:p-[14mm]">
       <div class="w-full max-w-sm">
         <section
-          class="rounded-2xl border border-default bg-default p-6 shadow-sm print:break-inside-avoid print:border-neutral-300 print:bg-white print:text-black print:shadow-none"
+          class="rounded-2xl border border-default bg-default p-6 shadow-sm print:break-inside-avoid print:bg-elevated"
         >
           <div
             v-if="stage === 'loading'"
@@ -477,12 +473,12 @@ useHead({ bodyAttrs: { class: 'print:bg-white' } })
                 :payload="code"
                 :size="240"
               />
-              <p class="mt-3 text-center text-xs text-muted print:text-neutral-600">
+              <p class="mt-3 text-center text-xs text-muted">
                 {{ stage === 'pick' ? 'Or scan this with your phone' : 'Or scan it with a phone' }}
               </p>
             </div>
 
-            <dl class="mt-6 w-full space-y-1 text-xs text-muted print:text-neutral-600">
+            <dl class="mt-6 w-full space-y-1 text-xs text-muted">
               <div class="flex justify-between gap-3">
                 <dt>Seller</dt>
                 <dd class="truncate font-mono">
@@ -553,7 +549,7 @@ useHead({ bodyAttrs: { class: 'print:bg-white' } })
       </div>
     </main>
 
-    <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:border-neutral-300 print:text-neutral-600">
+    <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted">
       Powered by
       <NuxtLink
         to="/"
