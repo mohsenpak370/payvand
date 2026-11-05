@@ -11,6 +11,9 @@ const api = usePaymentApi()
 const { publicKey, connected } = useSolanaWallet()
 
 const amountSol = ref('0.01')
+// The amount field opens a calculator: sellers often price from arithmetic
+// rather than a number they already know.
+const calculatorOpen = ref(false)
 const name = ref('')
 const description = ref('')
 const memo = ref('Coffee')
@@ -68,6 +71,10 @@ const canCreate = computed(() => connected.value && !busy.value && lamports.valu
 
 const statusColor = (status: string) =>
   status === 'settled' ? 'success' : status === 'missing' || status === 'pending' ? 'warning' : 'neutral'
+
+function applyAmount(amount: string) {
+  amountSol.value = amount
+}
 
 async function createPayment() {
   failure.value = ''
@@ -305,14 +312,23 @@ onBeforeUnmount(() => {
 
         <div class="flex flex-col gap-4">
           <UFormField label="Amount (SOL)">
-            <UInput
-              v-model="amountSol"
-              type="number"
-              min="0"
-              step="0.001"
-              class="w-full"
-              placeholder="0.01"
-            />
+            <div class="flex items-stretch gap-2">
+              <UInput
+                v-model="amountSol"
+                type="number"
+                min="0"
+                step="0.001"
+                class="min-w-0 flex-1"
+                placeholder="0.01"
+              />
+              <UButton
+                icon="i-lucide-calculator"
+                color="neutral"
+                variant="outline"
+                aria-label="Open the calculator"
+                @click="calculatorOpen = true"
+              />
+            </div>
           </UFormField>
 
           <UFormField
@@ -630,5 +646,11 @@ onBeforeUnmount(() => {
         </div>
       </UCard>
     </div>
+
+    <CalculatorModal
+      v-model:open="calculatorOpen"
+      :initial="amountSol"
+      @apply="applyAmount"
+    />
   </UPageSection>
 </template>
