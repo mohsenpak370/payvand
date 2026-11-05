@@ -85,8 +85,3 @@ export function lamportsFromFiat(
   if (!rate || !Number.isFinite(value) || value <= 0) return 0
   return Math.round((value / rate) * 1_000_000_000)
 }
-
-/** Short label for the currency, for controls that have no room for the name. */
-export function currencyLabel(currency: FiatCurrency): string {
-  return currency === 'eur' ? 'EUR' : 'USD'
-}

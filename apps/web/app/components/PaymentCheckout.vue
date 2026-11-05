@@ -49,22 +49,14 @@ const heading = computed(() => paymentName.value || paymentMemo.value || 'Paymen
 
 const discountOpen = ref(false)
 
-// The invoice is charged in SOL; the fiat line under it is what the price is
-// worth in the currency this buyer reads. They can switch it here, which also
-// becomes their default for the rest of the app.
-const { currency, setCurrency } = useCurrencyPreference()
+// The invoice is charged in SOL. The figure in brackets is what that price is
+// worth in the currency chosen in the profile — the checkout only reads it,
+// there is nothing to pick here.
+const { currency } = useCurrencyPreference()
 const rates = useSolRates()
 const fiatPrice = computed(() =>
   fiatFromLamports(payableLamports.value, rates.value, currency.value)
 )
-const currencyItems = [
-  { label: 'USD', value: 'usd' },
-  { label: 'EUR', value: 'eur' }
-]
-const currencyChoice = computed({
-  get: () => currency.value,
-  set: (next: FiatCurrency) => setCurrency(next)
-})
 
 const savedToProfile = ref(false)
 const saving = ref(false)
@@ -226,9 +218,15 @@ useSeoMeta({
               >
                 {{ discount.percent_off }}% off
               </UBadge>
-              <p class="flex items-baseline justify-center gap-2 text-4xl font-bold tabular-nums">
+              <p class="flex flex-wrap items-baseline justify-center gap-x-2 text-4xl font-bold tabular-nums">
                 {{ lamportsToSol(payableLamports) }}
                 <span class="text-xl font-semibold text-muted">SOL</span>
+                <span
+                  v-if="fiatPrice"
+                  class="text-base font-normal text-muted"
+                >
+                  (≈ {{ fiatPrice }})
+                </span>
               </p>
               <p
                 v-if="discount"
@@ -236,23 +234,6 @@ useSeoMeta({
               >
                 <span class="line-through">{{ lamportsToSol(priceLamports) }} SOL</span>
               </p>
-              <!-- What the SOL price is worth, and the switch that decides it. -->
-              <div
-                v-if="fiatPrice"
-                class="mt-1 flex items-center gap-1"
-              >
-                <span class="text-sm text-muted tabular-nums">≈ {{ fiatPrice }}</span>
-                <!-- Printed receipts keep the fiat price but not the switch. -->
-                <USelect
-                  v-model="currencyChoice"
-                  :items="currencyItems"
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  aria-label="Currency shown for this price"
-                  class="w-20 print:hidden"
-                />
-              </div>
             </div>
 
             <!--
