@@ -42,6 +42,9 @@ export default defineNuxtConfig({
     // Both flows talk to a connected wallet and a camera, so they only make
     // sense in the browser. The Solana plugin is client-only.
     '/sell': { ssr: false },
+    // The checkout is the scan target now, and it is as client-only as /pay:
+    // it reads the invoice from the URL, the wallet and the allowance.
+    '/p/**': { ssr: false },
     '/pay': { ssr: false },
     '/scan': { ssr: false },
     // Budget state lives in the wallet + localStorage, same reason.

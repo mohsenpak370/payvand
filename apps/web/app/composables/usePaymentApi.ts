@@ -93,12 +93,16 @@ export interface DiscountPreview {
 }
 
 /**
- * The shared link opens the printable payment page, so any phone camera (or
- * chat app) opens the invoice in a browser — the payload rides along as the
- * `p` query value.
+ * The shared link opens the checkout, so any phone camera (or chat app) lands
+ * on a page that can take the payment. The invoice rides in the path as a
+ * token, which keeps the link short enough for a printed code.
  */
+export function paymentLinkPath(payload: string): string {
+  return `/p/${encodePaymentToken(payload)}`
+}
+
 export function paymentUrl(payload: string): string {
-  return `${window.location.origin}/pay?p=${encodeURIComponent(payload)}`
+  return `${window.location.origin}${paymentLinkPath(payload)}`
 }
 
 /**
@@ -130,7 +134,13 @@ export function solanaPayUrl(payload: string, apiBase: string): string {
   return `solana:${apiBase.replace(/\/+$/, '')}/api/solana-pay/${encodePaymentToken(payload)}`
 }
 
-export function parseQrPayload(raw: string): PaymentQrPayload {
+/**
+ * Reduces every accepted form of a payment code — raw JSON, `/p/<token>`, the
+ * legacy `?p=` link, a `solana:` request or a bare token — to the JSON the
+ * invoice is made of. The QR re-encodes this, so it must be the invoice text
+ * itself and never the link it was read from.
+ */
+export function unwrapQrText(raw: string): string {
   let text = raw.trim()
   // Unwrap a wallet code first: a Solana Pay transaction request carries the
   // same invoice, base64url-encoded in its path.
@@ -148,12 +158,33 @@ export function parseQrPayload(raw: string): PaymentQrPayload {
   } else if (/^https?:\/\//i.test(text)) {
     // Unwrap a scanned link; a pasted raw JSON payload still works.
     try {
-      const embedded = new URL(text).searchParams.get('p')
-      if (embedded) text = embedded
+      const url = new URL(text)
+      const embedded = url.searchParams.get('p')
+      if (embedded) {
+        text = embedded
+      } else {
+        // `/p/<token>` carries the whole invoice in its last path segment.
+        const token = url.pathname.split('/').filter(Boolean).pop()
+        if (token && !text.startsWith('{')) text = decodePaymentToken(token)
+      }
     } catch {
       // Fall through: the JSON error below explains it to the buyer.
     }
+  } else if (!text.startsWith('{')) {
+    // A bare token is the same invoice in its URL-safe form, so the short
+    // link can be pasted without its origin.
+    try {
+      const decoded = decodePaymentToken(text)
+      if (decoded.startsWith('{')) text = decoded
+    } catch {
+      // Leave it as-is: the JSON error below explains the problem.
+    }
   }
+  return text
+}
+
+export function parseQrPayload(raw: string): PaymentQrPayload {
+  const text = unwrapQrText(raw)
 
   let parsed: PaymentQrPayload
   try {

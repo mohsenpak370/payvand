@@ -14,14 +14,13 @@ const markup = ref<string | null>(null)
 
 const qrSize = computed(() => props.size ?? 320)
 
-// The code a wallet understands. `apiBase` is the API's own origin in
-// production and the current origin in dev, where Nitro forwards the request.
-const config = useRuntimeConfig()
+// The code a phone camera understands: an ordinary web link to the checkout,
+// so the camera app, a scanner app and a wallet's own scanner all land on the
+// same page. Encoding `solana:` here would only work in a wallet.
+const origin = useRequestURL().origin
 const qrText = computed(() => {
-  const apiBase = (config.public.apiBase as string)
-    || (import.meta.client ? window.location.origin : '')
-  if (!props.payload || !apiBase) return ''
-  return solanaPayUrl(props.payload, apiBase)
+  if (!props.payload) return ''
+  return `${origin}${paymentLinkPath(props.payload)}`
 })
 
 // The encoder uses error-correction level "Q" (~25% recoverable), so a logo
