@@ -1,3 +1,10 @@
+# Vercel refuses a lockfile whose packages were published in the last 24 hours
+# (its supply-chain policy), so a lockfile resolved here can fail the deploy
+# after passing every check locally. Applying the same age here means what this
+# machine resolves is what Vercel accepts, and a package published an hour ago
+# cannot reach the build from either side.
+minimumReleaseAge: 1440
+
 allowBuilds:
   '@parcel/watcher': false
   '@tailwindcss/oxide': false
