@@ -82,6 +82,12 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/payments',
         changeOrigin: true
       },
+      // Wallets ask the API for a transaction; in dev the QR points at this
+      // origin, so forward that request to the Axum server.
+      '/api/solana-pay': {
+        target: 'http://127.0.0.1:8787/api/solana-pay',
+        changeOrigin: true
+      },
       '/api/saved-payments': {
         target: 'http://127.0.0.1:8787/api/saved-payments',
         changeOrigin: true

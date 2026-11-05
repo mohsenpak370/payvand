@@ -1,0 +1,12 @@
+# Files excluded from Vercel uploads (API project only — the upload tree is
+# this directory). NOTE: when this file exists it REPLACES the .gitignore
+# fallback, so every local-only path must be listed here explicitly.
+
+# Local Rust build output; the runtime compiles the crate itself
+target
+
+# Local config and secrets
+.vercel
+.env
+.env.*
+.DS_Store

@@ -237,7 +237,7 @@ useHead({ bodyAttrs: { class: 'print:bg-white' } })
             </div>
 
             <p class="mt-4 text-xs text-muted print:text-neutral-600">
-              Scan to pay
+              Scan with a Solana wallet to pay
             </p>
           </div>
         </section>

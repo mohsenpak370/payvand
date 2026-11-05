@@ -7,6 +7,7 @@ pub mod discounts;
 pub mod email;
 pub mod payments;
 pub mod saved;
+pub mod solana_pay;
 pub mod wallet;
 
 use axum::extract::{Path, Query, State};
@@ -54,6 +55,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
         .route("/api/payments/{id}", get(get_payment))
+        // Solana Pay transaction request: a wallet scans the QR, asks for a
+        // transaction and signs it. GET is the metadata half of the spec.
+        .route("/api/solana-pay/icon.svg", get(solana_pay::icon))
+        .route(
+            "/api/solana-pay/{token}",
+            get(solana_pay::info).post(solana_pay::transaction),
+        )
         .route("/api/saved-payments", get(saved::list).post(saved::save))
         .route("/api/admin/stats", get(admin::stats))
         .route("/api/admin/users", get(admin::list_users))
@@ -92,6 +100,7 @@ async fn index() -> Json<serde_json::Value> {
             "/api/payments",
             "/api/payments/watch",
             "/api/payments/{id}",
+            "/api/solana-pay/{token}",
             "/api/saved-payments",
             "/api/discounts",
             "/api/discounts/validate",

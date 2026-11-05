@@ -448,7 +448,7 @@ fn default_cluster() -> String {
 }
 
 /// Explicit endpoint wins, then `SOLANA_RPC_URL`, then the cluster default.
-fn resolve_endpoint(endpoint: Option<&str>, cluster: &str) -> ApiResult<String> {
+pub(crate) fn resolve_endpoint(endpoint: Option<&str>, cluster: &str) -> ApiResult<String> {
     if let Some(endpoint) = endpoint {
         if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
             return Ok(endpoint.to_string());

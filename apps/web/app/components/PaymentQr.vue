@@ -14,6 +14,16 @@ const markup = ref<string | null>(null)
 
 const qrSize = computed(() => props.size ?? 320)
 
+// The code a wallet understands. `apiBase` is the API's own origin in
+// production and the current origin in dev, where Nitro forwards the request.
+const config = useRuntimeConfig()
+const qrText = computed(() => {
+  const apiBase = (config.public.apiBase as string)
+    || (import.meta.client ? window.location.origin : '')
+  if (!props.payload || !apiBase) return ''
+  return solanaPayUrl(props.payload, apiBase)
+})
+
 // The encoder uses error-correction level "Q" (~25% recoverable), so a logo
 // covering ~4% of the area leaves plenty of margin for reliable scans.
 const qrWithLogo = computed(() => {
@@ -34,10 +44,10 @@ const qrWithLogo = computed(() => {
 })
 
 watch(
-  () => props.payload,
-  async (payload) => {
-    if (!payload) return
-    markup.value = await generate(payload, { size: qrSize.value })
+  qrText,
+  async (text) => {
+    if (!text) return
+    markup.value = await generate(text, { size: qrSize.value })
   },
   { immediate: true }
 )

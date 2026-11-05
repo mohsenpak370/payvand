@@ -93,17 +93,60 @@ export interface DiscountPreview {
 }
 
 /**
- * The QR encodes a link to this page, so any phone camera opens the invoice
- * straight in a browser — the payload rides along as the `p` query value.
+ * The shared link opens the printable payment page, so any phone camera (or
+ * chat app) opens the invoice in a browser — the payload rides along as the
+ * `p` query value.
  */
 export function paymentUrl(payload: string): string {
   return `${window.location.origin}/pay?p=${encodeURIComponent(payload)}`
 }
 
+/**
+ * Base64url without padding, so the invoice fits in one URL path segment.
+ * The API decodes the same token back into the invoice.
+ */
+export function encodePaymentToken(payload: string): string {
+  let binary = ''
+  for (const byte of new TextEncoder().encode(payload)) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+export function decodePaymentToken(token: string): string {
+  const base64 = token.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+  const binary = atob(padded)
+  return new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0)))
+}
+
+/**
+ * What the QR encodes: a Solana Pay transaction request pointing at the API.
+ * A wallet recognizes the `solana:` URL, asks the API for a `settle_payment`
+ * transaction and signs it — the same instruction the in-app checkout sends.
+ * The invoice itself rides in the path, so the code stays stateless.
+ */
+export function solanaPayUrl(payload: string, apiBase: string): string {
+  return `solana:${apiBase.replace(/\/+$/, '')}/api/solana-pay/${encodePaymentToken(payload)}`
+}
+
 export function parseQrPayload(raw: string): PaymentQrPayload {
   let text = raw.trim()
-  // Unwrap a scanned link first; a pasted raw JSON payload still works.
-  if (/^https?:\/\//i.test(text)) {
+  // Unwrap a wallet code first: a Solana Pay transaction request carries the
+  // same invoice, base64url-encoded in its path.
+  if (/^solana:/i.test(text)) {
+    try {
+      const token = new URL(text.slice(text.indexOf(':') + 1)).pathname
+        .split('/')
+        .filter(Boolean)
+        .pop()
+      if (!token) throw new Error()
+      text = decodePaymentToken(token)
+    } catch {
+      throw new Error('That is a Solana payment code Payvand cannot read.')
+    }
+  } else if (/^https?:\/\//i.test(text)) {
+    // Unwrap a scanned link; a pasted raw JSON payload still works.
     try {
       const embedded = new URL(text).searchParams.get('p')
       if (embedded) text = embedded

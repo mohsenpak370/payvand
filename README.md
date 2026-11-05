@@ -5,9 +5,10 @@ A two-sided Solana payment app.
 - **Seller** connects a wallet (they never sign), enters an amount, and the app
   derives the invoice address locally and renders a QR code — nothing touches
   the chain until a customer pays.
-- **Buyer** scans the code with their camera, sees the amount and memo, and
-  approves a single `settle_payment` transaction that opens the invoice
-  (`Payment` PDA) and pays it in one signature.
+- **Buyer** scans the code with a Solana wallet (or the app's own scanner),
+  sees the amount and memo, and approves a single `settle_payment`
+  transaction that opens the invoice (`Payment` PDA) and pays it in one
+  signature.
 - The **Axum API** validates payment requests and reports live on-chain status.
 
 An account is required before either side can be used. Sign-up and sign-in are
@@ -141,6 +142,9 @@ GET  /api/auth/me            -> the signed-in account
 POST /api/payments           -> validates a request, returns the QR payload
 GET  /api/payments/{pda}     -> live status read from the cluster
 POST /api/payments/watch     -> status of many payment addresses at once
+GET  /api/solana-pay/{token} -> wallet metadata for a scanned QR (label/icon/message)
+POST /api/solana-pay/{token} -> unsigned settle_payment transaction for the wallet
+GET  /api/solana-pay/icon.svg -> the icon wallets display beside that label
 GET  /api/discounts          -> the signed-in account's discount codes
 POST /api/discounts          -> creates a code {code, percent_off}
 POST /api/discounts/validate -> prices an invoice with a code
@@ -277,14 +281,15 @@ serverless cold start.
 
 ## Notes and next steps
 
-- The QR encodes a link (`<origin>/pay?p=<payload>`) so any phone camera opens
-  the invoice in a browser; `p` carries the small JSON blob
-  (`{v,id,seller,seller_user,reference,amount_lamports,memo,cluster,endpoint}`)
-  this app parses, and a pasted raw payload still works. `seller_user` lets the
-  buyer's screen ask for that seller's discount codes. For wallet-native
-  scanning instead, switch the payload to the
-  [Solana Pay URL format](https://docs.solanapay.com/spec) — the reference and
-  amount fields map one to one.
+- The QR encodes a [Solana Pay transaction request](https://docs.solanapay.com/spec):
+  `solana:<api-origin>/api/solana-pay/<token>`, where the token is the same
+  invoice JSON (`{v,id,seller,seller_user,reference,amount_lamports,memo,cluster,endpoint}`)
+  base64url-encoded. A wallet recognizes the scheme, POSTs its account and
+  signs the `settle_payment` transaction the API builds, so it settles exactly
+  like a payment made inside the app. The app's scanner decodes the token back
+  into the invoice, and a pasted raw payload or `?p=` share link still works.
+  The shareable link (`<origin>/pay?p=<payload>`) is unchanged and remains the
+  way any phone camera opens the printable payment page.
 - Cluster defaults in the API are the public `api.*.solana.com` endpoints. For
   anything beyond testing, set `SOLANA_RPC_URL` to a dedicated provider.
 - `settle_payment` creates the invoice account (funded by the buyer) and moves

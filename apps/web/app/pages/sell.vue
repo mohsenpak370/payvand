@@ -418,6 +418,10 @@ onBeforeUnmount(() => {
             :size="320"
           />
 
+          <p class="text-center text-xs text-muted">
+            Your customer scans this with a Solana wallet.
+          </p>
+
           <div class="flex flex-wrap items-center justify-center gap-2">
             <UButton
               :to="shareLink"
