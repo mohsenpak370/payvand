@@ -19,7 +19,7 @@ const solanaEndpoint
     || (solanaCluster === 'localnet' ? 'http://127.0.0.1:8899' : undefined)
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@vue-solana/nuxt'],
+  modules: ['@nuxt/eslint', '@nuxt/ui', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
 
   devtools: {
     enabled: true
@@ -129,6 +129,41 @@ export default defineNuxtConfig({
         commaDangle: 'never',
         braceStyle: '1tbs'
       }
+    }
+  },
+
+  // Installable app: the module emits the web manifest, links it from every
+  // page and registers a service worker that precaches the build assets.
+  // `autoUpdate` keeps the installed app on the current release; the worker
+  // deliberately caches no navigation responses, because an invoice or a
+  // payment status read from a cache would be a stale one.
+  pwa: {
+    registerType: 'autoUpdate',
+    manifest: {
+      id: '/',
+      name: 'Payvand — Solana QR payments',
+      short_name: 'Payvand',
+      description: 'Take payment with a QR code, or scan one and pay from your wallet.',
+      lang: 'en',
+      categories: ['finance', 'business'],
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      // Matches the logo's navy, so the launch splash and the app window share
+      // one colour instead of flashing white before the dark theme loads.
+      theme_color: '#080E20',
+      background_color: '#080E20',
+      icons: [
+        { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        // Full-bleed navy so launchers that crop icons to a circle keep the
+        // mark intact.
+        { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    },
+    workbox: {
+      globPatterns: ['**/*.{js,css,png,svg,ico,woff2}'],
+      cleanupOutdatedCaches: true
     }
   },
 

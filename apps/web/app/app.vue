@@ -1,10 +1,18 @@
 <script setup>
 useHead({
   meta: [
-    { name: 'viewport', content: 'width=device-width, initial-scale=1' }
+    { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+    // Colors the browser UI (and the task switcher on Android) to match the
+    // app rather than the browser default.
+    { name: 'theme-color', content: '#080E20' },
+    // iOS ignores the manifest for the home-screen title and opens the app
+    // full screen only when asked to; these are the two things it reads.
+    { name: 'apple-mobile-web-app-title', content: 'Payvand' },
+    { name: 'apple-mobile-web-app-capable', content: 'yes' }
   ],
   link: [
-    { rel: 'icon', type: 'image/png', href: '/logo.png' }
+    { rel: 'icon', type: 'image/png', href: '/logo.png' },
+    { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' }
   ],
   htmlAttrs: {
     lang: 'en'
@@ -59,6 +67,9 @@ const accountMenu = computed(() => [
 
 <template>
   <UApp>
+    <!-- Links the web manifest that makes the app installable. -->
+    <NuxtPwaManifest />
+
     <!--
       The theme hides the centre slot and shows the burger toggle below `lg`,
       so the three slot groups already divide into "desktop header" and
