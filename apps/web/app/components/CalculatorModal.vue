@@ -221,8 +221,12 @@ watch(open, (isOpen) => {
 
     <template #footer>
       <div class="flex w-full items-center justify-between gap-3">
-        <p class="text-sm text-muted">
-          {{ canApply ? `${trim(value)} SOL` : 'Enter an amount' }}
+        <!--
+          The bare number: the amount field decides the unit (SOL or the
+          seller's currency), so naming one here would be wrong half the time.
+        -->
+        <p class="text-sm text-muted tabular-nums">
+          {{ canApply ? trim(value) : 'Enter an amount' }}
         </p>
         <UButton
           label="Use amount"
