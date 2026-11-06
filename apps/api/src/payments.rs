@@ -21,6 +21,55 @@ pub const MAX_DESCRIPTION_LEN: usize = 160;
 /// Version tag carried in the QR payload so scanners can evolve the format.
 pub const QR_PAYLOAD_VERSION: u8 = 1;
 
+/// Seed prefix for SOL invoices, mirroring the Anchor program.
+pub const PAYMENT_SEED: &[u8] = b"payment";
+/// Seed prefix for token invoices. A different prefix, and the mint is one of
+/// its seeds, so a USDC invoice and a SOL invoice never share an address.
+pub const TOKEN_PAYMENT_SEED: &[u8] = b"token-payment";
+
+/// SOL has nine decimals; the stablecoins the app takes have six.
+pub const SOL_DECIMALS: u8 = 9;
+pub const STABLE_DECIMALS: u8 = 6;
+
+/// The currency tag used for native SOL.
+pub const SOL_CURRENCY: &str = "sol";
+
+/// The stablecoins an invoice may be priced in, with the mint each one uses on
+/// a given cluster. Circle issues both; the addresses come from Circle's own
+/// published list, never from an invoice or a request.
+pub fn mint_for(currency: &str, cluster: &str) -> Option<Pubkey> {
+    let (mainnet, devnet) = match currency {
+        "usdc" => (
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+        ),
+        // Circle publishes one EURC address per cluster; on devnet it is the
+        // same one listed for testnet.
+        "eurc" => (
+            "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+            "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr",
+        ),
+        _ => return None,
+    };
+    let address = if matches!(cluster, "mainnet" | "mainnet-beta") {
+        mainnet
+    } else {
+        devnet
+    };
+    Pubkey::from_str(address).ok()
+}
+
+/// The currency a mint is priced in, so a chain read can name it.
+pub fn currency_for_mint(mint: &Pubkey, cluster: &str) -> Option<&'static str> {
+    if mint_for("usdc", cluster).as_ref() == Some(mint) {
+        return Some("usdc");
+    }
+    if mint_for("eurc", cluster).as_ref() == Some(mint) {
+        return Some("eurc");
+    }
+    None
+}
+
 #[derive(Debug, Error)]
 pub enum ApiError {
     #[error("{0}")]
@@ -75,6 +124,29 @@ pub struct PaymentDiscount {
     pub percent_off: u32,
 }
 
+/// One way to pay an invoice: a currency, its price, and the on-chain address
+/// that price is bound to. A seller who takes SOL and USDC puts two of these
+/// on one invoice, and the buyer picks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentOption {
+    /// `sol`, `usdc` or `eurc`.
+    pub currency: String,
+    /// The token mint, or the empty string for native SOL.
+    pub mint: String,
+    /// Decimals of `amount` — 9 for SOL, 6 for the stablecoins.
+    pub decimals: u8,
+    /// Price in the currency's base units.
+    pub amount: u64,
+    /// The PDA that holds this option's invoice once it is paid.
+    pub payment_pda: String,
+}
+
+impl PaymentOption {
+    pub fn is_sol(&self) -> bool {
+        self.currency == SOL_CURRENCY
+    }
+}
+
 /// The single shape the API returns, also embedded in the QR payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentRecord {
@@ -88,7 +160,12 @@ pub struct PaymentRecord {
     /// which knows nothing about accounts.
     pub seller_user: Option<String>,
     pub reference: String,
+    /// The SOL price, kept for older readers: it is the `sol` option's amount,
+    /// and zero on an invoice priced only in tokens.
     pub amount_lamports: u64,
+    /// Every currency this invoice accepts. Never empty on a created invoice.
+    #[serde(default)]
+    pub options: Vec<PaymentOption>,
     pub memo: String,
     /// Seller's title for the payment; empty for records read back from chain,
     /// which stores no such fields.
@@ -108,9 +185,19 @@ pub struct PaymentRecord {
 impl PaymentRecord {
     /// Compact, self-describing blob the seller encodes into the QR code.
     pub fn qr_payload(&self) -> String {
+        // An invoice that takes SOL and nothing else keeps the old shape: the
+        // code scans exactly as it did before a seller could offer currencies.
+        let many = self.options.len() > 1 || self.options.iter().any(|option| !option.is_sol());
+        let primary = self
+            .options
+            .iter()
+            .find(|option| option.is_sol())
+            .or_else(|| self.options.first())
+            .map(|option| option.payment_pda.as_str())
+            .unwrap_or(self.id.as_str());
         serde_json::to_string(&QrPayload {
             v: QR_PAYLOAD_VERSION,
-            id: &self.id,
+            id: primary,
             seller: &self.seller,
             // Lets the buyer's screen ask the API for this seller's codes.
             seller_user: self.seller_user.as_deref(),
@@ -120,6 +207,7 @@ impl PaymentRecord {
             name: &self.name,
             description: &self.description,
             discount: self.discount.as_ref(),
+            options: if many { &self.options } else { &[] },
             cluster: &self.cluster,
             endpoint: &self.endpoint,
         })
@@ -145,6 +233,10 @@ struct QrPayload<'a> {
     /// Skipped when absent, so an ordinary invoice scans exactly as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     discount: Option<&'a PaymentDiscount>,
+    /// The currencies this invoice accepts. Skipped for a SOL-only invoice,
+    /// whose `id` and `amount_lamports` already say everything.
+    #[serde(skip_serializing_if = "<[PaymentOption]>::is_empty")]
+    options: &'a [PaymentOption],
     cluster: &'a str,
     endpoint: &'a str,
 }
@@ -152,10 +244,19 @@ struct QrPayload<'a> {
 /// What the seller posts after its wallet has created the payment account.
 #[derive(Debug, Deserialize)]
 pub struct CreatePaymentRequest {
+    /// Kept for older clients: the SOL invoice address they derived. Newer
+    /// clients send `options` and leave this out, and the API derives every
+    /// address itself.
+    #[serde(default)]
     pub payment_pda: String,
     pub seller: String,
     pub reference: String,
+    #[serde(default)]
     pub amount_lamports: u64,
+    /// The currencies this invoice accepts, each with its own price. Empty
+    /// means the older shape: one SOL price in `amount_lamports`.
+    #[serde(default)]
+    pub options: Vec<CreateOption>,
     pub memo: String,
     #[serde(default)]
     pub name: Option<String>,
@@ -170,6 +271,13 @@ pub struct CreatePaymentRequest {
     pub endpoint: Option<String>,
 }
 
+/// One currency the seller chose to accept, with the price it charges in it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateOption {
+    pub currency: String,
+    pub amount: u64,
+}
+
 /// `?cluster=devnet` / `?endpoint=...` on `GET /api/payments/{id}`.
 #[derive(Debug, Default, Deserialize)]
 pub struct PaymentQuery {
@@ -179,16 +287,21 @@ pub struct PaymentQuery {
 
 /// Validates an intent and returns the canonical record plus the QR payload.
 pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord> {
-    parse_pubkey(&request.payment_pda, "payment_pda")?;
     parse_pubkey(&request.seller, "seller")?;
     parse_pubkey(&request.reference, "reference")?;
+    if !request.payment_pda.is_empty() {
+        parse_pubkey(&request.payment_pda, "payment_pda")?;
+    }
 
-    if request.amount_lamports == 0 {
+    if request.options.is_empty() && request.amount_lamports == 0 {
         return Err(bad("amount_lamports must be greater than 0"));
     }
     if request.memo.len() > MAX_MEMO_LEN {
         return Err(bad(format!("memo must be at most {MAX_MEMO_LEN} bytes")));
     }
+
+    // Derived before any field is moved out of the request.
+    let options = build_options(&request)?;
 
     let name = request.name.unwrap_or_default().trim().to_string();
     if name.len() > MAX_NAME_LEN {
@@ -203,14 +316,30 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
 
     let endpoint = resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?;
 
+    // The SOL option is what older readers understand, so it leads when the
+    // seller accepts it; a token-only invoice leads with its first option.
+    let id = options
+        .iter()
+        .find(|option| option.is_sol())
+        .or_else(|| options.first())
+        .map(|option| option.payment_pda.clone())
+        .filter(|pda| !pda.is_empty())
+        .unwrap_or_else(|| request.payment_pda.clone());
+    let amount_lamports = options
+        .iter()
+        .find(|option| option.is_sol())
+        .map(|option| option.amount)
+        .unwrap_or(0);
+
     Ok(PaymentRecord {
-        id: request.payment_pda.clone(),
+        id: id.clone(),
         status: PaymentStatus::Missing,
-        payment_pda: request.payment_pda,
+        payment_pda: id,
         seller: request.seller,
         seller_user: None,
         reference: request.reference,
-        amount_lamports: request.amount_lamports,
+        amount_lamports,
+        options,
         memo: request.memo,
         name,
         description,
@@ -221,6 +350,115 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         created_at_unix: 0,
         settled_at_unix: 0,
     })
+}
+
+/// Turns the requested currencies into priced options, deriving the invoice
+/// address for each one. Addresses are derived here rather than taken from the
+/// request: the seeds (`seller`, `reference`, currency, amount) are the whole
+/// safety story of a QR code, so the API computes them from the same facts it
+/// validated instead of trusting an address a client sent.
+pub fn build_options(request: &CreatePaymentRequest) -> ApiResult<Vec<PaymentOption>> {
+    let program = program_id()?;
+    let seller = parse_pubkey(&request.seller, "seller")?;
+    let reference = parse_pubkey(&request.reference, "reference")?;
+
+    // No options means an older client: one SOL price, as before.
+    if request.options.is_empty() {
+        let amount = request.amount_lamports;
+        if amount == 0 {
+            return Err(bad("amount_lamports must be greater than 0"));
+        }
+        let (pda, _) = Pubkey::find_program_address(
+            &[
+                PAYMENT_SEED,
+                seller.as_ref(),
+                reference.as_ref(),
+                &amount.to_le_bytes(),
+            ],
+            &program,
+        );
+        return Ok(vec![PaymentOption {
+            currency: SOL_CURRENCY.to_string(),
+            mint: String::new(),
+            decimals: SOL_DECIMALS,
+            amount,
+            payment_pda: pda.to_string(),
+        }]);
+    }
+
+    if request.options.len() > MAX_OPTIONS {
+        return Err(bad(format!(
+            "an invoice can accept at most {MAX_OPTIONS} currencies"
+        )));
+    }
+
+    let mut options: Vec<PaymentOption> = Vec::with_capacity(request.options.len());
+    for requested in &request.options {
+        let currency = requested.currency.trim().to_ascii_lowercase();
+        if requested.amount == 0 {
+            return Err(bad(format!(
+                "the {currency} amount must be greater than 0"
+            )));
+        }
+        if options.iter().any(|option| option.currency == currency) {
+            return Err(bad(format!("{currency} is offered twice")));
+        }
+
+        if currency == SOL_CURRENCY {
+            let (pda, _) = Pubkey::find_program_address(
+                &[
+                    PAYMENT_SEED,
+                    seller.as_ref(),
+                    reference.as_ref(),
+                    &requested.amount.to_le_bytes(),
+                ],
+                &program,
+            );
+            options.push(PaymentOption {
+                currency,
+                mint: String::new(),
+                decimals: SOL_DECIMALS,
+                amount: requested.amount,
+                payment_pda: pda.to_string(),
+            });
+            continue;
+        }
+
+        let mint = mint_for(&currency, &request.cluster).ok_or_else(|| {
+            bad(format!(
+                "{currency} cannot be charged on the {} network",
+                request.cluster
+            ))
+        })?;
+        let (pda, _) = Pubkey::find_program_address(
+            &[
+                TOKEN_PAYMENT_SEED,
+                seller.as_ref(),
+                reference.as_ref(),
+                mint.as_ref(),
+                &requested.amount.to_le_bytes(),
+            ],
+            &program,
+        );
+        options.push(PaymentOption {
+            currency,
+            mint: mint.to_string(),
+            decimals: STABLE_DECIMALS,
+            amount: requested.amount,
+            payment_pda: pda.to_string(),
+        });
+    }
+
+    Ok(options)
+}
+
+/// SOL, USDC and EURC — more than that makes the QR too dense to scan.
+pub const MAX_OPTIONS: usize = 3;
+
+/// `declare_id!` of the program, as a pubkey.
+fn program_id() -> ApiResult<Pubkey> {
+    Pubkey::from_str(PAYVAND_PROGRAM_ID)
+        .map_err(|error| ApiError::Internal(format!("bad program id: {error}")))
 }
 
 /// Reads the payment account straight from the cluster. The handler is
@@ -239,13 +477,28 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
         }
     };
 
-    let Some(payment) = decode_payment(&account.data) else {
+    let Some(record) = record_for(pubkey, &account.data, cluster, endpoint) else {
         return Err(bad(format!(
             "{payment_pda} is not a payvand payment account"
         )));
     };
 
-    Ok(record_from_chain(pubkey, payment, cluster, endpoint))
+    Ok(record)
+}
+
+/// The record for whatever kind of invoice lives at an address — SOL or token.
+/// Anything else (a budget, a stranger's account) is not an invoice.
+fn record_for(
+    pubkey: Pubkey,
+    data: &[u8],
+    cluster: String,
+    endpoint: String,
+) -> Option<PaymentRecord> {
+    if let Some(payment) = decode_payment(data) {
+        return Some(record_from_chain(pubkey, payment, cluster, endpoint));
+    }
+    decode_token_payment(data)
+        .map(|payment| token_record_from_chain(pubkey, payment, cluster, endpoint))
 }
 
 /// Placeholder returned while no payment account is readable for an address —
@@ -259,6 +512,7 @@ fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRec
         seller_user: None,
         reference: String::new(),
         amount_lamports: 0,
+        options: Vec::new(),
         memo: String::new(),
         name: String::new(),
         description: String::new(),
@@ -290,6 +544,15 @@ fn record_from_chain(
         seller_user: None,
         reference: payment.reference.to_string(),
         amount_lamports: payment.amount,
+        // A chain read describes one address, which is one option: the seller
+        // screen knows the rest from the invoice's own code.
+        options: vec![PaymentOption {
+            currency: SOL_CURRENCY.to_string(),
+            mint: String::new(),
+            decimals: SOL_DECIMALS,
+            amount: payment.amount,
+            payment_pda: pubkey.to_string(),
+        }],
         memo: payment.memo,
         name: String::new(),
         description: String::new(),
@@ -352,8 +615,10 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
     Ok(pubkeys
         .iter()
         .zip(accounts)
-        .map(|(pubkey, account)| match account.and_then(|account| decode_payment(&account.data)) {
-            Some(payment) => record_from_chain(*pubkey, payment, cluster.clone(), endpoint.clone()),
+        .map(|(pubkey, account)| match account
+            .and_then(|account| record_for(*pubkey, &account.data, cluster.clone(), endpoint.clone()))
+        {
+            Some(record) => record,
             None => empty_record(*pubkey, cluster.clone(), endpoint.clone()),
         })
         .collect())
@@ -411,13 +676,8 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     let mut payments = Vec::new();
     let mut budgets = Vec::new();
     for (pubkey, account) in accounts {
-        if let Some(payment) = decode_payment(&account.data) {
-            payments.push(record_from_chain(
-                pubkey,
-                payment,
-                cluster.clone(),
-                endpoint.clone(),
-            ));
+        if let Some(record) = record_for(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
+            payments.push(record);
         } else if let Some(budget) = decode_budget(&account.data) {
             budgets.push(budget);
         }
@@ -501,6 +761,82 @@ fn decode_payment(data: &[u8]) -> Option<OnchainPayment> {
         created_at: reader.i64()?,
         settled_at: reader.i64()?,
     })
+}
+
+struct OnchainTokenPayment {
+    seller: Pubkey,
+    reference: Pubkey,
+    mint: Pubkey,
+    amount: u64,
+    memo: String,
+    state: u8,
+    payer: Pubkey,
+    created_at: i64,
+    settled_at: i64,
+}
+
+/// Borsh layout of the `TokenPayment` account: discriminator, then the fields
+/// in declaration order — the mint sits between the reference and the amount.
+fn decode_token_payment(data: &[u8]) -> Option<OnchainTokenPayment> {
+    let mut reader = Reader::new(data);
+
+    if reader.take(8)? != discriminator_for("TokenPayment") {
+        return None;
+    }
+
+    Some(OnchainTokenPayment {
+        seller: reader.pubkey()?,
+        reference: reader.pubkey()?,
+        mint: reader.pubkey()?,
+        amount: reader.u64()?,
+        memo: reader.string()?,
+        state: reader.u8()?,
+        payer: reader.pubkey()?,
+        created_at: reader.i64()?,
+        settled_at: reader.i64()?,
+    })
+}
+
+/// The record for an address whose token invoice decoded successfully.
+fn token_record_from_chain(
+    pubkey: Pubkey,
+    payment: OnchainTokenPayment,
+    cluster: String,
+    endpoint: String,
+) -> PaymentRecord {
+    let currency = currency_for_mint(&payment.mint, &cluster)
+        .unwrap_or("token")
+        .to_string();
+    PaymentRecord {
+        id: pubkey.to_string(),
+        status: if payment.state == 1 {
+            PaymentStatus::Settled
+        } else {
+            PaymentStatus::Pending
+        },
+        payment_pda: pubkey.to_string(),
+        seller: payment.seller.to_string(),
+        seller_user: None,
+        reference: payment.reference.to_string(),
+        // A token invoice charges no SOL; the option below carries the price.
+        amount_lamports: 0,
+        options: vec![PaymentOption {
+            currency,
+            mint: payment.mint.to_string(),
+            decimals: STABLE_DECIMALS,
+            amount: payment.amount,
+            payment_pda: pubkey.to_string(),
+        }],
+        memo: payment.memo,
+        name: String::new(),
+        description: String::new(),
+        discount: None,
+        cluster,
+        endpoint,
+        settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
+        created_at_unix: payment.created_at,
+        settled_at_unix: payment.settled_at,
+    }
 }
 
 /// `sha256("account:<Name>")[..8]`, the discriminator Anchor prefixes to
@@ -588,6 +924,7 @@ mod tests {
             seller: "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J".to_string(),
             reference: "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J".to_string(),
             amount_lamports: 1_000_000,
+            options: Vec::new(),
             memo: "coffee".to_string(),
             name: None,
             description: None,
@@ -723,5 +1060,126 @@ mod tests {
     #[test]
     fn rejects_a_foreign_account() {
         assert!(decode_payment(&[0u8; 100]).is_none());
+    }
+
+    #[test]
+    fn prices_every_currency_the_seller_accepts() {
+        let request = CreatePaymentRequest {
+            amount_lamports: 0,
+            options: vec![
+                CreateOption {
+                    currency: "sol".into(),
+                    amount: 50_000_000,
+                },
+                CreateOption {
+                    currency: "usdc".into(),
+                    amount: 5_000_000,
+                },
+                CreateOption {
+                    currency: "eurc".into(),
+                    amount: 4_500_000,
+                },
+            ],
+            ..sample_request()
+        };
+        let record = create_payment(request).expect("valid request");
+
+        assert_eq!(record.options.len(), 3);
+        assert_eq!(record.amount_lamports, 50_000_000);
+        // SOL leads the payload: that is the shape older readers understand.
+        assert_eq!(record.options[0].currency, "sol");
+        assert_eq!(record.options[0].payment_pda, record.id);
+        // Each currency gets its own address, so paying one cannot settle
+        // another.
+        let mut addresses = record
+            .options
+            .iter()
+            .map(|option| option.payment_pda.clone())
+            .collect::<Vec<_>>();
+        addresses.sort();
+        addresses.dedup();
+        assert_eq!(addresses.len(), 3);
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert_eq!(payload["options"].as_array().unwrap().len(), 3);
+        assert_eq!(payload["options"][1]["currency"], "usdc");
+        assert_eq!(payload["options"][1]["decimals"], 6);
+        assert_eq!(
+            payload["options"][1]["mint"],
+            "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        );
+    }
+
+    #[test]
+    fn a_sol_only_invoice_keeps_the_old_payload() {
+        let record = create_payment(sample_request()).expect("valid request");
+        assert_eq!(record.options.len(), 1);
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert!(payload.get("options").is_none());
+        assert_eq!(payload["amount_lamports"], 1_000_000);
+    }
+
+    #[test]
+    fn rejects_a_currency_twice_and_an_empty_invoice() {
+        let twice = CreatePaymentRequest {
+            amount_lamports: 0,
+            options: vec![
+                CreateOption {
+                    currency: "usdc".into(),
+                    amount: 1,
+                },
+                CreateOption {
+                    currency: "USDC".into(),
+                    amount: 2,
+                },
+            ],
+            ..sample_request()
+        };
+        assert!(create_payment(twice).is_err());
+
+        let nothing = CreatePaymentRequest {
+            amount_lamports: 0,
+            options: vec![],
+            ..sample_request()
+        };
+        assert!(create_payment(nothing).is_err());
+    }
+
+    #[test]
+    fn rejects_a_token_that_has_no_mint_on_this_cluster() {
+        let request = CreatePaymentRequest {
+            amount_lamports: 0,
+            options: vec![CreateOption {
+                currency: "dai".into(),
+                amount: 1_000_000,
+            }],
+            ..sample_request()
+        };
+        assert!(create_payment(request).is_err());
+    }
+
+    #[test]
+    fn decodes_a_token_payment_account() {
+        let mut data = discriminator_for("TokenPayment").to_vec();
+        data.extend_from_slice(&[7u8; 32]); // seller
+        data.extend_from_slice(&[9u8; 32]); // reference
+        data.extend_from_slice(&[3u8; 32]); // mint
+        data.extend_from_slice(&42u64.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(b"hi");
+        data.push(1); // settled
+        data.extend_from_slice(&[5u8; 32]); // payer
+        data.extend_from_slice(&100i64.to_le_bytes());
+        data.extend_from_slice(&200i64.to_le_bytes());
+
+        let payment = decode_token_payment(&data).expect("decodes");
+        assert_eq!(payment.amount, 42);
+        assert_eq!(payment.state, 1);
+        assert_eq!(payment.settled_at, 200);
+
+        // A SOL invoice must not decode as a token invoice and vice versa.
+        assert!(decode_payment(&data).is_none());
     }
 }

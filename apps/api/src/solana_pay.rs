@@ -198,7 +198,11 @@ pub fn decode_invoice(token: &str) -> ApiResult<Invoice> {
         return Err(bad("This payment code version is not supported."));
     }
     if invoice.amount_lamports == 0 {
-        return Err(bad("This payment code has no amount."));
+        // A token invoice has no lamport price: the wallet transaction this
+        // route builds is a SOL transfer, so the buyer pays it on the page.
+        return Err(bad(
+            "This invoice is priced in a token. Open the payment page to pay it.",
+        ));
     }
     if invoice.memo.len() > MAX_MEMO_LEN {
         return Err(bad("This payment code has an overlong memo."));

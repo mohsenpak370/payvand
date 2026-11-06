@@ -769,6 +769,7 @@ mod tests {
             seller_user: None,
             reference: "Reference111".into(),
             amount_lamports: 1_000_000,
+            options: Vec::new(),
             memo: format!("memo for {id}"),
             name: String::new(),
             description: String::new(),

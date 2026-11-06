@@ -23,6 +23,8 @@ custom-panic = []
 # `init-if-needed` lets the buyer's settle transaction create the invoice
 # account itself, so opening a payment code never requires a seller signature.
 anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
+# Token payments: the SPL transfer CPIs and the mint/token-account checks.
+anchor-spl = { version = "1.1.2", features = ["token", "idl-build"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
