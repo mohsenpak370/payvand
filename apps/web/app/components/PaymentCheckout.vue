@@ -74,13 +74,12 @@ const priceLabel = computed(() =>
 )
 
 /**
- * What the charge is worth in fiat. A stablecoin is worth one unit of its own
- * money, so only SOL needs a rate.
+ * What the charge is worth in fiat. Only SOL has a price to convert: a
+ * stablecoin is already denominated in dollars or euros, so an estimate beside
+ * "5 USDC" would just repeat the same number in brackets.
  */
 const fiatPrice = computed(() => {
-  const option = selected.value
-  if (option.currency === 'usdc') return `$${(payableAmount.value / 1_000_000).toFixed(2)}`
-  if (option.currency === 'eurc') return `€${(payableAmount.value / 1_000_000).toFixed(2)}`
+  if (selected.value.currency !== 'sol') return null
   return fiatFromLamports(payableLamports.value, rates.value, priceCurrency.value)
 })
 
@@ -506,9 +505,11 @@ useSeoMeta({
               />
             </div>
 
+            <!-- The badge is the text and Remove is the action: on a phone the
+                 action drops below it rather than squeezing onto the same row. -->
             <div
               v-if="discount && !settled"
-              class="mt-2 flex flex-wrap items-center justify-center gap-2 print:hidden"
+              class="mt-2 flex flex-col items-center gap-2 print:hidden sm:flex-row sm:flex-wrap sm:justify-center"
             >
               <UBadge
                 color="success"
