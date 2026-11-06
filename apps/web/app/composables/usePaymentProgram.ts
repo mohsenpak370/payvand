@@ -17,6 +17,49 @@ import {
 import idl from '~/assets/payvand.idl.json'
 
 const PAYMENT_SEED = new TextEncoder().encode('payment')
+/** Token invoices live under their own prefix, with the mint as a seed. */
+const TOKEN_PAYMENT_SEED = new TextEncoder().encode('token-payment')
+
+/** Legacy SPL token program — Circle's stablecoins use it. */
+export const TOKEN_PROGRAM_ID = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+/** The program that derives token accounts from an owner and a mint. */
+export const ASSOCIATED_TOKEN_PROGRAM_ID = address(
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+)
+
+/**
+ * Circle's published mints. Stablecoins are worth one unit of their fiat, so
+ * a price in them needs no exchange rate — only the mint to send it to.
+ */
+const CURRENCY_MINTS: Record<'usdc' | 'eurc', { mainnet: string, devnet: string }> = {
+  usdc: {
+    mainnet: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    devnet: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+  },
+  eurc: {
+    // Circle lists one EURC address for both clusters.
+    mainnet: 'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr',
+    devnet: 'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr'
+  }
+}
+
+/** The mint a stablecoin uses on a cluster, or null when it has none there. */
+export function mintForCurrency(
+  currency: 'usdc' | 'eurc',
+  cluster: string
+): Address | null {
+  const entry = CURRENCY_MINTS[currency]
+  const value = /^mainnet/.test(cluster) ? entry.mainnet : entry.devnet
+  return value ? address(value) : null
+}
+
+/** The currencies a seller can offer on a cluster, in display order. */
+export function currenciesForCluster(cluster: string): ('sol' | 'usdc' | 'eurc')[] {
+  const offered: ('sol' | 'usdc' | 'eurc')[] = ['sol']
+  if (mintForCurrency('usdc', cluster)) offered.push('usdc')
+  if (mintForCurrency('eurc', cluster)) offered.push('eurc')
+  return offered
+}
 
 /** The SPL Memo program — present on every Solana cluster. */
 export const MEMO_PROGRAM_ID = address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
@@ -150,6 +193,49 @@ export async function derivePaymentPda(
   const [pda] = await getProgramDerivedAddress({
     programAddress: PAYVAND_PROGRAM_ID,
     seeds: [PAYMENT_SEED, encoder.encode(seller), encoder.encode(reference), amountBytes]
+  })
+  return pda
+}
+
+/**
+ * `seeds = [b"token-payment", seller, reference, mint, amount_le]`. The mint is
+ * in the seeds, so a USDC price and a SOL price can never settle each other
+ * even when they share a reference and an amount.
+ */
+export async function deriveTokenPaymentPda(
+  seller: Address,
+  reference: Address,
+  mint: Address,
+  amount: number | bigint
+): Promise<Address> {
+  const encoder = getAddressEncoder()
+  const amountBytes = new Uint8Array(8)
+  new DataView(amountBytes.buffer).setBigUint64(0, BigInt(amount), true)
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PAYVAND_PROGRAM_ID,
+    seeds: [
+      TOKEN_PAYMENT_SEED,
+      encoder.encode(seller),
+      encoder.encode(reference),
+      encoder.encode(mint),
+      amountBytes
+    ]
+  })
+  return pda
+}
+
+/**
+ * The address of `owner`'s token account for `mint`. The program creates it
+ * when it does not exist yet, so this is only ever needed to name it.
+ */
+export async function deriveAssociatedTokenAddress(
+  owner: Address,
+  mint: Address
+): Promise<Address> {
+  const encoder = getAddressEncoder()
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: ASSOCIATED_TOKEN_PROGRAM_ID,
+    seeds: [encoder.encode(owner), encoder.encode(TOKEN_PROGRAM_ID), encoder.encode(mint)]
   })
   return pda
 }

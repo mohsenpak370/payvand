@@ -2,6 +2,25 @@ import type { FiatCurrency } from './useFiat'
 
 export type PaymentStatus = 'pending' | 'settled' | 'missing'
 
+/** The currencies an invoice can be priced in. */
+export type SupportedCurrency = 'sol' | 'usdc' | 'eurc'
+
+/**
+ * One way to pay an invoice: a currency, its price, and the address that price
+ * is bound to. A seller who takes SOL and USDC puts two of these on one code,
+ * and the buyer picks on their own screen.
+ */
+export interface PaymentOption {
+  currency: SupportedCurrency
+  /** The token mint; empty for native SOL. */
+  mint: string
+  /** 9 for SOL, 6 for the stablecoins. */
+  decimals: number
+  /** Price in the currency's base units. */
+  amount: number
+  payment_pda: string
+}
+
 export interface PaymentRecord {
   id: string
   status: PaymentStatus
@@ -9,6 +28,8 @@ export interface PaymentRecord {
   seller: string
   reference: string
   amount_lamports: number
+  /** Every currency this invoice accepts; one entry on a chain read. */
+  options?: PaymentOption[]
   memo: string
   /** Empty on records read back from chain, which stores neither field. */
   name: string
@@ -24,10 +45,10 @@ export interface PaymentRecord {
 }
 
 export interface CreatePaymentInput {
-  payment_pda: string
   seller: string
   reference: string
-  amount_lamports: number
+  /** The currencies the seller accepts, each with its own price. */
+  options: { currency: SupportedCurrency, amount: number }[]
   memo: string
   name?: string
   description?: string
@@ -58,6 +79,8 @@ export interface PaymentQrPayload {
   seller: string
   reference: string
   amount_lamports: number
+  /** Every currency this invoice accepts. Absent on codes made before it. */
+  options?: PaymentOption[]
   memo: string
   name?: string
   description?: string
@@ -204,6 +227,43 @@ export function parseQrPayload(raw: string): PaymentQrPayload {
     throw new Error('That is not a Payvand payment code.')
   }
   return parsed
+}
+
+/**
+ * Every way an invoice can be paid. A code made before currencies existed
+ * carries one SOL price and one address, so it reads as a single option and
+ * everything downstream only ever deals with options.
+ */
+export function paymentOptions(payload: PaymentQrPayload): PaymentOption[] {
+  if (payload.options?.length) return payload.options
+  return [
+    {
+      currency: 'sol',
+      mint: '',
+      decimals: 9,
+      amount: payload.amount_lamports,
+      payment_pda: payload.id
+    }
+  ]
+}
+
+/** `0.05`, `5.00` — a token amount with its own decimals, no trailing zeros. */
+export function formatTokenAmount(amount: number, decimals: number): string {
+  const whole = Math.floor(amount / 10 ** decimals)
+  const fraction = String(amount % 10 ** decimals).padStart(decimals, '0').replace(/0+$/, '')
+  return fraction ? `${whole}.${fraction}` : String(whole)
+}
+
+/** Nine for SOL, six for the stablecoins — the decimals each one counts in. */
+export function currencyDecimals(currency: SupportedCurrency): number {
+  return currency === 'sol' ? 9 : 6
+}
+
+/** Short label for a currency, as the seller and buyer both read it. */
+export function currencySymbol(currency: SupportedCurrency): string {
+  if (currency === 'usdc') return 'USDC'
+  if (currency === 'eurc') return 'EURC'
+  return 'SOL'
 }
 
 export function lamportsToSol(lamports: number): string {

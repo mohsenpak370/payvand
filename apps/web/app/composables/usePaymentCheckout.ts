@@ -1,6 +1,19 @@
-import { address } from '@vue-solana/nuxt/kit'
-import type { DiscountPreview, PaymentQrPayload, PaymentRecord } from './usePaymentApi'
-import { peekSessionSigner, type BudgetState } from './useBudget'
+import { address, type Address } from '@vue-solana/nuxt/kit'
+import type {
+  DiscountPreview,
+  PaymentOption,
+  PaymentQrPayload,
+  PaymentRecord,
+  SupportedCurrency
+} from './usePaymentApi'
+import { discountedLamports, paymentOptions } from './usePaymentApi'
+import {
+  deriveAssociatedTokenAddress,
+  derivePaymentPda,
+  deriveTokenPaymentPda,
+  mintForCurrency
+} from './usePaymentProgram'
+import { peekSessionSigner, type BudgetState, type TokenBudgetState } from './useBudget'
 
 /**
  * Paying from the allowance is the only path that needs no wallet at all, so
@@ -63,21 +76,44 @@ export function usePaymentCheckout() {
   const discountError = ref('')
   const activePda = ref<string | null>(null)
 
+  // The seller decides which currencies an invoice takes; the buyer only
+  // picks among them. `selected` is the one being priced and paid.
+  const selectedCurrency = ref<SupportedCurrency>('sol')
+  const options = computed<PaymentOption[]>(() =>
+    payload.value ? paymentOptions(payload.value) : []
+  )
+  const selected = computed<PaymentOption>(() => {
+    return (
+      options.value.find(option => option.currency === selectedCurrency.value)
+      ?? options.value[0]
+      ?? { currency: 'sol', mint: '', decimals: 9, amount: 0, payment_pda: '' }
+    )
+  })
+  /** True when the seller offered more than one way to pay. */
+  const offersChoice = computed(() => options.value.length > 1)
+
   // The allowance path is three separate things agreeing: the connected wallet
   // says *who* pays, the budget says *how much* is allowed, and the session key
   // stored on this device says *how* to sign without a popup. Missing any one
   // of them is a different screen, not a generic error.
   const budgetState = ref<BudgetState | null>(null)
+  const tokenBudgetState = ref<TokenBudgetState | null>(null)
   const budgetObstacle = ref<string | null>(null)
   const sessionReady = ref(false)
 
   const autoSeconds = ref(0)
   const autoAttempted = ref(false)
 
-  const payableLamports = computed(
-    () => discount.value?.discounted_lamports ?? payload.value?.amount_lamports ?? 0
+  /** What the chosen currency is charged, after any discount, in base units. */
+  const payableAmount = computed(() =>
+    discount.value
+      ? discountedLamports(selected.value.amount, discount.value.percent_off)
+      : selected.value.amount
   )
-  const priceLamports = computed(() => payload.value?.amount_lamports ?? 0)
+  const priceAmount = computed(() => selected.value.amount)
+  // Kept for the SOL wording elsewhere on the page: an invoice priced in SOL.
+  const payableLamports = computed(() => (selected.value.currency === 'sol' ? payableAmount.value : 0))
+  const priceLamports = computed(() => (selected.value.currency === 'sol' ? priceAmount.value : 0))
   const settled = computed(() => record.value?.status === 'settled')
 
   // Name and description ride in the code itself: the chain stores only the
@@ -101,9 +137,14 @@ export function usePaymentCheckout() {
       && (record.value?.status === 'pending' || record.value?.status === 'missing')
   )
 
+  /** The allowance that would pay this invoice, in whichever currency it is. */
+  const activeBudget = computed(() =>
+    selected.value.currency === 'sol' ? budgetState.value : tokenBudgetState.value
+  )
+
   /** True when this browser can settle the invoice with no wallet popup. */
   const canPaySilently = computed(
-    () => Boolean(budgetState.value) && sessionReady.value && !budgetObstacle.value
+    () => Boolean(activeBudget.value) && sessionReady.value && !budgetObstacle.value
   )
 
   const stage = computed<CheckoutStage>(() => {
@@ -115,17 +156,37 @@ export function usePaymentCheckout() {
     if (canPaySilently.value) return 'silent'
     // A budget this device cannot sign for is a one-time setup step, not a
     // reason to fall back to a popup on every payment.
-    if (budgetState.value && !sessionReady.value) return 'setup'
+    if (activeBudget.value && !sessionReady.value) return 'setup'
     return 'wallet'
   })
 
   async function refreshBudget() {
     budgetState.value = null
+    tokenBudgetState.value = null
     budgetObstacle.value = null
     sessionReady.value = false
     const payer = publicKey.value
     if (!payer) return
+
+    const option = selected.value
     try {
+      const mint = option.currency === 'sol'
+        ? null
+        : mintForCurrency(option.currency as 'usdc' | 'eurc', payload.value?.cluster ?? 'devnet')
+      if (option.currency !== 'sol' && !mint) return
+
+      if (mint) {
+        const state = await budget.loadTokenBudget(payer, mint)
+        tokenBudgetState.value = state
+        if (!state) return
+        const session = await peekSessionSigner(state.buyer)
+        sessionReady.value = Boolean(session && session.address === state.sessionKey)
+        budgetObstacle.value = sessionReady.value
+          ? await budget.tokenBudgetObstacle(state, payableAmount.value)
+          : null
+        return
+      }
+
       const state = await budget.loadBudget(payer)
       budgetState.value = state
       if (!state) return
@@ -134,11 +195,36 @@ export function usePaymentCheckout() {
       // Only ask the budget whether it covers this amount once we know it can
       // sign at all — otherwise every amount reports the same missing key.
       budgetObstacle.value = sessionReady.value
-        ? await budget.silentPaymentObstacle(state, payableLamports.value)
+        ? await budget.silentPaymentObstacle(state, payableAmount.value)
         : null
     } catch {
       // A flaky RPC read must never block paying — the wallet path still works.
     }
+  }
+
+  /** The address the chosen currency, at the price shown, is watched on. */
+  async function addressFor(option: PaymentOption, amount: number): Promise<Address> {
+    const seller = address(payload.value?.seller ?? '')
+    const reference = address(payload.value?.reference ?? '')
+    if (option.currency === 'sol') {
+      return await derivePaymentPda(seller, reference, amount)
+    }
+    return await deriveTokenPaymentPda(seller, reference, address(option.mint), amount)
+  }
+
+  /**
+   * Switching currency moves the invoice to a different on-chain address, so
+   * the watch address, the allowance and the countdown all follow it.
+   */
+  async function selectCurrency(currency: SupportedCurrency) {
+    if (currency === selectedCurrency.value) return
+    cancelAutoPay()
+    selectedCurrency.value = currency
+    const option = selected.value
+    if (option) {
+      activePda.value = (await addressFor(option, payableAmount.value)).toString()
+    }
+    await refreshBudget()
   }
 
   async function refreshRecord() {
@@ -194,7 +280,7 @@ export function usePaymentCheckout() {
 
     autoAttempted.value = true
     try {
-      sessionStorage.setItem(autoPayKey(current.id), '1')
+      sessionStorage.setItem(autoPayKey(activePda.value ?? current.id), '1')
     } catch {
       // Private mode: the in-memory flag still stops a double send.
     }
@@ -218,23 +304,41 @@ export function usePaymentCheckout() {
     try {
       const parsed = parseQrPayload(source)
 
-      // The program binds the price into the address, so deriving it here and
-      // comparing proves the details were not tampered with.
-      const derived = await derivePaymentPda(
-        address(parsed.seller),
-        address(parsed.reference),
-        parsed.amount_lamports
-      )
-      if (derived !== parsed.id) {
-        throw new Error('These details do not match the code. Ask the seller for a new link.')
-      }
-
       // The QR must re-encode the invoice, not the link it arrived on.
       code.value = unwrapQrText(source)
       payload.value = parsed
-      activePda.value = parsed.id
+
+      // Every currency is checked against its own seeds: the program binds
+      // the token and the price into the address, so details edited apart
+      // cannot derive the address the code names.
+      const offered = paymentOptions(parsed)
+      if (!offered.length) throw new Error('This payment code has no price.')
+      for (const option of offered) {
+        const derived = option.currency === 'sol'
+          ? await derivePaymentPda(
+              address(parsed.seller),
+              address(parsed.reference),
+              option.amount
+            )
+          : await deriveTokenPaymentPda(
+              address(parsed.seller),
+              address(parsed.reference),
+              address(option.mint),
+              option.amount
+            )
+        if (derived !== option.payment_pda) {
+          throw new Error('These details do not match the code. Ask the seller for a new link.')
+        }
+      }
+
+      // SOL leads when the seller takes it, so the first price a buyer sees is
+      // the one most of them can pay.
+      selectedCurrency.value = offered.some(option => option.currency === 'sol')
+        ? 'sol'
+        : offered[0]!.currency
+      activePda.value = selected.value.payment_pda
       autoAttempted.value = sessionStorage.getItem(autoPayKey(parsed.id)) === '1'
-      record.value = await api.getPayment(parsed.id, {
+      record.value = await api.getPayment(activePda.value, {
         cluster: parsed.cluster,
         endpoint: parsed.endpoint
       })
@@ -270,29 +374,64 @@ export function usePaymentCheckout() {
       // Full price unless a code was applied. `load()` already proved the code
       // matches its details; here the amount only derives the address that gets
       // paid, so what is paid is exactly what was shown.
-      const amount = payableLamports.value
-      const payment = await derivePaymentPda(seller, reference, amount)
+      const option = selected.value
+      const amount = payableAmount.value
+      const memo = current.memo || ''
+      const payment = await addressFor(option, amount)
 
       let sent: string
-      if (canPaySilently.value) {
-        sent = await budget.sendSilentPayment(payer, {
-          payment,
-          seller,
-          reference,
-          amount,
-          memo: current.memo || ''
-        })
+      if (option.currency === 'sol') {
+        if (canPaySilently.value) {
+          sent = await budget.sendSilentPayment(payer, {
+            payment,
+            seller,
+            reference,
+            amount,
+            memo
+          })
+        } else {
+          const instruction = buildInstruction(
+            'settle_payment',
+            { amount, memo },
+            { payer, payment, seller, reference }
+          )
+          const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })
+          sent = await execute(wire, {
+            confirm: true,
+            confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
+          })
+        }
       } else {
-        const instruction = buildInstruction(
-          'settle_payment',
-          { amount, memo: current.memo || '' },
-          { payer, payment, seller, reference }
-        )
-        const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })
-        sent = await execute(wire, {
-          confirm: true,
-          confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
-        })
+        const mint = address(option.mint)
+        if (canPaySilently.value) {
+          sent = await budget.sendSilentTokenPayment(payer, {
+            payment,
+            seller,
+            reference,
+            mint,
+            amount,
+            memo
+          })
+        } else {
+          const instruction = buildInstruction(
+            'settle_token_payment',
+            { amount, memo },
+            {
+              payer,
+              payment,
+              seller,
+              seller_token_account: await deriveAssociatedTokenAddress(seller, mint),
+              payer_token_account: await deriveAssociatedTokenAddress(payer, mint),
+              mint,
+              reference
+            }
+          )
+          const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })
+          sent = await execute(wire, {
+            confirm: true,
+            confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
+          })
+        }
       }
       signature.value = sent
 
@@ -321,16 +460,14 @@ export function usePaymentCheckout() {
       const preview = await api.validateDiscount({
         code: next,
         seller_user: current.seller_user,
-        price_lamports: current.amount_lamports
+        // The API owns the percentage; the price it applies to is the one the
+        // buyer is looking at, in whichever currency that is.
+        price_lamports: priceAmount.value
       })
       discount.value = preview
       discountInput.value = ''
       // The discounted amount derives its own address — watch and pay that.
-      activePda.value = await derivePaymentPda(
-        address(current.seller),
-        address(current.reference),
-        preview.discounted_lamports
-      )
+      activePda.value = (await addressFor(selected.value, payableAmount.value)).toString()
       await refreshBudget()
     } catch (cause) {
       discountError.value = apiErrorMessage(cause, 'That discount code could not be applied.')
@@ -343,7 +480,7 @@ export function usePaymentCheckout() {
     discount.value = null
     discountInput.value = ''
     discountError.value = ''
-    activePda.value = payload.value?.id ?? null
+    activePda.value = selected.value.payment_pda || null
     void refreshBudget()
   }
 
@@ -365,6 +502,15 @@ export function usePaymentCheckout() {
   return {
     payload,
     code,
+    options,
+    selected,
+    selectedCurrency,
+    selectCurrency,
+    offersChoice,
+    payableAmount,
+    priceAmount,
+    activeBudget,
+    tokenBudgetState,
     record,
     loading,
     error,

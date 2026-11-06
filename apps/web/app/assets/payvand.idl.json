@@ -121,6 +121,155 @@
       ]
     },
     {
+      "name": "close_token_budget",
+      "docs": [
+        "Drain the token vault back to the buyer and retire the budget. One",
+        "wallet signature; every token and lamport comes back."
+      ],
+      "discriminator": [
+        169,
+        17,
+        44,
+        254,
+        33,
+        103,
+        4,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              },
+              {
+                "kind": "account",
+                "path": "budget.mint",
+                "account": "TokenBudget"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "buyer_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_token_payment",
+      "docs": [
+        "Seller reclaims the rent of a settled token invoice. Mirrors",
+        "`close_payment`, and is the only signature a seller ever makes."
+      ],
+      "discriminator": [
+        210,
+        114,
+        178,
+        74,
+        238,
+        144,
+        2,
+        27
+      ],
+      "accounts": [
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment.seller",
+                "account": "TokenPayment"
+              },
+              {
+                "kind": "account",
+                "path": "payment.reference",
+                "account": "TokenPayment"
+              },
+              {
+                "kind": "account",
+                "path": "payment.mint",
+                "account": "TokenPayment"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "open_budget",
       "docs": [
         "Buyer funds this month's spending budget and registers a session key.",
@@ -176,6 +325,194 @@
             "the only key allowed to spend from the budget afterwards."
           ],
           "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "monthly_limit",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_token_budget",
+      "docs": [
+        "Buyer opens (or tops up) this month's budget for one token and",
+        "registers a session key for it. One wallet signature per token; after",
+        "that the session key settles token invoices from the vault without",
+        "touching the wallet again."
+      ],
+      "discriminator": [
+        63,
+        156,
+        226,
+        194,
+        14,
+        151,
+        157,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "buyer_token_account",
+          "docs": [
+            "Where the budget's tokens come from — the buyer's own account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The pot itself: a token account owned by the budget PDA, so only this",
+            "program can ever move what is inside it."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "budget"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "session_key",
+          "docs": [
+            "the only key allowed to spend from this budget afterwards."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "system_program",
@@ -308,6 +645,238 @@
       ]
     },
     {
+      "name": "pay_from_token_budget",
+      "docs": [
+        "Silent token payment: the session key settles a token invoice out of",
+        "the buyer's vault, with no wallet popup. The monthly cap, the vault",
+        "balance and the amount in the invoice seeds are all enforced here, and",
+        "only the session key registered at open time may spend."
+      ],
+      "discriminator": [
+        126,
+        56,
+        157,
+        52,
+        84,
+        68,
+        172,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "session_key",
+          "docs": [
+            "Session key: fee payer and invoice-rent payer (refunded from the",
+            "budget's float in this same transaction). Never the buyer's wallet."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "budget",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  98,
+                  117,
+                  100,
+                  103,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "budget.buyer",
+                "account": "TokenBudget"
+              },
+              {
+                "kind": "account",
+                "path": "budget.mint",
+                "account": "TokenBudget"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "seller"
+        },
+        {
+          "name": "seller_token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "reference"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "reference"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "memo",
+          "type": "string"
+        }
+      ]
+    },
+    {
       "name": "settle_payment",
       "docs": [
         "Buyer pays an invoice. The invoice account is created (and funded by",
@@ -399,6 +968,217 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "settle_token_payment",
+      "docs": [
+        "Buyer pays a token-denominated invoice straight from their wallet.",
+        "",
+        "Same guarantee as `settle_payment`: the amount rides in the PDA seeds,",
+        "so an invoice can only ever be settled for the exact price its QR",
+        "shows. The mint is in the seeds too, so a USDC invoice and a SOL",
+        "invoice that happen to share a reference and a price are different",
+        "accounts and cannot pay for each other."
+      ],
+      "discriminator": [
+        236,
+        176,
+        239,
+        27,
+        32,
+        26,
+        185,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays the invoice rent, the seller's token account rent if it does not",
+            "exist yet, and the fee. The tokens themselves come out of",
+            "`payer_token_account`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "payment",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "reference"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "amount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller",
+          "docs": [
+            "through its own associated token account, checked below."
+          ]
+        },
+        {
+          "name": "seller_token_account",
+          "docs": [
+            "Created on the fly when the seller has never held this token, so a",
+            "buyer is never blocked by the recipient's account setup."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "payer_token_account",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "reference",
+          "docs": [
+            "and an address watchers can look up."
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "memo",
+          "type": "string"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -426,6 +1206,32 @@
         88,
         4,
         148
+      ]
+    },
+    {
+      "name": "TokenBudget",
+      "discriminator": [
+        123,
+        59,
+        46,
+        153,
+        135,
+        46,
+        24,
+        234
+      ]
+    },
+    {
+      "name": "TokenPayment",
+      "discriminator": [
+        133,
+        208,
+        47,
+        125,
+        80,
+        200,
+        243,
+        167
       ]
     }
   ],
@@ -474,6 +1280,11 @@
       "code": 6008,
       "name": "InvalidSessionKey",
       "msg": "The session key is not the one registered for this budget"
+    },
+    {
+      "code": 6009,
+      "name": "MintMismatch",
+      "msg": "The token does not match this budget"
     }
   ],
   "types": [
@@ -603,6 +1414,139 @@
           },
           {
             "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenBudget",
+      "docs": [
+        "A buyer's monthly spending pot for one token: the vault holds the tokens",
+        "and this account holds the rules the session key's signatures obey."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "docs": [
+              "Main wallet — funds, refills and closes the pot."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "session_key",
+            "docs": [
+              "App-generated key allowed to spend from the vault without the wallet."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "The token this budget is denominated in."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "monthly_limit",
+            "docs": [
+              "Ceiling for one calendar month, in the mint's base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "spent",
+            "docs": [
+              "Spent so far in `month_index`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "month_index",
+            "docs": [
+              "`year * 12 + month` that `spent` belongs to."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenPayment",
+      "docs": [
+        "An invoice paid in an SPL token. A separate account type from `Payment`",
+        "because it records the mint, and keeping it separate leaves every SOL",
+        "invoice already on chain readable."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "seller",
+            "docs": [
+              "Who is being paid."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reference",
+            "docs": [
+              "Free-form lookup key chosen when the invoice was opened."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "The token this invoice is priced in."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Price in the mint's base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "memo",
+            "docs": [
+              "Human readable invoice note."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "PaymentState"
+              }
+            }
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Set once the invoice has been settled."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

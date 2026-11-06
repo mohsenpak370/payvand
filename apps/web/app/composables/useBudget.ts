@@ -16,11 +16,14 @@ import {
 import {
   PAYVAND_PROGRAM_ID,
   buildInstruction,
+  deriveAssociatedTokenAddress,
   describeProgramErrorCode
 } from './usePaymentProgram'
 import type { compileWireTransaction } from './usePaymentProgram'
 
 const BUDGET_SEED = new TextEncoder().encode('budget')
+/** A token budget per buyer per mint, under its own seed prefix. */
+const TOKEN_BUDGET_SEED = new TextEncoder().encode('token-budget')
 const SESSION_STORAGE_PREFIX = 'payvand.session.v1.'
 
 /** Mirrors `BUDGET_SPACE` in the program: 8 + 32 + 32 + 8 + 8 + 8 + 1. */
@@ -32,11 +35,31 @@ const PAYMENT_SPACE = 230
  * session key so its silent transactions can pay their own fees.
  */
 const SESSION_FEE_FLOAT = 10_000_000
+/** Mirrors `TOKEN_BUDGET_SPACE`: 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1. */
+const TOKEN_BUDGET_SPACE = 129
+/** Lamports a token budget keeps to refund the invoice rent it advances. */
+const TOKEN_BUDGET_FEE_FLOAT = 10_000_000
 /**
  * Network fee for one signature (5000 lamports), plus a small margin for
  * price movement — what `open_budget` costs above the lamports it moves.
  */
 const TRANSACTION_FEE_LAMPORTS = 10_000
+
+/** A buyer's monthly pot for one token, and what its vault holds. */
+export interface TokenBudgetState {
+  pda: Address
+  buyer: Address
+  sessionKey: Address
+  mint: Address
+  /** Ceiling for the month, in the mint's base units. */
+  monthlyLimit: number
+  spent: number
+  monthIndex: number
+  /** Lamports on the budget account (rent + the refund float). */
+  lamports: number
+  /** Tokens sitting in the vault right now. */
+  amount: number
+}
 
 export interface BudgetState {
   /** The buyer's budget PDA. */
@@ -75,6 +98,16 @@ export async function deriveBudgetPda(buyer: Address): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({
     programAddress: PAYVAND_PROGRAM_ID,
     seeds: [BUDGET_SEED, getAddressEncoder().encode(buyer)]
+  })
+  return pda
+}
+
+/** `["token-budget", buyer, mint]` — one allowance per buyer per token. */
+export async function deriveTokenBudgetPda(buyer: Address, mint: Address): Promise<Address> {
+  const encoder = getAddressEncoder()
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PAYVAND_PROGRAM_ID,
+    seeds: [TOKEN_BUDGET_SEED, encoder.encode(buyer), encoder.encode(mint)]
   })
   return pda
 }
@@ -305,6 +338,17 @@ export function useBudget() {
       }
     )
 
+    return await submitWithSession(session, instruction)
+  }
+
+  /**
+   * Signs one instruction with the session key and waits for it to land. No
+   * wallet is involved, so no popup ever appears.
+   */
+  async function submitWithSession(
+    session: KeyPairSigner,
+    instruction: ReturnType<typeof buildInstruction>
+  ): Promise<string> {
     const { value: lifetime } = await client.rpc.getLatestBlockhash().send()
     const message = setTransactionMessageLifetimeUsingBlockhash(
       lifetime,
@@ -335,6 +379,132 @@ export function useBudget() {
     throw new Error('The payment was sent but did not confirm in time — watch the invoice status.')
   }
 
+  // ---- token allowances ---------------------------------------------------
+
+  /** The token account a budget PDA owns for one mint: where its tokens sit. */
+  async function tokenVault(budgetPda: Address, mint: Address): Promise<Address> {
+    return await deriveAssociatedTokenAddress(budgetPda, mint)
+  }
+
+  /** `null` when the buyer has no allowance for this token yet. */
+  async function loadTokenBudget(
+    buyer: Address,
+    mint: Address
+  ): Promise<TokenBudgetState | null> {
+    const pda = await deriveTokenBudgetPda(buyer, mint)
+    const info = await client.rpc
+      .getAccountInfo(pda, { commitment: 'confirmed', encoding: 'base64' })
+      .send()
+    if (!info.value || !Array.isArray(info.value.data)) return null
+
+    const bytes = Uint8Array.from(atob(info.value.data[0]), c => c.charCodeAt(0))
+    const expected = await accountDiscriminator('TokenBudget')
+    if (!expected.every((byte, i) => bytes[i] === byte)) {
+      throw new Error('That address is not a token budget account.')
+    }
+
+    // No vault yet simply means nobody has funded it for this token.
+    const amount = await client.rpc
+      .getTokenAccountBalance(await tokenVault(pda, mint), { commitment: 'confirmed' })
+      .send()
+      .then(balance => Number(balance.value.amount))
+      .catch(() => 0)
+
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return {
+      pda,
+      buyer: getAddressDecoder().decode(bytes.subarray(8, 40)),
+      sessionKey: getAddressDecoder().decode(bytes.subarray(40, 72)),
+      mint: getAddressDecoder().decode(bytes.subarray(72, 104)),
+      monthlyLimit: Number(view.getBigUint64(104, true)),
+      spent: Number(view.getBigUint64(112, true)),
+      monthIndex: Number(view.getBigUint64(120, true)),
+      lamports: Number(info.value.lamports),
+      amount
+    }
+  }
+
+  /** Tokens still spendable this month (a new month resets the counter). */
+  function tokenRemainingThisMonth(budget: TokenBudgetState): number {
+    const spent = budget.monthIndex === currentMonthIndex() ? budget.spent : 0
+    return Math.max(0, budget.monthlyLimit - spent)
+  }
+
+  /** Why a token invoice cannot ride this allowance, or `null` when it can. */
+  async function tokenBudgetObstacle(
+    budget: TokenBudgetState,
+    amount: number
+  ): Promise<string | null> {
+    const session = await peekSessionSigner(budget.buyer)
+    if (!session || session.address !== budget.sessionKey) {
+      return 'This device has no session key for your budget — open it once on this device.'
+    }
+    if (amount > tokenRemainingThisMonth(budget)) {
+      return 'The monthly limit for this token is used up.'
+    }
+    if (budget.amount < amount) {
+      return 'The allowance does not hold enough of this token — top it up from the budget page.'
+    }
+    return null
+  }
+
+  /** Settle a token invoice from the allowance, with no wallet popup. */
+  async function sendSilentTokenPayment(
+    buyer: Address,
+    params: {
+      payment: Address
+      seller: Address
+      reference: Address
+      mint: Address
+      amount: number
+      memo: string
+    }
+  ): Promise<string> {
+    const session = await peekSessionSigner(buyer)
+    if (!session) {
+      throw new Error('No session key on this device — open your budget here first.')
+    }
+
+    const budgetPda = await deriveTokenBudgetPda(buyer, params.mint)
+    const instruction = buildInstruction(
+      'pay_from_token_budget',
+      { amount: params.amount, memo: params.memo },
+      {
+        session_key: session.address,
+        budget: budgetPda,
+        vault: await tokenVault(budgetPda, params.mint),
+        mint: params.mint,
+        seller: params.seller,
+        seller_token_account: await deriveAssociatedTokenAddress(params.seller, params.mint),
+        payment: params.payment,
+        reference: params.reference
+      }
+    )
+
+    return await submitWithSession(session, instruction)
+  }
+
+  /**
+   * What one `open_token_budget` signature costs on top of the tokens it
+   * moves: the session-key float, the budget account's rent and its refund
+   * float, and the network fee.
+   */
+  async function openTokenBudgetCost(
+    buyer: Address,
+    mint: Address,
+    sessionAddress: Address
+  ): Promise<{ rent: number, feeFloat: number, refundFloat: number, fee: number, total: number }> {
+    const existing = await loadTokenBudget(buyer, mint)
+    const rent = existing ? 0 : await rentMinimum(TOKEN_BUDGET_SPACE)
+    const refundFloat = existing ? 0 : TOKEN_BUDGET_FEE_FLOAT
+    const sessionLamports = Number(
+      (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
+    )
+    const feeFloat = Math.max(0, SESSION_FEE_FLOAT - sessionLamports)
+    const fee = TRANSACTION_FEE_LAMPORTS
+    return { rent, feeFloat, refundFloat, fee, total: rent + refundFloat + feeFloat + fee }
+  }
+
   return {
     loadBudget,
     remainingThisMonth,
@@ -342,6 +512,12 @@ export function useBudget() {
     openBudgetCost,
     preflight,
     silentPaymentObstacle,
-    sendSilentPayment
+    sendSilentPayment,
+    tokenVault,
+    loadTokenBudget,
+    tokenRemainingThisMonth,
+    tokenBudgetObstacle,
+    sendSilentTokenPayment,
+    openTokenBudgetCost
   }
 }

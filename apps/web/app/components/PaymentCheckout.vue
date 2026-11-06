@@ -31,7 +31,12 @@ const {
   budgetObstacle,
   autoSeconds,
   payableLamports,
-  priceLamports,
+  payableAmount,
+  priceAmount,
+  options,
+  selected,
+  selectCurrency,
+  offersChoice,
   settled,
   paymentName,
   paymentDescription,
@@ -56,9 +61,28 @@ const discountOpen = ref(false)
 const { currency } = useCurrencyPreference()
 const rates = useSolRates()
 const priceCurrency = computed<FiatCurrency>(() => payload.value?.currency ?? currency.value)
-const fiatPrice = computed(() =>
-  fiatFromLamports(payableLamports.value, rates.value, priceCurrency.value)
+
+/** The amount as it is charged, in the currency the buyer picked. */
+const payableNumber = computed(() =>
+  formatTokenAmount(payableAmount.value, selected.value.decimals)
 )
+const payableLabel = computed(() =>
+  `${payableNumber.value} ${currencySymbol(selected.value.currency)}`
+)
+const priceLabel = computed(() =>
+  `${formatTokenAmount(priceAmount.value, selected.value.decimals)} ${currencySymbol(selected.value.currency)}`
+)
+
+/**
+ * What the charge is worth in fiat. A stablecoin is worth one unit of its own
+ * money, so only SOL needs a rate.
+ */
+const fiatPrice = computed(() => {
+  const option = selected.value
+  if (option.currency === 'usdc') return `$${(payableAmount.value / 1_000_000).toFixed(2)}`
+  if (option.currency === 'eurc') return `€${(payableAmount.value / 1_000_000).toFixed(2)}`
+  return fiatFromLamports(payableLamports.value, rates.value, priceCurrency.value)
+})
 
 const savedToProfile = ref(false)
 const saving = ref(false)
@@ -217,6 +241,23 @@ useSeoMeta({
               {{ paymentDescription }}
             </p>
 
+            <!-- The seller decides which currencies this invoice takes; the
+                 buyer only chooses among them. -->
+            <div
+              v-if="offersChoice"
+              class="mt-4 flex flex-wrap items-center justify-center gap-2 print:hidden"
+            >
+              <UButton
+                v-for="option in options"
+                :key="option.currency"
+                :label="currencySymbol(option.currency)"
+                size="sm"
+                :color="selected.currency === option.currency ? 'primary' : 'neutral'"
+                :variant="selected.currency === option.currency ? 'solid' : 'outline'"
+                @click="selectCurrency(option.currency)"
+              />
+            </div>
+
             <div class="mt-6 flex flex-col items-center gap-1">
               <UBadge
                 v-if="discount"
@@ -227,8 +268,8 @@ useSeoMeta({
                 {{ discount.percent_off }}% off
               </UBadge>
               <p class="flex flex-wrap items-baseline justify-center gap-x-2 text-4xl font-bold tabular-nums">
-                {{ lamportsToSol(payableLamports) }}
-                <span class="text-xl font-semibold text-muted">SOL</span>
+                {{ payableNumber }}
+                <span class="text-xl font-semibold text-muted">{{ currencySymbol(selected.currency) }}</span>
                 <span
                   v-if="fiatPrice"
                   class="text-base font-normal text-muted"
@@ -240,7 +281,7 @@ useSeoMeta({
                 v-if="discount"
                 class="text-sm text-muted tabular-nums"
               >
-                <span class="line-through">{{ lamportsToSol(priceLamports) }} SOL</span>
+                <span class="line-through">{{ priceLabel }}</span>
               </p>
             </div>
 
@@ -274,7 +315,7 @@ useSeoMeta({
                 class="rounded-xl border border-success/40 bg-success/5 p-4"
               >
                 <p class="text-sm font-medium">
-                  Paying {{ lamportsToSol(payableLamports) }} SOL from your allowance
+                  Paying {{ payableLabel }} from your allowance
                 </p>
                 <p class="mt-1 text-xs text-muted">
                   No wallet approval needed. Sending in {{ autoSeconds }}s.
@@ -292,7 +333,7 @@ useSeoMeta({
               <!-- The allowance already covers it, but the buyer cancelled once. -->
               <template v-else-if="stage === 'silent'">
                 <UButton
-                  :label="`Pay ${lamportsToSol(payableLamports)} SOL`"
+                  :label="`Pay ${payableLabel}`"
                   icon="i-lucide-zap"
                   :loading="busy"
                   :disabled="!canPay"
@@ -307,7 +348,7 @@ useSeoMeta({
               <!-- A connected wallet: one tap, straight to its approval. -->
               <template v-else-if="stage === 'wallet'">
                 <UButton
-                  :label="`Pay ${lamportsToSol(payableLamports)} SOL`"
+                  :label="`Pay ${payableLabel}`"
                   icon="i-lucide-wallet"
                   :loading="busy"
                   :disabled="!canPay"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { address } from '@vue-solana/nuxt/kit'
-import type { DiscountCode, PaymentRecord } from '~/composables/usePaymentApi'
+import type { DiscountCode, PaymentRecord, SupportedCurrency } from '~/composables/usePaymentApi'
+import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
+import { currenciesForCluster } from '~/composables/usePaymentProgram'
 import type { FiatCurrency } from '~/composables/useFiat'
 
 useSeoMeta({ title: 'Sell — Payvand' })
@@ -19,6 +21,10 @@ const { currency, setCurrency } = useCurrencyPreference()
 const rates = useSolRates()
 const priceInFiat = ref(false)
 const fiatAmount = ref('')
+// Which currencies this invoice takes. The seller prices the invoice once and
+// every ticked currency gets its own price, pinned at creation time.
+const accepted = ref<SupportedCurrency[]>(['sol'])
+const currencyChoices = computed(() => currenciesForCluster(cluster))
 const amountUnits = [
   { label: 'SOL', value: 'sol' },
   { label: 'USD', value: 'usd' },
@@ -81,8 +87,6 @@ const lamports = computed(() =>
     ? lamportsFromFiat(Number(fiatAmount.value), rates.value, currency.value)
     : solToLamports(Number(amountSol.value))
 )
-// The price in the other unit — what the seller checks the number against.
-const fiatHint = computed(() => fiatFromLamports(lamports.value, rates.value, currency.value))
 
 /** SOL, or the currency the price is typed in. Picking a currency also makes it the default. */
 const amountUnit = computed<'sol' | FiatCurrency>({
@@ -104,7 +108,53 @@ const amountUnit = computed<'sol' | FiatCurrency>({
 // Creating a code needs the seller's address, never a signature: the invoice
 // address is derived locally and the account only comes into existence (and
 // is only funded) when the customer pays.
-const canCreate = computed(() => connected.value && !busy.value && lamports.value > 0)
+// A price in SOL converts to the stablecoins at today's rate, so a ticked
+// stablecoin with no rate available cannot be priced — say so instead of
+// creating an invoice that charges zero.
+const usdAmount = computed(() => {
+  if (priceInFiat.value && currency.value === 'usd') return Number(fiatAmount.value) || 0
+  const rate = rates.value?.usd
+  return rate ? (lamports.value / 1_000_000_000) * rate : 0
+})
+const eurAmount = computed(() => {
+  if (priceInFiat.value && currency.value === 'eur') return Number(fiatAmount.value) || 0
+  const rate = rates.value?.eur
+  return rate ? (lamports.value / 1_000_000_000) * rate : 0
+})
+
+/** Each accepted currency, priced in its own base units. */
+const acceptedOptions = computed(() =>
+  accepted.value.map((option) => {
+    if (option === 'sol') return { currency: option, amount: lamports.value }
+    const fiat = option === 'usdc' ? usdAmount.value : eurAmount.value
+    return { currency: option, amount: Math.round(fiat * 1_000_000) }
+  })
+)
+
+/** Naira-free summary of every price this invoice will charge. */
+const priceSummary = computed(() =>
+  acceptedOptions.value.map(option =>
+    option.currency === 'sol'
+      ? `${lamportsToSol(option.amount)} SOL`
+      : `${formatTokenAmount(option.amount, 6)} ${currencySymbol(option.currency)}`
+  )
+)
+
+function toggleAccepted(option: SupportedCurrency) {
+  if (accepted.value.includes(option)) {
+    // Never leave an invoice with no way to pay it.
+    if (accepted.value.length > 1) accepted.value = accepted.value.filter(item => item !== option)
+    return
+  }
+  accepted.value = currencyChoices.value.filter(item => item === option || accepted.value.includes(item))
+}
+
+const canCreate = computed(() =>
+  connected.value
+  && !busy.value
+  && lamports.value > 0
+  && acceptedOptions.value.every(option => option.amount > 0)
+)
 
 const statusColor = (status: string) =>
   status === 'settled' ? 'success' : status === 'missing' || status === 'pending' ? 'warning' : 'neutral'
@@ -159,13 +209,13 @@ async function createPayment() {
     // Nothing to sign: derive the invoice address from the amount locally,
     // then record the details. The customer's payment funds the account.
     const reference = createReference()
-    const paymentPda = await derivePaymentPda(seller, reference, lamports.value)
 
+    // The API derives one invoice address per accepted currency from these
+    // prices, so the code the customer scans carries every way to pay it.
     const created = await api.createPayment({
-      payment_pda: paymentPda,
       seller,
       reference,
-      amount_lamports: lamports.value,
+      options: acceptedOptions.value,
       memo: memo.value,
       name: name.value.trim(),
       description: description.value.trim(),
@@ -189,19 +239,49 @@ async function createPayment() {
  * and reference priced at each possible amount. Whichever address gets
  * funded tells us the full price — or exactly which code the buyer used.
  */
+/**
+ * Every address this invoice can be settled on: one per accepted currency at
+ * full price, plus one per currency per discount code. Whichever gets funded
+ * says what was paid and which code the buyer used.
+ */
 async function watchTargets(): Promise<{ pda: string, code: string | null }[]> {
   const current = record.value
   if (!current) return []
 
-  const targets = [{ pda: current.payment_pda, code: null as string | null }]
   const seller = address(current.seller)
-  for (const discount of discounts.value) {
-    const amount = discountedLamports(priceLamports.value, discount.percent_off)
-    if (amount <= 0 || amount === priceLamports.value) continue
-    const pda = await derivePaymentPda(seller, address(current.reference), amount)
-    targets.push({ pda, code: discount.code })
+  const reference = address(current.reference)
+  const options = current.options?.length
+    ? current.options
+    : [{
+        currency: 'sol' as SupportedCurrency,
+        mint: '',
+        decimals: 9,
+        amount: current.amount_lamports,
+        payment_pda: current.payment_pda
+      }]
+
+  const targets: { pda: string, code: string | null }[] = []
+  for (const option of options) {
+    targets.push({ pda: option.payment_pda, code: null })
+    for (const discount of discounts.value) {
+      const amount = discountedLamports(option.amount, discount.percent_off)
+      if (amount <= 0 || amount === option.amount) continue
+      const pda = option.currency === 'sol'
+        ? await derivePaymentPda(seller, reference, amount)
+        : await deriveTokenPaymentPda(seller, reference, address(option.mint), amount)
+      targets.push({ pda: pda.toString(), code: discount.code })
+    }
   }
   return targets
+}
+
+/** How to print whatever an invoice was settled for, in its own currency. */
+function paidAmountLabel(record: PaymentRecord): string {
+  const option = record.options?.[0]
+  if (option && option.currency !== 'sol') {
+    return `${formatTokenAmount(option.amount, option.decimals)} ${currencySymbol(option.currency)}`
+  }
+  return `${lamportsToSol(record.amount_lamports)} SOL`
 }
 
 async function refreshStatus() {
@@ -404,6 +484,23 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <UFormField
+            label="Accept payment in"
+            help="Tick every currency you take — the customer picks one on their own screen."
+          >
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="choice in currencyChoices"
+                :key="choice"
+                :label="currencySymbol(choice)"
+                size="sm"
+                :color="accepted.includes(choice) ? 'primary' : 'neutral'"
+                :variant="accepted.includes(choice) ? 'solid' : 'outline'"
+                @click="toggleAccepted(choice)"
+              />
+            </div>
+          </UFormField>
+
+          <UFormField
             v-if="discounts.length"
             label="Discount"
             :help="selectedDiscount
@@ -458,10 +555,7 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3 text-sm text-muted">
             <span>{{ networkLabel(cluster) }}</span>
             <span class="tabular-nums">
-              {{ lamportsToSol(lamports) }} SOL
-              <template v-if="fiatHint">
-                ({{ fiatHint }})
-              </template>
+              {{ priceSummary.join(' · ') }}
             </span>
           </div>
 
@@ -559,7 +653,7 @@ onBeforeUnmount(() => {
               {{ statusLabel(record.status) }}
             </UBadge>
             <span class="text-sm text-muted">
-              {{ lamportsToSol(record.amount_lamports) }} SOL
+              {{ paidAmountLabel(record) }}
               <template v-if="record.memo"> · {{ record.memo }}</template>
             </span>
             <UBadge
@@ -570,7 +664,7 @@ onBeforeUnmount(() => {
               {{ record.discount.percent_off }}% off
             </UBadge>
             <UBadge
-              v-if="paidCode"
+              v-if="paidCode && record.amount_lamports > 0"
               color="success"
               variant="subtle"
             >
