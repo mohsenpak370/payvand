@@ -6,6 +6,9 @@
 minimumReleaseAge: 1440
 
 allowBuilds:
+  # @nuxt/content's build-time database needs the native addon, so unlike the
+  # rest of this list its install script has to run.
+  better-sqlite3: true
   '@parcel/watcher': false
   '@tailwindcss/oxide': false
   esbuild: false

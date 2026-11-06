@@ -1,4 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { readdirSync } from 'node:fs'
 
 // The cluster the app targets is set in `.env` (`SOLANA_CLUSTER`), not here:
 // 'localnet' for a local `solana-test-validator`, 'devnet' for testing,
@@ -18,8 +19,16 @@ const solanaEndpoint
   = process.env.NUXT_PUBLIC_SOLANA_ENDPOINT
     || (solanaCluster === 'localnet' ? 'http://127.0.0.1:8899' : undefined)
 
+// Every markdown file under content/learn is a route. Nitro's crawler does not
+// follow the card links on the index page, so the guides are listed here and
+// prerendered as static HTML — which also keeps the content database out of
+// the deployed server function's request path.
+const learnGuides = readdirSync(new URL('./content/learn', import.meta.url))
+  .filter(file => file.endsWith('.md'))
+  .map(file => `/learn/${file.replace(/\.md$/, '')}`)
+
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
+  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxt/content', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
 
   devtools: {
     enabled: true
@@ -39,6 +48,11 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/': { prerender: true },
+    // The guides are markdown compiled at build time, so there is nothing per
+    // request to render: ship them as static pages and keep the content
+    // database out of the server function entirely.
+    '/learn': { prerender: true },
+    '/learn/**': { prerender: true },
     // Both flows talk to a connected wallet and a camera, so they only make
     // sense in the browser. The Solana plugin is client-only.
     '/sell': { ssr: false },
@@ -72,6 +86,11 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-06-30',
 
   nitro: {
+    // Prerendered guide pages, one per markdown file in content/learn.
+    prerender: {
+      routes: ['/learn', ...learnGuides]
+    },
+
     // `pnpm dev` forwards API calls to the local Axum server. The prefixes
     // are listed explicitly instead of a single `/api` rule: Nuxt Icon also
     // serves its collections from `/api/_nuxt_icon/*`, and a blanket `/api`

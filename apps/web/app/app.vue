@@ -133,6 +133,12 @@ const accountMenu = computed(() => [
           >
             Scan and pay
           </NuxtLink>
+          <NuxtLink
+            to="/learn"
+            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
+            Learn
+          </NuxtLink>
         </nav>
       </template>
 
@@ -196,6 +202,15 @@ const accountMenu = computed(() => [
             color="neutral"
             variant="soft"
             icon="i-lucide-scan-line"
+            block
+            class="justify-start"
+          />
+          <UButton
+            to="/learn"
+            label="Learn about crypto"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-graduation-cap"
             block
             class="justify-start"
           />
