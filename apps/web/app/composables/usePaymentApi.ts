@@ -1,3 +1,5 @@
+import type { FiatCurrency } from './useFiat'
+
 export type PaymentStatus = 'pending' | 'settled' | 'missing'
 
 export interface PaymentRecord {
@@ -65,6 +67,11 @@ export interface PaymentQrPayload {
   endpoint: string
   /** The seller's account id, so the buyer's screen can price their codes. */
   seller_user?: string | null
+  /**
+   * The currency the seller reads prices in, stamped in when the invoice is
+   * created, so a buyer anywhere sees the fiat figure in that currency.
+   */
+  currency?: FiatCurrency | null
 }
 
 export interface DiscountCode {

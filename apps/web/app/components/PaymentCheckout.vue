@@ -50,12 +50,14 @@ const heading = computed(() => paymentName.value || paymentMemo.value || 'Paymen
 const discountOpen = ref(false)
 
 // The invoice is charged in SOL. The figure in brackets is what that price is
-// worth in the currency chosen in the profile — the checkout only reads it,
-// there is nothing to pick here.
+// worth in the seller's currency, which travels inside the code — the buyer
+// picks nothing. Older codes carry no currency, so the reader's own default
+// stands in for it.
 const { currency } = useCurrencyPreference()
 const rates = useSolRates()
+const priceCurrency = computed<FiatCurrency>(() => payload.value?.currency ?? currency.value)
 const fiatPrice = computed(() =>
-  fiatFromLamports(payableLamports.value, rates.value, currency.value)
+  fiatFromLamports(payableLamports.value, rates.value, priceCurrency.value)
 )
 
 const savedToProfile = ref(false)

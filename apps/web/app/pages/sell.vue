@@ -114,6 +114,19 @@ function applyAmount(amount: string) {
   else amountSol.value = amount
 }
 
+/**
+ * Stamps the seller's currency into the invoice code, so the price a customer
+ * opens is read in the money the seller charges in — on any phone, signed in
+ * or not. The API builds the rest of the payload; this only adds the field.
+ */
+function withSellerCurrency(payloadJson: string): string {
+  try {
+    return JSON.stringify({ ...JSON.parse(payloadJson), currency: currency.value })
+  } catch {
+    return payloadJson
+  }
+}
+
 async function createPayment() {
   failure.value = ''
   record.value = null
@@ -161,7 +174,7 @@ async function createPayment() {
     })
 
     record.value = created.payment
-    qrPayload.value = created.qrPayload
+    qrPayload.value = withSellerCurrency(created.qrPayload)
     priceLamports.value = lamports.value
     paidCode.value = null
   } catch (error) {
