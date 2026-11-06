@@ -317,30 +317,23 @@ onBeforeUnmount(() => {
     title="Scan and pay"
     description="Point your camera at the seller's code, check the amount, and approve the payment in your wallet."
   >
-    <div class="grid gap-6 lg:grid-cols-2">
-      <UCard>
+    <!--
+      One card at a time. The camera takes the whole page until a code is read,
+      then it leaves: leaving it mounted next to the payment meant staring at
+      your own camera while paying, and it kept the request for camera access
+      alive for no reason. "Scan another" on the payment card brings it back.
+    -->
+    <div class="mx-auto w-full max-w-2xl">
+      <UCard v-if="!payload">
         <template #header>
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="text-base font-semibold">
-              1. Scan the code
-            </h2>
-            <UButton
-              v-if="payload"
-              label="Scan another"
-              color="neutral"
-              variant="soft"
-              size="sm"
-              @click="reset"
-            />
-          </div>
+          <h2 class="text-base font-semibold">
+            1. Scan the code
+          </h2>
         </template>
 
         <div class="flex flex-col gap-4">
           <ClientOnly>
-            <QrScanner
-              v-if="!payload"
-              @decoded="load"
-            />
+            <QrScanner @decoded="load" />
             <template #fallback>
               <div class="aspect-square w-full animate-pulse rounded-xl bg-elevated/50" />
             </template>
@@ -355,10 +348,7 @@ onBeforeUnmount(() => {
             :description="scanError"
           />
 
-          <UFormField
-            v-if="!payload"
-            label="Or paste the code text"
-          >
+          <UFormField label="Or paste the code text">
             <div class="flex w-full flex-col gap-2">
               <UTextarea
                 v-model="manualPayload"
@@ -378,13 +368,28 @@ onBeforeUnmount(() => {
         </div>
       </UCard>
 
-      <UCard>
+      <UCard v-else>
         <template #header>
-          <div class="flex items-center justify-between gap-3">
+          <!--
+            The title owns the first row on a phone and the actions sit under
+            it; side by side only once there is room. Sharing a row squeezed
+            both the heading and the buttons on a 390px screen.
+          -->
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 class="text-base font-semibold">
               2. Pay
             </h2>
-            <WalletConnect v-if="payload" />
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                label="Scan another"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                icon="i-lucide-scan-line"
+                @click="reset"
+              />
+              <WalletConnect />
+            </div>
           </div>
         </template>
 
@@ -422,7 +427,7 @@ onBeforeUnmount(() => {
             </p>
             <div
               v-if="discount"
-              class="mt-2 flex flex-wrap items-center gap-2"
+              class="mt-2 flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center"
             >
               <UBadge
                 color="success"
@@ -445,7 +450,7 @@ onBeforeUnmount(() => {
 
           <div
             v-if="payload.seller_user && !discount && record.status !== 'settled'"
-            class="flex items-end gap-3"
+            class="flex flex-col gap-3 sm:flex-row sm:items-end"
           >
             <UFormField
               label="Discount code"
@@ -622,13 +627,6 @@ onBeforeUnmount(() => {
           >
             Wallet status: {{ txStatus }}
           </p>
-        </div>
-
-        <div
-          v-else
-          class="py-10 text-center text-sm text-muted"
-        >
-          Scan a payment code to see the payment here.
         </div>
       </UCard>
     </div>
