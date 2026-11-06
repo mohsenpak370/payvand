@@ -159,8 +159,14 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="flex min-h-[100svh] flex-col print:min-h-[100vh] print:bg-default">
-    <main class="flex flex-1 items-center justify-center px-5 py-10 print:p-[14mm]">
+  <!--
+    On paper the sheet is the page itself: the card is placed against the
+    page box and the brand line against its bottom edge. Sizing anything to
+    the viewport would instead be sized to the paper, and a single pixel of
+    overhang is enough for the browser to spill a second, empty page.
+  -->
+  <div class="flex min-h-[100svh] flex-col print:block print:min-h-0 print:bg-default">
+    <main class="flex flex-1 items-center justify-center px-5 py-10 print:fixed print:inset-0 print:flex print:items-center print:justify-center print:bg-default print:p-[12mm]">
       <div class="w-full max-w-sm">
         <section
           class="rounded-2xl border border-default bg-default p-6 shadow-sm print:break-inside-avoid print:bg-elevated"
@@ -566,7 +572,7 @@ useSeoMeta({
       </div>
     </main>
 
-    <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted">
+    <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
       Powered by
       <NuxtLink
         to="/"
