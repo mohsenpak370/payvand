@@ -81,7 +81,7 @@ const points = [
             <span class="relative text-[2.025rem] font-bold">
               Payvand
               <UBadge
-                color="neutral"
+                color="success"
                 variant="subtle"
                 size="sm"
                 class="absolute -top-2 start-full ms-1"
@@ -142,10 +142,10 @@ const points = [
               height="368"
               class="size-[4.95rem]"
             >
-            <span class="relative text-[1.8rem] font-semibold">
+            <span class="relative text-[1.8rem] font-bold">
               Payvand
               <UBadge
-                color="neutral"
+                color="success"
                 variant="subtle"
                 size="sm"
                 class="absolute -top-2 start-full ms-1"

@@ -90,17 +90,17 @@ const accountMenu = computed(() => [
             alt=""
             width="356"
             height="368"
-            class="h-7 w-auto shrink-0"
+            class="h-[2.625rem] w-auto shrink-0"
           >
           <!--
             The cluster pill hangs off the name's top-right corner instead of
             standing beside it, matching the brand row on the auth pages, so
             the cluster reads as a tag on the name rather than a third item.
           -->
-          <span class="relative font-semibold">
-            Payvand
+          <span class="relative text-2xl font-bold">
+            <span class="text-primary">Pay</span>vand
             <UBadge
-              color="neutral"
+              color="success"
               variant="subtle"
               size="sm"
               class="absolute -top-2 start-full ms-1"
