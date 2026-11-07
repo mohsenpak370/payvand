@@ -39,6 +39,28 @@
   --color-blue-800: #1D2C87;
   --color-blue-900: #192567;
   --color-blue-950: #060B19; /* logo background navy */
+
+  /*
+   * The line that sweeps down the QR viewfinder on the scan page: one pass per
+   * couple of seconds, fading in at the top and out at the bottom so it reads as
+   * light travelling over the frame rather than a bar that jumps back up.
+   */
+  --animate-scan-sweep: scan-sweep 2.4s ease-in-out infinite;
+
+  @keyframes scan-sweep {
+    0% {
+      top: 6%;
+      opacity: 0;
+    }
+    12%,
+    88% {
+      opacity: 1;
+    }
+    100% {
+      top: 94%;
+      opacity: 0;
+    }
+  }
 }
 
 /*

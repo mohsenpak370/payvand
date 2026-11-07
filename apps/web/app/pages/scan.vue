@@ -335,7 +335,9 @@ onBeforeUnmount(() => {
           <ClientOnly>
             <QrScanner @decoded="load" />
             <template #fallback>
-              <div class="aspect-square w-full animate-pulse rounded-xl bg-elevated/50" />
+              <!-- Same dark panel the scanner renders, so the card does not
+                   flash a pale block before the camera code arrives. -->
+              <div class="aspect-[4/5] w-full animate-pulse rounded-2xl bg-neutral-900/80 sm:aspect-square" />
             </template>
           </ClientOnly>
 
