@@ -67,6 +67,7 @@ onMounted(load)
           v-if="shops.length"
           color="primary"
           variant="subtle"
+          class="shrink-0 whitespace-nowrap"
         >
           {{ shops.length }} {{ shops.length === 1 ? 'shop' : 'shops' }}
         </UBadge>
@@ -110,7 +111,9 @@ onMounted(load)
               >
                 {{ shop.description }}
               </p>
-              <p class="mt-0.5 text-xs text-muted">
+              <!-- One line even on a narrow phone: "2 products" is a count, not
+                   a phrase worth wrapping. -->
+              <p class="mt-0.5 text-xs whitespace-nowrap text-muted">
                 {{ shop.products.length }}
                 {{ shop.products.length === 1 ? 'product' : 'products' }}
               </p>

@@ -326,8 +326,8 @@ onBeforeUnmount(() => {
     <div class="mx-auto w-full max-w-2xl">
       <UCard v-if="!payload">
         <template #header>
-          <h2 class="text-base font-semibold">
-            1. Scan the code
+          <h2 class="text-xl font-semibold">
+            Scan the code
           </h2>
         </template>
 
@@ -376,8 +376,8 @@ onBeforeUnmount(() => {
             both the heading and the buttons on a 390px screen.
           -->
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 class="text-base font-semibold">
-              2. Pay
+            <h2 class="text-xl font-semibold">
+              Pay
             </h2>
             <div class="flex flex-wrap items-center gap-2">
               <UButton

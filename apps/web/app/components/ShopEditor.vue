@@ -182,6 +182,7 @@ onMounted(load)
             <UBadge
               color="neutral"
               variant="subtle"
+              class="shrink-0 whitespace-nowrap"
             >
               {{ products.length }} {{ products.length === 1 ? 'product' : 'products' }}
             </UBadge>
@@ -189,7 +190,9 @@ onMounted(load)
         </template>
 
         <div class="flex flex-col gap-4">
-          <div class="grid gap-3 sm:grid-cols-2">
+          <!-- Each field on its own row: the name and the description are two
+               things to write, not one line to fill. -->
+          <div class="flex flex-col gap-3">
             <UFormField label="Shop name">
               <UInput
                 v-model="shopName"
