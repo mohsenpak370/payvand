@@ -9,7 +9,7 @@ import type {
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster } from '~/composables/usePaymentProgram'
 import type { FiatCurrency } from '~/composables/useFiat'
-import type { CartLine, Product } from '~/composables/useShop'
+import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 
 useSeoMeta({ title: 'Sell — Payvand' })
@@ -53,9 +53,10 @@ const qrPayload = ref('')
 // knows the memo and the amount but nothing about what was sold.
 const createdItems = ref<PaymentItem[]>([])
 
-// The seller's own menu, offered as taps instead of typing. An account with no
-// shop simply never sees this block.
-const products = ref<Product[]>([])
+// The seller's own menus, offered as taps instead of typing. An account with
+// no products simply never sees this block.
+const shops = ref<ShopWithProducts[]>([])
+const hasProducts = computed(() => shops.value.some(shop => shop.products.length > 0))
 const cart = ref<CartLine[]>([])
 const cartTotal = computed(() => cartTotalLamports(cart.value))
 const cartActive = computed(() => cart.value.length > 0)
@@ -363,14 +364,13 @@ async function loadDiscounts() {
   }
 }
 
-/** The menu, if this account has one. A shop that fails to load must never
- *  stop a seller from typing an amount the way they always could. */
+/** The menus, if this account has any. Shops that fail to load must never stop
+ *  a seller from typing an amount the way they always could. */
 async function loadShop() {
   try {
-    const response = await shopApi.get()
-    products.value = response.products
+    shops.value = await shopApi.list()
   } catch {
-    products.value = []
+    shops.value = []
   }
 }
 
@@ -491,9 +491,9 @@ onBeforeUnmount(() => {
 
         <div class="flex flex-col gap-4">
           <ProductPicker
-            v-if="products.length"
+            v-if="hasProducts"
             v-model="cart"
-            :products="products"
+            :shops="shops"
           />
 
           <UFormField

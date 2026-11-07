@@ -71,11 +71,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
-        // The seller's shop: one per account, plus its product catalogue.
-        .route("/api/shop", get(shops::get).put(shops::save))
-        .route("/api/shop/products", post(shops::create_product))
+        // The seller's shops and their catalogues. A shop id is part of every
+        // product path, and ownership is checked on each one.
+        .route("/api/shops", get(shops::list).post(shops::create))
+        .route("/api/shops/{id}", get(shops::get).patch(shops::update))
+        .route("/api/shops/{id}/products", post(shops::create_product))
         .route(
-            "/api/shop/products/{id}",
+            "/api/shops/{id}/products/{product_id}",
             patch(shops::update_product).delete(shops::delete_product),
         )
         .layer(
@@ -113,9 +115,10 @@ async fn index() -> Json<serde_json::Value> {
             "/api/discounts",
             "/api/discounts/validate",
             "/api/discounts/{id}",
-            "/api/shop",
-            "/api/shop/products",
-            "/api/shop/products/{id}",
+            "/api/shops",
+            "/api/shops/{id}",
+            "/api/shops/{id}/products",
+            "/api/shops/{id}/products/{product_id}",
             "/api/admin/stats",
             "/api/admin/users",
             "/api/admin/users/{id}",

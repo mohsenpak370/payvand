@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import type { Product } from '~/composables/useShop'
 
-// The shop belongs to the account, so this card is the only place it is
-// edited: one name, and a list of what the seller charges for. The payment
-// page reads the same list and offers it as a receipt.
+// One shop's page: its name, its description, and what it sells. Everything
+// here is the seller's own menu — the payment page reads the same catalogue
+// and turns a cart of it into a receipt.
+const props = defineProps<{ shopId: string }>()
+
 const api = useShopApi()
 
 const shopName = ref('')
 const shopDescription = ref('')
-const shop = ref<{ name: string, description: string } | null>(null)
 const products = ref<Product[]>([])
 
 const loading = ref(true)
 const savingShop = ref(false)
+/** Set when the shop itself could not be opened — the page shows nothing else. */
+const loadFailure = ref('')
 const failure = ref('')
 
 // Prices are paid in SOL; the seller may type them in the money they think in.
@@ -53,15 +56,14 @@ function fiatHint(lamports: number): string | null {
 
 async function load() {
   loading.value = true
-  failure.value = ''
+  loadFailure.value = ''
   try {
-    const response = await api.get()
-    shop.value = response.shop
-    products.value = response.products
-    shopName.value = response.shop?.name ?? ''
-    shopDescription.value = response.shop?.description ?? ''
+    const shop = await api.get(props.shopId)
+    shopName.value = shop.name
+    shopDescription.value = shop.description
+    products.value = shop.products
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not load your shop.')
+    loadFailure.value = apiErrorMessage(error, 'Could not open this shop.')
   } finally {
     loading.value = false
   }
@@ -72,14 +74,14 @@ async function saveShop() {
   savingShop.value = true
   failure.value = ''
   try {
-    shop.value = await api.saveShop({
+    const shop = await api.updateShop(props.shopId, {
       name: shopName.value.trim(),
       description: shopDescription.value.trim()
     })
-    shopName.value = shop.value.name
-    shopDescription.value = shop.value.description
+    shopName.value = shop.name
+    shopDescription.value = shop.description
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not save your shop.')
+    failure.value = apiErrorMessage(error, 'Could not save the shop.')
   } finally {
     savingShop.value = false
   }
@@ -115,10 +117,10 @@ async function submitProduct() {
       price_lamports: priceLamports.value
     }
     if (editingId.value) {
-      const updated = await api.updateProduct(editingId.value, body)
+      const updated = await api.updateProduct(props.shopId, editingId.value, body)
       products.value = products.value.map(item => (item.id === updated.id ? updated : item))
     } else {
-      products.value = [...products.value, await api.createProduct(body)]
+      products.value = [...products.value, await api.createProduct(props.shopId, body)]
     }
     resetForm()
   } catch (error) {
@@ -130,13 +132,13 @@ async function submitProduct() {
 
 async function removeProduct(product: Product) {
   const confirmed = window.confirm(
-    `Remove “${product.name}”?\n\nInvoices already created keep their receipt — this only takes it off the list.`
+    `Remove “${product.name}”?\n\nInvoices already created keep their receipt — this only takes it off the menu.`
   )
   if (!confirmed) return
 
   productFailure.value = ''
   try {
-    await api.deleteProduct(product.id)
+    await api.deleteProduct(props.shopId, product.id)
     products.value = products.value.filter(item => item.id !== product.id)
     if (editingId.value === product.id) resetForm()
   } catch (error) {
@@ -148,124 +150,99 @@ onMounted(load)
 </script>
 
 <template>
-  <UCard class="min-w-0">
-    <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <h2 class="text-base font-semibold">
-            Shop
-          </h2>
-          <p class="text-sm text-muted">
-            Your menu. The payment page turns these into a receipt and one QR code.
-          </p>
-        </div>
-        <UBadge
-          v-if="shop"
-          color="primary"
-          variant="subtle"
-        >
-          {{ products.length }} {{ products.length === 1 ? 'product' : 'products' }}
-        </UBadge>
-      </div>
-    </template>
+  <div class="flex flex-col gap-6">
+    <UAlert
+      v-if="loadFailure"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      title="Could not open this shop"
+      :description="loadFailure"
+    />
 
-    <div class="flex flex-col gap-4">
-      <UAlert
-        v-if="failure"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        title="Could not reach your shop"
-        :description="failure"
-      />
+    <p
+      v-else-if="loading"
+      class="py-8 text-center text-sm text-muted"
+    >
+      Reading your shop…
+    </p>
 
-      <p
-        v-if="loading"
-        class="py-4 text-center text-sm text-muted"
-      >
-        Reading your shop…
-      </p>
+    <template v-else>
+      <UCard class="min-w-0">
+        <template #header>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold">
+                Shop details
+              </h2>
+              <p class="text-sm text-muted">
+                What this shop is called, and what it sells in a line.
+              </p>
+            </div>
+            <UBadge
+              color="neutral"
+              variant="subtle"
+            >
+              {{ products.length }} {{ products.length === 1 ? 'product' : 'products' }}
+            </UBadge>
+          </div>
+        </template>
 
-      <!-- No shop yet: one name is all it takes. -->
-      <div
-        v-else-if="!shop"
-        class="flex flex-col gap-3 rounded-xl border border-dashed border-default p-4"
-      >
-        <div class="flex items-center gap-2">
-          <UIcon
-            name="i-lucide-store"
-            class="text-primary size-5"
+        <div class="flex flex-col gap-4">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <UFormField label="Shop name">
+              <UInput
+                v-model="shopName"
+                class="w-full"
+                :maxlength="48"
+              />
+            </UFormField>
+            <UFormField label="Description">
+              <UInput
+                v-model="shopDescription"
+                class="w-full"
+                placeholder="Flat whites and fresh bread"
+                :maxlength="160"
+              />
+            </UFormField>
+          </div>
+
+          <UAlert
+            v-if="failure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Could not save the shop"
+            :description="failure"
           />
-          <span class="font-medium">Open your shop</span>
-        </div>
-        <p class="text-sm text-muted">
-          Add what you sell once, then price a payment by tapping the products
-          instead of typing amounts.
-        </p>
-        <UFormField label="Shop name">
-          <UInput
-            v-model="shopName"
-            class="w-full"
-            placeholder="Corner Shop"
-            :maxlength="48"
-          />
-        </UFormField>
-        <UFormField
-          label="Short description"
-          help="Optional — shown nowhere yet, but it keeps the shop recognisable."
-        >
-          <UInput
-            v-model="shopDescription"
-            class="w-full"
-            placeholder="Flat whites and fresh bread"
-            :maxlength="160"
-          />
-        </UFormField>
-        <UButton
-          label="Create my shop"
-          icon="i-lucide-store"
-          :loading="savingShop"
-          :disabled="!shopName.trim() || savingShop"
-          class="self-start"
-          @click="saveShop"
-        />
-      </div>
 
-      <template v-else>
-        <div class="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <UFormField label="Shop name">
-            <UInput
-              v-model="shopName"
-              class="w-full"
-              :maxlength="48"
-            />
-          </UFormField>
-          <UFormField label="Description">
-            <UInput
-              v-model="shopDescription"
-              class="w-full"
-              :maxlength="160"
-            />
-          </UFormField>
           <UButton
-            label="Save"
+            label="Save shop"
             icon="i-lucide-check"
-            color="neutral"
-            variant="soft"
             :loading="savingShop"
             :disabled="!shopName.trim() || savingShop"
+            class="self-start"
             @click="saveShop"
           />
         </div>
+      </UCard>
 
-        <div class="flex flex-col gap-3 border-t border-default pt-4">
+      <UCard class="min-w-0">
+        <template #header>
           <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold">
-              Products
-            </h3>
+            <div>
+              <h2 class="text-base font-semibold">
+                Products
+              </h2>
+              <p class="text-sm text-muted">
+                What the payment page offers as a receipt.
+              </p>
+            </div>
             <span class="text-xs text-muted">Prices are charged in SOL</span>
           </div>
+        </template>
 
+        <div class="flex flex-col gap-4">
           <ul
             v-if="products.length"
             class="flex flex-col divide-y divide-default"
@@ -324,81 +301,83 @@ onMounted(load)
             No products yet — add the first one below.
           </p>
 
-          <div class="grid gap-3 sm:grid-cols-2">
-            <UFormField label="Product">
-              <UInput
-                v-model="productName"
-                class="w-full"
-                placeholder="Flat white"
-                :maxlength="32"
-              />
-            </UFormField>
-            <UFormField label="Price">
-              <div class="flex items-stretch gap-2">
+          <div class="flex flex-col gap-3 border-t border-default pt-4">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <UFormField label="Product">
                 <UInput
-                  v-model="productPrice"
-                  type="number"
-                  min="0"
-                  :step="priceUnit === 'sol' ? '0.001' : '0.01'"
-                  class="min-w-0 flex-1"
-                  placeholder="0.05"
+                  v-model="productName"
+                  class="w-full"
+                  placeholder="Flat white"
+                  :maxlength="32"
                 />
-                <USelect
-                  v-model="priceUnit"
-                  :items="priceUnits"
-                  class="w-24"
-                  aria-label="Unit of the price"
+              </UFormField>
+              <UFormField label="Price">
+                <div class="flex items-stretch gap-2">
+                  <UInput
+                    v-model="productPrice"
+                    type="number"
+                    min="0"
+                    :step="priceUnit === 'sol' ? '0.001' : '0.01'"
+                    class="min-w-0 flex-1"
+                    placeholder="0.05"
+                  />
+                  <USelect
+                    v-model="priceUnit"
+                    :items="priceUnits"
+                    class="w-24"
+                    aria-label="Unit of the price"
+                  />
+                </div>
+              </UFormField>
+              <UFormField
+                label="Details"
+                help="Optional — size, what is in it, anything the customer should know."
+                class="sm:col-span-2"
+              >
+                <UInput
+                  v-model="productDetails"
+                  class="w-full"
+                  placeholder="Large, oat milk"
+                  :maxlength="160"
                 />
-              </div>
-            </UFormField>
-            <UFormField
-              label="Details"
-              help="Optional — size, what is in it, anything the customer should know."
-              class="sm:col-span-2"
+              </UFormField>
+            </div>
+
+            <p
+              v-if="priceUnit !== 'sol' && !rates"
+              class="text-xs text-muted"
             >
-              <UInput
-                v-model="productDetails"
-                class="w-full"
-                placeholder="Large, oat milk"
-                :maxlength="160"
+              Reading today's rate…
+            </p>
+
+            <UAlert
+              v-if="productFailure"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              title="Could not save the product"
+              :description="productFailure"
+            />
+
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                :label="editingId ? 'Save changes' : 'Add product'"
+                :icon="editingId ? 'i-lucide-check' : 'i-lucide-plus'"
+                :loading="productBusy"
+                :disabled="!canSubmitProduct"
+                @click="submitProduct"
               />
-            </UFormField>
-          </div>
-
-          <p
-            v-if="priceUnit !== 'sol' && !rates"
-            class="text-xs text-muted"
-          >
-            Reading today's rate…
-          </p>
-
-          <UAlert
-            v-if="productFailure"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            title="Could not save the product"
-            :description="productFailure"
-          />
-
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              :label="editingId ? 'Save changes' : 'Add product'"
-              :icon="editingId ? 'i-lucide-check' : 'i-lucide-plus'"
-              :loading="productBusy"
-              :disabled="!canSubmitProduct"
-              @click="submitProduct"
-            />
-            <UButton
-              v-if="editingId"
-              label="Cancel"
-              color="neutral"
-              variant="ghost"
-              @click="resetForm"
-            />
+              <UButton
+                v-if="editingId"
+                label="Cancel"
+                color="neutral"
+                variant="ghost"
+                @click="resetForm"
+              />
+            </div>
           </div>
         </div>
-      </template>
-    </div>
-  </UCard>
+      </UCard>
+    </template>
+  </div>
 </template>

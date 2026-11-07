@@ -118,9 +118,10 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/discounts',
         changeOrigin: true
       },
-      // The seller's shop and its products, read by /profile and /sell.
-      '/api/shop': {
-        target: 'http://127.0.0.1:8787/api/shop',
+      // The seller's shops and their products, read by /profile, the shop
+      // pages and /sell.
+      '/api/shops': {
+        target: 'http://127.0.0.1:8787/api/shops',
         changeOrigin: true
       },
       '/api/health': {

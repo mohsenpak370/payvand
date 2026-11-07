@@ -1,23 +1,28 @@
 //! Shops and products.
 //!
-//! A seller describes their shop once and keeps a short catalogue on their
-//! account. The payment page then prices an invoice from a cart of those
-//! products, and the receipt travels inside the QR code — the API still stores
-//! no invoices, so a shop is only ever the menu the seller picks from.
+//! A seller keeps a list of shops on their account — a café and a bakery — and
+//! each shop has its own catalogue. The payment page prices an invoice from a
+//! cart of those products, and the receipt travels inside the QR code: the API
+//! still stores no invoices, so a shop is only ever the menu the seller picks
+//! from.
 //!
 //! Nothing here is on chain. A price is a number the seller edits, not state
 //! anyone has to trust: the customer pays the amount the code says, at an
 //! address the program derives from it.
 
-use axum::extract::{Json, Path, State};
+use axum::extract::{Path, State};
 use axum::http::HeaderMap;
+use axum::Json;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::auth;
 use crate::payments::{bad, ApiResult};
 
 /// Enough for a real café, small enough that the list stays a list.
 pub const MAX_PRODUCTS: usize = 60;
+/// Several shops are useful; a hundred is a shop-keeping system.
+pub const MAX_SHOPS: usize = 20;
 pub const MAX_SHOP_NAME_LEN: usize = 48;
 pub const MAX_SHOP_DESCRIPTION_LEN: usize = 160;
 /// Product names ride in the receipt inside the code, so they are kept short:
@@ -29,6 +34,7 @@ pub const MAX_PRICE_LAMPORTS: u64 = 10_000_000_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Shop {
+    pub id: String,
     pub name: String,
     pub description: String,
 }
@@ -36,6 +42,8 @@ pub struct Shop {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
     pub id: String,
+    /// The shop this product is sold from.
+    pub shop_id: String,
     pub name: String,
     /// Free text — what is in it, the size, the allergen. Never in the code.
     pub details: String,
@@ -43,11 +51,13 @@ pub struct Product {
     pub created_at_unix: i64,
 }
 
-/// The shop and its catalogue, in one read: the profile edits them together
-/// and the payment page needs both to price a cart.
+/// A shop with its catalogue. The profile lists several of these to count
+/// products, and the payment page needs the products to price a cart.
 #[derive(Debug, Serialize)]
-pub struct ShopResponse {
-    pub shop: Option<Shop>,
+pub struct ShopWithProducts {
+    pub id: String,
+    pub name: String,
+    pub description: String,
     pub products: Vec<Product>,
 }
 
@@ -103,47 +113,52 @@ fn valid_price(price_lamports: u64) -> ApiResult<u64> {
 }
 
 fn read_product(row: &libsql::Row) -> ApiResult<Product> {
-    let price: i64 = row.get(3).map_err(auth::internal)?;
+    let price: i64 = row.get(4).map_err(auth::internal)?;
     Ok(Product {
         id: row.get(0).map_err(auth::internal)?,
-        name: row.get(1).map_err(auth::internal)?,
-        details: row.get(2).map_err(auth::internal)?,
+        shop_id: row.get(1).map_err(auth::internal)?,
+        name: row.get(2).map_err(auth::internal)?,
+        details: row.get(3).map_err(auth::internal)?,
         price_lamports: u64::try_from(price)
             .map_err(|_| crate::payments::ApiError::Internal("stored price out of range".into()))?,
-        created_at_unix: row.get(4).map_err(auth::internal)?,
+        created_at_unix: row.get(5).map_err(auth::internal)?,
     })
 }
 
-/// The signed-in account's shop and catalogue. A shop is one row per account,
-/// so there is no id in the path and no way to read someone else's.
-pub async fn get(
-    State(state): State<crate::AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Json<ShopResponse>> {
-    let user = auth::require_user(&state.db, &headers).await?;
-    let connection = state.db.connect().map_err(auth::internal)?;
-
-    let mut shop_rows = connection
+/// Refuses a shop id that is not this account's. Every product route goes
+/// through it, so a shop id in a request can never reach another account.
+async fn require_shop(
+    connection: &libsql::Connection,
+    user_id: &str,
+    shop_id: &str,
+) -> ApiResult<(String, String)> {
+    let mut rows = connection
         .query(
-            "SELECT name, description FROM shops WHERE user_id = ?1",
-            [user.id.clone()],
+            "SELECT name, description FROM shops WHERE id = ?1 AND user_id = ?2",
+            (shop_id, user_id),
         )
         .await
         .map_err(auth::internal)?;
-    let shop = match shop_rows.next().await.map_err(auth::internal)? {
-        Some(row) => Some(Shop {
-            name: row.get(0).map_err(auth::internal)?,
-            description: row.get(1).map_err(auth::internal)?,
-        }),
-        None => None,
-    };
+    match rows.next().await.map_err(auth::internal)? {
+        Some(row) => Ok((
+            row.get(0).map_err(auth::internal)?,
+            row.get(1).map_err(auth::internal)?,
+        )),
+        None => Err(bad("That shop no longer exists.")),
+    }
+}
 
+async fn products_for_shop(
+    connection: &libsql::Connection,
+    user_id: &str,
+    shop_id: &str,
+) -> ApiResult<Vec<Product>> {
     // Oldest first: a catalogue that keeps its order reads like a menu.
     let mut rows = connection
         .query(
-            "SELECT id, name, details, price_lamports, created_at FROM products \
-             WHERE user_id = ?1 ORDER BY created_at ASC, rowid ASC",
-            [user.id],
+            "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+             WHERE user_id = ?1 AND shop_id = ?2 ORDER BY created_at ASC, rowid ASC",
+            (user_id, shop_id),
         )
         .await
         .map_err(auth::internal)?;
@@ -152,13 +167,82 @@ pub async fn get(
     while let Some(row) = rows.next().await.map_err(auth::internal)? {
         products.push(read_product(&row)?);
     }
-
-    Ok(Json(ShopResponse { shop, products }))
+    Ok(products)
 }
 
-/// Creates the shop, or renames the one this account already has. Idempotent
-/// by design: the profile form saves the same row every time.
-pub async fn save(
+/// Every shop the signed-in account keeps, each with its catalogue. One read
+/// serves both screens: the profile lists them, the payment page prices from
+/// them.
+pub async fn list(
+    State(state): State<crate::AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<ShopWithProducts>>> {
+    let user = auth::require_user(&state.db, &headers).await?;
+    let connection = state.db.connect().map_err(auth::internal)?;
+
+    let mut rows = connection
+        .query(
+            "SELECT id, name, description FROM shops WHERE user_id = ?1 \
+             ORDER BY created_at ASC, rowid ASC",
+            [user.id.clone()],
+        )
+        .await
+        .map_err(auth::internal)?;
+
+    let mut shops: Vec<ShopWithProducts> = Vec::new();
+    while let Some(row) = rows.next().await.map_err(auth::internal)? {
+        shops.push(ShopWithProducts {
+            id: row.get(0).map_err(auth::internal)?,
+            name: row.get(1).map_err(auth::internal)?,
+            description: row.get(2).map_err(auth::internal)?,
+            products: Vec::new(),
+        });
+    }
+
+    // One query for every product, grouped in memory: a seller has a handful
+    // of shops, and this keeps the round trips to two.
+    if !shops.is_empty() {
+        let mut rows = connection
+            .query(
+                "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+                 WHERE user_id = ?1 ORDER BY created_at ASC, rowid ASC",
+                [user.id],
+            )
+            .await
+            .map_err(auth::internal)?;
+        let mut by_shop: HashMap<String, Vec<Product>> = HashMap::new();
+        while let Some(row) = rows.next().await.map_err(auth::internal)? {
+            let product = read_product(&row)?;
+            by_shop.entry(product.shop_id.clone()).or_default().push(product);
+        }
+        for shop in &mut shops {
+            shop.products = by_shop.remove(&shop.id).unwrap_or_default();
+        }
+    }
+
+    Ok(Json(shops))
+}
+
+/// Opens one shop with its catalogue — what the shop's own page renders.
+pub async fn get(
+    State(state): State<crate::AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult<Json<ShopWithProducts>> {
+    let user = auth::require_user(&state.db, &headers).await?;
+    let connection = state.db.connect().map_err(auth::internal)?;
+    let (name, description) = require_shop(&connection, &user.id, &id).await?;
+    let products = products_for_shop(&connection, &user.id, &id).await?;
+    Ok(Json(ShopWithProducts {
+        id,
+        name,
+        description,
+        products,
+    }))
+}
+
+/// Creates a shop. Several per account are allowed; the profile lists them.
+pub async fn create(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
     Json(request): Json<SaveShopRequest>,
@@ -172,14 +256,27 @@ pub async fn save(
     )?;
     let connection = state.db.connect().map_err(auth::internal)?;
 
+    let mut rows = connection
+        .query("SELECT COUNT(*) FROM shops WHERE user_id = ?1", [user.id.clone()])
+        .await
+        .map_err(auth::internal)?;
+    let count: i64 = match rows.next().await.map_err(auth::internal)? {
+        Some(row) => row.get(0).map_err(auth::internal)?,
+        None => 0,
+    };
+    if count >= MAX_SHOPS as i64 {
+        return Err(bad(format!(
+            "You already keep the maximum of {MAX_SHOPS} shops."
+        )));
+    }
+
+    let id = auth::random_id();
     connection
         .execute(
             "INSERT INTO shops (id, user_id, name, description, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(user_id) DO UPDATE SET \
-             name = excluded.name, description = excluded.description",
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             (
-                auth::random_id(),
+                id.clone(),
                 user.id,
                 name.clone(),
                 description.clone(),
@@ -189,13 +286,55 @@ pub async fn save(
         .await
         .map_err(auth::internal)?;
 
-    Ok(Json(Shop { name, description }))
+    Ok(Json(Shop {
+        id,
+        name,
+        description,
+    }))
 }
 
-/// Adds a product to the signed-in account's catalogue.
+/// Renames a shop or rewrites its description. Ownership is checked first.
+pub async fn update(
+    State(state): State<crate::AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(request): Json<SaveShopRequest>,
+) -> ApiResult<Json<Shop>> {
+    let user = auth::require_user(&state.db, &headers).await?;
+    let name = required_text(&request.name, MAX_SHOP_NAME_LEN, "The shop name")?;
+    let description = optional_text(
+        &request.description,
+        MAX_SHOP_DESCRIPTION_LEN,
+        "The shop description",
+    )?;
+    let connection = state.db.connect().map_err(auth::internal)?;
+    require_shop(&connection, &user.id, &id).await?;
+
+    connection
+        .execute(
+            "UPDATE shops SET name = ?1, description = ?2 WHERE id = ?3 AND user_id = ?4",
+            (
+                name.clone(),
+                description.clone(),
+                id.clone(),
+                user.id,
+            ),
+        )
+        .await
+        .map_err(auth::internal)?;
+
+    Ok(Json(Shop {
+        id,
+        name,
+        description,
+    }))
+}
+
+/// Adds a product to one of the account's shops.
 pub async fn create_product(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
+    Path(shop_id): Path<String>,
     Json(request): Json<SaveProductRequest>,
 ) -> ApiResult<Json<Product>> {
     let user = auth::require_user(&state.db, &headers).await?;
@@ -207,11 +346,12 @@ pub async fn create_product(
     )?;
     let price_lamports = valid_price(request.price_lamports)?;
     let connection = state.db.connect().map_err(auth::internal)?;
+    require_shop(&connection, &user.id, &shop_id).await?;
 
     let mut rows = connection
         .query(
-            "SELECT COUNT(*) FROM products WHERE user_id = ?1",
-            [user.id.clone()],
+            "SELECT COUNT(*) FROM products WHERE user_id = ?1 AND shop_id = ?2",
+            (user.id.clone(), shop_id.clone()),
         )
         .await
         .map_err(auth::internal)?;
@@ -221,7 +361,7 @@ pub async fn create_product(
     };
     if count >= MAX_PRODUCTS as i64 {
         return Err(bad(format!(
-            "Your shop already has the maximum of {MAX_PRODUCTS} products."
+            "This shop already has the maximum of {MAX_PRODUCTS} products."
         )));
     }
 
@@ -229,15 +369,15 @@ pub async fn create_product(
     let created_at = auth::unix_now();
     connection
         .execute(
-            "INSERT INTO products (id, user_id, name, details, price_lamports, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO products (id, user_id, shop_id, name, details, price_lamports, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             (
                 id.clone(),
                 user.id,
+                shop_id.clone(),
                 name.clone(),
                 details.clone(),
-                i64::try_from(price_lamports)
-                    .map_err(|_| bad("That price is too large."))?,
+                i64::try_from(price_lamports).map_err(|_| bad("That price is too large."))?,
                 created_at,
             ),
         )
@@ -246,6 +386,7 @@ pub async fn create_product(
 
     Ok(Json(Product {
         id,
+        shop_id,
         name,
         details,
         price_lamports,
@@ -253,12 +394,12 @@ pub async fn create_product(
     }))
 }
 
-/// Edits one of the signed-in account's products. The price is part of the
-/// edit: a shop can change what something costs without recreating it.
+/// Edits one product of one shop. The price is part of the edit: a shop can
+/// change what something costs without recreating it.
 pub async fn update_product(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    Path((shop_id, product_id)): Path<(String, String)>,
     Json(request): Json<SaveProductRequest>,
 ) -> ApiResult<Json<Product>> {
     let user = auth::require_user(&state.db, &headers).await?;
@@ -270,16 +411,18 @@ pub async fn update_product(
     )?;
     let price_lamports = valid_price(request.price_lamports)?;
     let connection = state.db.connect().map_err(auth::internal)?;
+    require_shop(&connection, &user.id, &shop_id).await?;
 
     let updated = connection
         .execute(
             "UPDATE products SET name = ?1, details = ?2, price_lamports = ?3 \
-             WHERE id = ?4 AND user_id = ?5",
+             WHERE id = ?4 AND shop_id = ?5 AND user_id = ?6",
             (
                 name.clone(),
                 details.clone(),
                 i64::try_from(price_lamports).map_err(|_| bad("That price is too large."))?,
-                id.clone(),
+                product_id.clone(),
+                shop_id.clone(),
                 user.id.clone(),
             ),
         )
@@ -291,9 +434,9 @@ pub async fn update_product(
 
     let mut rows = connection
         .query(
-            "SELECT id, name, details, price_lamports, created_at FROM products \
-             WHERE id = ?1 AND user_id = ?2",
-            (id, user.id),
+            "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+             WHERE id = ?1 AND shop_id = ?2 AND user_id = ?3",
+            (product_id, shop_id, user.id),
         )
         .await
         .map_err(auth::internal)?;
@@ -308,14 +451,15 @@ pub async fn update_product(
 pub async fn delete_product(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    Path((shop_id, product_id)): Path<(String, String)>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let user = auth::require_user(&state.db, &headers).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
+    require_shop(&connection, &user.id, &shop_id).await?;
     let deleted = connection
         .execute(
-            "DELETE FROM products WHERE id = ?1 AND user_id = ?2",
-            (id, user.id),
+            "DELETE FROM products WHERE id = ?1 AND shop_id = ?2 AND user_id = ?3",
+            (product_id, shop_id, user.id),
         )
         .await
         .map_err(auth::internal)?;
@@ -390,26 +534,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn keeps_a_shop_and_its_products_per_account() {
+    async fn keeps_several_shops_per_account_apart() {
         let (state, path) = test_state().await;
         let mine = bearer(&signup(&state, "seller@example.com").await);
         let theirs = bearer(&signup(&state, "other@example.com").await);
 
-        let anonymous = get(StateExtractor(state.clone()), HeaderMap::new()).await;
+        let anonymous = list(StateExtractor(state.clone()), HeaderMap::new()).await;
         assert!(matches!(
             anonymous,
             Err(crate::payments::ApiError::Unauthorized)
         ));
 
-        // No shop yet: an empty menu, not an error.
-        let empty = get(StateExtractor(state.clone()), mine.clone())
+        // No shops yet: an empty list, not an error.
+        let empty = list(StateExtractor(state.clone()), mine.clone())
             .await
             .expect("read")
             .0;
-        assert!(empty.shop.is_none());
-        assert!(empty.products.is_empty());
+        assert!(empty.is_empty());
 
-        let saved = save(
+        let cafe = create(
             StateExtractor(state.clone()),
             mine.clone(),
             JsonExtractor(SaveShopRequest {
@@ -420,77 +563,121 @@ mod tests {
         .await
         .expect("created")
         .0;
-        assert_eq!(saved.name, "Corner Shop");
+        assert_eq!(cafe.name, "Corner Shop");
 
-        // Saving again renames the same shop instead of creating a second one.
-        save(
+        let bakery = create(
             StateExtractor(state.clone()),
             mine.clone(),
             JsonExtractor(SaveShopRequest {
-                name: "Corner Shop & Bakery".into(),
+                name: "Corner Bakery".into(),
                 description: String::new(),
             }),
         )
         .await
-        .expect("renamed");
+        .expect("second shop")
+        .0;
 
-        let added = create_product(
+        // Each shop keeps its own catalogue.
+        let coffee = create_product(
             StateExtractor(state.clone()),
             mine.clone(),
+            Path(cafe.id.clone()),
             JsonExtractor(product("Flat white", 12_000_000)),
         )
         .await
         .expect("product")
         .0;
-        assert_eq!(added.name, "Flat white");
+        assert_eq!(coffee.shop_id, cafe.id);
+
+        create_product(
+            StateExtractor(state.clone()),
+            mine.clone(),
+            Path(bakery.id.clone()),
+            JsonExtractor(product("Croissant", 8_000_000)),
+        )
+        .await
+        .expect("bakery product");
+
+        let shops = list(StateExtractor(state.clone()), mine.clone())
+            .await
+            .expect("read")
+            .0;
+        assert_eq!(shops.len(), 2);
+        let cafe_row = shops.iter().find(|shop| shop.id == cafe.id).expect("cafe");
+        assert_eq!(cafe_row.products.len(), 1);
+        assert_eq!(cafe_row.products[0].name, "Flat white");
+
+        // Renaming one shop leaves the other alone.
+        update(
+            StateExtractor(state.clone()),
+            mine.clone(),
+            Path(cafe.id.clone()),
+            JsonExtractor(SaveShopRequest {
+                name: "Corner Shop & Café".into(),
+                description: String::new(),
+            }),
+        )
+        .await
+        .expect("renamed");
+        let cafe_row = get(StateExtractor(state.clone()), mine.clone(), Path(cafe.id.clone()))
+            .await
+            .expect("open")
+            .0;
+        assert_eq!(cafe_row.name, "Corner Shop & Café");
+        assert_eq!(cafe_row.products.len(), 1);
+
+        // Another account sees no shops and cannot touch this one.
+        let their_shops = list(StateExtractor(state.clone()), theirs.clone())
+            .await
+            .expect("read")
+            .0;
+        assert!(their_shops.is_empty());
+        assert!(get(
+            StateExtractor(state.clone()),
+            theirs.clone(),
+            Path(cafe.id.clone())
+        )
+        .await
+        .is_err());
+        assert!(create_product(
+            StateExtractor(state.clone()),
+            theirs.clone(),
+            Path(cafe.id.clone()),
+            JsonExtractor(product("Free coffee", 1)),
+        )
+        .await
+        .is_err());
+
+        // A product of one shop cannot be edited through another.
+        assert!(update_product(
+            StateExtractor(state.clone()),
+            mine.clone(),
+            Path((bakery.id.clone(), coffee.id.clone())),
+            JsonExtractor(product("Flat white", 15_000_000)),
+        )
+        .await
+        .is_err());
 
         let edited = update_product(
             StateExtractor(state.clone()),
             mine.clone(),
-            axum::extract::Path(added.id.clone()),
+            Path((cafe.id.clone(), coffee.id.clone())),
             JsonExtractor(product("Flat white (large)", 15_000_000)),
         )
         .await
         .expect("edited")
         .0;
         assert_eq!(edited.price_lamports, 15_000_000);
-        assert_eq!(edited.created_at_unix, added.created_at_unix);
-
-        let mine_shop = get(StateExtractor(state.clone()), mine.clone())
-            .await
-            .expect("read")
-            .0;
-        assert_eq!(
-            mine_shop.shop.as_ref().map(|shop| shop.name.as_str()),
-            Some("Corner Shop & Bakery")
-        );
-        assert_eq!(mine_shop.products.len(), 1);
-
-        // Another account sees no shop and cannot edit this product.
-        let theirs_shop = get(StateExtractor(state.clone()), theirs.clone())
-            .await
-            .expect("read")
-            .0;
-        assert!(theirs_shop.shop.is_none());
-        assert!(theirs_shop.products.is_empty());
-
-        let stolen = update_product(
-            StateExtractor(state.clone()),
-            theirs.clone(),
-            axum::extract::Path(added.id.clone()),
-            JsonExtractor(product("Free coffee", 1)),
-        )
-        .await;
-        assert!(stolen.is_err());
+        assert_eq!(edited.created_at_unix, coffee.created_at_unix);
 
         delete_product(
             StateExtractor(state.clone()),
             mine.clone(),
-            axum::extract::Path(added.id),
+            Path((cafe.id.clone(), coffee.id.clone())),
         )
         .await
         .expect("deleted");
-        let after = get(StateExtractor(state.clone()), mine)
+        let after = get(StateExtractor(state.clone()), mine, Path(cafe.id))
             .await
             .expect("read")
             .0;

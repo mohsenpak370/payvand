@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import type { CartLine, Product } from '~/composables/useShop'
+import type { CartLine, Product, ShopWithProducts } from '~/composables/useShop'
 
 // Tapping products is the whole point: a seller behind a counter should price a
 // payment by quantity, not by adding up numbers in their head. The total here
 // is what the invoice charges, and each line becomes the buyer's receipt.
-const props = defineProps<{ products: Product[] }>()
+const props = defineProps<{ shops: ShopWithProducts[] }>()
 const lines = defineModel<CartLine[]>({ required: true })
+
+/** Shops with something to sell, in the order the profile lists them. */
+const shelves = computed(() => props.shops.filter(shop => shop.products.length > 0))
+/** Every product on every shelf, for keeping the cart in menu order. */
+const allProducts = computed(() => shelves.value.flatMap(shop => shop.products))
 
 // Mirrors `MAX_ITEMS` in the API: every line ends up inside the QR code, so a
 // receipt that added one more would stop being scannable.
@@ -39,7 +44,7 @@ function setQuantity(product: Product, quantity: number) {
     lines.value = without
     return
   }
-  const ordered = props.products
+  const ordered = allProducts.value
     .map(item => (item.id === product.id
       ? { product, quantity: next }
       : without.find(line => line.product.id === item.id)))
@@ -65,7 +70,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
 <template>
   <div class="flex flex-col gap-3 rounded-xl border border-default p-3">
     <div class="flex items-center justify-between gap-3">
-      <span class="text-sm font-medium">From my shop</span>
+      <span class="text-sm font-medium">From your shops</span>
       <UButton
         v-if="lines.length"
         label="Clear"
@@ -76,9 +81,16 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
       />
     </div>
 
-    <ul class="flex flex-col divide-y divide-default">
+    <ul
+      v-for="shop in shelves"
+      :key="shop.id"
+      class="flex flex-col divide-y divide-default"
+    >
+      <li class="pt-2 pb-1 text-xs font-medium text-muted">
+        {{ shop.name }}
+      </li>
       <li
-        v-for="product in products"
+        v-for="product in shop.products"
         :key="product.id"
         class="flex min-w-0 items-center justify-between gap-3 py-2"
       >

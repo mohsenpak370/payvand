@@ -1,19 +1,22 @@
 /**
- * The seller's shop and its product catalogue.
+ * The seller's shops and their product catalogues.
  *
- * Nothing here is on chain. A shop is the menu the payment page prices an
- * invoice from, and the receipt it produces travels inside the QR code — the
- * API still keeps no invoices, so a product is only a starting price the
- * seller can pick instead of typing.
+ * Nothing here is on chain. A shop is a menu the payment page prices an invoice
+ * from, and the receipt it produces travels inside the QR code — the API still
+ * keeps no invoices, so a product is only a starting price the seller can pick
+ * instead of typing.
  */
 
 export interface Shop {
+  id: string
   name: string
   description: string
 }
 
 export interface Product {
   id: string
+  /** The shop this product is sold from. */
+  shop_id: string
   name: string
   /** What is in it, the size, the allergens — never sent with a payment. */
   details: string
@@ -22,9 +25,8 @@ export interface Product {
   created_at_unix: number
 }
 
-export interface ShopResponse {
-  /** Null until the seller names their shop. */
-  shop: Shop | null
+/** A shop with its catalogue — what the shop page and the payment page read. */
+export interface ShopWithProducts extends Shop {
   products: Product[]
 }
 
@@ -55,41 +57,60 @@ export function useShopApi() {
     return token.value ? { authorization: `Bearer ${token.value}` } : {}
   }
 
-  async function get(): Promise<ShopResponse> {
-    return await $fetch(`${base}/api/shop`, { headers: authHeaders() })
+  /** Every shop the account keeps, each with its catalogue. */
+  async function list(): Promise<ShopWithProducts[]> {
+    return await $fetch(`${base}/api/shops`, { headers: authHeaders() })
   }
 
-  /** Creates the shop, or renames the one this account already has. */
-  async function saveShop(body: Shop): Promise<Shop> {
-    return await $fetch(`${base}/api/shop`, {
-      method: 'PUT',
-      body,
-      headers: authHeaders()
-    })
+  async function get(id: string): Promise<ShopWithProducts> {
+    return await $fetch(`${base}/api/shops/${id}`, { headers: authHeaders() })
   }
 
-  async function createProduct(body: ProductInput): Promise<Product> {
-    return await $fetch(`${base}/api/shop/products`, {
+  async function createShop(body: { name: string, description: string }): Promise<Shop> {
+    return await $fetch(`${base}/api/shops`, {
       method: 'POST',
       body,
       headers: authHeaders()
     })
   }
 
-  async function updateProduct(id: string, body: ProductInput): Promise<Product> {
-    return await $fetch(`${base}/api/shop/products/${id}`, {
+  async function updateShop(
+    id: string,
+    body: { name: string, description: string }
+  ): Promise<Shop> {
+    return await $fetch(`${base}/api/shops/${id}`, {
       method: 'PATCH',
       body,
       headers: authHeaders()
     })
   }
 
-  async function deleteProduct(id: string): Promise<{ ok: boolean }> {
-    return await $fetch(`${base}/api/shop/products/${id}`, {
+  async function createProduct(shopId: string, body: ProductInput): Promise<Product> {
+    return await $fetch(`${base}/api/shops/${shopId}/products`, {
+      method: 'POST',
+      body,
+      headers: authHeaders()
+    })
+  }
+
+  async function updateProduct(
+    shopId: string,
+    productId: string,
+    body: ProductInput
+  ): Promise<Product> {
+    return await $fetch(`${base}/api/shops/${shopId}/products/${productId}`, {
+      method: 'PATCH',
+      body,
+      headers: authHeaders()
+    })
+  }
+
+  async function deleteProduct(shopId: string, productId: string): Promise<{ ok: boolean }> {
+    return await $fetch(`${base}/api/shops/${shopId}/products/${productId}`, {
       method: 'DELETE',
       headers: authHeaders()
     })
   }
 
-  return { get, saveShop, createProduct, updateProduct, deleteProduct }
+  return { list, get, createShop, updateShop, createProduct, updateProduct, deleteProduct }
 }
