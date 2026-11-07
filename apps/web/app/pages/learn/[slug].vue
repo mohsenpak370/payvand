@@ -50,7 +50,20 @@ useSeoMeta({
       <UPageHeader
         :title="guide.title"
         :description="guide.description"
-      />
+      >
+        <!-- Same label as the card on the index: this one assumes more. -->
+        <template
+          v-if="guide.level === 'technical'"
+          #headline
+        >
+          <UBadge
+            label="Technical discussion"
+            icon="i-lucide-cpu"
+            color="neutral"
+            variant="subtle"
+          />
+        </template>
+      </UPageHeader>
 
       <UPageBody class="max-w-3xl">
         <!-- Prose components come from @nuxt/ui, so headings, lists and quotes

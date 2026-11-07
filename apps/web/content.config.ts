@@ -12,8 +12,11 @@ export default defineContentConfig({
       schema: z.object({
         title: z.string(),
         description: z.string(),
-        category: z.enum(['basics', 'solana', 'payvand', 'safety']),
-        order: z.number()
+        category: z.enum(['basics', 'solana', 'payvand', 'safety', 'technical']),
+        order: z.number(),
+        // Technical guides assume some familiarity with keys and transactions,
+        // and are labelled as such wherever they appear.
+        level: z.enum(['beginner', 'technical']).optional()
       })
     })
   }

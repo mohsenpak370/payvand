@@ -38,6 +38,13 @@ const groups = computed(() => [
     description: 'The handful of habits that prevent almost every crypto loss.',
     icon: 'i-lucide-shield-check',
     items: (guides.value ?? []).filter(guide => guide.category === 'safety')
+  },
+  {
+    key: 'technical',
+    title: 'Under the hood (technical)',
+    description: 'The actual mechanics — transaction bytes, PDAs, shreds, certificates — each with links to the official docs.',
+    icon: 'i-lucide-cpu',
+    items: (guides.value ?? []).filter(guide => guide.category === 'technical')
   }
 ])
 </script>
@@ -72,7 +79,21 @@ const groups = computed(() => [
           :description="guide.description"
           :to="guide.path"
           spotlight
-        />
+        >
+          <!-- Marks the deep-dive guides so a beginner can skip them. -->
+          <template
+            v-if="guide.level === 'technical'"
+            #footer
+          >
+            <UBadge
+              label="Technical"
+              icon="i-lucide-cpu"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+            />
+          </template>
+        </UPageCard>
       </UPageGrid>
     </UPageSection>
 
