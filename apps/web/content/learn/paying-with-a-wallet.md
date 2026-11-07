@@ -2,7 +2,7 @@
 title: What happens when you pay with a wallet
 description: From scanning the code to the money arriving — the six steps every crypto payment goes through, and what you are actually approving.
 category: basics
-order: 2
+order: 4
 ---
 
 A crypto payment feels like a card payment because the shop's screen behaves the same way. Under
@@ -35,8 +35,10 @@ key; it receives a signature, which is only valid for that exact transaction.
 ## 4. The transaction goes to the network
 
 The signed transaction is sent to the network and included in a block. On Solana this normally
-takes a couple of seconds. You can watch it happen from the confirmation link the wallet or app
-shows.
+takes a couple of seconds to show up, and the payment becomes *permanently final* in well under a
+second — since the Alpenglow upgrade in October 2026, typically about 150 milliseconds
+([what finality means](/learn/when-is-a-payment-final)). You can watch it happen from the
+confirmation link the wallet or app shows.
 
 ## 5. The seller's side updates
 
@@ -69,6 +71,6 @@ on your device. After that, payments that fit inside the budget are signed by th
 there is no wallet popup at the counter.
 
 What that key can do is deliberately narrow: it can pay invoices up to the budget you set, this
-month, and nothing else. It cannot send funds anywhere of its choosing, cannot exceed the limit,
+month, and nothing else ([the allowance in plain words](/learn/monthly-allowance-explained)). It cannot send funds anywhere of its choosing, cannot exceed the limit,
 and you can close the allowance at any time to pull the remaining balance back to your wallet. If
 that trade-off does not appeal, pay from your wallet each time — both paths pay the same invoices.

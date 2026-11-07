@@ -2,7 +2,7 @@
 title: Stablecoins, in plain words
 description: Why a shop can quote prices in USDC or EURC without worrying about the price of the token moving, and what actually backs them.
 category: basics
-order: 3
+order: 5
 ---
 
 Most crypto you hear about has a price that moves all day. That is a terrible property for a
@@ -11,7 +11,8 @@ just lost 5%.
 
 A **stablecoin** is a token designed to always be worth one unit of an ordinary currency. The two
 you will see on Payvand are **USDC** (one dollar each) and **EURC** (one euro each), both issued
-by Circle.
+by Circle. They live on the Solana network, which is the plumbing underneath every payment here
+— [what Solana is, in plain words](/learn/what-is-solana).
 
 ## What "backed" means
 

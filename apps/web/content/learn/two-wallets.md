@@ -1,5 +1,5 @@
 ---
-title: Keep two wallets: one to spend, one to save
+title: Keep two wallets, one to spend and one to save
 description: The wallet you connect to apps should hold pocket money, not savings. How to split them, and what a deliberately small balance protects you from.
 category: safety
 order: 4
@@ -50,7 +50,8 @@ way: the amount you set is funded from your spending wallet into a program accou
 your wallet, and a key held by your device can spend from it up to that limit and no further. If
 that device is lost or compromised, the most that goes is the remainder of the month's limit — the
 rest of the wallet is untouched, and closing the budget from your wallet takes back everything
-left.
+left. [The allowance has its own guide](/learn/monthly-allowance-explained) if that is the part you
+came here for.
 
 ## Habits worth keeping with a spending wallet
 

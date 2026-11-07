@@ -2,7 +2,7 @@
 title: What a crypto wallet actually is
 description: A wallet is not a purse. It is a pair of keys that proves the money on the network is yours — which is why nobody can reset it for you.
 category: basics
-order: 1
+order: 3
 ---
 
 If you have only ever used a bank, the word "wallet" is misleading. A crypto wallet does not
@@ -61,4 +61,7 @@ Most people learn best with small amounts. A practical order:
 
 If you are on Payvand's test network, that is exactly what the tokens are for: they are free,
 they are worth nothing, and spending them teaches you the same motions you will use later with
-real money.
+real money — [there is a short guide on practice money](/learn/test-money-on-devnet).
+
+The next step is what actually happens when you pay: [what happens when you pay with a
+wallet](/learn/paying-with-a-wallet).

@@ -1,8 +1,9 @@
 import { defineCollection, defineContentConfig, z } from '@nuxt/content'
 
 // One collection for the plain-language guides under /learn. `category` splits
-// the index into "how it works" and "staying safe", and `order` is the reading
-// order inside each group, so the index never depends on filenames.
+// the index into its groups — the ideas, Solana itself, the app, and staying
+// safe — and `order` is the reading order inside each group, so the index
+// never depends on filenames.
 export default defineContentConfig({
   collections: {
     learn: defineCollection({
@@ -11,7 +12,7 @@ export default defineContentConfig({
       schema: z.object({
         title: z.string(),
         description: z.string(),
-        category: z.enum(['basics', 'safety']),
+        category: z.enum(['basics', 'solana', 'payvand', 'safety']),
         order: z.number()
       })
     })

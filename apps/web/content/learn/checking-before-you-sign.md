@@ -7,7 +7,9 @@ order: 3
 
 Every payment in crypto passes through one moment: a screen in your wallet asking you to sign.
 Up to that point, nothing has moved and anything can be cancelled for free. After it, the payment
-is final. Treat that screen as the real decision, not a formality to click through.
+is final — on Solana, about 150 milliseconds later, with no undo available to you or to anyone
+else ([why it is that fast](/learn/when-is-a-payment-final)). Treat that screen as the real
+decision, not a formality to click through.
 
 ## What a transaction actually contains
 
@@ -59,3 +61,6 @@ screen you scanned, stop and ask — one of the two is not what you think it is.
 - **Prefer a hardware wallet for large amounts.** It shows the amount and recipient on its own
   screen, so a compromised computer cannot swap them behind your back.
 - **If in doubt, reject.** Rejecting costs nothing and the payment can be retried in a minute.
+
+If something was signed that should not have been, [the lost-phone checklist](/learn/if-your-phone-is-lost)
+is the same set of steps to run: move what is left, stop the old key, and report it.

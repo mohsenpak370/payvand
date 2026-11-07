@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useSeoMeta({
   title: 'Learn — Payvand',
-  description: 'Plain-language guides to wallets, stablecoins and staying safe with crypto. No prior knowledge assumed.'
+  description: 'Crypto explained to someone who has never used it: how a blockchain works, what Solana is, what a wallet does, and how to stay safe. No prior knowledge assumed.'
 })
 
 // Reading order is the `order` field, not the filenames, so guides can be
@@ -13,10 +13,24 @@ const { data: guides } = await useAsyncData('learn-guides', () =>
 const groups = computed(() => [
   {
     key: 'basics',
-    title: 'How crypto payments work',
-    description: 'Start here if you have never used a wallet.',
-    icon: 'i-lucide-wallet',
+    title: 'Start here: the ideas',
+    description: 'What money on a blockchain actually is, in the order that makes sense. No prior knowledge assumed.',
+    icon: 'i-lucide-book-open',
     items: (guides.value ?? []).filter(guide => guide.category === 'basics')
+  },
+  {
+    key: 'solana',
+    title: 'Solana, in plain words',
+    description: 'The network under Payvand: why it is fast, what a payment costs, and when it is really done.',
+    icon: 'i-lucide-zap',
+    items: (guides.value ?? []).filter(guide => guide.category === 'solana')
+  },
+  {
+    key: 'payvand',
+    title: 'Using Payvand',
+    description: 'The monthly allowance, the practice money, and what each button on the screen does.',
+    icon: 'i-lucide-qr-code',
+    items: (guides.value ?? []).filter(guide => guide.category === 'payvand')
   },
   {
     key: 'safety',
@@ -33,7 +47,7 @@ const groups = computed(() => [
     <UPageHero
       headline="Learn"
       title="Crypto, explained like a person"
-      description="Short guides for people who have never used a wallet: what the keys do, why stablecoins exist, and how to keep an account that nobody can reset."
+      description="Short guides for someone who has never used a wallet. Start with what a blockchain is, then what Solana does, then how this app and its allowance work — and read the safety guides before you use real money."
       :ui="{ title: 'leading-tight' }"
     />
 

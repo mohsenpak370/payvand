@@ -9,6 +9,12 @@ Crypto scams are not sophisticated. They are repetitive: the same handful of ope
 aimed at the fact that payments are final and that whoever holds the keys holds the money. Learn
 the openings and you avoid nearly all of them.
 
+They are also common enough to have a number attached. In 2025 the FBI's complaint centre recorded
+**more than $11 billion** in reported crypto losses across 181,565 complaints, with investment
+fraud accounting for the largest share. Reports like that undercount, because most losses are never
+reported at all — which is the argument for recognising the pattern early rather than relying on
+getting money back afterwards.
+
 ## Red flag: someone contacted you first
 
 Real support does not message you first. Not in a Telegram group, not on X, not in your inbox, not
@@ -70,4 +76,5 @@ the publisher name, and be suspicious of an app with a familiar name and thirty 
 
 If something has already happened, act quickly rather than quietly: move whatever is left in the
 compromised wallet to a new wallet with a new recovery phrase, and tell the platform you were
-using. Nothing can reverse a confirmed payment, but speed limits the damage.
+using. Nothing can reverse a confirmed payment, but speed limits the damage —
+[the lost-phone checklist](/learn/if-your-phone-is-lost) covers the same steps for a stolen device.

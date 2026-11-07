@@ -67,3 +67,7 @@ If step 3 fails, you have found a transcription error while it is cheap.
 
 Payvand never asks for a recovery phrase, and it has no use for one: signing happens in your
 wallet, and the app only ever receives a signature for the payment in front of you.
+
+If the phone is already gone, work through [the lost-phone checklist](/learn/if-your-phone-is-lost)
+instead — the order of the steps matters there. And if the word "wallet" still feels abstract,
+[what a wallet actually is](/learn/what-is-a-crypto-wallet) is the place to start.
