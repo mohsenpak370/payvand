@@ -75,6 +75,12 @@ const foreignDevice = computed(
   () => Boolean(view.value && view.value.sessionKey !== deviceKeyAddress.value)
 )
 
+/** What it would take to put the pot back to the full monthly limit. */
+const refillNeeded = computed(() => {
+  const current = view.value
+  return current ? Math.max(0, current.limit - current.pot) : 0
+})
+
 const decimals = computed(() => (activeCurrency.value === 'sol' ? 9 : 6))
 const unitLabel = computed(() => currencySymbol(activeCurrency.value))
 
@@ -200,12 +206,20 @@ async function rotateToThisDevice() {
   await applyLimit(funded, 'rotate')
 }
 
+/** Puts the pot back to the monthly limit mid-month, in one approval. */
+async function refill() {
+  const current = view.value
+  if (!current) return
+  resetMessages()
+  await applyLimit(current.limit, 'refill')
+}
+
 /**
  * The one signature each currency's allowance ever asks for: funds the pot to
  * the limit, tops up the session key's fee float, and registers (or rotates)
  * the session key that will pay silently afterwards.
  */
-async function applyLimit(limit: number, intent: 'save' | 'rotate') {
+async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
   const buyer = publicKey.value
   if (!buyer) return
 
@@ -250,8 +264,8 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate') {
         return
       }
 
-      // A takeover moves no tokens — they already sit in the vault — so only
-      // a new or raised limit needs to check the wallet's balance.
+      // Only the gap between the limit and what the vault already holds comes
+      // out of the wallet; a takeover moves nothing at all.
       const held = await client.rpc
         .getTokenAccountBalance(await deriveAssociatedTokenAddress(buyer, mint), {
           commitment: 'confirmed'
@@ -259,10 +273,12 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate') {
         .send()
         .then(balance => Number(balance.value.amount))
         .catch(() => 0)
-      if (intent === 'save' && held < limit) {
+      const needed = Math.max(0, limit - (view.value?.pot ?? 0))
+      if (intent !== 'rotate' && held < needed) {
         failureTitle.value = `Not enough ${unitLabel.value}`
-        failure.value = `This wallet holds ${amountLabel(held)}, but the limit is ${amountLabel(limit)}. `
-          + 'Lower the limit, or get free test tokens from https://faucet.circle.com and try again.'
+        failure.value = `This wallet holds ${amountLabel(held)}, but this moves ${amountLabel(needed)} `
+          + `into the pot to reach ${amountLabel(limit)}. Lower the limit, or get free test tokens `
+          + 'from https://faucet.circle.com and try again.'
         return
       }
     }
@@ -291,14 +307,18 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate') {
           { monthly_limit: limit },
           { buyer, budget: await deriveBudgetPda(buyer), session_key: session.address }
         )
-    const memo = buildMemoInstruction(
-      intent === 'rotate'
-        ? `Payvand: pay from this device, same limit, other devices revoked`
-        : existing
-          ? `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)} (still your funds)`
-          : `Payvand: keep ${amountLabel(limit)} as your monthly budget (still your funds, withdrawable anytime)`,
-      buyer
-    )
+    let memoText = `Payvand: keep ${amountLabel(limit)} as your monthly budget `
+      + '(still your funds, withdrawable anytime)'
+    if (intent === 'rotate') {
+      memoText = 'Payvand: pay from this device, same limit, other devices revoked'
+    } else if (intent === 'refill') {
+      memoText = `Payvand: refill your own ${unitLabel.value} budget to ${amountLabel(limit)} `
+        + '(still your funds)'
+    } else if (existing) {
+      memoText = `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)} `
+        + '(still your funds)'
+    }
+    const memo = buildMemoInstruction(memoText, buyer)
     const wire = await compileWireTransaction({
       instruction: [instruction, memo],
       payer: buyer,
@@ -314,6 +334,10 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate') {
       success.value = 'This device now pays silently, and the key the other device held stopped '
         + `working at once. Nothing moved: the limit is now ${amountLabel(limit)}, what the pot already `
         + 'held, and the monthly counter restarts at zero. Top up from here whenever you want a bigger one.'
+    } else if (intent === 'refill') {
+      success.value = `Refilled — the pot holds ${amountLabel(limit)} again and every payment inside `
+        + 'it is back to no popups. The monthly counter restarts with a refill, so the whole limit is '
+        + 'spendable from now.'
     } else if (existing) {
       success.value = 'Budget updated — your limit and pot are in sync again.'
     } else {
@@ -393,7 +417,7 @@ async function closeBudget() {
 <template>
   <UPageSection
     title="Monthly spending budget"
-    description="Set your limit once a month — your wallet signs only that one time. The limit moves into an account derived from your own wallet, so only your private keys control it: payments inside it go through with no approval popups, and you can withdraw the whole amount back to your wallet at any moment."
+    description="Set a limit once and your wallet signs only for that: the amount leaves your wallet into a program account the chain derives from your wallet — not to Payvand, not to the seller. Only your wallet can take it back out, while this device's session key spends from it inside the limit with no approval popups."
   >
     <UCard>
       <template #header>
@@ -465,10 +489,25 @@ async function closeBudget() {
           </div>
 
           <p class="text-sm text-muted">
-            Your pot is held in a program-derived account — derived from, and spendable only
-            with, your wallet's private key. Nothing is sent to anyone: the limit resets on the
-            1st of each month, the pot keeps whatever you did not spend, and closing the budget
-            returns every unit back to your wallet.
+            <span class="font-medium text-highlighted">Where the money sits.</span>
+            The pot is a program account derived from your wallet: setting or refilling a limit
+            moves that amount out of your wallet and into it, and only your wallet can take it
+            back out. This device's session key can spend from it, but never more than the limit.
+            The limit resets on the 1st of each month, the pot keeps whatever you did not spend,
+            and closing the budget returns every unit to your wallet.
+          </p>
+
+          <p class="text-sm text-muted">
+            <span class="font-medium text-highlighted">Keep it small on purpose.</span>
+            A limit you could lose without changing your month is doing its job — that is why
+            payments from it never ask for an approval. Pair it with a wallet used only for
+            spending, apart from savings:
+            <NuxtLink
+              to="/learn/two-wallets"
+              class="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              how to keep two wallets
+            </NuxtLink>.
           </p>
 
           <UAlert
@@ -514,6 +553,13 @@ async function closeBudget() {
           />
 
           <div class="flex flex-wrap gap-2">
+            <UButton
+              v-if="refillNeeded > 0"
+              :label="`Refill to ${amountLabel(view.limit)}`"
+              icon="i-lucide-piggy-bank"
+              :loading="busy || txLoading"
+              @click="refill"
+            />
             <UButton
               label="Save limit / top up"
               icon="i-lucide-refresh-cw"
@@ -565,11 +611,22 @@ async function closeBudget() {
           />
 
           <p class="text-sm text-muted">
-            This is the only wallet approval the feature needs. Your limit is not sent anywhere:
-            it moves into an account derived from your wallet that only your private keys control,
-            and the session key that signs future payments stays on this device. Payments inside
-            the limit then go through with no popups, and you can withdraw the whole pot back at
-            any moment.
+            <span class="font-medium text-highlighted">What this one approval does.</span>
+            It moves the limit out of your wallet into a program account the chain derives from
+            your wallet — not to Payvand, and not to the seller — and registers a session key that
+            stays on this device. Payments inside the limit then go through with no popups, and
+            only your wallet can withdraw the pot.
+          </p>
+
+          <p class="text-sm text-muted">
+            Start small: the most a lost phone can spend is this limit, which is why payments never
+            ask for an approval. Keep this wallet separate from your savings —
+            <NuxtLink
+              to="/learn/two-wallets"
+              class="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              how to keep two wallets
+            </NuxtLink>.
           </p>
         </template>
 
