@@ -773,6 +773,7 @@ mod tests {
             memo: format!("memo for {id}"),
             name: String::new(),
             description: String::new(),
+            items: Vec::new(),
             discount: None,
             cluster: "devnet".into(),
             endpoint: "https://api.devnet.solana.com".into(),

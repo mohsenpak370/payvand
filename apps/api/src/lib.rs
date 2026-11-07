@@ -7,12 +7,13 @@ pub mod discounts;
 pub mod email;
 pub mod payments;
 pub mod saved;
+pub mod shops;
 pub mod solana_pay;
 pub mod wallet;
 
 use axum::extract::{Path, Query, State};
 use axum::http::{header, Method};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use payments::{ApiError, CreatePaymentRequest, PaymentQuery};
 use std::sync::Arc;
@@ -70,6 +71,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
+        // The seller's shop: one per account, plus its product catalogue.
+        .route("/api/shop", get(shops::get).put(shops::save))
+        .route("/api/shop/products", post(shops::create_product))
+        .route(
+            "/api/shop/products/{id}",
+            patch(shops::update_product).delete(shops::delete_product),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -105,6 +113,9 @@ async fn index() -> Json<serde_json::Value> {
             "/api/discounts",
             "/api/discounts/validate",
             "/api/discounts/{id}",
+            "/api/shop",
+            "/api/shop/products",
+            "/api/shop/products/{id}",
             "/api/admin/stats",
             "/api/admin/users",
             "/api/admin/users/{id}",

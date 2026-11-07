@@ -394,6 +394,9 @@ onMounted(() => {
         </div>
       </UCard>
 
+      <!-- The seller's menu: products the payment page can price from. -->
+      <ShopEditor />
+
       <!-- Monthly allowance. -->
       <UCard class="min-w-0">
         <template #header>

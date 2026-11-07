@@ -1,6 +1,7 @@
 import { address, type Address } from '@vue-solana/nuxt/kit'
 import type {
   DiscountPreview,
+  PaymentItem,
   PaymentOption,
   PaymentQrPayload,
   PaymentRecord,
@@ -124,6 +125,9 @@ export function usePaymentCheckout() {
     () => record.value?.description || payload.value?.description || ''
   )
   const paymentMemo = computed(() => record.value?.memo || payload.value?.memo || '')
+  // The receipt, if the seller built this invoice from their shop. It lives in
+  // the code, not the account, so a chain read never loses it.
+  const items = computed<PaymentItem[]>(() => payload.value?.items ?? [])
 
   /**
    * `missing` is the normal state of a fresh invoice: its account is created
@@ -532,6 +536,7 @@ export function usePaymentCheckout() {
     paymentName,
     paymentDescription,
     paymentMemo,
+    items,
     canPay,
     stage,
     load,

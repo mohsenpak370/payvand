@@ -41,6 +41,7 @@ const {
   paymentName,
   paymentDescription,
   paymentMemo,
+  items,
   canPay,
   stage,
   load,
@@ -81,6 +82,27 @@ const priceLabel = computed(() =>
 const fiatPrice = computed(() => {
   if (selected.value.currency !== 'sol') return null
   return fiatFromLamports(payableLamports.value, rates.value, priceCurrency.value)
+})
+
+/**
+ * The receipt, priced in whatever the buyer is paying with. Each line's share
+ * of the invoice total scales with the total, so switching from SOL to USDC or
+ * applying a code moves every line with the amount rather than contradicting it.
+ */
+const receiptLines = computed(() => {
+  const total = items.value.reduce(
+    (sum, item) => sum + item.amount_lamports * item.quantity,
+    0
+  )
+  const share = total ? payableAmount.value / total : 1
+  return items.value.map(item => ({
+    name: item.name,
+    quantity: item.quantity,
+    amount: `${formatTokenAmount(
+      Math.round(item.amount_lamports * item.quantity * share),
+      selected.value.decimals
+    )} ${currencySymbol(selected.value.currency)}`
+  }))
 })
 
 const savedToProfile = ref(false)
@@ -239,6 +261,30 @@ useSeoMeta({
             >
               {{ paymentDescription }}
             </p>
+
+            <!-- What the money is for, line by line. A receipt the customer can
+                 check before paying beats a single total they have to trust. -->
+            <div
+              v-if="receiptLines.length"
+              class="mt-4 w-full max-w-sm rounded-xl border border-default text-left"
+            >
+              <ul class="divide-y divide-default">
+                <li
+                  v-for="(line, index) in receiptLines"
+                  :key="index"
+                  class="flex items-baseline justify-between gap-3 px-3 py-2 text-sm"
+                >
+                  <span class="min-w-0 break-words">
+                    <span class="text-muted">{{ line.quantity }} ×</span> {{ line.name }}
+                  </span>
+                  <span class="shrink-0 text-muted tabular-nums">{{ line.amount }}</span>
+                </li>
+              </ul>
+              <div class="flex items-baseline justify-between gap-3 border-t border-default px-3 py-2 text-sm font-medium">
+                <span>Total</span>
+                <span class="tabular-nums">{{ payableLabel }}</span>
+              </div>
+            </div>
 
             <!-- The seller decides which currencies this invoice takes; the
                  buyer only chooses among them. -->

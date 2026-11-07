@@ -51,6 +51,27 @@ const SCHEMA: &[&str] = &[
         UNIQUE (user_id, payment_id)
     )",
     "CREATE INDEX IF NOT EXISTS saved_payments_user_id_idx ON saved_payments(user_id)",
+    // A seller's shop is one row per account: there is no shop id to pass
+    // around, and a profile page only ever edits its own.
+    "CREATE TABLE IF NOT EXISTS shops (
+        id          TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+    )",
+    // Products hang off the account rather than the shop row so a product
+    // survives the shop being edited. `price_lamports` is the canonical price:
+    // the receipt in every invoice is built from it.
+    "CREATE TABLE IF NOT EXISTS products (
+        id             TEXT PRIMARY KEY,
+        user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name           TEXT NOT NULL,
+        details        TEXT NOT NULL DEFAULT '',
+        price_lamports INTEGER NOT NULL,
+        created_at     INTEGER NOT NULL
+    )",
+    "CREATE INDEX IF NOT EXISTS products_user_id_idx ON products(user_id)",
     "CREATE TABLE IF NOT EXISTS password_resets (
         token_hash TEXT PRIMARY KEY,
         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

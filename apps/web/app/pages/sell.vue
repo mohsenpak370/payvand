@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { address } from '@vue-solana/nuxt/kit'
-import type { DiscountCode, PaymentRecord, SupportedCurrency } from '~/composables/usePaymentApi'
+import type {
+  DiscountCode,
+  PaymentItem,
+  PaymentRecord,
+  SupportedCurrency
+} from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster } from '~/composables/usePaymentProgram'
 import type { FiatCurrency } from '~/composables/useFiat'
+import type { CartLine, Product } from '~/composables/useShop'
+import { cartTotalLamports } from '~/composables/useShop'
 
 useSeoMeta({ title: 'Sell — Payvand' })
 
@@ -11,6 +18,7 @@ definePageMeta({ middleware: 'auth' })
 
 const { cluster } = useRuntimeConfig().public
 const api = usePaymentApi()
+const shopApi = useShopApi()
 const { publicKey, connected } = useSolanaWallet()
 
 const amountSol = ref('0.01')
@@ -40,6 +48,17 @@ const busy = ref(false)
 const failure = ref('')
 const record = ref<PaymentRecord | null>(null)
 const qrPayload = ref('')
+// The receipt this payment carries. Kept here rather than read back off the
+// record: a status refresh replaces the record with the chain's copy, which
+// knows the memo and the amount but nothing about what was sold.
+const createdItems = ref<PaymentItem[]>([])
+
+// The seller's own menu, offered as taps instead of typing. An account with no
+// shop simply never sees this block.
+const products = ref<Product[]>([])
+const cart = ref<CartLine[]>([])
+const cartTotal = computed(() => cartTotalLamports(cart.value))
+const cartActive = computed(() => cart.value.length > 0)
 
 // Discount codes, and the price of the open invoice — after settlement the
 // chain reports the *received* amount, so the full price is kept here.
@@ -140,6 +159,14 @@ const priceSummary = computed(() =>
   )
 )
 
+// Picking products decides the price: the invoice has to charge exactly what
+// the receipt adds up to, or the API refuses to build the code.
+watch(cartTotal, (total) => {
+  if (total <= 0) return
+  priceInFiat.value = false
+  amountSol.value = String(Number((total / 1_000_000_000).toFixed(9)))
+})
+
 function toggleAccepted(option: SupportedCurrency) {
   if (accepted.value.includes(option)) {
     // Never leave an invoice with no way to pay it.
@@ -219,6 +246,11 @@ async function createPayment() {
       memo: memo.value,
       name: name.value.trim(),
       description: description.value.trim(),
+      items: cart.value.map(line => ({
+        name: line.product.name,
+        quantity: line.quantity,
+        amount_lamports: line.product.price_lamports
+      })),
       discount_code: selectedDiscount.value?.code,
       cluster
     })
@@ -227,6 +259,9 @@ async function createPayment() {
     qrPayload.value = withSellerCurrency(created.qrPayload)
     priceLamports.value = lamports.value
     paidCode.value = null
+    createdItems.value = created.payment.items ?? []
+    // The invoice is made; the next one starts from an empty tray.
+    cart.value = []
   } catch (error) {
     failure.value = error instanceof Error ? error.message : 'Could not create the payment.'
   } finally {
@@ -328,6 +363,17 @@ async function loadDiscounts() {
   }
 }
 
+/** The menu, if this account has one. A shop that fails to load must never
+ *  stop a seller from typing an amount the way they always could. */
+async function loadShop() {
+  try {
+    const response = await shopApi.get()
+    products.value = response.products
+  } catch {
+    products.value = []
+  }
+}
+
 async function addDiscount() {
   codeFailure.value = ''
   codeBusy.value = true
@@ -361,6 +407,7 @@ function reset() {
   failure.value = ''
   paidCode.value = null
   priceLamports.value = 0
+  createdItems.value = []
 }
 
 const copiedCode = ref(false)
@@ -415,6 +462,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   loadDiscounts()
+  loadShop()
   timer = setInterval(refreshStatus, 5_000)
 })
 
@@ -442,11 +490,19 @@ onBeforeUnmount(() => {
         </template>
 
         <div class="flex flex-col gap-4">
+          <ProductPicker
+            v-if="products.length"
+            v-model="cart"
+            :products="products"
+          />
+
           <UFormField
             label="Amount"
-            :help="priceInFiat
-              ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
-              : 'What the customer pays.'"
+            :help="cartActive
+              ? 'The total of the products above — clear them to type an amount instead.'
+              : priceInFiat
+                ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
+                : 'What the customer pays.'"
           >
             <div class="flex items-stretch gap-2">
               <UInput
@@ -457,6 +513,7 @@ onBeforeUnmount(() => {
                 step="0.01"
                 class="min-w-0 flex-1"
                 placeholder="5.00"
+                :disabled="cartActive"
               />
               <UInput
                 v-else
@@ -466,18 +523,21 @@ onBeforeUnmount(() => {
                 step="0.001"
                 class="min-w-0 flex-1"
                 placeholder="0.01"
+                :disabled="cartActive"
               />
               <USelect
                 v-model="amountUnit"
                 :items="amountUnits"
                 class="w-24"
                 aria-label="Unit of the amount"
+                :disabled="cartActive"
               />
               <UButton
                 icon="i-lucide-calculator"
                 color="neutral"
                 variant="outline"
                 aria-label="Open the calculator"
+                :disabled="cartActive"
                 @click="calculatorOpen = true"
               />
             </div>
@@ -642,6 +702,26 @@ onBeforeUnmount(() => {
             >
               {{ record.description }}
             </p>
+          </div>
+
+          <!-- The receipt the customer sees, kept from the invoice itself: a
+               status refresh replaces the record, not this. -->
+          <div
+            v-if="createdItems.length"
+            class="w-full rounded-xl border border-default text-left"
+          >
+            <ul class="divide-y divide-default">
+              <li
+                v-for="(item, index) in createdItems"
+                :key="index"
+                class="flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm"
+              >
+                <span class="min-w-0 break-words">{{ item.quantity }} × {{ item.name }}</span>
+                <span class="shrink-0 text-muted tabular-nums">
+                  {{ lamportsToSol(item.amount_lamports * item.quantity) }} SOL
+                </span>
+              </li>
+            </ul>
           </div>
 
           <div class="flex items-center gap-2">

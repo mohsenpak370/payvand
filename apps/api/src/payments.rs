@@ -18,6 +18,16 @@ pub const MAX_NAME_LEN: usize = 64;
 /// for a phone camera to read.
 pub const MAX_DESCRIPTION_LEN: usize = 160;
 
+/// Lines a receipt may carry. Every line rides in the QR code, so this is the
+/// number that keeps a full cart scannable on a phone camera.
+pub const MAX_ITEMS: usize = 8;
+
+/// Product names are the dense part of a receipt line, so they are short.
+pub const MAX_ITEM_NAME_LEN: usize = 32;
+
+/// One shelf of a shop is not a stockroom; more than this is a typo.
+pub const MAX_ITEM_QUANTITY: u32 = 99;
+
 /// Version tag carried in the QR payload so scanners can evolve the format.
 pub const QR_PAYLOAD_VERSION: u8 = 1;
 
@@ -147,6 +157,18 @@ impl PaymentOption {
     }
 }
 
+/// One line of a receipt: what was sold, how many, and the unit price in
+/// lamports. The customer sees it above the amount, so a coffee and a croissant
+/// are itemised rather than collapsed into one unexplained total. The chain
+/// stores only the memo and the amount; the lines live in the code itself.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PaymentItem {
+    pub name: String,
+    pub quantity: u32,
+    /// Unit price, not the line total: quantity is kept beside it.
+    pub amount_lamports: u64,
+}
+
 /// The single shape the API returns, also embedded in the QR payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaymentRecord {
@@ -172,6 +194,10 @@ pub struct PaymentRecord {
     pub name: String,
     /// Seller's longer description, with the same caveat as `name`.
     pub description: String,
+    /// Receipt lines when the seller priced the invoice from their shop. Empty
+    /// for a hand-priced invoice, and always empty on a chain read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<PaymentItem>,
     /// The code attached while creating the invoice, if any. Chain reads carry
     /// none: the discount lives in the payload, not in the account.
     pub discount: Option<PaymentDiscount>,
@@ -206,6 +232,7 @@ impl PaymentRecord {
             memo: &self.memo,
             name: &self.name,
             description: &self.description,
+            items: &self.items,
             discount: self.discount.as_ref(),
             options: if many { &self.options } else { &[] },
             cluster: &self.cluster,
@@ -230,6 +257,10 @@ struct QrPayload<'a> {
     name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
     description: &'a str,
+    /// The receipt, skipped on an invoice that has none so ordinary codes keep
+    /// exactly the shape they had before shops existed.
+    #[serde(skip_serializing_if = "<[PaymentItem]>::is_empty")]
+    items: &'a [PaymentItem],
     /// Skipped when absent, so an ordinary invoice scans exactly as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     discount: Option<&'a PaymentDiscount>,
@@ -262,6 +293,11 @@ pub struct CreatePaymentRequest {
     pub name: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Receipt lines, when the invoice was built from a shop. Checked to add up
+    /// to the SOL price, so a code can never itemise one total and charge
+    /// another.
+    #[serde(default)]
+    pub items: Vec<PaymentItem>,
     /// Optional code to bake into this invoice. The handler resolves it to a
     /// percentage against the signed-in seller's own codes, so the body can
     /// name a code but never choose the discount.
@@ -302,6 +338,7 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
 
     // Derived before any field is moved out of the request.
     let options = build_options(&request)?;
+    let items = validate_items(request.items, &options)?;
 
     let name = request.name.unwrap_or_default().trim().to_string();
     if name.len() > MAX_NAME_LEN {
@@ -343,6 +380,7 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         memo: request.memo,
         name,
         description,
+        items,
         discount: None,
         cluster: request.cluster,
         endpoint,
@@ -452,6 +490,61 @@ pub fn build_options(request: &CreatePaymentRequest) -> ApiResult<Vec<PaymentOpt
     Ok(options)
 }
 
+/// Cleans the receipt and makes it agree with the price. A code whose lines add
+/// up to something other than what it charges is worse than no receipt at all,
+/// so it is refused here rather than shown to a customer.
+fn validate_items(
+    items: Vec<PaymentItem>,
+    options: &[PaymentOption],
+) -> ApiResult<Vec<PaymentItem>> {
+    if items.is_empty() {
+        return Ok(items);
+    }
+    if items.len() > MAX_ITEMS {
+        return Err(bad(format!(
+            "A receipt can list at most {MAX_ITEMS} different products."
+        )));
+    }
+
+    let mut cleaned = Vec::with_capacity(items.len());
+    let mut total: u128 = 0;
+    for item in items {
+        let name = item.name.trim().to_string();
+        if name.is_empty() {
+            return Err(bad("Every receipt line needs a name."));
+        }
+        if name.chars().count() > MAX_ITEM_NAME_LEN {
+            return Err(bad(format!(
+                "A receipt line name must be at most {MAX_ITEM_NAME_LEN} characters."
+            )));
+        }
+        if item.quantity == 0 || item.quantity > MAX_ITEM_QUANTITY {
+            return Err(bad(format!(
+                "A receipt line can be for 1 to {MAX_ITEM_QUANTITY} of an item."
+            )));
+        }
+        if item.amount_lamports == 0 {
+            return Err(bad("A receipt line needs a price greater than 0."));
+        }
+        total += u128::from(item.amount_lamports) * u128::from(item.quantity);
+        cleaned.push(PaymentItem {
+            name,
+            quantity: item.quantity,
+            amount_lamports: item.amount_lamports,
+        });
+    }
+
+    // Only a SOL price can be checked here: an invoice priced purely in a
+    // stablecoin has no lamport total to compare against.
+    if let Some(sol) = options.iter().find(|option| option.is_sol()) {
+        if total != u128::from(sol.amount) {
+            return Err(bad("The receipt lines do not add up to the invoice amount."));
+        }
+    }
+
+    Ok(cleaned)
+}
+
 /// SOL, USDC and EURC — more than that makes the QR too dense to scan.
 pub const MAX_OPTIONS: usize = 3;
 
@@ -516,6 +609,7 @@ fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRec
         memo: String::new(),
         name: String::new(),
         description: String::new(),
+        items: Vec::new(),
         discount: None,
         cluster,
         endpoint,
@@ -556,6 +650,7 @@ fn record_from_chain(
         memo: payment.memo,
         name: String::new(),
         description: String::new(),
+        items: Vec::new(),
         discount: None,
         cluster,
         endpoint,
@@ -830,6 +925,7 @@ fn token_record_from_chain(
         memo: payment.memo,
         name: String::new(),
         description: String::new(),
+        items: Vec::new(),
         discount: None,
         cluster,
         endpoint,
@@ -928,6 +1024,7 @@ mod tests {
             memo: "coffee".to_string(),
             name: None,
             description: None,
+            items: Vec::new(),
             discount_code: None,
             cluster: "devnet".to_string(),
             endpoint: None,
@@ -992,6 +1089,75 @@ mod tests {
         assert!(payload.get("name").is_none());
         assert!(payload.get("description").is_none());
         assert!(payload.get("discount").is_none());
+    }
+
+    #[test]
+    fn carries_a_receipt_that_adds_up_to_the_price() {
+        let request = CreatePaymentRequest {
+            amount_lamports: 1_000_000,
+            items: vec![
+                PaymentItem {
+                    name: " Flat white ".into(),
+                    quantity: 2,
+                    amount_lamports: 400_000,
+                },
+                PaymentItem {
+                    name: "Croissant".into(),
+                    quantity: 1,
+                    amount_lamports: 200_000,
+                },
+            ],
+            ..sample_request()
+        };
+        let record = create_payment(request).expect("valid receipt");
+        assert_eq!(record.items.len(), 2);
+        assert_eq!(record.items[0].name, "Flat white");
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&record.qr_payload()).expect("payload is json");
+        assert_eq!(payload["items"][0]["quantity"], 2);
+        assert_eq!(payload["items"][1]["amount_lamports"], 200_000);
+    }
+
+    #[test]
+    fn refuses_a_receipt_that_does_not_add_up() {
+        // 2 × 0.004 SOL is not the 0.01 SOL the invoice charges.
+        let request = CreatePaymentRequest {
+            items: vec![PaymentItem {
+                name: "Flat white".into(),
+                quantity: 2,
+                amount_lamports: 400_000,
+            }],
+            ..sample_request()
+        };
+        assert!(create_payment(request).is_err());
+    }
+
+    #[test]
+    fn refuses_a_receipt_line_that_makes_no_sense() {
+        let free = CreatePaymentRequest {
+            items: vec![PaymentItem {
+                name: "Coffee".into(),
+                quantity: 0,
+                amount_lamports: 1_000_000,
+            }],
+            ..sample_request()
+        };
+        assert!(create_payment(free).is_err());
+
+        // One more line than a code can carry.
+        let crowded = CreatePaymentRequest {
+            amount_lamports: u64::from(MAX_ITEMS as u32 + 1),
+            items: (0..=MAX_ITEMS)
+                .map(|_| PaymentItem {
+                    name: "x".into(),
+                    quantity: 1,
+                    amount_lamports: 1,
+                })
+                .collect(),
+            ..sample_request()
+        };
+        assert!(create_payment(crowded).is_err());
     }
 
     #[test]

@@ -34,6 +34,8 @@ export interface PaymentRecord {
   /** Empty on records read back from chain, which stores neither field. */
   name: string
   description: string
+  /** The receipt, when the invoice was built from a shop. Empty on chain reads. */
+  items?: PaymentItem[]
   /** The code attached while creating the invoice; null on chain reads. */
   discount?: PaymentDiscount | null
   cluster: string
@@ -44,6 +46,18 @@ export interface PaymentRecord {
   settled_at_unix: number
 }
 
+/**
+ * One line of a receipt. Priced in lamports — the unit the invoice itself is
+ * charged in — with the quantity kept beside it, so the buyer's screen can show
+ * "2 × Flat white" rather than a total nobody can check.
+ */
+export interface PaymentItem {
+  name: string
+  quantity: number
+  /** Unit price, not the line total. */
+  amount_lamports: number
+}
+
 export interface CreatePaymentInput {
   seller: string
   reference: string
@@ -52,6 +66,8 @@ export interface CreatePaymentInput {
   memo: string
   name?: string
   description?: string
+  /** Receipt lines, when the invoice was built from the seller's shop. */
+  items?: PaymentItem[]
   /** Code to bake into the invoice, priced against the seller's own codes. */
   discount_code?: string
   cluster: string
@@ -84,6 +100,8 @@ export interface PaymentQrPayload {
   memo: string
   name?: string
   description?: string
+  /** The receipt, when the seller priced the invoice from their shop. */
+  items?: PaymentItem[]
   /** Attached at creation: the buyer's screen applies it without typing. */
   discount?: PaymentDiscount | null
   cluster: string
