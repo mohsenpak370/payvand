@@ -18,7 +18,15 @@ const budgetApi = useBudget()
 const cluster = useRuntimeConfig().public.cluster as string
 const currencies = currenciesForCluster(cluster)
 const activeCurrency = ref<SupportedCurrency>('sol')
-const limitAmount = ref('2')
+/**
+ * Low on purpose: the session key pays without the wallet, so the limit is
+ * also the most a device holding it can ever spend on its own.
+ */
+const DEFAULT_LIMITS: Record<SupportedCurrency, string> = { sol: '0.1', usdc: '1', eurc: '1' }
+const limitAmount = ref(DEFAULT_LIMITS.sol)
+const LOW_LIMIT_WARNING
+  = 'Any device holding your session key can pay up to this amount without asking your wallet, '
+    + 'so it is also the most a stolen phone or laptop could spend. Start low and raise it whenever you need more.'
 const tokenBudgets = ref<Partial<Record<SupportedCurrency, TokenBudgetState | null>>>({})
 
 const busy = ref(false)
@@ -27,6 +35,8 @@ const failureTitle = ref('Something went wrong')
 const success = ref('')
 const budget = ref<BudgetState | null>(null)
 const budgetPot = ref(0)
+/** The session key this device holds, if any — the only key that can pay here. */
+const deviceKeyAddress = ref<string | null>(null)
 
 const activeMint = computed(() =>
   activeCurrency.value === 'sol'
@@ -57,6 +67,14 @@ const view = computed(() => {
   }
 })
 
+/**
+ * True when the allowance on screen is signed by a key this device does not
+ * hold: another installation opened it, or this browser was never set up.
+ */
+const foreignDevice = computed(
+  () => Boolean(view.value && view.value.sessionKey !== deviceKeyAddress.value)
+)
+
 const decimals = computed(() => (activeCurrency.value === 'sol' ? 9 : 6))
 const unitLabel = computed(() => currencySymbol(activeCurrency.value))
 
@@ -79,7 +97,11 @@ async function refresh() {
   budget.value = null
   budgetPot.value = 0
   tokenBudgets.value = {}
-  if (!publicKey.value) return
+  if (!publicKey.value) {
+    deviceKeyAddress.value = null
+    return
+  }
+  deviceKeyAddress.value = (await peekSessionSigner(publicKey.value))?.address ?? null
   try {
     const loaded = await budgetApi.loadBudget(publicKey.value)
     budget.value = loaded
@@ -97,6 +119,13 @@ async function refresh() {
 }
 
 watch(publicKey, refresh, { immediate: true })
+
+// A fresh low default for the currency being looked at, unless it was edited.
+watch(activeCurrency, (currency, previous) => {
+  if (limitAmount.value === DEFAULT_LIMITS[previous]) {
+    limitAmount.value = DEFAULT_LIMITS[currency]
+  }
+})
 
 /**
  * vue-solana wallet errors carry a string code (`USER_REJECTED`,
@@ -132,25 +161,57 @@ function recordFailure(error: unknown) {
   failure.value = describeFailure(error)
 }
 
-/**
- * The one signature each currency's allowance ever asks for: funds the pot to
- * the limit, tops up the session key's fee float, and registers (or rotates)
- * the session key that will pay silently afterwards.
- */
-async function saveLimit() {
-  const buyer = publicKey.value
-  if (!buyer) return
-
+function resetMessages() {
   failure.value = ''
   failureTitle.value = 'Something went wrong'
   success.value = ''
+}
 
+async function saveLimit() {
   const units = Number(limitAmount.value)
   const limit = toBaseUnits(units)
   if (!Number.isFinite(limit) || limit <= 0) {
     failure.value = `Enter a monthly limit greater than 0 ${unitLabel.value}.`
     return
   }
+  resetMessages()
+  await applyLimit(limit, 'save')
+}
+
+/**
+ * Moves this currency's allowance onto this device: the same instruction the
+ * first setup uses, which rewrites `session_key` — so every other device stops
+ * being able to spend. The limit written is what the pot already holds, since
+ * `open_*_budget` tops the pot up to the limit it is given; rotating at the old
+ * limit would pull the spent part back out of the wallet.
+ */
+async function rotateToThisDevice() {
+  const current = view.value
+  if (!current) return
+  resetMessages()
+  const funded = Math.min(current.limit, current.pot)
+  if (funded <= 0) {
+    failureTitle.value = 'Nothing left to take over'
+    failure.value = `This month's ${unitLabel.value} pot is empty, so there is nothing for a `
+      + 'session key to spend yet. Set a limit with the button below — that same approval also '
+      + 'registers this device.'
+    return
+  }
+  await applyLimit(funded, 'rotate')
+}
+
+/**
+ * The one signature each currency's allowance ever asks for: funds the pot to
+ * the limit, tops up the session key's fee float, and registers (or rotates)
+ * the session key that will pay silently afterwards.
+ */
+async function applyLimit(limit: number, intent: 'save' | 'rotate') {
+  const buyer = publicKey.value
+  if (!buyer) return
+
+  failure.value = ''
+  failureTitle.value = 'Something went wrong'
+  success.value = ''
 
   busy.value = true
   try {
@@ -189,6 +250,8 @@ async function saveLimit() {
         return
       }
 
+      // A takeover moves no tokens — they already sit in the vault — so only
+      // a new or raised limit needs to check the wallet's balance.
       const held = await client.rpc
         .getTokenAccountBalance(await deriveAssociatedTokenAddress(buyer, mint), {
           commitment: 'confirmed'
@@ -196,7 +259,7 @@ async function saveLimit() {
         .send()
         .then(balance => Number(balance.value.amount))
         .catch(() => 0)
-      if (held < limit) {
+      if (intent === 'save' && held < limit) {
         failureTitle.value = `Not enough ${unitLabel.value}`
         failure.value = `This wallet holds ${amountLabel(held)}, but the limit is ${amountLabel(limit)}. `
           + 'Lower the limit, or get free test tokens from https://faucet.circle.com and try again.'
@@ -229,9 +292,11 @@ async function saveLimit() {
           { buyer, budget: await deriveBudgetPda(buyer), session_key: session.address }
         )
     const memo = buildMemoInstruction(
-      existing
-        ? `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)} (still your funds)`
-        : `Payvand: keep ${amountLabel(limit)} as your monthly budget (still your funds, withdrawable anytime)`,
+      intent === 'rotate'
+        ? `Payvand: pay from this device, same limit, other devices revoked`
+        : existing
+          ? `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)} (still your funds)`
+          : `Payvand: keep ${amountLabel(limit)} as your monthly budget (still your funds, withdrawable anytime)`,
       buyer
     )
     const wire = await compileWireTransaction({
@@ -245,11 +310,17 @@ async function saveLimit() {
       confirm: true,
       confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
     })
-    success.value = existing
-      ? 'Budget updated — your limit and pot are in sync again.'
-      : `${unitLabel.value} allowance enabled. The tokens sit in an account derived from your wallet `
+    if (intent === 'rotate') {
+      success.value = 'This device now pays silently, and the key the other device held stopped '
+        + `working at once. Nothing moved: the limit is now ${amountLabel(limit)}, what the pot already `
+        + 'held, and the monthly counter restarts at zero. Top up from here whenever you want a bigger one.'
+    } else if (existing) {
+      success.value = 'Budget updated — your limit and pot are in sync again.'
+    } else {
+      success.value = `${unitLabel.value} allowance enabled. The tokens sit in an account derived from your wallet `
         + 'that only your private keys control — payments inside the limit need no approval, and '
         + '"Close budget" returns everything left at any time.'
+    }
     await refresh()
   } catch (error) {
     recordFailure(error)
@@ -384,6 +455,12 @@ async function closeBudget() {
               <p class="font-mono text-sm">
                 {{ shorten(view.sessionKey) }}
               </p>
+              <p
+                v-if="foreignDevice"
+                class="text-xs text-muted"
+              >
+                another device
+              </p>
             </div>
           </div>
 
@@ -393,6 +470,26 @@ async function closeBudget() {
             1st of each month, the pot keeps whatever you did not spend, and closing the budget
             returns every unit back to your wallet.
           </p>
+
+          <UAlert
+            v-if="foreignDevice"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-smartphone"
+            title="This allowance is registered to another device"
+            :description="deviceKeyAddress
+              ? `The key that pays silently here belongs to a different device (${shorten(deviceKeyAddress)}). Taking it over needs one approval, moves no funds, and stops the other device from spending.`
+              : 'The key that pays silently for this allowance lives on another device. Taking it over needs one approval, moves no funds, and stops the other device from spending.'"
+          >
+            <template #actions>
+              <UButton
+                label="Use this device instead"
+                size="sm"
+                :loading="busy || txLoading"
+                @click="rotateToThisDevice"
+              />
+            </template>
+          </UAlert>
 
           <UFormField
             :label="`Monthly limit (${unitLabel})`"
@@ -404,9 +501,17 @@ async function closeBudget() {
               min="0"
               step="0.1"
               class="w-full"
-              placeholder="2"
+              :placeholder="DEFAULT_LIMITS[activeCurrency]"
             />
           </UFormField>
+
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-shield-alert"
+            title="Keep the limit low"
+            :description="LOW_LIMIT_WARNING"
+          />
 
           <div class="flex flex-wrap gap-2">
             <UButton
@@ -424,6 +529,12 @@ async function closeBudget() {
               @click="closeBudget"
             />
           </div>
+
+          <p class="text-sm text-muted">
+            <span class="font-medium text-highlighted">Closing the budget is the kill switch.</span>
+            It revokes the session key on every device, returns everything left to your wallet, and
+            stops silent payments at once — then a new limit can be set whenever you are ready.
+          </p>
         </template>
 
         <template v-else-if="connected">
@@ -434,9 +545,17 @@ async function closeBudget() {
               min="0"
               step="0.1"
               class="w-full"
-              placeholder="2"
+              :placeholder="DEFAULT_LIMITS[activeCurrency]"
             />
           </UFormField>
+
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-shield-alert"
+            title="Keep the limit low"
+            :description="LOW_LIMIT_WARNING"
+          />
 
           <UButton
             label="Enable monthly budget"

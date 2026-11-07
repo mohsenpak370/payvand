@@ -1,6 +1,5 @@
 import {
   appendTransactionMessageInstruction,
-  createKeyPairSignerFromPrivateKeyBytes,
   createTransactionMessage,
   getAddressDecoder,
   getAddressEncoder,
@@ -20,11 +19,11 @@ import {
   describeProgramErrorCode
 } from './usePaymentProgram'
 import type { compileWireTransaction } from './usePaymentProgram'
+import { peekSessionSigner } from './useSessionKey'
 
 const BUDGET_SEED = new TextEncoder().encode('budget')
 /** A token budget per buyer per mint, under its own seed prefix. */
 const TOKEN_BUDGET_SEED = new TextEncoder().encode('token-budget')
-const SESSION_STORAGE_PREFIX = 'payvand.session.v1.'
 
 /** Mirrors `BUDGET_SPACE` in the program: 8 + 32 + 32 + 8 + 8 + 8 + 1. */
 const BUDGET_SPACE = 97
@@ -110,39 +109,6 @@ export async function deriveTokenBudgetPda(buyer: Address, mint: Address): Promi
     seeds: [TOKEN_BUDGET_SEED, encoder.encode(buyer), encoder.encode(mint)]
   })
   return pda
-}
-
-const sessionStorageKey = (buyer: Address) => `${SESSION_STORAGE_PREFIX}${buyer}`
-
-/** The device's stored session key, or null when this device never opened one. */
-export async function peekSessionSigner(buyer: Address): Promise<KeyPairSigner | null> {
-  try {
-    const raw = localStorage.getItem(sessionStorageKey(buyer))
-    if (!raw) return null
-    const bytes = Uint8Array.from(JSON.parse(raw) as number[])
-    if (bytes.length !== 32) return null
-    return await createKeyPairSignerFromPrivateKeyBytes(bytes)
-  } catch {
-    return null
-  }
-}
-
-/**
- * The session key for this buyer: loaded when this device has one, freshly
- * generated and persisted otherwise. The raw key never leaves the device —
- * and a leaked key can only ever spend the remainder of the month's budget.
- */
-export async function ensureSessionSigner(buyer: Address): Promise<KeyPairSigner> {
-  const existing = await peekSessionSigner(buyer)
-  if (existing) return existing
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  localStorage.setItem(sessionStorageKey(buyer), JSON.stringify([...bytes]))
-  return await createKeyPairSignerFromPrivateKeyBytes(bytes)
-}
-
-/** Drop the device's session key — used after the budget is closed. */
-export function forgetSessionSigner(buyer: Address): void {
-  localStorage.removeItem(sessionStorageKey(buyer))
 }
 
 /** First 8 bytes of `sha256("account:<Name>")`, Anchor's account tag. */

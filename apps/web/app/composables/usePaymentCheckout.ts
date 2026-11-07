@@ -13,7 +13,8 @@ import {
   deriveTokenPaymentPda,
   mintForCurrency
 } from './usePaymentProgram'
-import { peekSessionSigner, type BudgetState, type TokenBudgetState } from './useBudget'
+import { peekSessionSigner } from './useSessionKey'
+import type { BudgetState, TokenBudgetState } from './useBudget'
 
 /**
  * Paying from the allowance is the only path that needs no wallet at all, so
