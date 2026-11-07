@@ -154,10 +154,16 @@ defineExpose({ start, stop })
         <div
           class="absolute top-1/2 left-1/2 aspect-square w-[68%] max-w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
         >
-          <span class="absolute -top-0.5 -left-0.5 size-8 rounded-tl-xl border-t-2 border-l-2 border-white/90" />
-          <span class="absolute -top-0.5 -right-0.5 size-8 rounded-tr-xl border-t-2 border-r-2 border-white/90" />
-          <span class="absolute -bottom-0.5 -left-0.5 size-8 rounded-bl-xl border-b-2 border-l-2 border-white/90" />
-          <span class="absolute -right-0.5 -bottom-0.5 size-8 rounded-br-xl border-r-2 border-b-2 border-white/90" />
+          <!--
+            The brackets sit on the frame's own border box and share its corner
+            radius (2xl, the same token), so the white line lands exactly on the
+            edge of the undimmed area. A smaller radius or a pixel of offset
+            leaves a wedge of gap between the bracket and the scan area.
+          -->
+          <span class="absolute top-0 left-0 size-8 rounded-tl-2xl border-t-2 border-l-2 border-white/90" />
+          <span class="absolute top-0 right-0 size-8 rounded-tr-2xl border-t-2 border-r-2 border-white/90" />
+          <span class="absolute bottom-0 left-0 size-8 rounded-bl-2xl border-b-2 border-l-2 border-white/90" />
+          <span class="absolute right-0 bottom-0 size-8 rounded-br-2xl border-r-2 border-b-2 border-white/90" />
 
           <span
             class="animate-scan-sweep absolute inset-x-2 h-0.5 rounded-full bg-sky-300 shadow-[0_0_12px_2px_rgba(56,189,248,0.65)] motion-reduce:animate-none"
