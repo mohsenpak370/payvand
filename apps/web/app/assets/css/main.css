@@ -64,6 +64,18 @@
 }
 
 /*
+ * Light-mode warning and success text: Nuxt UI gives these tokens the 500 step
+ * (amber-500, and our green-500), which is a background-weight colour. On a
+ * white card it measures under 2:1, so a warning alert's yellow title reads as
+ * a smear. The 700 step keeps the hue and clears 4.5:1 on the card and on the
+ * 10% tint behind an alert. Dark mode keeps the 400 steps Nuxt UI picks there.
+ */
+:root:not(.dark) {
+  --ui-warning: var(--ui-color-warning-700);
+  --ui-success: var(--ui-color-success-700);
+}
+
+/*
  * A printed payment is the receipt, so it prints as the page looks — page
  * background, bordered card, coloured text — instead of being washed out to a
  * blank sheet. Browsers drop backgrounds from print jobs unless told to keep
