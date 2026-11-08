@@ -184,7 +184,9 @@ export default defineNuxtConfig({
     registerType: 'autoUpdate',
     manifest: {
       id: '/',
-      name: 'Payvand — Solana QR payments',
+      // The launch splash prints this under the icon and truncates anything
+      // long, so it is the name alone; the tagline lives in `description`.
+      name: 'Payvand',
       short_name: 'Payvand',
       description: 'Take payment with a QR code, or scan one and pay from your wallet.',
       lang: 'en',
