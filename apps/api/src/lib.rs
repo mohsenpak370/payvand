@@ -6,14 +6,16 @@ pub mod db;
 pub mod discounts;
 pub mod email;
 pub mod payments;
+pub mod rate_limit;
 pub mod saved;
 pub mod shops;
 pub mod solana_pay;
 pub mod waitlist;
 pub mod wallet;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, Method};
+use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use payments::{ApiError, CreatePaymentRequest, PaymentQuery};
@@ -88,6 +90,9 @@ pub fn build_router(state: AppState) -> Router {
             "/api/shops/{id}/products/{product_id}",
             patch(shops::update_product).delete(shops::delete_product),
         )
+        // Inside the CORS layer on purpose: a 429 still has to carry the
+        // headers that let the browser read it.
+        .layer(axum::middleware::from_fn(throttle))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -103,6 +108,54 @@ pub fn build_router(state: AppState) -> Router {
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// One route's allowance: how many hits per caller inside a window.
+struct Throttle {
+    bucket: &'static str,
+    limit: u32,
+    window_secs: u64,
+}
+
+/// The routes a stranger can hammer without an account: passwords, discount
+/// codes and the waiting list. Everything else already needs a session, so its
+/// volume is bounded by the account that spends it.
+fn throttle_for(path: &str) -> Option<Throttle> {
+    let (bucket, limit, window_secs) = match path {
+        "/api/auth/signup" => ("signup", 10, rate_limit::HOUR),
+        "/api/auth/signin" => ("signin", 30, rate_limit::MINUTE),
+        "/api/auth/forgot-password" => ("forgot", 10, rate_limit::HOUR),
+        "/api/auth/wallet/challenge" => ("challenge", 30, rate_limit::MINUTE),
+        // Low on purpose: a person applies a code or two, while guessing one
+        // is the only way to find another seller's discount.
+        "/api/discounts/validate" => ("discount", 12, rate_limit::MINUTE),
+        "/api/waitlist" => ("waitlist", 10, rate_limit::HOUR),
+        _ => return None,
+    };
+    Some(Throttle {
+        bucket,
+        limit,
+        window_secs,
+    })
+}
+
+/// Counts a hit per caller before the request reaches a handler. Only POST is
+/// counted: a page read costs nothing, a guess at a password does.
+async fn throttle(request: Request, next: axum::middleware::Next) -> axum::response::Response {
+    if request.method() == Method::POST {
+        if let Some(policy) = throttle_for(request.uri().path()) {
+            let caller = rate_limit::caller(request.headers());
+            if let Err(error) = rate_limit::hit(
+                policy.bucket,
+                &caller,
+                policy.limit,
+                policy.window_secs,
+            ) {
+                return error.into_response();
+            }
+        }
+    }
+    next.run(request).await
 }
 
 async fn index() -> Json<serde_json::Value> {

@@ -91,6 +91,8 @@ pub enum ApiError {
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
+    TooManyRequests(String),
+    #[error("{0}")]
     Internal(String),
 }
 
@@ -101,9 +103,21 @@ impl axum::response::IntoResponse for ApiError {
             Self::Unauthorized => axum::http::StatusCode::UNAUTHORIZED,
             Self::Forbidden(_) => axum::http::StatusCode::FORBIDDEN,
             Self::NotFound(_) => axum::http::StatusCode::NOT_FOUND,
+            Self::TooManyRequests(_) => axum::http::StatusCode::TOO_MANY_REQUESTS,
             Self::Internal(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
-        let body = axum::Json(serde_json::json!({ "error": self.to_string() }));
+        // An internal failure can name a table, a query or a file, so it is
+        // logged where the operator can read it and answered with a sentence
+        // that tells the caller only what to do next.
+        let body = match &self {
+            Self::Internal(message) => {
+                tracing::error!(%message, "internal error");
+                axum::Json(serde_json::json!({
+                    "error": "Something went wrong on our side. Try again."
+                }))
+            }
+            other => axum::Json(serde_json::json!({ "error": other.to_string() })),
+        };
         (status, body).into_response()
     }
 }
@@ -802,13 +816,56 @@ fn default_cluster() -> String {
     std::env::var("SOLANA_CLUSTER").unwrap_or_else(|_| "devnet".to_string())
 }
 
+/// The reassuring half of a URL: scheme, host and port, with any path, query
+/// or userinfo dropped. Comparing these is what makes the allowlist airtight —
+/// `https://api.devnet.solana.com@evil.example` has a different origin than the
+/// host it pretends to be.
+fn origin_of(raw: &str) -> Option<String> {
+    let parsed = url::Url::parse(raw.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    Some(parsed.origin().ascii_serialization())
+}
+
+/// Origins this API is willing to speak JSON-RPC to.
+///
+/// The cluster defaults, plus whatever the operator configured: `SOLANA_RPC_URL`
+/// (the endpoint the API already trusts for its own reads) and
+/// `ALLOWED_RPC_ENDPOINTS` (a comma-separated list, for a local validator on an
+/// unusual port or a second provider). Nothing else.
+fn allowed_origins() -> Vec<String> {
+    let mut origins = vec![
+        "https://api.devnet.solana.com".to_string(),
+        "https://api.testnet.solana.com".to_string(),
+        "https://api.mainnet-beta.solana.com".to_string(),
+        "http://127.0.0.1:8899".to_string(),
+    ];
+    if let Ok(configured) = std::env::var("SOLANA_RPC_URL") {
+        origins.extend(origin_of(&configured));
+    }
+    if let Ok(list) = std::env::var("ALLOWED_RPC_ENDPOINTS") {
+        origins.extend(list.split(',').filter_map(origin_of));
+    }
+    origins
+}
+
 /// Explicit endpoint wins, then `SOLANA_RPC_URL`, then the cluster default.
+///
+/// The explicit one arrives inside a payment code written by a stranger, so it
+/// is checked against the allowlist first: without that, `?endpoint=` would be
+/// a request-forgery tool pointed at anything the function can reach — cloud
+/// metadata, an internal admin port, a service on the same private network.
 pub(crate) fn resolve_endpoint(endpoint: Option<&str>, cluster: &str) -> ApiResult<String> {
     if let Some(endpoint) = endpoint {
-        if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
-            return Ok(endpoint.to_string());
+        let origin = origin_of(endpoint)
+            .ok_or_else(|| bad("endpoint must be an http(s) rpc url"))?;
+        if !allowed_origins().iter().any(|allowed| *allowed == origin) {
+            return Err(bad(
+                "This payment code points at an RPC server this API does not allow.",
+            ));
         }
-        return Err(bad("endpoint must be an http(s) rpc url"));
+        return Ok(endpoint.trim().to_string());
     }
     if let Ok(url) = std::env::var("SOLANA_RPC_URL") {
         if !url.is_empty() {
@@ -821,7 +878,7 @@ pub(crate) fn resolve_endpoint(endpoint: Option<&str>, cluster: &str) -> ApiResu
         "mainnet" | "mainnet-beta" => Ok("https://api.mainnet-beta.solana.com".to_string()),
         "localnet" => Ok("http://127.0.0.1:8899".to_string()),
         other => Err(bad(format!(
-            "unknown cluster {other:?}; pass ?endpoint=https://... instead"
+            "unknown cluster {other:?}; add its RPC to ALLOWED_RPC_ENDPOINTS to use it"
         ))),
     }
 }
@@ -1013,6 +1070,56 @@ pub(crate) fn parse_pubkey(value: &str, field: &str) -> ApiResult<Pubkey> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The endpoint travels inside a payment code, which is the shape a request
+    /// forgery attempt takes: a stranger's QR pointing the API at whatever it
+    /// can reach.
+    #[test]
+    fn refuses_an_endpoint_outside_the_allowlist() {
+        for hostile in [
+            "http://169.254.169.254/latest/meta-data",
+            "http://127.0.0.1:5432",
+            "https://api.devnet.solana.com@evil.example",
+            "https://evil.example/",
+            "ftp://api.devnet.solana.com",
+            "file:///etc/passwd",
+        ] {
+            assert!(
+                resolve_endpoint(Some(hostile), "devnet").is_err(),
+                "{hostile} should not be fetched"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_the_endpoints_the_operator_already_trusts() {
+        assert_eq!(
+            resolve_endpoint(Some("https://api.devnet.solana.com"), "devnet").unwrap(),
+            "https://api.devnet.solana.com"
+        );
+        // A path and a port on the same origin are still that origin.
+        assert!(resolve_endpoint(Some("http://127.0.0.1:8899/"), "localnet").is_ok());
+        // With no endpoint in the code, the cluster decides.
+        assert_eq!(
+            resolve_endpoint(None, "devnet").unwrap(),
+            "https://api.devnet.solana.com"
+        );
+    }
+
+    /// An internal failure names a table, a query or a file. The caller gets a
+    /// sentence instead; the detail goes to the log.
+    #[tokio::test]
+    async fn an_internal_error_keeps_its_detail_to_the_log() {
+        use axum::response::IntoResponse;
+        let response = ApiError::Internal("no such table: secret_ledger".into()).into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .expect("body");
+        let text = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(!text.contains("secret_ledger"), "leaked: {text}");
+        assert!(text.contains("Something went wrong"));
+    }
 
     fn sample_request() -> CreatePaymentRequest {
         CreatePaymentRequest {

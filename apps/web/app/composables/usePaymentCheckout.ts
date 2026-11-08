@@ -464,7 +464,7 @@ export function usePaymentCheckout() {
     try {
       const preview = await api.validateDiscount({
         code: next,
-        seller_user: current.seller_user,
+        seller: current.seller,
         // The API owns the percentage; the price it applies to is the one the
         // buyer is looking at, in whichever currency that is.
         price_lamports: priceAmount.value

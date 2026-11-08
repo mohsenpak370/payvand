@@ -32,13 +32,20 @@ pub struct CreateDiscountRequest {
     pub percent_off: u32,
 }
 
-/// What a buyer posts to check a code against an invoice price. `seller_user`
-/// comes from the QR payload, so the lookup is always scoped to the seller on
-/// the code the buyer actually scanned.
+/// What a buyer posts to check a code against an invoice price: the code, the
+/// seller's **wallet address** and the price.
+///
+/// The seller is named by its address, never by an account id: a payment code
+/// is data a buyer can edit, and an account id in it would let them point the
+/// lookup at their own list. The address is the one the invoice's own PDA was
+/// derived from, so it cannot be swapped for someone else's.
 #[derive(Debug, Deserialize)]
 pub struct ValidateDiscountRequest {
     pub code: String,
-    pub seller_user: String,
+    /// Optional only so a page cached before this field existed answers with a
+    /// sentence instead of a deserialization error; it is required in practice.
+    #[serde(default)]
+    pub seller: Option<String>,
     pub price_lamports: u64,
 }
 
@@ -80,6 +87,28 @@ pub fn discounted_lamports(price_lamports: u64, percent_off: u32) -> u64 {
     (u128::from(price_lamports) * u128::from(100 - percent_off) / 100) as u64
 }
 
+/// One account's own percentage for a code, if that account has it. The only
+/// place a discount percentage ever comes from: a request, an invoice or a
+/// payment code can name a code, never a percentage.
+pub async fn percent_for(
+    db: &libsql::Database,
+    user_id: &str,
+    code: &str,
+) -> ApiResult<Option<u32>> {
+    let connection = db.connect().map_err(auth::internal)?;
+    let mut rows = connection
+        .query(
+            "SELECT percent_off FROM discount_codes WHERE user_id = ?1 AND code = ?2",
+            (user_id, code),
+        )
+        .await
+        .map_err(auth::internal)?;
+    match rows.next().await.map_err(auth::internal)? {
+        Some(row) => Ok(Some(read_percent(&row, 0)?)),
+        None => Ok(None),
+    }
+}
+
 /// Resolves a code a seller attached while creating an invoice. Scoped to the
 /// seller's own list: the request body can name a code, never pick a discount.
 pub async fn resolve_for_seller(
@@ -88,19 +117,8 @@ pub async fn resolve_for_seller(
     raw: &str,
 ) -> ApiResult<PaymentDiscount> {
     let code = normalize_code(raw)?;
-    let connection = db.connect().map_err(auth::internal)?;
-
-    let mut rows = connection
-        .query(
-            "SELECT percent_off FROM discount_codes WHERE user_id = ?1 AND code = ?2",
-            (user_id, code.clone()),
-        )
-        .await
-        .map_err(auth::internal)?;
-
-    let percent_off = match rows.next().await.map_err(auth::internal)? {
-        Some(row) => read_percent(&row, 0)?,
-        None => return Err(bad(format!("You have no discount code called {code}."))),
+    let Some(percent_off) = percent_for(db, user_id, &code).await? else {
+        return Err(bad(format!("You have no discount code called {code}.")));
     };
     Ok(PaymentDiscount { code, percent_off })
 }
@@ -212,9 +230,11 @@ pub async fn delete(
 }
 
 /// Prices an invoice with a code. Public, like the status read: the buyer
-/// may have opened the payment link without an account. The lookup is scoped
-/// to the `seller_user` carried by the code they scanned, and the response
-/// reveals only that code's percentage for that seller's invoice.
+/// may have opened the payment link without an account.
+///
+/// The account is found from the seller's wallet address, so the percentage
+/// always comes from the list of the seller whose address the buyer is paying
+/// — a buyer cannot price someone else's invoice with a code of their own.
 pub async fn validate(
     State(state): State<crate::AppState>,
     Json(request): Json<ValidateDiscountRequest>,
@@ -224,19 +244,18 @@ pub async fn validate(
     }
     let code = normalize_code(&request.code)?;
 
-    let connection = state.db.connect().map_err(auth::internal)?;
-    let mut rows = connection
-        .query(
-            "SELECT percent_off FROM discount_codes WHERE user_id = ?1 AND code = ?2",
-            (request.seller_user, code.clone()),
-        )
-        .await
-        .map_err(auth::internal)?;
-
-    let percent_off = match rows.next().await.map_err(auth::internal)? {
-        Some(row) => read_percent(&row, 0)?,
-        None => return Err(bad("That discount code is not valid.")),
-    };
+    let seller_wallet = request
+        .seller
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| bad("Reload this payment page to apply a discount code."))?;
+    let seller = auth::seller_account(&state.db, seller_wallet)
+        .await?
+        .ok_or_else(|| bad("That seller does not offer discount codes."))?;
+    let percent_off = percent_for(&state.db, &seller, &code)
+        .await?
+        .ok_or_else(|| bad("That discount code is not valid."))?;
 
     let discounted = discounted_lamports(request.price_lamports, percent_off);
     if discounted == 0 || discounted >= request.price_lamports {
@@ -260,6 +279,104 @@ fn read_percent(row: &libsql::Row, index: i32) -> ApiResult<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn seeded_db() -> libsql::Database {
+        let path = std::env::temp_dir().join(format!(
+            "payvand-discount-test-{}.db",
+            auth::random_id()
+        ));
+        let db = libsql::Builder::new_local(&path)
+            .build()
+            .await
+            .expect("temp db");
+        crate::db::migrate(&db).await.expect("migrate");
+        db
+    }
+
+    async fn add_account(db: &libsql::Database, id: &str, email: &str, wallet: &str) {
+        db.connect()
+            .expect("connection")
+            .execute(
+                "INSERT INTO users (id, email, password_hash, wallet, created_at) \
+                 VALUES (?1, ?2, 'unused-in-tests', ?3, 0)",
+                (id, email, wallet),
+            )
+            .await
+            .expect("account");
+    }
+
+    async fn add_code(db: &libsql::Database, user_id: &str, code: &str, percent_off: i64) {
+        db.connect()
+            .expect("connection")
+            .execute(
+                "INSERT INTO discount_codes (id, user_id, code, percent_off, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, 0)",
+                (format!("{user_id}-{code}"), user_id, code, percent_off),
+            )
+            .await
+            .expect("code");
+    }
+
+    /// The attack the seller-address lookup closes: a buyer posts their own
+    /// account id next to a 99% code of theirs and asks for a price on someone
+    /// else's invoice.
+    #[tokio::test]
+    async fn prices_only_with_the_invoices_sellers_codes() {
+        let db = seeded_db().await;
+        add_account(&db, "seller-a", "a@example.com", "SellerWalletA").await;
+        add_code(&db, "seller-a", "SAVE10", 10).await;
+        add_account(&db, "buyer-b", "b@example.com", "BuyerWalletB").await;
+        add_code(&db, "buyer-b", "MINE99", 99).await;
+        let state = crate::AppState {
+            db: std::sync::Arc::new(db),
+        };
+
+        let own = validate(
+            State(state.clone()),
+            Json(ValidateDiscountRequest {
+                code: "save10".into(),
+                seller: Some("SellerWalletA".into()),
+                price_lamports: 1_000_000,
+            }),
+        )
+        .await
+        .expect("the seller's own code prices the invoice")
+        .0;
+        assert_eq!(own.percent_off, 10);
+        assert_eq!(own.discounted_lamports, 900_000);
+
+        let attack = validate(
+            State(state),
+            Json(ValidateDiscountRequest {
+                code: "MINE99".into(),
+                seller: Some("SellerWalletA".into()),
+                price_lamports: 1_000_000,
+            }),
+        )
+        .await;
+        assert!(attack.is_err(), "a stranger's 99% code must not price this invoice");
+    }
+
+    #[tokio::test]
+    async fn refuses_a_seller_without_an_account() {
+        let db = seeded_db().await;
+        add_account(&db, "buyer-b", "b@example.com", "BuyerWalletB").await;
+        add_code(&db, "buyer-b", "MINE99", 99).await;
+        let state = crate::AppState {
+            db: std::sync::Arc::new(db),
+        };
+
+        let refused = validate(
+            State(state),
+            Json(ValidateDiscountRequest {
+                code: "MINE99".into(),
+                seller: Some("NobodyWallet".into()),
+                price_lamports: 1_000_000,
+            }),
+        )
+        .await;
+        assert!(refused.is_err());
+    }
 
     #[test]
     fn normalizes_codes() {

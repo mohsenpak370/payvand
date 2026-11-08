@@ -49,7 +49,9 @@ pub struct Invoice {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    /// The seller's account, needed to price an attached discount code.
+    /// The seller's account, when the code carries one. A hint for the buyer's
+    /// screen — "this seller offers codes", nothing more. It prices nothing:
+    /// the account is looked up from `seller`, which `verify()` has proven.
     #[serde(default)]
     pub seller_user: Option<String>,
     /// A code the invoice carries. Its percentage is never taken from the
@@ -256,19 +258,22 @@ impl Invoice {
     /// seller's own list rather than trusting the percentage in the code: a
     /// QR is data a buyer can edit, and an invented discount must never turn
     /// into a cheaper transaction.
+    ///
+    /// The seller's account is found from the **wallet address** the invoice
+    /// was derived from, not from `seller_user` in the token. That field is
+    /// writable by anyone who edits the code, so trusting it here would let a
+    /// buyer attach a 99% code of their own to someone else's invoice.
     async fn payable_lamports(&self, db: &libsql::Database) -> ApiResult<u64> {
         let Some(discount) = &self.discount else {
             return Ok(self.amount_lamports);
         };
-        let seller_user = self
-            .seller_user
-            .as_deref()
-            .filter(|value| !value.is_empty())
+        let seller_user = crate::auth::seller_account(db, &self.seller)
+            .await?
             .ok_or_else(|| {
                 bad("This payment's discount cannot be checked. Open the payment page to pay.")
             })?;
 
-        let resolved = resolve_for_seller(db, seller_user, &discount.code)
+        let resolved = resolve_for_seller(db, &seller_user, &discount.code)
             .await
             .map_err(|error| match error {
                 ApiError::BadRequest(_) => {
@@ -437,6 +442,79 @@ mod tests {
         };
         let token = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&invoice).expect("json"));
         (invoice, token)
+    }
+
+    async fn seeded_db() -> libsql::Database {
+        let path = std::env::temp_dir().join(format!(
+            "payvand-solana-pay-test-{}.db",
+            crate::auth::random_id()
+        ));
+        let db = libsql::Builder::new_local(&path)
+            .build()
+            .await
+            .expect("temp db");
+        crate::db::migrate(&db).await.expect("migrate");
+        db
+    }
+
+    async fn add_account(db: &libsql::Database, id: &str, email: &str, wallet: &str) {
+        db.connect()
+            .expect("connection")
+            .execute(
+                "INSERT INTO users (id, email, password_hash, wallet, created_at) \
+                 VALUES (?1, ?2, 'unused-in-tests', ?3, 0)",
+                (id, email, wallet),
+            )
+            .await
+            .expect("account");
+    }
+
+    async fn add_code(db: &libsql::Database, user_id: &str, code: &str, percent_off: i64) {
+        db.connect()
+            .expect("connection")
+            .execute(
+                "INSERT INTO discount_codes (id, user_id, code, percent_off, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, 0)",
+                (format!("{user_id}-{code}"), user_id, code, percent_off),
+            )
+            .await
+            .expect("code");
+    }
+
+    /// The transaction built for a wallet must price the discount from the
+    /// invoice's own seller. `seller_user` in the token is editable by whoever
+    /// holds the code, so an attacker naming their own account and their own
+    /// 99% code must not make someone else's coffee cost 1%.
+    #[tokio::test]
+    async fn prices_the_discount_from_the_invoices_seller() {
+        let db = seeded_db().await;
+        let (mut invoice, _) = sample_invoice();
+        let seller_wallet = invoice.seller.clone();
+        add_account(&db, "seller-a", "a@example.com", &seller_wallet).await;
+        add_code(&db, "seller-a", "SAVE10", 10).await;
+        add_account(&db, "buyer-b", "b@example.com", "BuyerWalletB").await;
+        add_code(&db, "buyer-b", "MINE99", 99).await;
+
+        // The buyer's own code, with their own account named in the token.
+        invoice.discount = Some(PaymentDiscount {
+            code: "MINE99".into(),
+            percent_off: 99,
+        });
+        invoice.seller_user = Some("buyer-b".into());
+        assert!(
+            invoice.payable_lamports(&db).await.is_err(),
+            "a buyer's own code must not price the seller's invoice"
+        );
+
+        // The seller's own code, priced from the seller's list.
+        invoice.discount = Some(PaymentDiscount {
+            code: "save10".into(),
+            percent_off: 99,
+        });
+        assert_eq!(
+            invoice.payable_lamports(&db).await.expect("priced"),
+            9_000_000
+        );
     }
 
     #[test]

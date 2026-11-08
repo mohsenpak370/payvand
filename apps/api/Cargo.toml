@@ -40,6 +40,9 @@ solana-rpc-client = "3"
 solana-pubkey = "3"
 sha2 = "0.10"
 libsql = "0.10"
+# Parsing RPC endpoints the way a browser would, so a payment code cannot
+# smuggle a different host past the allowlist in `payments::resolve_endpoint`.
+url = "2"
 # Solana Pay transaction requests: the invoice token and the wallet's
 # transaction are base64.
 base64 = "0.22"

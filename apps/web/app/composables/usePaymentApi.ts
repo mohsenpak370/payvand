@@ -129,7 +129,11 @@ export interface PaymentDiscount {
 
 export interface ValidateDiscountInput {
   code: string
-  seller_user: string
+  /**
+   * The seller's wallet address, taken from the payment code. The API resolves
+   * the seller's account from it, so the percentage is always theirs.
+   */
+  seller: string
   price_lamports: number
 }
 

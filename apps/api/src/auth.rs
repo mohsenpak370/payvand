@@ -72,6 +72,15 @@ pub async fn signup(
     match inserted {
         Ok(_) => {}
         Err(error) if is_unique_violation(&error) => {
+            // The caller is told plainly — a signup form that answers "maybe"
+            // is worse for the person who forgot they had an account — and the
+            // address is told too, so an attempt to reuse it is not silent.
+            // What keeps this from being a way to enumerate the user table is
+            // the rate limit in front of the endpoint, not the wording.
+            if crate::rate_limit::hit("signup-notice", &email, 3, crate::rate_limit::HOUR).is_ok()
+            {
+                notice_existing_account(&email).await;
+            }
             return Err(ApiError::BadRequest(
                 "An account with that email already exists.".to_string(),
             ));
@@ -92,6 +101,9 @@ pub async fn signin(
     Json(request): Json<SigninRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
     let email = normalize_email(&request.email)?;
+    // Per account, not just per address: one caller behind many proxies must
+    // not turn a password into a guessing game either.
+    crate::rate_limit::hit("signin-email", &email, 10, 15 * 60)?;
     let connection = state.db.connect().map_err(internal)?;
 
     let Some((user, hash)) = read_user_with_hash(&connection, &email).await? else {
@@ -141,6 +153,9 @@ pub async fn forgot_password(
     Json(request): Json<ForgotPasswordRequest>,
 ) -> ApiResult<Json<ResetSentResponse>> {
     let email = normalize_email(&request.email)?;
+    // Bounds the mail this endpoint can be made to send to one address; the
+    // answer stays the same either way.
+    let may_send = crate::rate_limit::hit("forgot-email", &email, 3, crate::rate_limit::HOUR).is_ok();
     let connection = state.db.connect().map_err(internal)?;
 
     let generic = ResetSentResponse {
@@ -152,6 +167,9 @@ pub async fn forgot_password(
     let Some((user, _)) = read_user_with_hash(&connection, &email).await? else {
         return Ok(Json(generic));
     };
+    if !may_send {
+        return Ok(Json(generic));
+    }
 
     let token = create_reset_record(&connection, &user.id).await?;
     let link = format!("{}/reset-password?token={token}", frontend_base_url());
@@ -446,6 +464,51 @@ fn validate_password(password: &str) -> ApiResult<String> {
     Err(ApiError::BadRequest(format!(
         "The password must be at least {MIN_PASSWORD_LEN} characters."
     )))
+}
+
+/// Tells an address that someone tried to sign up with it, with the way back
+/// in for the person who owns it. Deliberately fire-and-forget: a mail server
+/// hiccup must not change what the caller is told.
+async fn notice_existing_account(email: &str) {
+    let recipient = email.to_string();
+    let body = format!(
+        "Someone tried to create a Payvand account with this email address.\n\n\
+         If that was you, you already have an account — sign in here:\n\n\
+         {}/signin\n\n\
+         If you have forgotten your password, use \"Forgot password?\" on that page.\n\n\
+         If it was not you, nothing has changed and you can ignore this message.",
+        frontend_base_url()
+    );
+    let subject = "A signup attempt for your Payvand account";
+    match tokio::task::spawn_blocking(move || crate::email::send(&recipient, subject, &body)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => eprintln!("[email] signup notice delivery failed: {error}"),
+        Err(error) => eprintln!("[email] signup notice task failed: {error}"),
+    }
+}
+
+/// The account a seller's wallet address belongs to, if one is linked to it.
+///
+/// Invoices name a wallet, and the API looks the account up from it, because a
+/// payment code is data a stranger can edit: trusting an account id from one
+/// would let the payer choose whose discount list prices an invoice.
+pub(crate) async fn seller_account(
+    db: &libsql::Database,
+    wallet: &str,
+) -> ApiResult<Option<String>> {
+    let wallet = wallet.trim();
+    if wallet.is_empty() {
+        return Ok(None);
+    }
+    let connection = db.connect().map_err(internal)?;
+    let mut rows = connection
+        .query("SELECT id FROM users WHERE wallet = ?1", [wallet])
+        .await
+        .map_err(internal)?;
+    match rows.next().await.map_err(internal)? {
+        Some(row) => Ok(Some(row.get(0).map_err(internal)?)),
+        None => Ok(None),
+    }
 }
 
 fn invalid_credentials() -> ApiError {

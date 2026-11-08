@@ -275,25 +275,22 @@ pub async fn delete_user(
     }
 
     let connection = state.db.connect().map_err(auth::internal)?;
-    // Children first — SQLite foreign keys are not guaranteed to be on.
-    connection
-        .execute("DELETE FROM sessions WHERE user_id = ?1", [id.as_str()])
-        .await
-        .map_err(auth::internal)?;
-    connection
-        .execute(
-            "DELETE FROM discount_codes WHERE user_id = ?1",
-            [id.as_str()],
-        )
-        .await
-        .map_err(auth::internal)?;
-    connection
-        .execute(
-            "DELETE FROM password_resets WHERE user_id = ?1",
-            [id.as_str()],
-        )
-        .await
-        .map_err(auth::internal)?;
+    // Children first — SQLite foreign keys are not guaranteed to be on, and a
+    // row left behind would be an orphan pointing at an account that no longer
+    // exists: a shop nobody can open, a saved code nobody can read.
+    for sql in [
+        "DELETE FROM sessions WHERE user_id = ?1",
+        "DELETE FROM discount_codes WHERE user_id = ?1",
+        "DELETE FROM password_resets WHERE user_id = ?1",
+        "DELETE FROM saved_payments WHERE user_id = ?1",
+        "DELETE FROM products WHERE user_id = ?1",
+        "DELETE FROM shops WHERE user_id = ?1",
+    ] {
+        connection
+            .execute(sql, [id.as_str()])
+            .await
+            .map_err(auth::internal)?;
+    }
     let removed = connection
         .execute("DELETE FROM users WHERE id = ?1", [id.as_str()])
         .await

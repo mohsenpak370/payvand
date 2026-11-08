@@ -238,7 +238,7 @@ async function applyDiscount(code = discountInput.value) {
   try {
     const preview = await api.validateDiscount({
       code,
-      seller_user: current.seller_user,
+      seller: current.seller,
       price_lamports: current.amount_lamports
     })
     discount.value = preview
