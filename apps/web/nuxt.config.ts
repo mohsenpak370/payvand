@@ -107,6 +107,13 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/auth',
         changeOrigin: true
       },
+      // The account's own on-chain history, read by /profile. Its own prefix:
+      // it is not under /api/auth, so without this rule the browser's call
+      // falls through to Nitro and comes back "Page not found".
+      '/api/me': {
+        target: 'http://127.0.0.1:8787/api/me',
+        changeOrigin: true
+      },
       '/api/payments': {
         target: 'http://127.0.0.1:8787/api/payments',
         changeOrigin: true
