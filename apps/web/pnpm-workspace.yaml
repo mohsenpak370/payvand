@@ -1,9 +1,9 @@
-# Vercel refuses a lockfile whose packages were published in the last 24 hours
-# (its supply-chain policy), so a lockfile resolved here can fail the deploy
-# after passing every check locally. Applying the same age here means what this
-# machine resolves is what Vercel accepts, and a package published an hour ago
-# cannot reach the build from either side.
-minimumReleaseAge: 1440
+# pnpm 11 and later hold back versions published in the last day by default,
+# and the check applies to every lockfile entry, so a fresh release fails the
+# deploy's install rather than resolving. Off here because this project takes
+# new drops of @vue-solana the day they are published; add a temporary window
+# back (e.g. 1440) if a dependency is ever suspected of being compromised.
+minimumReleaseAge: 0
 
 allowBuilds:
   # @nuxt/content's build-time database needs the native addon, so unlike the
