@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ShopWithProducts } from '~/composables/useShop'
 
-// A seller may keep several shops — a café and a bakery. The profile lists
+// A seller may keep several shops — a café and a bakery. The /shops page lists
 // them; each one opens on its own page, where its catalogue is edited. The
 // form lives in a modal so an empty page is not a form to fill in by accident.
 const api = useShopApi()
@@ -62,7 +62,7 @@ onMounted(load)
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <h2 class="text-base font-semibold">
-            Shops
+            Your shops
           </h2>
           <p class="text-sm text-muted">
             Create and save the products you sell, then use them to create payments.

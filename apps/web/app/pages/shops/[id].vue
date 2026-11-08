@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// One shop, opened from the profile's list. Everything on this page belongs to
-// the signed-in account: the API scopes each read and write to it.
+// One shop, opened from /shops. Everything on this page belongs to the
+// signed-in account: the API scopes each read and write to it.
 useSeoMeta({ title: 'Shop — Payvand' })
 
 definePageMeta({ middleware: 'auth' })
@@ -16,14 +16,14 @@ const shopId = computed(() => String(route.params.id ?? ''))
   >
     <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
       <NuxtLink
-        to="/profile"
+        to="/shops"
         class="flex items-center gap-1.5 text-sm font-medium text-muted underline-offset-4 hover:text-default hover:underline"
       >
         <UIcon
           name="i-lucide-arrow-left"
           class="size-4"
         />
-        Back to your profile
+        Back to your shops
       </NuxtLink>
 
       <ShopEditor :shop-id="shopId" />

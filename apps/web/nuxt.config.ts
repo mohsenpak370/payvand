@@ -67,6 +67,9 @@ export default defineNuxtConfig({
     '/scan': { ssr: false },
     // Budget state lives in the wallet + localStorage, same reason.
     '/budget': { ssr: false },
+    // The currency and the shops switch are browser preferences, so the server
+    // has nothing to render — and would otherwise paint today's default first.
+    '/settings': { ssr: false },
     // The allowance card reads the chain through the client-only Solana
     // plugin (useSolanaClient throws during SSR) and the session itself
     // lives in localStorage — there is nothing to render on the server.

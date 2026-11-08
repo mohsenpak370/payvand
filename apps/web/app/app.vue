@@ -34,6 +34,10 @@ useSeoMeta({
 const { cluster } = useRuntimeConfig().public
 const { user, signout } = useAuth()
 const { isAdmin } = useAdminAccess()
+// Shops are a seller's own catalogue: shown to a signed-in account that has
+// not switched them off in settings.
+const { shopsEnabled } = useShopPreference()
+const showShops = computed(() => !!user.value && shopsEnabled.value)
 
 // The auth pages carry their own brand row and want no chrome, so they opt
 // out of the app header and footer with `header: false` / `footer: false`
@@ -55,6 +59,7 @@ async function onSignOut() {
 const accountMenu = computed(() => [
   [
     { label: 'Profile', icon: 'i-lucide-circle-user-round', to: '/profile' },
+    { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
     ...(isAdmin.value
       ? [{ label: 'Admin', icon: 'i-lucide-shield-check', to: '/admin' }]
       : [])
@@ -134,6 +139,13 @@ const accountMenu = computed(() => [
             Scan and pay
           </NuxtLink>
           <NuxtLink
+            v-if="showShops"
+            to="/shops"
+            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
+            Shops
+          </NuxtLink>
+          <NuxtLink
             to="/learn"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
@@ -206,6 +218,16 @@ const accountMenu = computed(() => [
             class="justify-start"
           />
           <UButton
+            v-if="showShops"
+            to="/shops"
+            label="Shops"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-store"
+            block
+            class="justify-start"
+          />
+          <UButton
             to="/learn"
             label="Learn about crypto"
             color="neutral"
@@ -233,6 +255,15 @@ const accountMenu = computed(() => [
               color="neutral"
               variant="soft"
               icon="i-lucide-circle-user-round"
+              block
+              class="justify-start"
+            />
+            <UButton
+              to="/settings"
+              label="Settings"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-settings"
               block
               class="justify-start"
             />
