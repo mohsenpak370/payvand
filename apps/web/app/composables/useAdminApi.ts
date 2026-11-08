@@ -39,6 +39,17 @@ export interface PaymentsPage {
   endpoint: string
 }
 
+/** One seller who asked to be told when Payvand can take real money. */
+export interface WaitlistEntry {
+  email: string
+  created_at_unix: number
+}
+
+export interface WaitlistPage {
+  items: WaitlistEntry[]
+  total: number
+}
+
 /**
  * Admin endpoints. Access is decided by the API (`ADMIN_EMAILS`), not by
  * the client — every call can still come back 403 and the page must handle
@@ -78,6 +89,21 @@ export function useAdminApi() {
     })
   }
 
+  /** Addresses waiting for a live cluster, newest first. */
+  async function fetchWaitlist(): Promise<WaitlistPage> {
+    return await $fetch<WaitlistPage>(`${base}/api/admin/waitlist`, {
+      headers: headers()
+    })
+  }
+
+  async function removeWaitlistEntry(email: string): Promise<void> {
+    // The address is a path segment, so it is encoded rather than trusted.
+    await $fetch(`${base}/api/admin/waitlist/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+      headers: headers()
+    })
+  }
+
   async function deleteUser(id: string): Promise<void> {
     await $fetch(`${base}/api/admin/users/${id}`, {
       method: 'DELETE',
@@ -85,5 +111,12 @@ export function useAdminApi() {
     })
   }
 
-  return { fetchStats, fetchUsers, fetchPayments, deleteUser }
+  return {
+    fetchStats,
+    fetchUsers,
+    fetchPayments,
+    fetchWaitlist,
+    removeWaitlistEntry,
+    deleteUser
+  }
 }

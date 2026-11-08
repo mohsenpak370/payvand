@@ -2,7 +2,14 @@
 useSeoMeta({ title: 'Admin — Payvand' })
 definePageMeta({ middleware: 'auth' })
 
-const { fetchStats, fetchUsers, fetchPayments, deleteUser } = useAdminApi()
+const {
+  fetchStats,
+  fetchUsers,
+  fetchPayments,
+  fetchWaitlist,
+  removeWaitlistEntry,
+  deleteUser
+} = useAdminApi()
 
 const stats = ref<AdminStats | null>(null)
 const rows = ref<AdminUser[]>([])
@@ -20,6 +27,12 @@ const failure = ref('')
 const feed = ref<PaymentsPage | null>(null)
 const feedLoading = ref(false)
 const feedFailure = ref('')
+
+// The waiting list is its own read too: it holds addresses, not accounts, and
+// loading it must not decide whether the rest of the page renders.
+const waitlist = ref<WaitlistPage | null>(null)
+const waitlistLoading = ref(false)
+const waitlistFailure = ref('')
 
 const pageFrom = computed(() => (total.value === 0 ? 0 : offset.value + 1))
 const pageTo = computed(() => Math.min(offset.value + pageSize, total.value))
@@ -71,6 +84,41 @@ async function loadFeed() {
     )
   } finally {
     feedLoading.value = false
+  }
+}
+
+async function loadWaitlist() {
+  waitlistFailure.value = ''
+  waitlistLoading.value = true
+  try {
+    waitlist.value = await fetchWaitlist()
+  } catch (error) {
+    waitlistFailure.value = apiErrorMessage(
+      error,
+      'Could not read the waiting list.'
+    )
+  } finally {
+    waitlistLoading.value = false
+  }
+}
+
+async function removeEntry(entry: WaitlistEntry) {
+  const confirmed = window.confirm(
+    `Remove ${entry.email} from the waiting list?\n\nThe address is deleted, so nobody can email it from here again.`
+  )
+  if (!confirmed) return
+
+  busy.value = true
+  try {
+    await removeWaitlistEntry(entry.email)
+    await loadWaitlist()
+  } catch (error) {
+    waitlistFailure.value = apiErrorMessage(
+      error,
+      'Could not remove that address.'
+    )
+  } finally {
+    busy.value = false
   }
 }
 
@@ -136,13 +184,14 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
 onMounted(() => {
   load()
   loadFeed()
+  loadWaitlist()
 })
 </script>
 
 <template>
   <UPageSection
     title="Admin"
-    description="Platform oversight: accounts, live sessions and discount codes."
+    description="Platform oversight: accounts, live sessions, discount codes and the waiting list."
   >
     <!--
       `min-w-0` on this column and on the cards below: in a flex column each
@@ -187,6 +236,84 @@ onMounted(() => {
             </div>
           </UCard>
         </div>
+
+        <UCard class="min-w-0">
+          <template #header>
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h2 class="text-base font-semibold">
+                  Waiting list
+                </h2>
+                <p class="text-xs text-muted">
+                  {{
+                    waitlist
+                      ? `${waitlist.total} address${waitlist.total === 1 ? '' : 'es'} for a live cluster`
+                      : 'Sellers who want to take real payments'
+                  }}
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-refresh-cw"
+                label="Refresh"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :loading="waitlistLoading"
+                @click="loadWaitlist"
+              />
+            </div>
+          </template>
+
+          <UAlert
+            v-if="waitlistFailure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Waiting list"
+            :description="waitlistFailure"
+          />
+          <p
+            v-else-if="waitlistLoading && !waitlist"
+            class="py-6 text-center text-sm text-muted"
+          >
+            Reading the list…
+          </p>
+          <p
+            v-else-if="!waitlist?.items.length"
+            class="py-6 text-center text-sm text-muted"
+          >
+            Nobody has joined yet. The card on the home page adds the first
+            address.
+          </p>
+          <ul
+            v-else
+            class="flex flex-col divide-y divide-default"
+          >
+            <li
+              v-for="entry in waitlist.items"
+              :key="entry.email"
+              class="flex min-w-0 items-center justify-between gap-3 py-2.5"
+            >
+              <div class="min-w-0">
+                <p class="text-sm break-all">
+                  {{ entry.email }}
+                </p>
+                <p class="text-xs text-muted">
+                  Joined {{ formatDate(entry.created_at_unix) }}
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-trash-2"
+                color="error"
+                variant="ghost"
+                size="sm"
+                :disabled="busy"
+                aria-label="Remove from the waiting list"
+                @click="removeEntry(entry)"
+              />
+            </li>
+          </ul>
+        </UCard>
 
         <UCard class="min-w-0">
           <template #header>

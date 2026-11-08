@@ -69,6 +69,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
         .route("/api/admin/payments", get(admin::list_payments))
+        .route("/api/admin/waitlist", get(admin::waitlist))
+        .route(
+            "/api/admin/waitlist/{email}",
+            delete(admin::remove_waitlist),
+        )
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
@@ -133,7 +138,9 @@ async fn index() -> Json<serde_json::Value> {
             "/api/admin/stats",
             "/api/admin/users",
             "/api/admin/users/{id}",
-            "/api/admin/payments"
+            "/api/admin/payments",
+            "/api/admin/waitlist",
+            "/api/admin/waitlist/{email}"
         ]
     }))
 }
