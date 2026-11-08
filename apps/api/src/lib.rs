@@ -83,7 +83,14 @@ pub fn build_router(state: AppState) -> Router {
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
-                .allow_methods([Method::GET, Method::POST, Method::DELETE])
+                // PATCH is how a shop and a product are edited, so it has to be
+                // here or the browser refuses the request before it is sent.
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PATCH,
+                    Method::DELETE,
+                ])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
         )
         .layer(TraceLayer::new_for_http())
