@@ -30,6 +30,10 @@ const ctaTitle = computed(() =>
       }]"
     />
 
+    <UPageSection>
+      <WaitlistCard />
+    </UPageSection>
+
     <UPageSection
       id="how"
       title="How a payment moves"

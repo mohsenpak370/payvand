@@ -423,7 +423,7 @@ pub fn verify_password(password: &str, stored: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn normalize_email(email: &str) -> ApiResult<String> {
+pub(crate) fn normalize_email(email: &str) -> ApiResult<String> {
     let normalized = email.trim().to_lowercase();
     if !normalized.is_empty()
         && normalized.len() <= 254

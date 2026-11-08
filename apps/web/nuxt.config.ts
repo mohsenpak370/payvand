@@ -118,6 +118,10 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/discounts',
         changeOrigin: true
       },
+      '/api/waitlist': {
+        target: 'http://127.0.0.1:8787/api/waitlist',
+        changeOrigin: true
+      },
       // The seller's shops and their products, read by /profile, the shop
       // pages and /sell.
       '/api/shops': {

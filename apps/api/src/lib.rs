@@ -9,6 +9,7 @@ pub mod payments;
 pub mod saved;
 pub mod shops;
 pub mod solana_pay;
+pub mod waitlist;
 pub mod wallet;
 
 use axum::extract::{Path, Query, State};
@@ -71,6 +72,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discounts", get(discounts::list).post(discounts::create))
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
+        // Sellers who want to take real payments, before they have an account.
+        .route("/api/waitlist", post(waitlist::join))
         // The seller's shops and their catalogues. A shop id is part of every
         // product path, and ownership is checked on each one.
         .route("/api/shops", get(shops::list).post(shops::create))
@@ -122,6 +125,7 @@ async fn index() -> Json<serde_json::Value> {
             "/api/discounts",
             "/api/discounts/validate",
             "/api/discounts/{id}",
+            "/api/waitlist",
             "/api/shops",
             "/api/shops/{id}",
             "/api/shops/{id}/products",

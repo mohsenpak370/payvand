@@ -94,6 +94,10 @@ const SCHEMA: &[&str] = &[
     // A wallet belongs to at most one account.
     "CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_unique_idx \
      ON users(wallet) WHERE wallet IS NOT NULL",
+    // Sellers who want to take real money, waiting for a live cluster. The
+    // email is the key, so one address joins once; nothing here is linked to
+    // an account, because someone on the list may not have one.
+    "CREATE TABLE IF NOT EXISTS waitlist (\n        email      TEXT PRIMARY KEY,\n        created_at INTEGER NOT NULL\n    )",
     "CREATE INDEX IF NOT EXISTS password_resets_user_id_idx ON password_resets(user_id)",
 ];
 
