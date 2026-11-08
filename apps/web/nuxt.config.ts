@@ -53,6 +53,10 @@ export default defineNuxtConfig({
     // database out of the server function entirely.
     '/learn': { prerender: true },
     '/learn/**': { prerender: true },
+    // Legal pages are the same text for everyone and change only when the app
+    // is deployed, so they ship as static HTML too.
+    '/terms': { prerender: true },
+    '/privacy': { prerender: true },
     // Both flows talk to a connected wallet and a camera, so they only make
     // sense in the browser. The Solana plugin is client-only.
     '/sell': { ssr: false },

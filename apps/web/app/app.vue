@@ -300,25 +300,7 @@ const accountMenu = computed(() => [
 
     <template v-if="showFooter">
       <USeparator icon="i-lucide-scan-line" />
-
-      <UFooter>
-        <template #left>
-          <p class="text-sm text-muted">
-            Payvand • Simple payments on Solana • © {{ new Date().getFullYear() }}
-          </p>
-        </template>
-
-        <template #right>
-          <UButton
-            to="https://solana.com/docs"
-            target="_blank"
-            icon="i-lucide-book-open"
-            aria-label="Solana docs"
-            color="neutral"
-            variant="ghost"
-          />
-        </template>
-      </UFooter>
+      <AppFooter />
     </template>
   </UApp>
 </template>
