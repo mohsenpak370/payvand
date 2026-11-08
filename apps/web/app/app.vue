@@ -59,6 +59,9 @@ async function onSignOut() {
 const accountMenu = computed(() => [
   [
     { label: 'Profile', icon: 'i-lucide-circle-user-round', to: '/profile' },
+    ...(showShops.value
+      ? [{ label: 'Shops', icon: 'i-lucide-store', to: '/shops' }]
+      : []),
     { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
     ...(isAdmin.value
       ? [{ label: 'Admin', icon: 'i-lucide-shield-check', to: '/admin' }]
@@ -139,13 +142,6 @@ const accountMenu = computed(() => [
             Scan and pay
           </NuxtLink>
           <NuxtLink
-            v-if="showShops"
-            to="/shops"
-            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
-          >
-            Shops
-          </NuxtLink>
-          <NuxtLink
             to="/learn"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
@@ -218,16 +214,6 @@ const accountMenu = computed(() => [
             class="justify-start"
           />
           <UButton
-            v-if="showShops"
-            to="/shops"
-            label="Shops"
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-store"
-            block
-            class="justify-start"
-          />
-          <UButton
             to="/learn"
             label="Learn about crypto"
             color="neutral"
@@ -255,6 +241,16 @@ const accountMenu = computed(() => [
               color="neutral"
               variant="soft"
               icon="i-lucide-circle-user-round"
+              block
+              class="justify-start"
+            />
+            <UButton
+              v-if="showShops"
+              to="/shops"
+              label="Shops"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-store"
               block
               class="justify-start"
             />
