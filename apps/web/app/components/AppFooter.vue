@@ -16,15 +16,17 @@ const columns = computed(() => [
       { label: 'Learn about crypto', to: '/learn' }
     ]
   },
-  {
-    label: user.value ? 'Account' : 'Get started',
-    children: user.value
-      ? []
-      : [
-          { label: 'Sign in', to: '/signin' },
-          { label: 'Sign up', to: '/signup' }
-        ]
-  },
+  ...(user.value
+    ? []
+    : [
+        {
+          label: 'Get started',
+          children: [
+            { label: 'Sign in', to: '/signin' },
+            { label: 'Sign up', to: '/signup' }
+          ]
+        }
+      ]),
   {
     label: 'Legal',
     children: [
