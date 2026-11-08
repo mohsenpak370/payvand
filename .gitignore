@@ -49,6 +49,9 @@ DEV.md
 # Freebuff's local project marker (machine-specific)
 .freebuff/
 
+# Local screenshots
+screenshots/
+
 # pnpm's self-manager lockfile for the root task package (regenerated on
 # every root `pnpm <script>` run). Leading slash: the app's real lockfile
 # at apps/web/pnpm-lock.yaml must stay committed.

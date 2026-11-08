@@ -1,6 +1,6 @@
 {
   "name": "payvand",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm -C apps/web dev",
@@ -11,7 +11,26 @@
     "api": "cargo run --manifest-path apps/api/Cargo.toml --bin server",
     "anchor:build": "cd apps/contracts && anchor build && cp target/idl/payvand.json ../web/app/assets/payvand.idl.json",
     "anchor:deploy": "cd apps/contracts && anchor deploy",
-    "anchor:keys": "cd apps/contracts && anchor keys list"
+    "anchor:keys": "cd apps/contracts && anchor keys list",
+    "prepare": "husky"
   },
-  "packageManager": "pnpm@12.14.0"
+  "packageManager": "pnpm@12.14.0",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0"
+  },
+  "lint-staged": {
+    "apps/web/**/*.{vue,ts,js,mjs}": [
+      "cd apps/web && corepack pnpm exec eslint --fix",
+      "cd apps/web && corepack pnpm exec prettier --write"
+    ],
+    "apps/api/**/*.rs": [
+      "cargo fmt --manifest-path apps/api/Cargo.toml",
+      "cargo clippy --manifest-path apps/api/Cargo.toml -- -D warnings"
+    ],
+    "apps/contracts/**/*.rs": [
+      "anchor fmt",
+      "cargo clippy --manifest-path apps/contracts/Cargo.toml -- -D warnings"
+    ]
+  }
 }

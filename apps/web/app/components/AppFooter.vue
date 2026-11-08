@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const { cluster } = useRuntimeConfig().public
 const { user } = useAuth()
 
 /**
@@ -20,7 +19,7 @@ const columns = computed(() => [
   {
     label: user.value ? 'Account' : 'Get started',
     children: user.value
-      ? [{ label: 'Profile', to: '/profile' }]
+      ? []
       : [
           { label: 'Sign in', to: '/signin' },
           { label: 'Sign up', to: '/signup' }
@@ -65,14 +64,6 @@ const columns = computed(() => [
                 -->
                 <span class="relative text-xl font-bold">
                   <span class="text-primary">Pay</span>vand
-                  <UBadge
-                    color="success"
-                    variant="subtle"
-                    size="sm"
-                    class="absolute -top-2 start-full ms-1"
-                  >
-                    {{ cluster }}
-                  </UBadge>
                 </span>
               </NuxtLink>
 
@@ -88,7 +79,7 @@ const columns = computed(() => [
 
     <template #left>
       <p class="text-muted text-sm">
-        © {{ new Date().getFullYear() }} Payvand · Built on Solana
+        © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.1.0
       </p>
     </template>
 
