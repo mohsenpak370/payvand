@@ -62,9 +62,9 @@ const columns = computed(() => [
                   The cluster pill repeats the header's, because whether the
                   money here is real decides how the rest of the page reads.
                 -->
-                 <span class="relative text-xl font-bold">
-                   <span class="text-primary">Pay</span>vand
-                 </span>
+                <span class="relative text-xl font-bold">
+                  <span class="text-primary">Pay</span>vand
+                </span>
               </NuxtLink>
 
               <p class="text-muted mt-4 text-sm leading-relaxed">
@@ -79,7 +79,7 @@ const columns = computed(() => [
 
     <template #left>
       <p class="text-muted text-sm">
-         © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.1.0
+        © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.1.0
       </p>
     </template>
 
