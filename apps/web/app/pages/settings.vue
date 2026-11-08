@@ -77,8 +77,8 @@ const SHOP_CHOICES = [
               Shops
             </h2>
             <p class="text-sm text-muted">
-              A shop keeps the products you sell, so a payment is priced from a list rather than
-              typed in every time.
+              A shop keeps the products you sell, so a payment can be priced from a list rather
+              than typed in every time.
             </p>
           </div>
         </template>
