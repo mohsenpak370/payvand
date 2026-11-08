@@ -2,7 +2,8 @@
 import type { ShopWithProducts } from '~/composables/useShop'
 
 // A seller may keep several shops — a café and a bakery. The profile lists
-// them; each one opens on its own page, where its catalogue is edited.
+// them; each one opens on its own page, where its catalogue is edited. The
+// form lives in a modal so an empty page is not a form to fill in by accident.
 const api = useShopApi()
 
 const shops = ref<ShopWithProducts[]>([])
@@ -21,13 +22,16 @@ async function load() {
   failure.value = ''
   try {
     shops.value = await api.list()
-    // Nothing to list yet: the form is the page.
-    formOpen.value = shops.value.length === 0
   } catch (error) {
     failure.value = apiErrorMessage(error, 'Could not load your shops.')
   } finally {
     loading.value = false
   }
+}
+
+function openForm() {
+  failure.value = ''
+  formOpen.value = true
 }
 
 async function createShop() {
@@ -40,6 +44,7 @@ async function createShop() {
       description: description.value.trim()
     })
     // Straight to the new shop, which is empty and waiting for products.
+    formOpen.value = false
     await navigateTo(`/shops/${shop.id}`)
   } catch (error) {
     failure.value = apiErrorMessage(error, 'Could not create the shop.')
@@ -54,29 +59,28 @@ onMounted(load)
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <div>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
           <h2 class="text-base font-semibold">
             Shops
           </h2>
           <p class="text-sm text-muted">
-            Your menus. Each shop keeps its own products, and a payment can be priced from them.
+            Create and save the products you sell, then use them to create payments.
           </p>
         </div>
-        <UBadge
-          v-if="shops.length"
-          color="primary"
-          variant="subtle"
-          class="shrink-0 whitespace-nowrap"
-        >
-          {{ shops.length }} {{ shops.length === 1 ? 'shop' : 'shops' }}
-        </UBadge>
+        <UButton
+          label="New shop"
+          icon="i-lucide-plus"
+          size="sm"
+          class="shrink-0"
+          @click="openForm"
+        />
       </div>
     </template>
 
     <div class="flex flex-col gap-4">
       <UAlert
-        v-if="failure"
+        v-if="failure && !formOpen"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
@@ -134,37 +138,26 @@ onMounted(load)
           v-else
           class="text-sm text-muted"
         >
-          No shops yet — name the first one below.
+          No shops yet — create one to save your first products.
         </p>
+      </template>
+    </div>
 
-        <UButton
-          v-if="!formOpen"
-          label="New shop"
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="soft"
-          size="sm"
-          class="self-start"
-          @click="formOpen = true"
-        />
-
-        <div
-          v-if="formOpen"
-          class="flex flex-col gap-3 rounded-xl border border-dashed border-default p-4"
-        >
-          <div class="flex items-center gap-2">
-            <UIcon
-              name="i-lucide-store"
-              class="text-primary size-5"
-            />
-            <span class="font-medium">New shop</span>
-          </div>
+    <UModal
+      v-model:open="formOpen"
+      title="New shop"
+      description="A shop holds the products you sell. You can add products once it exists."
+      :ui="{ content: 'max-w-md' }"
+    >
+      <template #body>
+        <div class="flex flex-col gap-4">
           <UFormField label="Shop name">
             <UInput
               v-model="name"
               class="w-full"
               placeholder="Corner Shop"
               :maxlength="48"
+              autofocus
             />
           </UFormField>
           <UFormField
@@ -178,24 +171,35 @@ onMounted(load)
               :maxlength="160"
             />
           </UFormField>
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              label="Create shop"
-              icon="i-lucide-store"
-              :loading="creating"
-              :disabled="!canCreate"
-              @click="createShop"
-            />
-            <UButton
-              v-if="shops.length"
-              label="Cancel"
-              color="neutral"
-              variant="ghost"
-              @click="formOpen = false"
-            />
-          </div>
+
+          <UAlert
+            v-if="failure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="Could not create the shop"
+            :description="failure"
+          />
         </div>
       </template>
-    </div>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="formOpen = false"
+          />
+          <UButton
+            label="Create shop"
+            icon="i-lucide-store"
+            :loading="creating"
+            :disabled="!canCreate"
+            @click="createShop"
+          />
+        </div>
+      </template>
+    </UModal>
   </UCard>
 </template>

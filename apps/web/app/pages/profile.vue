@@ -153,6 +153,11 @@ const transactions = ref<TransactionsResponse | null>(null)
 const txLoading = ref(false)
 const txFailure = ref('')
 
+// Both lists run long. They start folded, so someone who came for the wallet
+// or the allowance is not scrolled past their whole history.
+const savedOpen = ref(false)
+const txOpen = ref(false)
+
 // Payment codes this account saved. The code is the invoice, so everything
 // shown on a card comes out of the payload the API kept.
 const savedPayments = ref<SavedPayment[]>([])
@@ -377,7 +382,7 @@ onMounted(() => {
           </div>
         </template>
 
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-col gap-2">
           <UFormField label="Show prices in">
             <USelect
               v-model="currencyChoice"
@@ -385,18 +390,15 @@ onMounted(() => {
               class="w-56"
             />
           </UFormField>
+          <!-- Its own line: beside the select it hung halfway down the field. -->
           <p
             v-if="rateHint"
-            class="text-sm text-muted tabular-nums"
+            class="text-xs text-muted tabular-nums"
           >
             1 SOL ≈ {{ rateHint }}
           </p>
         </div>
       </UCard>
-
-      <!-- The seller's shops: each opens on its own page, where its menu is
-           edited and the payment page reads it from. -->
-      <ShopsList />
 
       <!-- Monthly allowance. -->
       <UCard class="min-w-0">
@@ -505,6 +507,10 @@ onMounted(() => {
         </div>
       </UCard>
 
+      <!-- The seller's shops: each opens on its own page, where its products
+           are edited and a payment is priced from them. -->
+      <ShopsList />
+
       <!-- Saved payment codes. -->
       <UCard class="min-w-0">
         <template #header>
@@ -552,6 +558,16 @@ onMounted(() => {
           >
             Nothing saved yet — open a payment link and press “Save this payment”.
           </p>
+
+          <UButton
+            v-else-if="!savedOpen"
+            :label="`Show ${savedCards.length} saved ${savedCards.length === 1 ? 'code' : 'codes'}`"
+            icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="ghost"
+            block
+            @click="savedOpen = true"
+          />
 
           <ul
             v-else
@@ -601,6 +617,16 @@ onMounted(() => {
               </div>
             </li>
           </ul>
+
+          <UButton
+            v-if="savedOpen"
+            label="Hide"
+            icon="i-lucide-chevron-up"
+            color="neutral"
+            variant="ghost"
+            block
+            @click="savedOpen = false"
+          />
         </div>
       </UCard>
 
@@ -668,6 +694,16 @@ onMounted(() => {
             No transactions yet — your first payment will show up here.
           </p>
 
+          <UButton
+            v-else-if="transactions && !txOpen"
+            :label="`Show ${transactions.items.length} ${transactions.items.length === 1 ? 'payment' : 'payments'}`"
+            icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="ghost"
+            block
+            @click="txOpen = true"
+          />
+
           <ul
             v-else-if="transactions"
             class="flex flex-col divide-y divide-default"
@@ -711,6 +747,16 @@ onMounted(() => {
               </div>
             </li>
           </ul>
+
+          <UButton
+            v-if="txOpen"
+            label="Hide"
+            icon="i-lucide-chevron-up"
+            color="neutral"
+            variant="ghost"
+            block
+            @click="txOpen = false"
+          />
         </div>
       </UCard>
     </div>
