@@ -1,6 +1,4 @@
 <script setup lang="ts">
-const { user } = useAuth()
-
 /**
  * The brand block takes the grid's first column, so the groups sit beside it
  * rather than wrapping underneath. The account group changes with the session
@@ -16,17 +14,6 @@ const columns = computed(() => [
       { label: 'Learn about crypto', to: '/learn' }
     ]
   },
-  ...(user.value
-    ? []
-    : [
-        {
-          label: 'Get started',
-          children: [
-            { label: 'Sign in', to: '/signin' },
-            { label: 'Sign up', to: '/signup' }
-          ]
-        }
-      ]),
   {
     label: 'Legal',
     children: [
