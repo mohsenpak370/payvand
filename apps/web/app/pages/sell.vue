@@ -8,7 +8,6 @@ import type {
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster } from '~/composables/usePaymentProgram'
-import type { FiatCurrency } from '~/composables/useFiat'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 
@@ -24,29 +23,25 @@ const shopApi = useShopApi()
 const { shopsEnabled } = useShopPreference()
 const { publicKey, connected } = useSolanaWallet()
 
-const amountSol = ref('0.01')
-// Sellers think in the money they charge; the chain takes SOL. The amount can
-// be typed in either, and the other one is shown next to it, but every invoice
-// is created in lamports.
-const { currency, setCurrency } = useCurrencyPreference()
-const rates = useSolRates()
-const priceInFiat = ref(false)
-const fiatAmount = ref('')
+// One price, in the currency the code charges: the dropdown beside the field is
+// that currency, so there is no second control to reconcile against it. The
+// seller types what they want to be paid and the customer hands over exactly it.
+const priceInput = ref('0.01')
+const { currency } = useCurrencyPreference()
 // The one currency this invoice charges in. Offering several prices at once
 // only hands the customer a decision; the seller decides, and the code says it.
 const priceCurrency = ref<SupportedCurrency>('sol')
 const currencyChoices = computed(() => currenciesForCluster(cluster))
-const amountUnits = [
-  { label: 'SOL', value: 'sol' },
-  { label: 'USD', value: 'usd' },
-  { label: 'EUR', value: 'eur' }
-]
+const currencyItems = computed(() => currencyChoices.value.map(choice => ({
+  label: currencySymbol(choice),
+  value: choice
+})))
 // The amount field opens a calculator: sellers often price from arithmetic
 // rather than a number they already know.
 const calculatorOpen = ref(false)
 const name = ref('')
 const description = ref('')
-const memo = ref('Coffee')
+const memo = ref('')
 const busy = ref(false)
 const failure = ref('')
 const record = ref<PaymentRecord | null>(null)
@@ -70,7 +65,6 @@ const priceMode = ref<'amount' | 'products'>('amount')
 // The rest of the form is optional, so it stays folded: a seller who just wants
 // to charge a number sees a number field, a name and one button. Each toggle is
 // the same show/hide button the profile uses, rather than an accordion widget.
-const currencyOpen = ref(false)
 const detailsOpen = ref(false)
 const discountsOpen = ref(false)
 const codeOpen = ref(false)
@@ -115,54 +109,24 @@ const canAddCode = computed(() =>
   && Number(newPercent.value) <= 99
 )
 
-const lamports = computed(() => {
+/**
+ * The typed price in what the code charges: lamports for SOL, the token's own
+ * base units for a stablecoin. A shop's cart sets it too — its products are
+ * priced in lamports, which is why picking from a menu pins the currency to SOL.
+ */
+const priceUnits = computed(() => {
   if (sellingFromShops.value) return cartTotal.value
-  return priceInFiat.value
-    ? lamportsFromFiat(Number(fiatAmount.value), rates.value, currency.value)
-    : solToLamports(Number(amountSol.value))
-})
-
-/** SOL, or the currency the price is typed in. Picking a currency also makes it the default. */
-const amountUnit = computed<'sol' | FiatCurrency>({
-  get: () => (priceInFiat.value ? currency.value : 'sol'),
-  set: (next) => {
-    if (next === 'sol') {
-      // Carry the number over so switching unit never changes the price.
-      if (priceInFiat.value) amountSol.value = String(Number((lamports.value / 1_000_000_000).toFixed(9)))
-      priceInFiat.value = false
-      return
-    }
-    const rate = rates.value?.[next]
-    const equivalent = rate ? (lamports.value / 1_000_000_000) * rate : 0
-    fiatAmount.value = equivalent ? String(Number(equivalent.toFixed(2))) : ''
-    priceInFiat.value = true
-    setCurrency(next)
-  }
-})
-// Creating a code needs the seller's address, never a signature: the invoice
-// address is derived locally and the account only comes into existence (and
-// is only funded) when the customer pays.
-// A price in SOL converts to the stablecoins at today's rate, so a ticked
-// stablecoin with no rate available cannot be priced — say so instead of
-// creating an invoice that charges zero.
-const usdAmount = computed(() => {
-  if (priceInFiat.value && currency.value === 'usd') return Number(fiatAmount.value) || 0
-  const rate = rates.value?.usd
-  return rate ? (lamports.value / 1_000_000_000) * rate : 0
-})
-const eurAmount = computed(() => {
-  if (priceInFiat.value && currency.value === 'eur') return Number(fiatAmount.value) || 0
-  const rate = rates.value?.eur
-  return rate ? (lamports.value / 1_000_000_000) * rate : 0
+  const typed = Number(priceInput.value)
+  if (!Number.isFinite(typed) || typed <= 0) return 0
+  return priceCurrency.value === 'sol'
+    ? solToLamports(typed)
+    : Math.round(typed * 1_000_000)
 })
 
 /** The invoice's price in its own base units — exactly what the code charges. */
-const invoiceOptions = computed(() => {
-  const option = priceCurrency.value
-  if (option === 'sol') return [{ currency: option, amount: lamports.value }]
-  const fiat = option === 'usdc' ? usdAmount.value : eurAmount.value
-  return [{ currency: option, amount: Math.round(fiat * 1_000_000) }]
-})
+const invoiceOptions = computed(() => [
+  { currency: priceCurrency.value, amount: priceUnits.value }
+])
 
 /** A price in the money the customer will hand over. */
 function priceLabel(option: { currency: SupportedCurrency, amount: number }): string {
@@ -173,6 +137,13 @@ function priceLabel(option: { currency: SupportedCurrency, amount: number }): st
 
 /** The price shown next to the form, and the same price after a carried code. */
 const priceSummary = computed(() => priceLabel(invoiceOptions.value[0]!))
+
+/** What a carried discount code took off, in the currency this code charges. */
+const savedLabel = computed(() => {
+  const currency = record.value?.options?.[0]?.currency ?? priceCurrency.value
+  const saved = priceLamports.value - (record.value?.amount_lamports ?? 0)
+  return saved > 0 ? priceLabel({ currency, amount: saved }) : ''
+})
 const discountedPrice = computed(() => {
   const option = invoiceOptions.value[0]!
   if (!selectedDiscount.value) return priceLabel(option)
@@ -182,23 +153,19 @@ const discountedPrice = computed(() => {
   })
 })
 
-/** The amount field prices the invoice; a stablecoin invoice is pinned to that price. */
+/** The price field sets the invoice, and the dropdown says which currency it charges. */
 const amountHelp = computed(() => {
-  if (cartActive.value) return 'The total of the products above — clear them to type an amount instead.'
-  if (priceCurrency.value !== 'sol') {
-    return `Priced here in SOL or your own currency, charged in ${currencySymbol(priceCurrency.value)} at today's rate — the exact price is below.`
-  }
-  return priceInFiat.value
-    ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
-    : 'What the customer pays.'
+  if (cartActive.value) return 'The total of the products above — clear them to type a price instead.'
+  if (sellingFromShops.value) return 'What the customer pays.'
+  return `What the customer pays, in ${currencySymbol(priceCurrency.value)}.`
 })
 
 // Picking products decides the price: the invoice has to charge exactly what
 // the receipt adds up to, or the API refuses to build the code.
 watch(cartTotal, (total) => {
   if (total <= 0) return
-  priceInFiat.value = false
-  amountSol.value = String(Number((total / 1_000_000_000).toFixed(9)))
+  priceCurrency.value = 'sol'
+  priceInput.value = String(Number((total / 1_000_000_000).toFixed(9)))
 })
 
 // Switching back to a typed amount drops the tray: a cart left behind would
@@ -210,7 +177,7 @@ watch(priceMode, (mode) => {
 const canCreate = computed(() =>
   connected.value
   && !busy.value
-  && lamports.value > 0
+  && priceUnits.value > 0
   && invoiceOptions.value.every(option => option.amount > 0)
 )
 
@@ -218,8 +185,7 @@ const statusColor = (status: string) =>
   status === 'settled' ? 'success' : status === 'missing' || status === 'pending' ? 'warning' : 'neutral'
 
 function applyAmount(amount: string) {
-  if (priceInFiat.value) fiatAmount.value = amount
-  else amountSol.value = amount
+  priceInput.value = amount
 }
 
 /**
@@ -245,8 +211,8 @@ async function createPayment() {
     failure.value = 'Connect your seller wallet first.'
     return
   }
-  if (!Number.isFinite(lamports.value) || lamports.value <= 0) {
-    failure.value = 'Enter an amount greater than 0.'
+  if (!Number.isFinite(priceUnits.value) || priceUnits.value <= 0) {
+    failure.value = 'Enter a price greater than 0.'
     return
   }
   if (memo.value.length > 96) {
@@ -288,7 +254,7 @@ async function createPayment() {
 
     record.value = created.payment
     qrPayload.value = withSellerCurrency(created.qrPayload)
-    priceLamports.value = lamports.value
+    priceLamports.value = priceUnits.value
     paidCode.value = null
     createdItems.value = created.payment.items ?? []
     // The invoice is made; the next one starts from an empty tray.
@@ -522,7 +488,7 @@ onBeforeUnmount(() => {
         <div class="flex flex-col gap-4">
           <UFormField
             v-if="shopsEnabled && hasProducts"
-            label="Price"
+            label="Pricing"
           >
             <URadioGroup
               v-model="priceMode"
@@ -536,37 +502,30 @@ onBeforeUnmount(() => {
             :shops="shops"
           />
 
+          <!--
+            One field for the price and the currency it is charged in: the
+            dropdown is not a display unit, it decides what the code charges.
+          -->
           <UFormField
             v-if="!sellingFromShops"
-            label="Amount"
+            label="Price"
             :help="amountHelp"
           >
             <div class="flex items-stretch gap-2">
               <UInput
-                v-if="priceInFiat"
-                v-model="fiatAmount"
+                v-model="priceInput"
                 type="number"
                 min="0"
-                step="0.01"
+                :step="priceCurrency === 'sol' ? '0.001' : '0.01'"
                 class="min-w-0 flex-1"
-                placeholder="5.00"
-                :disabled="cartActive"
-              />
-              <UInput
-                v-else
-                v-model="amountSol"
-                type="number"
-                min="0"
-                step="0.001"
-                class="min-w-0 flex-1"
-                placeholder="0.01"
+                :placeholder="priceCurrency === 'sol' ? '0.01' : '5.00'"
                 :disabled="cartActive"
               />
               <USelect
-                v-model="amountUnit"
-                :items="amountUnits"
+                v-model="priceCurrency"
+                :items="currencyItems"
                 class="w-24"
-                aria-label="Unit of the amount"
+                aria-label="Currency the customer pays in"
                 :disabled="cartActive"
               />
               <UButton
@@ -579,45 +538,6 @@ onBeforeUnmount(() => {
               />
             </div>
           </UFormField>
-
-          <!--
-            Every code charges one currency, and nearly every code charges SOL,
-            so the choice is a line of text until someone asks for it.
-          -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-3">
-              <p class="text-sm text-muted">
-                Charged in
-                <span class="text-default font-medium">{{ currencySymbol(priceCurrency) }}</span>
-              </p>
-              <UButton
-                :label="currencyOpen ? 'Done' : 'Change'"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                :aria-expanded="currencyOpen"
-                @click="currencyOpen = !currencyOpen"
-              />
-            </div>
-
-            <template v-if="currencyOpen">
-              <div class="flex flex-wrap gap-2">
-                <UButton
-                  v-for="choice in currencyChoices"
-                  :key="choice"
-                  :label="currencySymbol(choice)"
-                  size="sm"
-                  :color="priceCurrency === choice ? 'primary' : 'neutral'"
-                  :variant="priceCurrency === choice ? 'solid' : 'outline'"
-                  :aria-pressed="priceCurrency === choice"
-                  @click="priceCurrency = choice"
-                />
-              </div>
-              <p class="text-xs text-muted">
-                One currency per code — it is fixed when you create it, and the customer pays in it.
-              </p>
-            </template>
-          </div>
 
           <UFormField
             v-if="discounts.length"
@@ -824,7 +744,7 @@ onBeforeUnmount(() => {
               color="success"
               variant="subtle"
             >
-              {{ paidCode }} · saved {{ lamportsToSol(priceLamports - record.amount_lamports) }} SOL
+              {{ paidCode }} · saved {{ savedLabel }}
             </UBadge>
           </div>
 
@@ -1022,7 +942,7 @@ onBeforeUnmount(() => {
 
     <CalculatorModal
       v-model:open="calculatorOpen"
-      :initial="priceInFiat ? fiatAmount : amountSol"
+      :initial="priceInput"
       @apply="applyAmount"
     />
   </UPageSection>
