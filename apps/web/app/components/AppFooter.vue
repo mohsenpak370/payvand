@@ -68,7 +68,7 @@ const columns = computed(() => [
 
     <template #left>
       <p class="text-muted text-sm">
-        © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.1.0
+        © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.1.1
       </p>
     </template>
 
