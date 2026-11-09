@@ -11,7 +11,14 @@ const ctaTitle = computed(() =>
 
 <template>
   <div>
+    <!--
+      The opening screen is the hero and nothing else: it takes the height left
+      under the header, and the page below it starts after a scroll. `svh` rather
+      than `vh` so a phone's collapsing browser chrome does not push the next
+      section half into view.
+    -->
     <UPageHero
+      class="flex min-h-[calc(100svh-var(--ui-header-height))] flex-col justify-center"
       title="Simple payments on Solana"
       :ui="{ title: 'leading-tight' }"
       description="A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it."
