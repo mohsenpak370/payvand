@@ -67,9 +67,19 @@ const {
 const heading = computed(() => paymentName.value || paymentMemo.value || 'Payment')
 
 const discountOpen = ref(false)
-// The seller's address and the network are reference material, not part of
-// paying, so they stay behind a link under the code.
-const detailsOpen = ref(false)
+// The code and the invoice's identifiers belong to paying on another device or
+// on paper, not to the screen that takes this payment. One button opens both.
+const qrOpen = ref(false)
+
+// Written once and printed in two places: the modal on screen, and the sheet
+// itself on paper, which has no button to press.
+const detailRows = computed(() => [
+  { label: 'Seller', value: String(payload.value?.seller ?? ''), mono: true },
+  { label: 'Network', value: networkLabel(payload.value?.cluster || ''), mono: false },
+  ...(record.value
+    ? [{ label: 'Status', value: statusLabel(record.value.status), mono: false }]
+    : [])
+])
 
 // The invoice is charged in SOL. The figure in brackets is what that price is
 // worth in the seller's currency, which travels inside the code — the buyer
@@ -609,80 +619,45 @@ useSeoMeta({
             </div>
 
             <!--
-              The printed page is this code: on paper it is the only way to
-              pay, and on a desktop it is how the phone takes over.
+              Paying on another device, or printing the sheet, is the second
+              way in — not what this page is for. Both live behind this one
+              button so the amount and the pay action keep the screen.
             -->
-            <div
-              v-if="!settled"
-              class="mt-6 hidden w-full max-w-[240px] sm:block print:block"
-            >
-              <PaymentQr
-                :payload="code"
-                :size="240"
-              />
-              <p class="mt-3 text-center text-xs text-muted">
-                {{ stage === 'pick' ? 'Or scan this with your phone' : 'Or scan it with a phone' }}
-              </p>
+            <UButton
+              label="QR code and details"
+              icon="i-lucide-qr-code"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              class="mt-4 print:hidden"
+              @click="qrOpen = true"
+            />
+
+            <!-- Paper has no button to press, so the code and the invoice's
+                 identifiers are always printed. -->
+            <div class="mt-6 hidden w-full print:block">
+              <div class="mx-auto w-full max-w-[240px]">
+                <PaymentQr
+                  :payload="code"
+                  :size="240"
+                />
+              </div>
+              <dl class="mt-4 w-full space-y-1 text-xs text-muted">
+                <div
+                  v-for="row in detailRows"
+                  :key="row.label"
+                  class="flex justify-between gap-3"
+                >
+                  <dt>{{ row.label }}</dt>
+                  <dd
+                    class="truncate"
+                    :class="row.mono ? 'font-mono' : ''"
+                  >
+                    {{ row.value }}
+                  </dd>
+                </div>
+              </dl>
             </div>
-
-            <!-- The seller's address and network, folded away: what a buyer
-                 needs is the amount and the button. -->
-            <UButton
-              v-if="!detailsOpen"
-              label="Payment details"
-              icon="i-lucide-chevron-down"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              class="mt-6 print:hidden"
-              :aria-expanded="false"
-              @click="detailsOpen = true"
-            />
-
-            <!--
-              On screen it opens from the link above; on paper it is always
-              printed, because a printed sheet has no button to press and the
-              seller and network are what make it checkable.
-            -->
-            <dl
-              :class="detailsOpen
-                ? 'mt-6 w-full space-y-1 text-xs text-muted'
-                : 'mt-6 hidden w-full space-y-1 text-xs text-muted print:block'"
-            >
-              <div class="flex justify-between gap-3">
-                <dt>Seller</dt>
-                <dd class="truncate font-mono">
-                  {{ payload?.seller }}
-                </dd>
-              </div>
-              <div class="flex justify-between gap-3">
-                <dt>Network</dt>
-                <dd class="truncate">
-                  {{ networkLabel(payload?.cluster || '') }}
-                </dd>
-              </div>
-              <div
-                v-if="record"
-                class="flex justify-between gap-3"
-              >
-                <dt>Status</dt>
-                <dd class="truncate">
-                  {{ statusLabel(record.status) }}
-                </dd>
-              </div>
-            </dl>
-
-            <UButton
-              v-if="detailsOpen"
-              label="Hide details"
-              icon="i-lucide-chevron-up"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              class="mt-2 print:hidden"
-              :aria-expanded="true"
-              @click="detailsOpen = false"
-            />
           </div>
         </section>
 
@@ -751,6 +726,50 @@ useSeoMeta({
         />
       </div>
     </main>
+
+    <!-- The code and its identifiers, for a customer paying on a phone. -->
+    <UModal
+      v-model:open="qrOpen"
+      title="QR code and details"
+      :transition="false"
+      :ui="{ content: 'max-w-sm' }"
+    >
+      <template #body>
+        <div class="flex flex-col items-center gap-4">
+          <template v-if="!settled">
+            <PaymentQr
+              :payload="code"
+              :size="240"
+            />
+            <p class="text-center text-xs text-muted">
+              Scan this with a phone camera to pay on another device.
+            </p>
+          </template>
+          <p
+            v-else
+            class="text-center text-sm text-muted"
+          >
+            This payment is settled — there is no code left to scan.
+          </p>
+
+          <dl class="w-full space-y-1 text-left text-xs text-muted">
+            <div
+              v-for="row in detailRows"
+              :key="row.label"
+              class="flex justify-between gap-3"
+            >
+              <dt>{{ row.label }}</dt>
+              <dd
+                class="truncate"
+                :class="row.mono ? 'font-mono' : ''"
+              >
+                {{ row.value }}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </template>
+    </UModal>
 
     <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
       Powered by
