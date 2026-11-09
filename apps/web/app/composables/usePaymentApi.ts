@@ -79,12 +79,14 @@ export interface CreatePaymentResponse {
   qrPayload: string
 }
 
-/** A payment code kept on the account, so the profile can open it again. */
+/** A payment code kept on the account, filed under a shop, so it opens again. */
 export interface SavedPayment {
   id: string
   payment_id: string
   /** The code itself — the invoice lives here, not in the API. */
   payload: string
+  /** The shop that keeps it. Codes saved before shops kept them have none. */
+  shop_id: string | null
   created_at_unix: number
 }
 
@@ -345,11 +347,14 @@ export function usePaymentApi() {
     return await $fetch(`${base}/api/payments/${id}`, { params })
   }
 
-  /** Keeps a payment code on the signed-in account; saving twice is a no-op. */
-  async function savePayment(payload: string): Promise<SavedPayment> {
+  /**
+   * Files a payment code under one of the account's shops; saving the same
+   * payment twice is a no-op that answers with the entry already kept.
+   */
+  async function savePayment(payload: string, shopId?: string): Promise<SavedPayment> {
     return await $fetch(`${base}/api/saved-payments`, {
       method: 'POST',
-      body: { payload },
+      body: { payload, shop_id: shopId ?? null },
       headers: authHeaders()
     })
   }

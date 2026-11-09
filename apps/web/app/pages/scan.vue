@@ -111,11 +111,13 @@ onMounted(async () => {
 
     <!--
       The same sheet a shared link opens: one price in the currency the seller
-      chose, and the one action this browser can take to pay it.
+      chose, and the one action this browser can take to pay it. Nothing to
+      keep and nothing to print, though — this code is being paid now.
     -->
     <PaymentCheckout
       v-else
       :source="scanned"
+      :permanent="false"
     >
       <template #actions>
         <UButton

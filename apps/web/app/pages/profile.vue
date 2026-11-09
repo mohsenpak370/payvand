@@ -520,7 +520,7 @@ onMounted(() => {
             v-else-if="!savedPayments.length"
             class="py-4 text-center text-sm text-muted"
           >
-            Nothing saved yet — open a payment link and press “Save this payment”.
+            Nothing saved yet — open a payment link and press “Save to my shop”.
           </p>
 
           <UButton

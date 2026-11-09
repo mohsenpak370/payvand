@@ -42,11 +42,13 @@ const SCHEMA: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS discount_codes_user_id_idx ON discount_codes(user_id)",
     // A saved payment keeps a copy of the code that already *is* the invoice:
     // the API does not know invoices, only what the account wants to see again.
+    // `shop_id` is the shop the seller filed it under, when they picked one.
     "CREATE TABLE IF NOT EXISTS saved_payments (
         id         TEXT PRIMARY KEY,
         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         payment_id TEXT NOT NULL,
         payload    TEXT NOT NULL,
+        shop_id    TEXT,
         created_at INTEGER NOT NULL,
         UNIQUE (user_id, payment_id)
     )",
@@ -144,7 +146,10 @@ pub async fn open() -> Result<Database, DbError> {
             .unwrap_or("?");
         eprintln!("[db] remote open host={host} token_len={}", token.len());
         let built = Builder::new_remote(target, token).build().await;
-        eprintln!("[db] builder.build() -> {}", if built.is_ok() { "ok" } else { "err" });
+        eprintln!(
+            "[db] builder.build() -> {}",
+            if built.is_ok() { "ok" } else { "err" }
+        );
         return Ok(built?);
     }
 
@@ -170,6 +175,7 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
         eprintln!("[db] migrate statement {} ok", i + 1);
     }
     migrate_shops_to_a_list(connection).await?;
+    migrate_saved_codes_to_shops(connection).await?;
     eprintln!("[db] migrate done");
     Ok(())
 }
@@ -201,9 +207,8 @@ async fn migrate_shops_to_a_list(connection: &libsql::Connection) -> Result<(), 
             )
             .await?;
         let mut found = None;
-        while let Some(row) = rows.next().await? {
+        if let Some(row) = rows.next().await? {
             found = row.get(0).ok();
-            break;
         }
         found
     };
@@ -246,6 +251,30 @@ async fn migrate_shops_to_a_list(connection: &libsql::Connection) -> Result<(), 
     connection
         .execute(
             "CREATE INDEX IF NOT EXISTS products_shop_id_idx ON products(shop_id)",
+            (),
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// Saved codes began on the account alone. They now belong to a shop, which is
+/// what the seller files them under, so the shop page can list what it keeps.
+/// The column is additive: codes saved before this keep their place on the
+/// account and simply belong to no shop yet.
+async fn migrate_saved_codes_to_shops(connection: &libsql::Connection) -> Result<(), DbError> {
+    if !has_column(connection, "saved_payments", "shop_id").await? {
+        connection
+            .execute("ALTER TABLE saved_payments ADD COLUMN shop_id TEXT", ())
+            .await?;
+        eprintln!("[db] migrate: added saved_payments.shop_id");
+    }
+
+    // Created here rather than in `SCHEMA`, because an older database only gets
+    // the column above, and an index on a missing column cannot be built.
+    connection
+        .execute(
+            "CREATE INDEX IF NOT EXISTS saved_payments_shop_id_idx ON saved_payments(shop_id)",
             (),
         )
         .await?;
@@ -356,10 +385,7 @@ mod tests {
         assert_eq!(name, "Corner Shop");
 
         let mut rows = connection
-            .query(
-                "SELECT shop_id FROM products WHERE id = 'product-1'",
-                (),
-            )
+            .query("SELECT shop_id FROM products WHERE id = 'product-1'", ())
             .await
             .expect("read product");
         let shop_id: String = rows
@@ -382,12 +408,20 @@ mod tests {
             .expect("a seller can keep two shops");
 
         // Re-running is a no-op, as every cold start does.
-        migrate_connection(&connection).await.expect("migrated again");
+        migrate_connection(&connection)
+            .await
+            .expect("migrated again");
         let mut rows = connection
             .query("SELECT COUNT(*) FROM shops", ())
             .await
             .expect("count");
-        let count: i64 = rows.next().await.expect("row").expect("count").get(0).expect("value");
+        let count: i64 = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("count")
+            .get(0)
+            .expect("value");
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_file(path);

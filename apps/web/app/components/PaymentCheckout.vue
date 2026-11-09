@@ -1,5 +1,18 @@
 <script setup lang="ts">
-const props = defineProps<{ source?: string }>()
+import type { Shop } from '~/composables/useShop'
+
+const props = withDefaults(
+  defineProps<{
+    source?: string
+    /**
+     * A shared or printed link outlives the visit, so it is worth keeping and
+     * printing. A code read at the counter is paid on the spot and has nothing
+     * to save, so the scan flow turns this off.
+     */
+    permanent?: boolean
+  }>(),
+  { permanent: true }
+)
 
 // The shared link is the checkout: one sheet with what is being sold, its
 // price, and the single action that pays it. It still has to survive being
@@ -105,9 +118,19 @@ const receiptLines = computed(() => {
   }))
 })
 
-const savedToProfile = ref(false)
+// Keeping the code files it under one of the account's shops, so the shop page
+// can list the links it hands out. Most people keep a single shop, so a picker
+// only appears when there is something to pick between.
+const shopApi = useShopApi()
+const shops = ref<Shop[]>([])
+const shopId = ref('')
+const saved = ref(false)
+const savedShopId = ref('')
 const saving = ref(false)
 const saveError = ref('')
+
+const shopChoices = computed(() => shops.value.map(shop => ({ label: shop.name, value: shop.id })))
+const savedShop = computed(() => shops.value.find(shop => shop.id === savedShopId.value))
 
 /**
  * The code a Solana wallet understands, offered as a link for someone whose
@@ -148,25 +171,33 @@ function openDiscount() {
 }
 
 async function refreshSaved() {
-  savedToProfile.value = false
+  saved.value = false
+  savedShopId.value = ''
   const current = payload.value
   if (!user.value || !current) return
   try {
-    const saved = await api.listSavedPayments()
-    savedToProfile.value = saved.some(item => item.payment_id === current.id)
+    const [kept, menus] = await Promise.all([api.listSavedPayments(), shopApi.list()])
+    shops.value = menus
+    shopId.value = menus[0]?.id ?? ''
+    const entry = kept.find(item => item.payment_id === current.id)
+    if (entry) {
+      saved.value = true
+      savedShopId.value = entry.shop_id ?? ''
+    }
   } catch {
     // Not worth an error of its own: the save action reports its own failures.
   }
 }
 
-async function saveToProfile() {
+async function saveToShop() {
   const current = payload.value
-  if (!current) return
+  if (!current || !shopId.value) return
   saving.value = true
   saveError.value = ''
   try {
-    await api.savePayment(JSON.stringify(current))
-    savedToProfile.value = true
+    const entry = await api.savePayment(JSON.stringify(current), shopId.value)
+    saved.value = true
+    savedShopId.value = entry.shop_id ?? shopId.value
   } catch (cause) {
     saveError.value = apiErrorMessage(cause, 'Could not save this payment.')
   } finally {
@@ -628,28 +659,48 @@ useSeoMeta({
         </div>
 
         <div
-          v-if="stage !== 'loading' && stage !== 'invalid'"
+          v-if="permanent && stage !== 'loading' && stage !== 'invalid'"
           class="mt-3 flex flex-wrap items-center justify-center gap-2 print:hidden"
         >
           <UButton
-            v-if="savedToProfile"
-            to="/profile"
-            label="Saved to your profile"
+            v-if="saved"
+            :to="savedShopId ? `/shops/${savedShopId}` : '/profile'"
+            :label="savedShop ? `Saved to ${savedShop.name}` : 'Saved to your shop'"
             icon="i-lucide-bookmark-check"
             color="neutral"
             variant="ghost"
             size="sm"
           />
-          <UButton
-            v-else-if="user"
-            label="Save to my profile"
-            icon="i-lucide-bookmark-plus"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :loading="saving"
-            @click="saveToProfile"
-          />
+          <template v-else-if="user">
+            <USelect
+              v-if="shops.length > 1"
+              v-model="shopId"
+              :items="shopChoices"
+              class="w-40"
+              size="sm"
+              aria-label="Shop to save this code in"
+            />
+            <UButton
+              v-if="shops.length"
+              label="Save to my shop"
+              icon="i-lucide-bookmark-plus"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :loading="saving"
+              @click="saveToShop"
+            />
+            <!-- No shop yet, nowhere to file it: the shop is one step away. -->
+            <UButton
+              v-else
+              to="/shops"
+              label="Create a shop to keep codes"
+              icon="i-lucide-store"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+            />
+          </template>
           <UButton
             label="Save as PDF"
             icon="i-lucide-file-down"

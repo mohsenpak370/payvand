@@ -12,7 +12,7 @@ const shopId = computed(() => String(route.params.id ?? ''))
 <template>
   <UPageSection
     title="Shop"
-    description="Your products, and the prices the payment page charges."
+    description="Your products, the prices the payment page charges, and the codes you saved here."
   >
     <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
       <NuxtLink
@@ -27,6 +27,12 @@ const shopId = computed(() => String(route.params.id ?? ''))
       </NuxtLink>
 
       <ShopEditor :shop-id="shopId" />
+
+      <!-- The links this shop keeps, next to the products they price. -->
+      <ShopCodes
+        :key="shopId"
+        :shop-id="shopId"
+      />
     </div>
   </UPageSection>
 </template>
