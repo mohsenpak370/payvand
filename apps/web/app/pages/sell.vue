@@ -29,9 +29,9 @@ const { currency, setCurrency } = useCurrencyPreference()
 const rates = useSolRates()
 const priceInFiat = ref(false)
 const fiatAmount = ref('')
-// Which currencies this invoice takes. The seller prices the invoice once and
-// every ticked currency gets its own price, pinned at creation time.
-const accepted = ref<SupportedCurrency[]>(['sol'])
+// The one currency this invoice charges in. Offering several prices at once
+// only hands the customer a decision; the seller decides, and the code says it.
+const priceCurrency = ref<SupportedCurrency>('sol')
 const currencyChoices = computed(() => currenciesForCluster(cluster))
 const amountUnits = [
   { label: 'SOL', value: 'sol' },
@@ -79,12 +79,6 @@ const discountCode = ref(NONE)
 
 const selectedDiscount = computed(
   () => discounts.value.find(code => code.code === discountCode.value) ?? null
-)
-
-const previewLamports = computed(() =>
-  selectedDiscount.value
-    ? discountedLamports(lamports.value, selectedDiscount.value.percent_off)
-    : lamports.value
 )
 
 const discountOptions = computed(() => [
@@ -142,23 +136,42 @@ const eurAmount = computed(() => {
   return rate ? (lamports.value / 1_000_000_000) * rate : 0
 })
 
-/** Each accepted currency, priced in its own base units. */
-const acceptedOptions = computed(() =>
-  accepted.value.map((option) => {
-    if (option === 'sol') return { currency: option, amount: lamports.value }
-    const fiat = option === 'usdc' ? usdAmount.value : eurAmount.value
-    return { currency: option, amount: Math.round(fiat * 1_000_000) }
-  })
-)
+/** The invoice's price in its own base units — exactly what the code charges. */
+const invoiceOptions = computed(() => {
+  const option = priceCurrency.value
+  if (option === 'sol') return [{ currency: option, amount: lamports.value }]
+  const fiat = option === 'usdc' ? usdAmount.value : eurAmount.value
+  return [{ currency: option, amount: Math.round(fiat * 1_000_000) }]
+})
 
-/** Naira-free summary of every price this invoice will charge. */
-const priceSummary = computed(() =>
-  acceptedOptions.value.map(option =>
-    option.currency === 'sol'
-      ? `${lamportsToSol(option.amount)} SOL`
-      : `${formatTokenAmount(option.amount, 6)} ${currencySymbol(option.currency)}`
-  )
-)
+/** A price in the money the customer will hand over. */
+function priceLabel(option: { currency: SupportedCurrency, amount: number }): string {
+  return option.currency === 'sol'
+    ? `${lamportsToSol(option.amount)} SOL`
+    : `${formatTokenAmount(option.amount, 6)} ${currencySymbol(option.currency)}`
+}
+
+/** The price shown next to the form, and the same price after a carried code. */
+const priceSummary = computed(() => priceLabel(invoiceOptions.value[0]!))
+const discountedPrice = computed(() => {
+  const option = invoiceOptions.value[0]!
+  if (!selectedDiscount.value) return priceLabel(option)
+  return priceLabel({
+    currency: option.currency,
+    amount: discountedLamports(option.amount, selectedDiscount.value.percent_off)
+  })
+})
+
+/** The amount field prices the invoice; a stablecoin invoice is pinned to that price. */
+const amountHelp = computed(() => {
+  if (cartActive.value) return 'The total of the products above — clear them to type an amount instead.'
+  if (priceCurrency.value !== 'sol') {
+    return `Priced here in SOL or your own currency, charged in ${currencySymbol(priceCurrency.value)} at today's rate — the exact price is below.`
+  }
+  return priceInFiat.value
+    ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
+    : 'What the customer pays.'
+})
 
 // Picking products decides the price: the invoice has to charge exactly what
 // the receipt adds up to, or the API refuses to build the code.
@@ -168,20 +181,11 @@ watch(cartTotal, (total) => {
   amountSol.value = String(Number((total / 1_000_000_000).toFixed(9)))
 })
 
-function toggleAccepted(option: SupportedCurrency) {
-  if (accepted.value.includes(option)) {
-    // Never leave an invoice with no way to pay it.
-    if (accepted.value.length > 1) accepted.value = accepted.value.filter(item => item !== option)
-    return
-  }
-  accepted.value = currencyChoices.value.filter(item => item === option || accepted.value.includes(item))
-}
-
 const canCreate = computed(() =>
   connected.value
   && !busy.value
   && lamports.value > 0
-  && acceptedOptions.value.every(option => option.amount > 0)
+  && invoiceOptions.value.every(option => option.amount > 0)
 )
 
 const statusColor = (status: string) =>
@@ -238,12 +242,12 @@ async function createPayment() {
     // then record the details. The customer's payment funds the account.
     const reference = createReference()
 
-    // The API derives one invoice address per accepted currency from these
-    // prices, so the code the customer scans carries every way to pay it.
+    // The API derives the invoice address from this price, so the code the
+    // customer scans names exactly the currency and amount it charges.
     const created = await api.createPayment({
       seller,
       reference,
-      options: acceptedOptions.value,
+      options: invoiceOptions.value,
       memo: memo.value,
       name: name.value.trim(),
       description: description.value.trim(),
@@ -276,8 +280,8 @@ async function createPayment() {
  * funded tells us the full price — or exactly which code the buyer used.
  */
 /**
- * Every address this invoice can be settled on: one per accepted currency at
- * full price, plus one per currency per discount code. Whichever gets funded
+ * Every address this invoice can be settled on: its currency at full price,
+ * plus the same currency at each discount code's price. Whichever gets funded
  * says what was paid and which code the buyer used.
  */
 async function watchTargets(): Promise<{ pda: string, code: string | null }[]> {
@@ -498,11 +502,7 @@ onBeforeUnmount(() => {
 
           <UFormField
             label="Amount"
-            :help="cartActive
-              ? 'The total of the products above — clear them to type an amount instead.'
-              : priceInFiat
-                ? 'Charged in SOL at today\'s rate — the invoice keeps the amount below.'
-                : 'What the customer pays.'"
+            :help="amountHelp"
           >
             <div class="flex items-stretch gap-2">
               <UInput
@@ -544,8 +544,8 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <UFormField
-            label="Accept payment in"
-            help="Tick every currency you take — the customer picks one on their own screen."
+            label="Currency"
+            :help="`The customer pays in ${currencySymbol(priceCurrency)} — one currency per code, fixed when you create it.`"
           >
             <div class="flex flex-wrap gap-2">
               <UButton
@@ -553,9 +553,10 @@ onBeforeUnmount(() => {
                 :key="choice"
                 :label="currencySymbol(choice)"
                 size="sm"
-                :color="accepted.includes(choice) ? 'primary' : 'neutral'"
-                :variant="accepted.includes(choice) ? 'solid' : 'outline'"
-                @click="toggleAccepted(choice)"
+                :color="priceCurrency === choice ? 'primary' : 'neutral'"
+                :variant="priceCurrency === choice ? 'solid' : 'outline'"
+                :aria-pressed="priceCurrency === choice"
+                @click="priceCurrency = choice"
               />
             </div>
           </UFormField>
@@ -564,7 +565,7 @@ onBeforeUnmount(() => {
             v-if="discounts.length"
             label="Discount"
             :help="selectedDiscount
-              ? `Buyers pay ${lamportsToSol(previewLamports)} SOL — ${selectedDiscount.percent_off}% off, applied for them.`
+              ? `Buyers pay ${discountedPrice} — ${selectedDiscount.percent_off}% off, applied for them.`
               : 'Optional — ride one of your codes along with this QR so buyers get it without typing it.'"
           >
             <USelect
@@ -615,7 +616,7 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3 text-sm text-muted">
             <span>{{ networkLabel(cluster) }}</span>
             <span class="tabular-nums">
-              {{ priceSummary.join(' · ') }}
+              {{ priceSummary }}
             </span>
           </div>
 
