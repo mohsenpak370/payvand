@@ -28,6 +28,12 @@ const shopId = computed(() => String(route.params.id ?? ''))
 
       <ShopEditor :shop-id="shopId" />
 
+      <!-- A code priced from this shop's menu, made where the menu lives. -->
+      <ShopPayment
+        :key="shopId"
+        :shop-id="shopId"
+      />
+
       <!-- The links this shop keeps, next to the products they price. -->
       <ShopCodes
         :key="shopId"

@@ -19,6 +19,9 @@ definePageMeta({ middleware: 'auth' })
 const { cluster } = useRuntimeConfig().public
 const api = usePaymentApi()
 const shopApi = useShopApi()
+// Pricing from a menu is only offered to sellers who turned shops on in
+// settings — everyone else creates codes the way they always have.
+const { shopsEnabled } = useShopPreference()
 const { publicKey, connected } = useSolanaWallet()
 
 const amountSol = ref('0.01')
@@ -511,7 +514,7 @@ onBeforeUnmount(() => {
 
         <div class="flex flex-col gap-4">
           <UFormField
-            v-if="hasProducts"
+            v-if="shopsEnabled && hasProducts"
             label="Price"
           >
             <URadioGroup
@@ -521,7 +524,7 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <ProductPicker
-            v-if="sellingFromShops"
+            v-if="shopsEnabled && sellingFromShops"
             v-model="cart"
             :shops="shops"
           />

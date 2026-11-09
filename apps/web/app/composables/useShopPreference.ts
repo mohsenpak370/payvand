@@ -1,7 +1,8 @@
 /**
  * Whether shops belong in this person's app. Plenty of sellers charge for one
  * thing at a time and never want a catalogue hanging off their profile, so the
- * feature can be switched off; that takes its link out of the navigation.
+ * feature starts switched off and its link stays out of the navigation until it
+ * is turned on.
  *
  * It is a browser preference like the currency, not an account setting: it
  * follows this device.
@@ -9,9 +10,11 @@
 export const SHOPS_STORAGE_KEY = 'payvand.shops-enabled.v1'
 
 export function useShopPreference() {
-  // On by default: shops were part of the app before this setting existed, so
-  // nobody loses the feature by visiting a page that has not stored a choice.
-  const shopsEnabled = useState<boolean>('shops-enabled', () => true)
+  // Off by default: most sellers charge for one thing at a time, so a catalogue
+  // is something they switch on in settings rather than something they have to
+  // find and switch off. Turning it on adds the Shops link and the option to
+  // price a payment from a menu.
+  const shopsEnabled = useState<boolean>('shops-enabled', () => false)
 
   function setShopsEnabled(next: boolean) {
     shopsEnabled.value = next

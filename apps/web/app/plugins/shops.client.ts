@@ -5,7 +5,7 @@ import { SHOPS_STORAGE_KEY } from '~/composables/useShopPreference'
  * render so the navigation does not paint a Shops link and then take it away.
  */
 export default defineNuxtPlugin(() => {
-  const shopsEnabled = useState<boolean>('shops-enabled', () => true)
+  const shopsEnabled = useState<boolean>('shops-enabled', () => false)
   try {
     const stored = localStorage.getItem(SHOPS_STORAGE_KEY)
     if (stored === 'on') shopsEnabled.value = true
