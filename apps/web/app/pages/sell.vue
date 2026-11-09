@@ -67,6 +67,13 @@ const cartActive = computed(() => cart.value.length > 0)
 // of what they pick off a shop's menu. Most codes are the first, so the menus
 // stay folded away until a seller asks for them.
 const priceMode = ref<'amount' | 'products'>('amount')
+// The rest of the form is optional, so it stays folded: a seller who just wants
+// to charge a number sees a number field, a name and one button. Each toggle is
+// the same show/hide button the profile uses, rather than an accordion widget.
+const currencyOpen = ref(false)
+const detailsOpen = ref(false)
+const discountsOpen = ref(false)
+const codeOpen = ref(false)
 const priceModeItems = [
   { label: 'Type an amount', value: 'amount' },
   { label: 'From my shops', value: 'products' }
@@ -573,23 +580,44 @@ onBeforeUnmount(() => {
             </div>
           </UFormField>
 
-          <UFormField
-            label="Currency"
-            :help="`The customer pays in ${currencySymbol(priceCurrency)} — one currency per code, fixed when you create it.`"
-          >
-            <div class="flex flex-wrap gap-2">
+          <!--
+            Every code charges one currency, and nearly every code charges SOL,
+            so the choice is a line of text until someone asks for it.
+          -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-sm text-muted">
+                Charged in
+                <span class="text-default font-medium">{{ currencySymbol(priceCurrency) }}</span>
+              </p>
               <UButton
-                v-for="choice in currencyChoices"
-                :key="choice"
-                :label="currencySymbol(choice)"
-                size="sm"
-                :color="priceCurrency === choice ? 'primary' : 'neutral'"
-                :variant="priceCurrency === choice ? 'solid' : 'outline'"
-                :aria-pressed="priceCurrency === choice"
-                @click="priceCurrency = choice"
+                :label="currencyOpen ? 'Done' : 'Change'"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :aria-expanded="currencyOpen"
+                @click="currencyOpen = !currencyOpen"
               />
             </div>
-          </UFormField>
+
+            <template v-if="currencyOpen">
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  v-for="choice in currencyChoices"
+                  :key="choice"
+                  :label="currencySymbol(choice)"
+                  size="sm"
+                  :color="priceCurrency === choice ? 'primary' : 'neutral'"
+                  :variant="priceCurrency === choice ? 'solid' : 'outline'"
+                  :aria-pressed="priceCurrency === choice"
+                  @click="priceCurrency = choice"
+                />
+              </div>
+              <p class="text-xs text-muted">
+                One currency per code — it is fixed when you create it, and the customer pays in it.
+              </p>
+            </template>
+          </div>
 
           <UFormField
             v-if="discounts.length"
@@ -617,31 +645,48 @@ onBeforeUnmount(() => {
             />
           </UFormField>
 
-          <UFormField
-            label="Description"
-            help="Optional detail under the name — what is included, where, when."
-          >
-            <UTextarea
-              v-model="description"
-              :rows="2"
-              class="w-full"
-              placeholder="Two flat whites at the corner shop"
-              :maxlength="160"
+          <!-- Two optional text fields: the buyer's detail line and the on-chain
+               note. Folded, because most codes need neither. -->
+          <div class="flex flex-col gap-3">
+            <UButton
+              :label="detailsOpen ? 'Hide description and note' : 'Add a description or note'"
+              :icon="detailsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              block
+              :aria-expanded="detailsOpen"
+              @click="detailsOpen = !detailsOpen"
             />
-          </UFormField>
 
-          <UFormField
-            label="Memo"
-            help="Recorded on chain with the payment, so wallets and explorers show it too."
-          >
-            <UTextarea
-              v-model="memo"
-              :rows="2"
-              class="w-full"
-              placeholder="Coffee"
-              :maxlength="96"
-            />
-          </UFormField>
+            <template v-if="detailsOpen">
+              <UFormField
+                label="Description"
+                help="Optional detail under the name — what is included, where, when."
+              >
+                <UTextarea
+                  v-model="description"
+                  :rows="2"
+                  class="w-full"
+                  placeholder="Two flat whites at the corner shop"
+                  :maxlength="160"
+                />
+              </UFormField>
+
+              <UFormField
+                label="Memo"
+                help="Recorded on chain with the payment, so wallets and explorers show it too."
+              >
+                <UTextarea
+                  v-model="memo"
+                  :rows="2"
+                  class="w-full"
+                  placeholder="Coffee"
+                  :maxlength="96"
+                />
+              </UFormField>
+            </template>
+          </div>
 
           <div class="flex items-center justify-between gap-3 text-sm text-muted">
             <span>{{ networkLabel(cluster) }}</span>
@@ -783,49 +828,77 @@ onBeforeUnmount(() => {
             </UBadge>
           </div>
 
-          <dl class="w-full space-y-1 text-xs text-muted">
-            <div class="flex justify-between gap-3">
-              <dt>Payment ID</dt>
-              <dd class="truncate font-mono">
-                {{ record.payment_pda }}
-              </dd>
-            </div>
-            <div
-              v-if="record.settled_by"
-              class="flex justify-between gap-3"
-            >
-              <dt>Paid by</dt>
-              <dd class="truncate font-mono">
-                {{ record.settled_by }}
-              </dd>
-            </div>
-          </dl>
-
           <!--
+            Fallbacks and identifiers: needed when a phone will not scan, or when
+            a payment has to be looked up. Folded so the code is what the card
+            shows, which is what the seller actually holds up.
+          -->
+          <UButton
+            v-if="!codeOpen"
+            label="Can't scan it? Show the code text"
+            icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :aria-expanded="false"
+            @click="codeOpen = true"
+          />
+
+          <template v-else>
+            <dl class="w-full space-y-1 text-xs text-muted">
+              <div class="flex justify-between gap-3">
+                <dt>Payment ID</dt>
+                <dd class="truncate font-mono">
+                  {{ record.payment_pda }}
+                </dd>
+              </div>
+              <div
+                v-if="record.settled_by"
+                class="flex justify-between gap-3"
+              >
+                <dt>Paid by</dt>
+                <dd class="truncate font-mono">
+                  {{ record.settled_by }}
+                </dd>
+              </div>
+            </dl>
+
+            <!--
             The same text the pay page accepts pasted in, so a customer who
             cannot scan the QR can still pay. `break-all` matters: the payload
             is one unbroken JSON string, and without it the card would grow to
             the payload's width instead of wrapping inside the card.
           -->
-          <div ref="payloadBox">
-            <div class="mb-1.5 flex items-center justify-between gap-3">
-              <span class="text-sm font-medium">Payment code</span>
-              <UButton
-                :icon="copiedCode ? 'i-lucide-check' : 'i-lucide-copy'"
-                :label="copiedCode ? 'Copied' : 'Copy code'"
-                color="neutral"
-                variant="soft"
-                size="xs"
-                @click="copyPayload"
-              />
+            <div ref="payloadBox">
+              <div class="mb-1.5 flex items-center justify-between gap-3">
+                <span class="text-sm font-medium">Payment code</span>
+                <UButton
+                  :icon="copiedCode ? 'i-lucide-check' : 'i-lucide-copy'"
+                  :label="copiedCode ? 'Copied' : 'Copy code'"
+                  color="neutral"
+                  variant="soft"
+                  size="xs"
+                  @click="copyPayload"
+                />
+              </div>
+              <code class="block w-full rounded-md border border-default bg-elevated/40 px-2.5 py-2 font-mono text-xs break-all whitespace-pre-wrap">
+                {{ qrPayload }}
+              </code>
+              <p class="mt-1.5 text-xs text-muted">
+                If the QR cannot be scanned, your customer can paste this on the pay page.
+              </p>
             </div>
-            <code class="block w-full rounded-md border border-default bg-elevated/40 px-2.5 py-2 font-mono text-xs break-all whitespace-pre-wrap">
-              {{ qrPayload }}
-            </code>
-            <p class="mt-1.5 text-xs text-muted">
-              If the QR cannot be scanned, your customer can paste this on the pay page.
-            </p>
-          </div>
+
+            <UButton
+              label="Hide details"
+              icon="i-lucide-chevron-up"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :aria-expanded="true"
+              @click="codeOpen = false"
+            />
+          </template>
         </div>
 
         <div
@@ -839,16 +912,34 @@ onBeforeUnmount(() => {
       <UCard class="lg:col-span-2">
         <template #header>
           <div class="flex items-center justify-between gap-3">
-            <h2 class="text-base font-semibold">
-              3. Discount codes
-            </h2>
-            <span class="text-sm text-muted">
-              Optional — buyers type a code at checkout to pay less.
-            </span>
+            <div>
+              <h2 class="text-base font-semibold">
+                Discount codes
+              </h2>
+              <p class="text-sm text-muted">
+                Optional — buyers type a code at checkout to pay less.
+              </p>
+            </div>
+            <UButton
+              :label="discountsOpen
+                ? 'Hide'
+                : discounts.length
+                  ? `${discounts.length} ${discounts.length === 1 ? 'code' : 'codes'}`
+                  : 'Add a code'"
+              :icon="discountsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              :aria-expanded="discountsOpen"
+              @click="discountsOpen = !discountsOpen"
+            />
           </div>
         </template>
 
-        <div class="flex flex-col gap-4">
+        <div
+          v-if="discountsOpen"
+          class="flex flex-col gap-4"
+        >
           <ul
             v-if="discounts.length"
             class="flex flex-wrap gap-2"

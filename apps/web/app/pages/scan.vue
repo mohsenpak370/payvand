@@ -17,6 +17,9 @@ const router = useRouter()
 const scanned = ref('')
 const scanError = ref('')
 const manualPayload = ref('')
+// Typing a code is the fallback, not the way in: the camera is on screen and
+// the paste box only appears for someone whose phone will not focus.
+const pasteOpen = ref(false)
 
 async function load(raw: string) {
   scanError.value = ''
@@ -87,7 +90,22 @@ onMounted(async () => {
               :description="scanError"
             />
 
-            <UFormField label="Or paste the code text">
+            <UButton
+              v-if="!pasteOpen"
+              label="Can't scan it? Paste the code"
+              icon="i-lucide-chevron-down"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              class="self-start"
+              :aria-expanded="false"
+              @click="pasteOpen = true"
+            />
+
+            <UFormField
+              v-else
+              label="Paste the code text"
+            >
               <div class="flex w-full flex-col gap-2">
                 <UTextarea
                   v-model="manualPayload"

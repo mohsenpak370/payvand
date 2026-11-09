@@ -67,6 +67,9 @@ const {
 const heading = computed(() => paymentName.value || paymentMemo.value || 'Payment')
 
 const discountOpen = ref(false)
+// The seller's address and the network are reference material, not part of
+// paying, so they stay behind a link under the code.
+const detailsOpen = ref(false)
 
 // The invoice is charged in SOL. The figure in brackets is what that price is
 // worth in the seller's currency, which travels inside the code — the buyer
@@ -119,8 +122,10 @@ const receiptLines = computed(() => {
 })
 
 // Keeping the code files it under one of the account's shops, so the shop page
-// can list the links it hands out. Most people keep a single shop, so a picker
-// only appears when there is something to pick between.
+// can list the links it hands out. Shops are an account's own catalogue and most
+// accounts never turn them on, so the whole offer stays out of sight for them —
+// a buyer who happens to be signed in should not be sold a shop while paying.
+const { shopsEnabled } = useShopPreference()
 const shopApi = useShopApi()
 const shops = ref<Shop[]>([])
 const shopId = ref('')
@@ -174,7 +179,7 @@ async function refreshSaved() {
   saved.value = false
   savedShopId.value = ''
   const current = payload.value
-  if (!user.value || !current) return
+  if (!user.value || !current || !shopsEnabled.value) return
   try {
     const [kept, menus] = await Promise.all([api.listSavedPayments(), shopApi.list()])
     shops.value = menus
@@ -620,7 +625,30 @@ useSeoMeta({
               </p>
             </div>
 
-            <dl class="mt-6 w-full space-y-1 text-xs text-muted">
+            <!-- The seller's address and network, folded away: what a buyer
+                 needs is the amount and the button. -->
+            <UButton
+              v-if="!detailsOpen"
+              label="Payment details"
+              icon="i-lucide-chevron-down"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              class="mt-6 print:hidden"
+              :aria-expanded="false"
+              @click="detailsOpen = true"
+            />
+
+            <!--
+              On screen it opens from the link above; on paper it is always
+              printed, because a printed sheet has no button to press and the
+              seller and network are what make it checkable.
+            -->
+            <dl
+              :class="detailsOpen
+                ? 'mt-6 w-full space-y-1 text-xs text-muted'
+                : 'mt-6 hidden w-full space-y-1 text-xs text-muted print:block'"
+            >
               <div class="flex justify-between gap-3">
                 <dt>Seller</dt>
                 <dd class="truncate font-mono">
@@ -643,6 +671,18 @@ useSeoMeta({
                 </dd>
               </div>
             </dl>
+
+            <UButton
+              v-if="detailsOpen"
+              label="Hide details"
+              icon="i-lucide-chevron-up"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              class="mt-2 print:hidden"
+              :aria-expanded="true"
+              @click="detailsOpen = false"
+            />
           </div>
         </section>
 
@@ -671,7 +711,7 @@ useSeoMeta({
             variant="ghost"
             size="sm"
           />
-          <template v-else-if="user">
+          <template v-else-if="user && shopsEnabled && shops.length">
             <USelect
               v-if="shops.length > 1"
               v-model="shopId"
@@ -681,7 +721,6 @@ useSeoMeta({
               aria-label="Shop to save this code in"
             />
             <UButton
-              v-if="shops.length"
               label="Save to my shop"
               icon="i-lucide-bookmark-plus"
               color="neutral"
@@ -689,16 +728,6 @@ useSeoMeta({
               size="sm"
               :loading="saving"
               @click="saveToShop"
-            />
-            <!-- No shop yet, nowhere to file it: the shop is one step away. -->
-            <UButton
-              v-else
-              to="/shops"
-              label="Create a shop to keep codes"
-              icon="i-lucide-store"
-              color="neutral"
-              variant="ghost"
-              size="sm"
             />
           </template>
           <UButton

@@ -215,9 +215,13 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
       : 'neutral'
 }
 
+// Saved codes live in a shop, so the card that lists them belongs to accounts
+// that use shops at all — not to everyone who opens their profile.
+const { shopsEnabled } = useShopPreference()
+
 onMounted(() => {
   refreshTransactions()
-  refreshSavedPayments()
+  if (shopsEnabled.value) refreshSavedPayments()
 })
 </script>
 
@@ -475,8 +479,11 @@ onMounted(() => {
         </div>
       </UCard>
 
-      <!-- Saved payment codes. -->
-      <UCard class="min-w-0">
+      <!-- Saved payment codes: a shop feature, so it shows for shop accounts. -->
+      <UCard
+        v-if="shopsEnabled"
+        class="min-w-0"
+      >
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <div>
