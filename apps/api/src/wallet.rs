@@ -152,15 +152,9 @@ async fn consume_challenge(
         .await
         .map_err(auth::internal)?;
 
-    let row = rows
-        .next()
-        .await
-        .map_err(auth::internal)?
-        .ok_or_else(|| {
-            ApiError::BadRequest(
-                "That request expired or was already used — start again.".into(),
-            )
-        })?;
+    let row = rows.next().await.map_err(auth::internal)?.ok_or_else(|| {
+        ApiError::BadRequest("That request expired or was already used — start again.".into())
+    })?;
 
     let stored_purpose: String = row.get(0).map_err(auth::internal)?;
     let message: String = row.get(1).map_err(auth::internal)?;
@@ -311,7 +305,10 @@ pub async fn unlink(
 
     let connection = state.db.connect().map_err(auth::internal)?;
     connection
-        .execute("UPDATE users SET wallet = NULL WHERE id = ?1", [user.id.clone()])
+        .execute(
+            "UPDATE users SET wallet = NULL WHERE id = ?1",
+            [user.id.clone()],
+        )
         .await
         .map_err(auth::internal)?;
 
@@ -387,8 +384,8 @@ pub(crate) fn match_transactions(
         .filter_map(|record| {
             let is_seller = record.seller == wallet;
             let payer = record.settled_by.as_deref();
-            let is_payer = payer == Some(wallet)
-                || (session.is_some() && payer == session.as_deref());
+            let is_payer =
+                payer == Some(wallet) || (session.is_some() && payer == session.as_deref());
             if !is_seller && !is_payer {
                 return None;
             }
@@ -440,7 +437,9 @@ mod tests {
             .expect("temp db");
         crate::db::migrate(&db).await.expect("migrate");
         (
-            crate::AppState { db: std::sync::Arc::new(db) },
+            crate::AppState {
+                db: std::sync::Arc::new(db),
+            },
             path,
         )
     }
@@ -568,12 +567,9 @@ mod tests {
         .expect("wallet signin")
         .0;
         assert_eq!(session.user.wallet.as_deref(), Some(address.as_str()));
-        let me = auth::require_user(
-            &state.db,
-            &bearer(&session.token),
-        )
-        .await
-        .expect("session works");
+        let me = auth::require_user(&state.db, &bearer(&session.token))
+            .await
+            .expect("session works");
         assert_eq!(me.id, session.user.id);
 
         // 6. An unlinked wallet gets a clear refusal, not a session.
@@ -634,11 +630,7 @@ mod tests {
         // 9. A signed-in account with no linked wallet is refused the feed
         //    before any RPC happens.
         let stranger_token = signup(&state, "no-wallet@example.com").await;
-        let feed = transactions(
-            StateExtractor(state.clone()),
-            bearer(&stranger_token),
-        )
-        .await;
+        let feed = transactions(StateExtractor(state.clone()), bearer(&stranger_token)).await;
         assert!(matches!(feed, Err(ApiError::BadRequest(_))));
 
         // 10. Switching: linking a different wallet replaces the first one,
@@ -695,11 +687,7 @@ mod tests {
         assert!(matches!(old_still_works, Err(ApiError::BadRequest(_))));
 
         // 11. Unlink detaches the wallet; anonymous callers cannot.
-        let anon_unlink = unlink(
-            StateExtractor(state.clone()),
-            HeaderMap::new(),
-        )
-        .await;
+        let anon_unlink = unlink(StateExtractor(state.clone()), HeaderMap::new()).await;
         assert!(matches!(anon_unlink, Err(ApiError::Unauthorized)));
         let removed = unlink(StateExtractor(state.clone()), headers.clone())
             .await

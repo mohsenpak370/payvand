@@ -281,10 +281,8 @@ mod tests {
     use super::*;
 
     async fn seeded_db() -> libsql::Database {
-        let path = std::env::temp_dir().join(format!(
-            "payvand-discount-test-{}.db",
-            auth::random_id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("payvand-discount-test-{}.db", auth::random_id()));
         let db = libsql::Builder::new_local(&path)
             .build()
             .await
@@ -354,7 +352,10 @@ mod tests {
             }),
         )
         .await;
-        assert!(attack.is_err(), "a stranger's 99% code must not price this invoice");
+        assert!(
+            attack.is_err(),
+            "a stranger's 99% code must not price this invoice"
+        );
     }
 
     #[tokio::test]

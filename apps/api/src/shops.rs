@@ -213,7 +213,10 @@ pub async fn list(
         let mut by_shop: HashMap<String, Vec<Product>> = HashMap::new();
         while let Some(row) = rows.next().await.map_err(auth::internal)? {
             let product = read_product(&row)?;
-            by_shop.entry(product.shop_id.clone()).or_default().push(product);
+            by_shop
+                .entry(product.shop_id.clone())
+                .or_default()
+                .push(product);
         }
         for shop in &mut shops {
             shop.products = by_shop.remove(&shop.id).unwrap_or_default();
@@ -257,7 +260,10 @@ pub async fn create(
     let connection = state.db.connect().map_err(auth::internal)?;
 
     let mut rows = connection
-        .query("SELECT COUNT(*) FROM shops WHERE user_id = ?1", [user.id.clone()])
+        .query(
+            "SELECT COUNT(*) FROM shops WHERE user_id = ?1",
+            [user.id.clone()],
+        )
         .await
         .map_err(auth::internal)?;
     let count: i64 = match rows.next().await.map_err(auth::internal)? {
@@ -313,12 +319,7 @@ pub async fn update(
     connection
         .execute(
             "UPDATE shops SET name = ?1, description = ?2 WHERE id = ?3 AND user_id = ?4",
-            (
-                name.clone(),
-                description.clone(),
-                id.clone(),
-                user.id,
-            ),
+            (name.clone(), description.clone(), id.clone(), user.id),
         )
         .await
         .map_err(auth::internal)?;
@@ -523,7 +524,10 @@ mod tests {
 
     #[test]
     fn keeps_names_short_and_prices_positive() {
-        assert_eq!(required_text("  Flat white ", 32, "Name").unwrap(), "Flat white");
+        assert_eq!(
+            required_text("  Flat white ", 32, "Name").unwrap(),
+            "Flat white"
+        );
         assert!(required_text("   ", 32, "Name").is_err());
         assert!(required_text(&"x".repeat(33), 32, "Name").is_err());
         // Counted in characters, so a short non-ASCII name is not rejected.
@@ -619,10 +623,14 @@ mod tests {
         )
         .await
         .expect("renamed");
-        let cafe_row = get(StateExtractor(state.clone()), mine.clone(), Path(cafe.id.clone()))
-            .await
-            .expect("open")
-            .0;
+        let cafe_row = get(
+            StateExtractor(state.clone()),
+            mine.clone(),
+            Path(cafe.id.clone()),
+        )
+        .await
+        .expect("open")
+        .0;
         assert_eq!(cafe_row.name, "Corner Shop & Café");
         assert_eq!(cafe_row.products.len(), 1);
 

@@ -5,8 +5,7 @@ use payvand_server::app;
 /// missing file is fine and variables already set in the shell are never
 /// overwritten.
 fn load_repo_env() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../web/.env");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../web/.env");
     let _ = dotenvy::from_path(path);
 }
 

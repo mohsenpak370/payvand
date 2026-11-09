@@ -120,7 +120,14 @@ mod tests {
     async fn rejects_what_is_not_an_address() {
         let (state, path) = test_state().await;
 
-        for bad in ["", "   ", "seller", "seller@", "@example.com", "seller@example"] {
+        for bad in [
+            "",
+            "   ",
+            "seller",
+            "seller@",
+            "@example.com",
+            "seller@example",
+        ] {
             let result = join(
                 StateExtractor(state.clone()),
                 JsonExtractor(JoinRequest {

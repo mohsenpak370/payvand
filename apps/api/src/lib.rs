@@ -16,7 +16,7 @@ pub mod wallet;
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, Method};
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use payments::{ApiError, CreatePaymentRequest, PaymentQuery};
 use std::sync::Arc;
@@ -76,7 +76,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/waitlist/{email}",
             delete(admin::remove_waitlist),
         )
-        .route("/api/discounts", get(discounts::list).post(discounts::create))
+        .route(
+            "/api/discounts",
+            get(discounts::list).post(discounts::create),
+        )
         .route("/api/discounts/validate", post(discounts::validate))
         .route("/api/discounts/{id}", delete(discounts::delete))
         // Sellers who want to take real payments, before they have an account.
@@ -98,12 +101,7 @@ pub fn build_router(state: AppState) -> Router {
                 .allow_origin(Any)
                 // PATCH is how a shop and a product are edited, so it has to be
                 // here or the browser refuses the request before it is sent.
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::PATCH,
-                    Method::DELETE,
-                ])
+                .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
         )
         .layer(TraceLayer::new_for_http())
@@ -145,12 +143,9 @@ async fn throttle(request: Request, next: axum::middleware::Next) -> axum::respo
     if request.method() == Method::POST {
         if let Some(policy) = throttle_for(request.uri().path()) {
             let caller = rate_limit::caller(request.headers());
-            if let Err(error) = rate_limit::hit(
-                policy.bucket,
-                &caller,
-                policy.limit,
-                policy.window_secs,
-            ) {
+            if let Err(error) =
+                rate_limit::hit(policy.bucket, &caller, policy.limit, policy.window_secs)
+            {
                 return error.into_response();
             }
         }

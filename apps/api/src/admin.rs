@@ -235,10 +235,7 @@ fn shape_feed(mut records: Vec<PaymentRecord>, limit: usize) -> (Vec<AdminPaymen
             .then_with(|| a.id.cmp(&b.id))
     });
     records.truncate(limit);
-    (
-        records.into_iter().map(AdminPayment::from).collect(),
-        total,
-    )
+    (records.into_iter().map(AdminPayment::from).collect(), total)
 }
 
 /// `GET /api/admin/payments` — live transaction activity, read straight
@@ -391,14 +388,18 @@ mod tests {
     use axum::extract::{Json as JsonExtractor, Query as QueryExtractor, State as StateExtractor};
 
     async fn test_state() -> (crate::AppState, std::path::PathBuf) {
-        let path =
-            std::env::temp_dir().join(format!("payvand-admin-test-{}.db", random_id()));
+        let path = std::env::temp_dir().join(format!("payvand-admin-test-{}.db", random_id()));
         let db = libsql::Builder::new_local(&path)
             .build()
             .await
             .expect("temp db");
         crate::db::migrate(&db).await.expect("migrate");
-        (crate::AppState { db: std::sync::Arc::new(db) }, path)
+        (
+            crate::AppState {
+                db: std::sync::Arc::new(db),
+            },
+            path,
+        )
     }
 
     fn bearer(token: &str) -> HeaderMap {

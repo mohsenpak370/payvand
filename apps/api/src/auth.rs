@@ -77,8 +77,7 @@ pub async fn signup(
             // address is told too, so an attempt to reuse it is not silent.
             // What keeps this from being a way to enumerate the user table is
             // the rate limit in front of the endpoint, not the wording.
-            if crate::rate_limit::hit("signup-notice", &email, 3, crate::rate_limit::HOUR).is_ok()
-            {
+            if crate::rate_limit::hit("signup-notice", &email, 3, crate::rate_limit::HOUR).is_ok() {
                 notice_existing_account(&email).await;
             }
             return Err(ApiError::BadRequest(
@@ -155,13 +154,13 @@ pub async fn forgot_password(
     let email = normalize_email(&request.email)?;
     // Bounds the mail this endpoint can be made to send to one address; the
     // answer stays the same either way.
-    let may_send = crate::rate_limit::hit("forgot-email", &email, 3, crate::rate_limit::HOUR).is_ok();
+    let may_send =
+        crate::rate_limit::hit("forgot-email", &email, 3, crate::rate_limit::HOUR).is_ok();
     let connection = state.db.connect().map_err(internal)?;
 
     let generic = ResetSentResponse {
         ok: true,
-        message: "If an account exists for that email, a reset link is on its way."
-            .to_string(),
+        message: "If an account exists for that email, a reset link is on its way.".to_string(),
     };
 
     let Some((user, _)) = read_user_with_hash(&connection, &email).await? else {
@@ -249,10 +248,7 @@ pub async fn reset_password(
 
 /// Creates — and returns — a fresh reset token, replacing any outstanding
 /// links so only the newest email works.
-async fn create_reset_record(
-    connection: &libsql::Connection,
-    user_id: &str,
-) -> ApiResult<String> {
+async fn create_reset_record(connection: &libsql::Connection, user_id: &str) -> ApiResult<String> {
     let token = hex(&random_bytes::<32>());
     let now = unix_now();
     connection
@@ -345,7 +341,10 @@ async fn resolve_session(db: &SharedDb, token: &str) -> ApiResult<Option<User>> 
     }
 }
 
-pub(crate) async fn issue_session(connection: &libsql::Connection, user_id: &str) -> ApiResult<String> {
+pub(crate) async fn issue_session(
+    connection: &libsql::Connection,
+    user_id: &str,
+) -> ApiResult<String> {
     let token = random_id();
     let now = unix_now();
     connection
@@ -364,7 +363,10 @@ pub(crate) async fn issue_session(connection: &libsql::Connection, user_id: &str
     Ok(token)
 }
 
-pub(crate) async fn read_user(connection: &libsql::Connection, id: &str) -> ApiResult<Option<User>> {
+pub(crate) async fn read_user(
+    connection: &libsql::Connection,
+    id: &str,
+) -> ApiResult<Option<User>> {
     let mut rows = connection
         .query(
             "SELECT id, email, wallet, created_at FROM users WHERE id = ?",
@@ -480,7 +482,8 @@ async fn notice_existing_account(email: &str) {
         frontend_base_url()
     );
     let subject = "A signup attempt for your Payvand account";
-    match tokio::task::spawn_blocking(move || crate::email::send(&recipient, subject, &body)).await {
+    match tokio::task::spawn_blocking(move || crate::email::send(&recipient, subject, &body)).await
+    {
         Ok(Ok(())) => {}
         Ok(Err(error)) => eprintln!("[email] signup notice delivery failed: {error}"),
         Err(error) => eprintln!("[email] signup notice task failed: {error}"),
@@ -635,8 +638,7 @@ mod tests {
     /// every `db.connect()` sees the same schema and data.
     async fn test_state() -> (crate::AppState, std::path::PathBuf) {
         use std::sync::Arc;
-        let path =
-            std::env::temp_dir().join(format!("payvand-auth-test-{}.db", random_id()));
+        let path = std::env::temp_dir().join(format!("payvand-auth-test-{}.db", random_id()));
         let db = libsql::Builder::new_local(&path)
             .build()
             .await
@@ -674,9 +676,10 @@ mod tests {
         .await
         .expect("signup");
 
-        let unknown = super::forgot_password(State(state.clone()), Json(request("nobody@example.com")))
-            .await
-            .expect("generic answer");
+        let unknown =
+            super::forgot_password(State(state.clone()), Json(request("nobody@example.com")))
+                .await
+                .expect("generic answer");
         let known = super::forgot_password(State(state.clone()), Json(request("ada@example.com")))
             .await
             .expect("generic answer");

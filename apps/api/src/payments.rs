@@ -448,9 +448,7 @@ pub fn build_options(request: &CreatePaymentRequest) -> ApiResult<Vec<PaymentOpt
     for requested in &request.options {
         let currency = requested.currency.trim().to_ascii_lowercase();
         if requested.amount == 0 {
-            return Err(bad(format!(
-                "the {currency} amount must be greater than 0"
-            )));
+            return Err(bad(format!("the {currency} amount must be greater than 0")));
         }
         if options.iter().any(|option| option.currency == currency) {
             return Err(bad(format!("{currency} is offered twice")));
@@ -552,7 +550,9 @@ fn validate_items(
     // stablecoin has no lamport total to compare against.
     if let Some(sol) = options.iter().find(|option| option.is_sol()) {
         if total != u128::from(sol.amount) {
-            return Err(bad("The receipt lines do not add up to the invoice amount."));
+            return Err(bad(
+                "The receipt lines do not add up to the invoice amount.",
+            ));
         }
     }
 
@@ -724,11 +724,13 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
     Ok(pubkeys
         .iter()
         .zip(accounts)
-        .map(|(pubkey, account)| match account
-            .and_then(|account| record_for(*pubkey, &account.data, cluster.clone(), endpoint.clone()))
-        {
-            Some(record) => record,
-            None => empty_record(*pubkey, cluster.clone(), endpoint.clone()),
+        .map(|(pubkey, account)| {
+            match account.and_then(|account| {
+                record_for(*pubkey, &account.data, cluster.clone(), endpoint.clone())
+            }) {
+                Some(record) => record,
+                None => empty_record(*pubkey, cluster.clone(), endpoint.clone()),
+            }
         })
         .collect())
 }
@@ -858,9 +860,9 @@ fn allowed_origins() -> Vec<String> {
 /// metadata, an internal admin port, a service on the same private network.
 pub(crate) fn resolve_endpoint(endpoint: Option<&str>, cluster: &str) -> ApiResult<String> {
     if let Some(endpoint) = endpoint {
-        let origin = origin_of(endpoint)
-            .ok_or_else(|| bad("endpoint must be an http(s) rpc url"))?;
-        if !allowed_origins().iter().any(|allowed| *allowed == origin) {
+        let origin =
+            origin_of(endpoint).ok_or_else(|| bad("endpoint must be an http(s) rpc url"))?;
+        if !allowed_origins().contains(&origin) {
             return Err(bad(
                 "This payment code points at an RPC server this API does not allow.",
             ));
@@ -1112,7 +1114,10 @@ mod tests {
     async fn an_internal_error_keeps_its_detail_to_the_log() {
         use axum::response::IntoResponse;
         let response = ApiError::Internal("no such table: secret_ledger".into()).into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
         let body = axum::body::to_bytes(response.into_body(), 4096)
             .await
             .expect("body");

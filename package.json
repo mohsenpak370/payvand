@@ -25,12 +25,12 @@
       "cd apps/web && corepack pnpm exec prettier --write"
     ],
     "apps/api/**/*.rs": [
-      "cargo fmt --manifest-path apps/api/Cargo.toml",
-      "cargo clippy --manifest-path apps/api/Cargo.toml -- -D warnings"
+      "sh -c 'cargo fmt --manifest-path apps/api/Cargo.toml'",
+      "sh -c 'cargo clippy --manifest-path apps/api/Cargo.toml --quiet -- -D warnings'"
     ],
     "apps/contracts/**/*.rs": [
-      "anchor fmt",
-      "cargo clippy --manifest-path apps/contracts/Cargo.toml -- -D warnings"
+      "sh -c 'anchor fmt'",
+      "sh -c 'cargo clippy --manifest-path apps/contracts/Cargo.toml --quiet -- -D warnings'"
     ]
   }
 }
