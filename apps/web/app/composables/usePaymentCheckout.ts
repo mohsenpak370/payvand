@@ -49,6 +49,40 @@ export type CheckoutStage
     | 'pick'
 
 /**
+ * Proves a code names what it charges: the program binds the seller, the
+ * reference, the currency and the price into each invoice address, so details
+ * edited apart cannot derive the address the code carries. Returns the options
+ * it checked — every way that code can be paid.
+ *
+ * Shared with the scanner, which checks a code before showing any payment UI:
+ * a code read off a printout has to fail at the camera, not one screen later.
+ */
+export async function verifyPaymentCode(parsed: PaymentQrPayload): Promise<PaymentOption[]> {
+  const offered = paymentOptions(parsed)
+  if (!offered.length) throw new Error('This payment code has no price.')
+
+  for (const option of offered) {
+    const derived = option.currency === 'sol'
+      ? await derivePaymentPda(
+          address(parsed.seller),
+          address(parsed.reference),
+          option.amount
+        )
+      : await deriveTokenPaymentPda(
+          address(parsed.seller),
+          address(parsed.reference),
+          address(option.mint),
+          option.amount
+        )
+    if (derived !== option.payment_pda) {
+      throw new Error('These details do not match the code. Ask the seller for a new link.')
+    }
+  }
+
+  return offered
+}
+
+/**
  * Resolves an invoice from the shared link and carries it to payment.
  *
  * The three ways to pay are deliberately separate states rather than one
@@ -313,28 +347,7 @@ export function usePaymentCheckout() {
       code.value = unwrapQrText(source)
       payload.value = parsed
 
-      // Every currency is checked against its own seeds: the program binds
-      // the token and the price into the address, so details edited apart
-      // cannot derive the address the code names.
-      const offered = paymentOptions(parsed)
-      if (!offered.length) throw new Error('This payment code has no price.')
-      for (const option of offered) {
-        const derived = option.currency === 'sol'
-          ? await derivePaymentPda(
-              address(parsed.seller),
-              address(parsed.reference),
-              option.amount
-            )
-          : await deriveTokenPaymentPda(
-              address(parsed.seller),
-              address(parsed.reference),
-              address(option.mint),
-              option.amount
-            )
-        if (derived !== option.payment_pda) {
-          throw new Error('These details do not match the code. Ask the seller for a new link.')
-        }
-      }
+      const offered = await verifyPaymentCode(parsed)
 
       // SOL leads when the seller takes it, so the first price a buyer sees is
       // the one most of them can pay.

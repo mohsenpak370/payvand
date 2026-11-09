@@ -615,6 +615,18 @@ useSeoMeta({
           </div>
         </section>
 
+        <!--
+          An action belonging to whichever page opened the sheet — the
+          scanner's "Scan another", say. Kept out of the row below so it still
+          shows when no invoice could be read, which is when it matters most.
+        -->
+        <div
+          v-if="$slots.actions && stage !== 'loading'"
+          class="mt-3 flex flex-wrap items-center justify-center gap-2 print:hidden"
+        >
+          <slot name="actions" />
+        </div>
+
         <div
           v-if="stage !== 'loading' && stage !== 'invalid'"
           class="mt-3 flex flex-wrap items-center justify-center gap-2 print:hidden"
