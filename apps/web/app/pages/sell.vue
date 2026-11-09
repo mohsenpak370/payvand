@@ -60,6 +60,15 @@ const hasProducts = computed(() => shops.value.some(shop => shop.products.length
 const cart = ref<CartLine[]>([])
 const cartTotal = computed(() => cartTotalLamports(cart.value))
 const cartActive = computed(() => cart.value.length > 0)
+// An invoice is priced one of two ways: a number the seller types, or the total
+// of what they pick off a shop's menu. Most codes are the first, so the menus
+// stay folded away until a seller asks for them.
+const priceMode = ref<'amount' | 'products'>('amount')
+const priceModeItems = [
+  { label: 'Type an amount', value: 'amount' },
+  { label: 'From my shops', value: 'products' }
+]
+const sellingFromShops = computed(() => priceMode.value === 'products')
 
 // Discount codes, and the price of the open invoice — after settlement the
 // chain reports the *received* amount, so the full price is kept here.
@@ -96,11 +105,12 @@ const canAddCode = computed(() =>
   && Number(newPercent.value) <= 99
 )
 
-const lamports = computed(() =>
-  priceInFiat.value
+const lamports = computed(() => {
+  if (sellingFromShops.value) return cartTotal.value
+  return priceInFiat.value
     ? lamportsFromFiat(Number(fiatAmount.value), rates.value, currency.value)
     : solToLamports(Number(amountSol.value))
-)
+})
 
 /** SOL, or the currency the price is typed in. Picking a currency also makes it the default. */
 const amountUnit = computed<'sol' | FiatCurrency>({
@@ -179,6 +189,12 @@ watch(cartTotal, (total) => {
   if (total <= 0) return
   priceInFiat.value = false
   amountSol.value = String(Number((total / 1_000_000_000).toFixed(9)))
+})
+
+// Switching back to a typed amount drops the tray: a cart left behind would
+// price the invoice from items nobody can see any more.
+watch(priceMode, (mode) => {
+  if (mode === 'amount') cart.value = []
 })
 
 const canCreate = computed(() =>
@@ -494,13 +510,24 @@ onBeforeUnmount(() => {
         </template>
 
         <div class="flex flex-col gap-4">
-          <ProductPicker
+          <UFormField
             v-if="hasProducts"
+            label="Price"
+          >
+            <URadioGroup
+              v-model="priceMode"
+              :items="priceModeItems"
+            />
+          </UFormField>
+
+          <ProductPicker
+            v-if="sellingFromShops"
             v-model="cart"
             :shops="shops"
           />
 
           <UFormField
+            v-if="!sellingFromShops"
             label="Amount"
             :help="amountHelp"
           >
