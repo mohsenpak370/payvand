@@ -132,9 +132,11 @@ onMounted(load)
       v-else-if="qrPayload"
       class="flex flex-col items-center gap-4"
     >
+      <!-- 320 rather than 280: the styled code needs the extra pixels to stay
+           readable once a phone's lens softens it (see PaymentQr). -->
       <PaymentQr
         :payload="qrPayload"
-        :size="280"
+        :size="320"
       />
 
       <p class="text-center text-xs text-muted">
