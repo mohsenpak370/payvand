@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payvand — payment sound alternatives</title>
+    <!--
+      A scratch page for choosing the payment sounds. Nothing in the app links
+      here: it exists so the files next to it can be compared by ear, on a
+      phone or a laptop. Delete the sounds/ folder in public once one pair is
+      picked.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --ink: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --accent: #0891b2;
+        --accent-soft: #ecfeff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #131c2e;
+          --ink: #e2e8f0;
+          --muted: #94a3b8;
+          --line: #24304a;
+          --accent: #22d3ee;
+          --accent-soft: #0e2a35;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 32px 20px 64px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Manrope, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.35rem;
+        letter-spacing: -0.02em;
+        margin: 0 0 6px;
+      }
+      p.lead {
+        color: var(--muted);
+        margin: 0 0 28px;
+        font-size: 0.9rem;
+      }
+      h2 {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted);
+        margin: 28px 0 10px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--card);
+      }
+      li + li {
+        border-top: 1px solid var(--line);
+      }
+      button {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        width: 100%;
+        padding: 12px 16px;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      button:hover,
+      button:focus-visible {
+        background: var(--accent-soft);
+        outline: none;
+      }
+      .glyph {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 0.7rem;
+      }
+      button.playing .glyph {
+        background: var(--accent);
+        color: #fff;
+      }
+      .text {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .name {
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+      .desc {
+        font-size: 0.83rem;
+        color: var(--muted);
+      }
+      .meta {
+        margin-left: auto;
+        flex: none;
+        font-size: 0.72rem;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      footer {
+        margin-top: 26px;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      code {
+        font-size: 0.78rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Payment sound alternatives</h1>
+      <p class="lead">
+        Ten short candidates for the two sounds a payment makes. Tap to play —
+        one at a time. The first in each list is what ships today.
+      </p>
+
+      <h2>Payment went through</h2>
+      <ul data-group>
+        <li>
+          <button data-src="success-chime.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Chime — shipping today</span>
+              <span class="desc">Two sine notes a fifth apart, G5 up to D6.</span>
+            </span>
+            <span class="meta">0.3s · 29 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="success-marimba.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Marimba</span>
+              <span class="desc">Three wooden notes up. Warm, not electronic.</span>
+            </span>
+            <span class="meta">0.8s · 65 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="success-bell.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Bell</span>
+              <span class="desc">One small bell struck, with a long tail.</span>
+            </span>
+            <span class="meta">1.3s · 112 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="success-coin.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Coin</span>
+              <span class="desc">Two quick metallic dings, like a till opening.</span>
+            </span>
+            <span class="meta">0.5s · 43 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="success-sweep.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Sweep</span>
+              <span class="desc">A short rise with no pitch to sing back.</span>
+            </span>
+            <span class="meta">0.4s · 36 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="success-pop.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Pop</span>
+              <span class="desc">A quiet plop. The least intrusive option.</span>
+            </span>
+            <span class="meta">0.3s · 26 KB</span>
+          </button>
+        </li>
+      </ul>
+
+      <h2>Payment did not go through</h2>
+      <ul data-group>
+        <li>
+          <button data-src="failure-buzz.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Buzz — shipping today</span>
+              <span class="desc">Two triangle notes down, B♭3 to F3.</span>
+            </span>
+            <span class="meta">0.4s · 36 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="failure-thud.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Thud</span>
+              <span class="desc">A dead low knock. Minimal, no melody.</span>
+            </span>
+            <span class="meta">0.4s · 34 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="failure-womp.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Womp</span>
+              <span class="desc">Two soft notes down, lightly saturated.</span>
+            </span>
+            <span class="meta">0.6s · 53 KB</span>
+          </button>
+        </li>
+        <li>
+          <button data-src="failure-clicks.wav">
+            <span class="glyph">▶</span>
+            <span class="text">
+              <span class="name">Clicks</span>
+              <span class="desc">Two flat square clicks. Unmistakable, no pitch.</span>
+            </span>
+            <span class="meta">0.3s · 22 KB</span>
+          </button>
+        </li>
+      </ul>
+
+      <footer>
+        All ten are 44.1 kHz mono 16-bit WAV, synthesised locally — no samples,
+        nothing to license. Peak-normalised, no clipping. The app currently
+        synthesises its two tones at runtime in
+        <code>app/composables/useTransactionSounds.ts</code>; a chosen file can
+        replace that, or its recipe can be copied into the oscillator code.
+      </footer>
+    </main>
+
+    <script>
+      // One element for the whole page, so starting a sound stops the last one.
+      const audio = new Audio()
+      let current = null
+
+      function stop() {
+        audio.pause()
+        if (current) {
+          current.classList.remove('playing')
+          setGlyph(current, false)
+        }
+        current = null
+      }
+
+      audio.addEventListener('ended', stop)
+
+      function setGlyph(button, playing) {
+        const glyph = button.querySelector('.glyph')
+        if (glyph) glyph.textContent = playing ? '■' : '▶'
+      }
+
+      document.querySelectorAll('button[data-src]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const wasCurrent = button === current
+          stop()
+          if (wasCurrent) return
+          audio.src = button.dataset.src
+          audio.play().catch(() => {
+            // Some browsers refuse without a gesture on the element itself;
+            // tapping again generally gets through.
+          })
+          button.classList.add('playing')
+          setGlyph(button, true)
+          current = button
+        })
+      })
+    </script>
+  </body>
+</html>
