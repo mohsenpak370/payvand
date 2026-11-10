@@ -68,6 +68,9 @@ const priceMode = ref<'amount' | 'products'>('amount')
 const detailsOpen = ref(false)
 const discountsOpen = ref(false)
 const codeOpen = ref(false)
+// What a seller holds up to the customer's phone: the code, the name, the
+// description and the price on their own screen, without the form around them.
+const presentOpen = ref(false)
 const priceModeItems = [
   { label: 'Type an amount', value: 'amount' },
   { label: 'From my shops', value: 'products' }
@@ -400,6 +403,7 @@ async function removeDiscount(discount: DiscountCode) {
 function reset() {
   record.value = null
   qrPayload.value = ''
+  presentOpen.value = false
   failure.value = ''
   paidCode.value = null
   priceLamports.value = 0
@@ -659,6 +663,18 @@ onBeforeUnmount(() => {
           <PaymentQr
             :payload="qrPayload"
             :size="320"
+          />
+
+          <!--
+            The seller is the one showing the code, usually on this phone, so
+            the way to hand it over is here rather than on the payment page the
+            customer would have to open first.
+          -->
+          <UButton
+            label="Show to customer"
+            icon="i-lucide-maximize"
+            block
+            @click="presentOpen = true"
           />
 
           <p class="text-center text-xs text-muted">
@@ -945,5 +961,46 @@ onBeforeUnmount(() => {
       :initial="priceInput"
       @apply="applyAmount"
     />
+
+    <!--
+      The screen a seller turns towards the customer: the code, the name, the
+      description and the price, and nothing that belongs to the seller's side
+      of the sale.
+    -->
+    <UModal
+      v-if="record"
+      v-model:open="presentOpen"
+      :title="record.name || 'Payment code'"
+      :transition="false"
+      :ui="{ content: 'max-w-md' }"
+    >
+      <template #body>
+        <div class="flex flex-col items-center gap-4">
+          <!-- 400 rather than the card's 320: an invoice link is long, so the
+               code is dense, and it is read from further away here. It still
+               shrinks to fit a narrow screen. -->
+          <PaymentQr
+            :payload="qrPayload"
+            :size="400"
+          />
+
+          <div class="w-full text-center">
+            <p
+              v-if="record.description"
+              class="text-sm text-muted"
+            >
+              {{ record.description }}
+            </p>
+            <p class="mt-2 text-2xl font-semibold tabular-nums">
+              {{ paidAmountLabel(record) }}
+            </p>
+          </div>
+
+          <p class="text-center text-xs text-muted">
+            Scan this with a phone camera to pay.
+          </p>
+        </div>
+      </template>
+    </UModal>
   </UPageSection>
 </template>

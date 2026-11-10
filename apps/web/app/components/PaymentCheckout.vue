@@ -67,12 +67,8 @@ const {
 const heading = computed(() => paymentName.value || paymentMemo.value || 'Payment')
 
 const discountOpen = ref(false)
-// The code and the invoice's identifiers belong to paying on another device or
-// on paper, not to the screen that takes this payment. One button opens both.
-const qrOpen = ref(false)
 
-// Written once and printed in two places: the modal on screen, and the sheet
-// itself on paper, which has no button to press.
+// Written once and printed on the sheet: paper has nothing to click.
 const detailRows = computed(() => [
   { label: 'Seller', value: String(payload.value?.seller ?? ''), mono: true },
   { label: 'Network', value: networkLabel(payload.value?.cluster || ''), mono: false },
@@ -618,22 +614,7 @@ useSeoMeta({
               />
             </div>
 
-            <!--
-              Paying on another device, or printing the sheet, is the second
-              way in — not what this page is for. Both live behind this one
-              button so the amount and the pay action keep the screen.
-            -->
-            <UButton
-              label="QR code and details"
-              icon="i-lucide-qr-code"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              class="mt-4 print:hidden"
-              @click="qrOpen = true"
-            />
-
-            <!-- Paper has no button to press, so the code and the invoice's
+            <!-- Paper has nothing to click, so the code and the invoice's
                  identifiers are always printed. -->
             <div class="mt-6 hidden w-full print:block">
               <div class="mx-auto w-full max-w-[240px]">
@@ -726,55 +707,6 @@ useSeoMeta({
         />
       </div>
     </main>
-
-    <!-- The code and its identifiers, for a customer paying on a phone. -->
-    <UModal
-      v-model:open="qrOpen"
-      title="QR code and details"
-      :transition="false"
-      :ui="{ content: 'max-w-md' }"
-    >
-      <template #body>
-        <div class="flex flex-col items-center gap-4">
-          <template v-if="!settled">
-            <!-- 400 rather than a thumbnail size: an invoice link is long,
-                 so the code is dense, and a decoder needs a few pixels per
-                 module. Measured on a phone photographing a screen, a phone's
-                 own decoder still reads a 320px code but barely, and nothing
-                 reads a 240px one. It shrinks to fit a narrow screen. -->
-            <PaymentQr
-              :payload="code"
-              :size="400"
-            />
-            <p class="text-center text-xs text-muted">
-              Scan this with a phone camera to pay on another device.
-            </p>
-          </template>
-          <p
-            v-else
-            class="text-center text-sm text-muted"
-          >
-            This payment is settled — there is no code left to scan.
-          </p>
-
-          <dl class="w-full space-y-1 text-left text-xs text-muted">
-            <div
-              v-for="row in detailRows"
-              :key="row.label"
-              class="flex justify-between gap-3"
-            >
-              <dt>{{ row.label }}</dt>
-              <dd
-                class="truncate"
-                :class="row.mono ? 'font-mono' : ''"
-              >
-                {{ row.value }}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </template>
-    </UModal>
 
     <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
       Powered by
