@@ -1,6 +1,6 @@
 {
   "name": "payvand",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "pnpm -C apps/web dev",
