@@ -732,17 +732,19 @@ useSeoMeta({
       v-model:open="qrOpen"
       title="QR code and details"
       :transition="false"
-      :ui="{ content: 'max-w-sm' }"
+      :ui="{ content: 'max-w-md' }"
     >
       <template #body>
         <div class="flex flex-col items-center gap-4">
           <template v-if="!settled">
-            <!-- 320 rather than a thumbnail size: an invoice link is long,
-                 so the code is dense, and a scanner app — or /scan on the
-                 other phone — needs a few pixels per module to resolve it. -->
+            <!-- 400 rather than a thumbnail size: an invoice link is long,
+                 so the code is dense, and a decoder needs a few pixels per
+                 module. Measured on a phone photographing a screen, a phone's
+                 own decoder still reads a 320px code but barely, and nothing
+                 reads a 240px one. It shrinks to fit a narrow screen. -->
             <PaymentQr
               :payload="code"
-              :size="320"
+              :size="400"
             />
             <p class="text-center text-xs text-muted">
               Scan this with a phone camera to pay on another device.

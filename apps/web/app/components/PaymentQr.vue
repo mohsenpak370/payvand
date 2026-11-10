@@ -82,9 +82,14 @@ const qrWithLogo = computed(() => {
 </script>
 
 <template>
+  <!--
+    The code is drawn at a fixed size for scanners, but still has to fit a
+    narrow phone: the SVG shrinks with `max-w-full` rather than pushing the
+    card sideways, and scales back up wherever there is room.
+  -->
   <div
     v-if="qrWithLogo"
-    class="mx-auto w-fit rounded-lg bg-white p-3"
+    class="mx-auto w-fit max-w-full rounded-lg bg-white p-3 [&_svg]:h-auto [&_svg]:max-w-full"
     v-html="qrWithLogo"
   />
   <p

@@ -8,38 +8,62 @@ const emit = defineEmits<{
 const videoRef = ref<HTMLVideoElement>()
 const message = ref('')
 const scanning = ref(false)
+/** A frame with real dimensions has arrived, so the panel can show the camera. */
+const framesFlowing = ref(false)
+/** Playback would not start on its own and needs a tap from the buyer. */
+const playBlocked = ref(false)
+/** Something to say under the viewfinder after a while without a code. */
+const hint = ref('')
 
 let stream: MediaStream | null = null
 let waitNotice = 0
+let playWatchdog = 0
 let frame = 0
 let canvas: HTMLCanvasElement | null = null
 let context: CanvasRenderingContext2D | null = null
+let cameraLabel = ''
+let startedAt = 0
+let reads = 0
 
 /*
  * jsQR is a strict grid reader, and the codes this page meets are dense: the
  * whole invoice rides in the link, so a seller offering two currencies has a
- * hundred and forty modules in a code a phone screen shows a few hundred
- * pixels wide. Below roughly three pixels per module it stops resolving them,
- * which is why a camera frame is not enough on its own — the browser's own
- * decoder, the same kind the scanner apps use, copes far better. Prefer it
- * where the browser has it and keep jsQR as the fallback.
+ * hundred and forty modules in a code a screen shows a few hundred pixels
+ * wide. Below roughly three pixels per module it stops resolving them, and on
+ * a phone it is also slow enough that a full camera frame is measured in
+ * hundreds of milliseconds. The browser's own decoder — the same kind the
+ * scanner apps use — copes with far less and costs far less.
  */
 interface BarcodeDetectorLike {
   detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>
 }
 
-type BarcodeDetectorCtor = new (options: { formats: string[] }) => BarcodeDetectorLike
+type BarcodeDetectorCtor = {
+  new (options: { formats: string[] }): BarcodeDetectorLike
+  getSupportedFormats?: () => Promise<string[]>
+}
 
 let detector: BarcodeDetectorLike | null = null
 let detectorFailures = 0
 
-function createDetector(): BarcodeDetectorLike | null {
+/**
+ * The interface existing says nothing about the device behind it: Chrome
+ * exposes `BarcodeDetector` on Android phones whose Play Services cannot
+ * decode a single code, and constructing one succeeds either way. Chrome's own
+ * guidance is to ask what the platform supports, which is the only way to tell
+ * — otherwise such a phone looks native-capable and jsQR, the weak decoder,
+ * never runs.
+ */
+async function createDetector(): Promise<BarcodeDetectorLike | null> {
   const ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
   if (!ctor) return null
   try {
+    if (ctor.getSupportedFormats) {
+      const formats = await ctor.getSupportedFormats()
+      if (!formats.includes('qr_code')) return null
+    }
     return new ctor({ formats: ['qr_code'] })
   } catch {
-    // A browser can expose the API and still refuse the format.
     return null
   }
 }
@@ -47,7 +71,9 @@ function createDetector(): BarcodeDetectorLike | null {
 async function start() {
   if (scanning.value) return
   message.value = ''
+  hint.value = ''
   clearTimeout(waitNotice)
+  clearTimeout(playWatchdog)
 
   // Browsers only expose the camera in a secure context: over plain
   // http:// on a LAN address `mediaDevices` doesn't exist at all, and the
@@ -74,8 +100,8 @@ async function start() {
     // camera, and asking for one as a requirement fails the whole request.
     //
     // The size is asked for explicitly for the same reason: left to itself a
-    // webcam hands back 640×480, where a dense code is a couple of pixels per
-    // module and nothing can read it. The camera still picks its own default
+    // camera hands back 640×480, where a dense code is a couple of pixels per
+    // module and nothing can read it. The device still picks its own default
     // if it cannot do better, and the decoder copes with what it gets.
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -107,28 +133,61 @@ async function start() {
     // Keep the camera's own choice of focus.
   }
 
+  // What the camera actually gave us, so a hint can say it outright.
+  const settings = track?.getSettings() ?? {}
+  cameraLabel = settings.width && settings.height ? `${settings.width}×${settings.height}` : ''
+
   const video = videoRef.value
   if (!video) return
 
   canvas = document.createElement('canvas')
   context = canvas.getContext('2d', { willReadFrequently: true })
-  detector = createDetector()
+  detector = await createDetector()
   detectorFailures = 0
+  reads = 0
+  framesFlowing.value = false
+  playBlocked.value = false
   video.srcObject = stream
-  /*
-   * `play()` can stay pending until the page gets a gesture (iOS is the usual
-   * offender), and awaiting it meant the panel sat on "Starting the camera…"
-   * with a working camera behind it. Let it resolve on its own: `tick()` waits
-   * for frames anyway, and replays are silent if the browser refuses.
-   */
-  void video.play().catch(() => {})
+  startedAt = performance.now()
   scanning.value = true
+
+  /*
+   * Playback is not always granted without a gesture — Android browsers and
+   * iOS both refuse sometimes — and a refused `play()` used to be swallowed,
+   * which left a black panel that never scanned anything. Ask, and if the
+   * browser says no, put a button on screen that asks again on a real tap.
+   */
+  void video.play().then(
+    () => {
+      playBlocked.value = false
+    },
+    () => {
+      playBlocked.value = true
+    }
+  )
+  playWatchdog = window.setTimeout(() => {
+    if (scanning.value && !framesFlowing.value) playBlocked.value = true
+  }, 2_500)
+
   tick(performance.now())
 }
 
+/** Start playback again, from a tap the browser will honour. */
+async function resume() {
+  const video = videoRef.value
+  if (!video) return
+  try {
+    await video.play()
+    playBlocked.value = false
+  } catch {
+    playBlocked.value = true
+  }
+}
+
 /**
- * Twelve frames a second is plenty to catch a code someone is holding still,
- * and a tenth of what reading a full-resolution frame costs.
+ * Twelve reads a second is plenty to catch a code someone is holding still,
+ * and the loop only asks for the next frame once a read has finished, so a slow
+ * decoder throttles itself instead of piling work up.
  */
 const SCAN_INTERVAL_MS = 80
 let lastScan = 0
@@ -137,6 +196,18 @@ async function tick(now: number) {
   if (!scanning.value) return
 
   const video = videoRef.value
+  if (video) {
+    if (video.videoWidth > 0) {
+      if (!framesFlowing.value) {
+        framesFlowing.value = true
+        playBlocked.value = false
+        clearTimeout(playWatchdog)
+      }
+    } else if (now - startedAt > 3_000) {
+      playBlocked.value = true
+    }
+  }
+
   if (video && context && canvas && video.readyState === video.HAVE_ENOUGH_DATA && now - lastScan >= SCAN_INTERVAL_MS) {
     lastScan = now
     try {
@@ -145,6 +216,17 @@ async function tick(now: number) {
         stop()
         emit('decoded', text)
         return
+      }
+      if (!hint.value && performance.now() - startedAt > 8_000) {
+        /*
+         * Only a phone's own decoder reads these codes at the size a screen
+         * shows them (measured: under jsQR alone they stay unreadable even at
+         * three pixels a module through a lens). Without one, say what is
+         * actually wrong instead of letting the buyer keep waving the phone.
+         */
+        hint.value = detector
+          ? `No code yet${cameraLabel ? ` (camera ${cameraLabel})` : ''} — move closer, so it fills the frame.`
+          : 'This browser cannot read payment codes. Open the link with your camera app instead — it goes to the same page.'
       }
     } catch {
       // A frame that cannot be read is no reason to give up the camera.
@@ -155,50 +237,54 @@ async function tick(now: number) {
 }
 
 async function readFrame(video: HTMLVideoElement): Promise<string | null> {
+  const image = scanImage(video)
+  if (!image || !context) return null
+  reads += 1
+
   if (detector) {
     try {
-      const [found] = await detector.detect(video)
-      // A frame with no code in it is the normal case, not a failure.
-      return found?.rawValue ?? null
+      const [found] = await detector.detect(image)
+      if (found?.rawValue) return found.rawValue
     } catch {
       // The detector can refuse a frame while the camera is still warming up;
       // if it keeps refusing, it is not usable here and jsQR takes over.
       if (++detectorFailures >= 3) detector = null
-      return null
     }
+    // The native decoder is both the better and the cheaper one; jsQR is the
+    // safety net, and its cost is what a phone notices, so it takes every
+    // other read.
+    if (reads % 2 === 0) return null
   }
 
-  return decodeWithJsQr(video)
+  const pixels = context.getImageData(0, 0, image.width, image.height)
+  return jsQR(pixels.data, pixels.width, pixels.height, {
+    inversionAttempts: 'attemptBoth'
+  })?.data ?? null
 }
 
-function decodeWithJsQr(video: HTMLVideoElement): string | null {
+/** Smallest crop worth decoding: a camera that hands back less is upscaled. */
+const SCAN_MIN_PX = 900
+/** Cap, so jsQR stays affordable on a phone. */
+const SCAN_MAX_PX = 1200
+
+/**
+ * What both decoders read: the square in the middle of the frame — the region
+ * the viewfinder points at, and, because the video is drawn to cover its box,
+ * exactly the part the buyer can see. It is never shrunk below the camera's own
+ * sampling, since that is the detail a dense code depends on.
+ */
+function scanImage(video: HTMLVideoElement): HTMLCanvasElement | null {
   if (!canvas || !context) return null
 
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-  const whole = context.getImageData(0, 0, canvas.width, canvas.height)
-  const code = jsQR(whole.data, whole.width, whole.height, {
-    inversionAttempts: 'attemptBoth'
-  })
-  if (code?.data) return code.data
-
-  /*
-   * Nothing over the whole frame, so give the middle of it more pixels than the
-   * camera did. The viewfinder already asks the buyer to put the code there,
-   * and jsQR's binarizer resolves a module far better at four pixels than at
-   * two — the frame carries the detail even though the camera sampled it
-   * sparsely. Nearest-neighbour on purpose: a smooth resample blurs the edges
-   * the reader is looking for.
-   */
-  const side = Math.round(Math.min(video.videoWidth, video.videoHeight) * 0.8)
+  const side = Math.min(video.videoWidth, video.videoHeight)
   if (side < 32) return null
 
-  const zoomed = Math.min(1024, side * 3)
+  const size = Math.min(SCAN_MAX_PX, Math.max(SCAN_MIN_PX, side))
+  canvas.width = size
+  canvas.height = size
+  // Nearest-neighbour on purpose: a smooth resample blurs the module edges the
+  // readers are looking for.
   context.imageSmoothingEnabled = false
-  canvas.width = zoomed
-  canvas.height = zoomed
   context.drawImage(
     video,
     Math.round((video.videoWidth - side) / 2),
@@ -207,19 +293,18 @@ function decodeWithJsQr(video: HTMLVideoElement): string | null {
     side,
     0,
     0,
-    zoomed,
-    zoomed
+    size,
+    size
   )
 
-  const centre = context.getImageData(0, 0, zoomed, zoomed)
-  return jsQR(centre.data, centre.width, centre.height, {
-    inversionAttempts: 'attemptBoth'
-  })?.data ?? null
+  return canvas
 }
 
 function stop() {
   scanning.value = false
+  framesFlowing.value = false
   clearTimeout(waitNotice)
+  clearTimeout(playWatchdog)
   cancelAnimationFrame(frame)
   for (const track of stream?.getTracks() ?? []) track.stop()
   stream = null
@@ -256,7 +341,7 @@ defineExpose({ start, stop })
         the mask and the border can never drift apart at a different size.
       -->
       <div
-        v-if="scanning"
+        v-if="scanning && framesFlowing"
         class="pointer-events-none absolute inset-0"
       >
         <div
@@ -280,15 +365,16 @@ defineExpose({ start, stop })
       </div>
 
       <p
-        v-if="scanning"
+        v-if="scanning && framesFlowing"
         class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-4 pt-10 pb-4 text-center text-xs text-white/80"
       >
-        Point the camera at the payment code
+        {{ hint || 'Point the camera at the payment code' }}
       </p>
 
       <!--
         Nothing to see until the camera delivers a frame, so cover the panel
-        instead of leaving a white card behind a black video element.
+        instead of leaving a white card behind a black video element. When
+        playback itself was refused, the cover carries the tap that starts it.
       -->
       <div
         v-else
@@ -296,11 +382,11 @@ defineExpose({ start, stop })
       >
         <div class="flex flex-col items-center gap-3">
           <UIcon
-            :name="message ? 'i-lucide-video-off' : 'i-lucide-loader-circle'"
-            :class="['size-8 text-white/60', message ? '' : 'animate-spin']"
+            :name="message || playBlocked ? 'i-lucide-video-off' : 'i-lucide-loader-circle'"
+            :class="['size-8 text-white/60', message || playBlocked ? '' : 'animate-spin']"
           />
           <p class="text-sm text-white/70">
-            {{ message || 'Starting the camera…' }}
+            {{ message || (playBlocked ? 'The camera is waiting for a tap to start.' : 'Starting the camera…') }}
           </p>
           <UButton
             v-if="message"
@@ -310,6 +396,15 @@ defineExpose({ start, stop })
             variant="solid"
             class="bg-white/15 text-white hover:bg-white/25"
             @click="start"
+          />
+          <UButton
+            v-else-if="playBlocked"
+            label="Start the camera"
+            size="sm"
+            color="neutral"
+            variant="solid"
+            class="bg-white/15 text-white hover:bg-white/25"
+            @click="resume"
           />
         </div>
       </div>
