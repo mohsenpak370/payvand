@@ -41,7 +41,7 @@ apps/api/            Axum API (also the Vercel Rust function)
 apps/contracts/      Anchor program + workspace Cargo.toml/Anchor.toml
   programs/payvand/      The on-chain program
   target/                Anchor build output — includes the program keypair
-plans/               Implementation plans (numbered; templates + completed/)
+plans/               Implementation plans (numbered; templates + archive/)
 Taskfile.yml         Task runner entry points (`task --list`)
 ```
 

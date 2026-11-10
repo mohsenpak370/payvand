@@ -41,7 +41,8 @@ Use sequential filenames:
 0003-discount-codes.md
 ```
 
-Templates live in `plans/templates/`.
+Start a new plan by copying `plans/templates/plan-template.md` to the next
+sequential filename. Templates live in `plans/templates/`.
 
 ## Maintenance Rules
 
@@ -49,21 +50,23 @@ Templates live in `plans/templates/`.
   steps.
 - Mark blocked tasks clearly instead of inventing missing requirements.
 - Update a plan when scope changes during implementation.
-- Run `task verify` (lint, typecheck, both Rust test suites) as the standard
-  verification bar named in plan tasks.
+- Run `task verify` (lint, typecheck, API tests, and the contract suite
+  including `anchor test`) as the standard verification bar named in plan
+  tasks.
 - Update `README.md` when a completed plan changes documented behavior.
-- Move completed plan files into `plans/completed/` and keep active,
+- Move completed plan files into `plans/archive/` and keep active,
   draft, in-progress, superseded, or cancelled plans at the top level.
+- Keep the active and archived tables below up to date.
 
 ## Active Plans
 
 | ID | Plan | Status |
 | ---- | ---- | -------- |
-| | | |
+| 0001 | [Contract Security Hardening](0001-contract-security-hardening.md) | Draft |
 
-## Completed Plans
+## Archived Plans
 
-Completed plans are archived in `plans/completed/` to keep active planning
+Completed plans are archived in `plans/archive/` to keep active planning
 easy to scan while preserving implementation history.
 
 | ID | Plan | Status |

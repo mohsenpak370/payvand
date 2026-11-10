@@ -30,6 +30,15 @@ Out of scope:
 - Technical decisions:
 - Open questions:
 
+## Issues Addressed
+
+List the bugs, review findings, or requirements this plan closes. Link to the
+review or issue where possible.
+
+| ID | Issue | Severity | Phase |
+| --- | --- | --- | --- |
+| 1 | Short description | High | 1 |
+
 ## Phases
 
 ### Phase 1: Foundation
@@ -60,15 +69,33 @@ Estimated scope: Small.
 
 - [ ] After foundation tasks, `task verify` passes and docs are updated.
 - [ ] After integration tasks, affected user flows work end-to-end against a
-  local or devnet cluster.
+      local or devnet cluster.
 - [ ] Before completion, the `README.md` sections affected by the change are
-  updated.
+      updated.
 
 ## Risks And Mitigations
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Risk description | Medium | Mitigation description |
+
+## Rollout / Deployment
+
+Describe the deployment order, feature flags, migrations, and backward
+compatibility. For on-chain changes, include the program upgrade, IDL update,
+API deploy, and client deploy order.
+
+- [ ] Program / migration:
+- [ ] API / data:
+- [ ] Client:
+- [ ] Smoke tests:
+
+## Definition Of Done
+
+- [ ] All acceptance criteria are met.
+- [ ] `task verify` passes.
+- [ ] The affected docs are updated.
+- [ ] The plan is moved to `plans/archive/` and listed in `plans/README.md`.
 
 ## Open Questions
 
