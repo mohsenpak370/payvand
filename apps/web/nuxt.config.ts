@@ -157,10 +157,9 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      // All three are CommonJS and only load in the browser. `qrcode` is not
-      // imported by this app: `useSolanaQrCode` pulls it in with a dynamic
-      // import from @vue-solana/core, and without pre-bundling Vite serves
-      // that file raw, where `require` does not exist and the QR never
+      // Both are CommonJS and only load in the browser. `qrcode` is reached
+      // with a dynamic import from PaymentQr, and without pre-bundling Vite
+      // serves the raw file, where `require` does not exist and the QR never
       // appears.
       include: ['jsqr', 'qrcode']
     }

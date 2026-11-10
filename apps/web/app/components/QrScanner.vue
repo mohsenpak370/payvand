@@ -15,6 +15,35 @@ let frame = 0
 let canvas: HTMLCanvasElement | null = null
 let context: CanvasRenderingContext2D | null = null
 
+/*
+ * jsQR is a strict grid reader, and the codes this page meets are dense: the
+ * whole invoice rides in the link, so a seller offering two currencies has a
+ * hundred and forty modules in a code a phone screen shows a few hundred
+ * pixels wide. Below roughly three pixels per module it stops resolving them,
+ * which is why a camera frame is not enough on its own — the browser's own
+ * decoder, the same kind the scanner apps use, copes far better. Prefer it
+ * where the browser has it and keep jsQR as the fallback.
+ */
+interface BarcodeDetectorLike {
+  detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>
+}
+
+type BarcodeDetectorCtor = new (options: { formats: string[] }) => BarcodeDetectorLike
+
+let detector: BarcodeDetectorLike | null = null
+let detectorFailures = 0
+
+function createDetector(): BarcodeDetectorLike | null {
+  const ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
+  if (!ctor) return null
+  try {
+    return new ctor({ formats: ['qr_code'] })
+  } catch {
+    // A browser can expose the API and still refuse the format.
+    return null
+  }
+}
+
 async function start() {
   if (scanning.value) return
   message.value = ''
@@ -43,8 +72,17 @@ async function start() {
   try {
     // `ideal` rather than a hard requirement: on a laptop there is no back
     // camera, and asking for one as a requirement fails the whole request.
+    //
+    // The size is asked for explicitly for the same reason: left to itself a
+    // webcam hands back 640×480, where a dense code is a couple of pixels per
+    // module and nothing can read it. The camera still picks its own default
+    // if it cannot do better, and the decoder copes with what it gets.
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
       audio: false
     })
   } catch {
@@ -74,6 +112,8 @@ async function start() {
 
   canvas = document.createElement('canvas')
   context = canvas.getContext('2d', { willReadFrequently: true })
+  detector = createDetector()
+  detectorFailures = 0
   video.srcObject = stream
   /*
    * `play()` can stay pending until the page gets a gesture (iOS is the usual
@@ -83,31 +123,98 @@ async function start() {
    */
   void video.play().catch(() => {})
   scanning.value = true
-  tick()
+  tick(performance.now())
 }
 
-function tick() {
+/**
+ * Twelve frames a second is plenty to catch a code someone is holding still,
+ * and a tenth of what reading a full-resolution frame costs.
+ */
+const SCAN_INTERVAL_MS = 80
+let lastScan = 0
+
+async function tick(now: number) {
   if (!scanning.value) return
 
   const video = videoRef.value
-  if (video && context && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    const image = context.getImageData(0, 0, canvas.width, canvas.height)
-    const code = jsQR(image.data, image.width, image.height, {
-      inversionAttempts: 'attemptBoth'
-    })
-
-    if (code?.data) {
-      stop()
-      emit('decoded', code.data)
-      return
+  if (video && context && canvas && video.readyState === video.HAVE_ENOUGH_DATA && now - lastScan >= SCAN_INTERVAL_MS) {
+    lastScan = now
+    try {
+      const text = await readFrame(video)
+      if (text) {
+        stop()
+        emit('decoded', text)
+        return
+      }
+    } catch {
+      // A frame that cannot be read is no reason to give up the camera.
     }
   }
 
   frame = requestAnimationFrame(tick)
+}
+
+async function readFrame(video: HTMLVideoElement): Promise<string | null> {
+  if (detector) {
+    try {
+      const [found] = await detector.detect(video)
+      // A frame with no code in it is the normal case, not a failure.
+      return found?.rawValue ?? null
+    } catch {
+      // The detector can refuse a frame while the camera is still warming up;
+      // if it keeps refusing, it is not usable here and jsQR takes over.
+      if (++detectorFailures >= 3) detector = null
+      return null
+    }
+  }
+
+  return decodeWithJsQr(video)
+}
+
+function decodeWithJsQr(video: HTMLVideoElement): string | null {
+  if (!canvas || !context) return null
+
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const whole = context.getImageData(0, 0, canvas.width, canvas.height)
+  const code = jsQR(whole.data, whole.width, whole.height, {
+    inversionAttempts: 'attemptBoth'
+  })
+  if (code?.data) return code.data
+
+  /*
+   * Nothing over the whole frame, so give the middle of it more pixels than the
+   * camera did. The viewfinder already asks the buyer to put the code there,
+   * and jsQR's binarizer resolves a module far better at four pixels than at
+   * two — the frame carries the detail even though the camera sampled it
+   * sparsely. Nearest-neighbour on purpose: a smooth resample blurs the edges
+   * the reader is looking for.
+   */
+  const side = Math.round(Math.min(video.videoWidth, video.videoHeight) * 0.8)
+  if (side < 32) return null
+
+  const zoomed = Math.min(1024, side * 3)
+  context.imageSmoothingEnabled = false
+  canvas.width = zoomed
+  canvas.height = zoomed
+  context.drawImage(
+    video,
+    Math.round((video.videoWidth - side) / 2),
+    Math.round((video.videoHeight - side) / 2),
+    side,
+    side,
+    0,
+    0,
+    zoomed,
+    zoomed
+  )
+
+  const centre = context.getImageData(0, 0, zoomed, zoomed)
+  return jsQR(centre.data, centre.width, centre.height, {
+    inversionAttempts: 'attemptBoth'
+  })?.data ?? null
 }
 
 function stop() {
@@ -116,6 +223,7 @@ function stop() {
   cancelAnimationFrame(frame)
   for (const track of stream?.getTracks() ?? []) track.stop()
   stream = null
+  detector = null
   if (videoRef.value) videoRef.value.srcObject = null
 }
 
