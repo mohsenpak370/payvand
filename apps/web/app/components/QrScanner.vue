@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import jsQR from 'jsqr'
-
 const emit = defineEmits<{
   decoded: [text: string]
 }>()
@@ -26,13 +24,15 @@ let startedAt = 0
 let reads = 0
 
 /*
- * jsQR is a strict grid reader, and the codes this page meets are dense: the
- * whole invoice rides in the link, so a seller offering two currencies has a
- * hundred and forty modules in a code a screen shows a few hundred pixels
- * wide. Below roughly three pixels per module it stops resolving them, and on
- * a phone it is also slow enough that a full camera frame is measured in
- * hundreds of milliseconds. The browser's own decoder — the same kind the
- * scanner apps use — copes with far less and costs far less.
+ * The browser's own decoder goes first — the same kind the scanner apps use —
+ * and rxing (a Rust port of ZXing, compiled to WebAssembly) reads the frames it
+ * cannot. The codes this page meets are dense: the whole invoice rides in the
+ * link, so a seller offering two currencies has a hundred and forty modules in
+ * a code a screen shows a few hundred pixels wide. Measured on a lens-softened
+ * camera frame of exactly that code, the wasm reader resolves it down to about
+ * two pixels per module in a few milliseconds; the JavaScript reader it
+ * replaced (jsQR) failed at every size the app shows, even above three pixels
+ * per module, which is why a phone without a native decoder never scanned.
  */
 interface BarcodeDetectorLike {
   detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>
@@ -51,8 +51,8 @@ let detectorFailures = 0
  * exposes `BarcodeDetector` on Android phones whose Play Services cannot
  * decode a single code, and constructing one succeeds either way. Chrome's own
  * guidance is to ask what the platform supports, which is the only way to tell
- * — otherwise such a phone looks native-capable and jsQR, the weak decoder,
- * never runs.
+ * — otherwise such a phone looks native-capable and the wasm reader, the one
+ * that could have read the code, never runs.
  */
 async function createDetector(): Promise<BarcodeDetectorLike | null> {
   const ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector
@@ -211,7 +211,7 @@ async function tick(now: number) {
   if (video && context && canvas && video.readyState === video.HAVE_ENOUGH_DATA && now - lastScan >= SCAN_INTERVAL_MS) {
     lastScan = now
     try {
-      const text = await readFrame(video)
+      const text = await readFrame(video, now)
       if (text) {
         stop()
         emit('decoded', text)
@@ -219,14 +219,14 @@ async function tick(now: number) {
       }
       if (!hint.value && performance.now() - startedAt > 8_000) {
         /*
-         * Only a phone's own decoder reads these codes at the size a screen
-         * shows them (measured: under jsQR alone they stay unreadable even at
-         * three pixels a module through a lens). Without one, say what is
-         * actually wrong instead of letting the buyer keep waving the phone.
+         * Nothing has been read. When the wasm reader could not even start
+         * there is nothing left to try, and saying so beats letting the buyer
+         * keep waving the phone; otherwise the code is simply too small in
+         * the frame, which is the one thing they can fix.
          */
-        hint.value = detector
-          ? `No code yet${cameraLabel ? ` (camera ${cameraLabel})` : ''} — move closer, so it fills the frame.`
-          : 'This browser cannot read payment codes. Open the link with your camera app instead — it goes to the same page.'
+        hint.value = rxingUnavailable
+          ? 'This browser cannot read payment codes. Open the link with your camera app instead — it goes to the same page.'
+          : `No code yet${cameraLabel ? ` (camera ${cameraLabel})` : ''} — move closer, so it fills the frame.`
       }
     } catch {
       // A frame that cannot be read is no reason to give up the camera.
@@ -236,9 +236,9 @@ async function tick(now: number) {
   frame = requestAnimationFrame(tick)
 }
 
-async function readFrame(video: HTMLVideoElement): Promise<string | null> {
+async function readFrame(video: HTMLVideoElement, now: number): Promise<string | null> {
   const image = scanImage(video)
-  if (!image || !context) return null
+  if (!image) return null
   reads += 1
 
   if (detector) {
@@ -247,24 +247,65 @@ async function readFrame(video: HTMLVideoElement): Promise<string | null> {
       if (found?.rawValue) return found.rawValue
     } catch {
       // The detector can refuse a frame while the camera is still warming up;
-      // if it keeps refusing, it is not usable here and jsQR takes over.
+      // if it keeps refusing, it is not usable here and the wasm reader takes
+      // over.
       if (++detectorFailures >= 3) detector = null
     }
-    // The native decoder is both the better and the cheaper one; jsQR is the
-    // safety net, and its cost is what a phone notices, so it takes every
-    // other read.
-    if (reads % 2 === 0) return null
   }
 
-  const pixels = context.getImageData(0, 0, image.width, image.height)
-  return jsQR(pixels.data, pixels.width, pixels.height, {
-    inversionAttempts: 'attemptBoth'
-  })?.data ?? null
+  /*
+   * The wasm reader is 2.4 MB, which no one should pay for on a phone that can
+   * read the code by itself — so it is fetched only when it is needed: on a
+   * browser without a native decoder, or after a native one has had a few
+   * seconds and found nothing.
+   */
+  const needed = !detector || now - startedAt > RXING_AFTER_MS
+  if (!needed) return null
+  // Once both are in play, the wasm reader takes every other read.
+  if (detector && reads % 2 === 1) return null
+
+  return decodeWithRxing(image)
+}
+
+/** How long a native decoder gets on its own before the wasm reader joins in. */
+const RXING_AFTER_MS = 3_000
+
+let rxing: typeof import('rxing-wasm') | null = null
+let rxingUnavailable = false
+
+/**
+ * rxing is a Rust port of ZXing compiled to WebAssembly: the same decoder the
+ * phone in a scanner app uses, and the only thing that reads these codes on a
+ * browser whose own detector is missing or refuses them.
+ */
+async function decodeWithRxing(image: HTMLCanvasElement): Promise<string | null> {
+  if (rxingUnavailable || !context) return null
+
+  if (!rxing) {
+    try {
+      rxing = await import('rxing-wasm')
+    } catch {
+      // A browser that cannot start the module cannot be helped further.
+      rxingUnavailable = true
+      return null
+    }
+  }
+
+  try {
+    const pixels = context.getImageData(0, 0, image.width, image.height)
+    const luma = rxing.convert_imagedata_to_luma(pixels)
+    // `true` is rxing's try-harder: accuracy over speed, and at a few
+    // milliseconds a frame there is plenty of speed to give away.
+    return rxing.decode_barcode(luma, pixels.width, pixels.height, true).text()
+  } catch {
+    // "not found" is the ordinary answer for a frame without a code in it.
+    return null
+  }
 }
 
 /** Smallest crop worth decoding: a camera that hands back less is upscaled. */
 const SCAN_MIN_PX = 900
-/** Cap, so jsQR stays affordable on a phone. */
+/** Cap, so a read stays affordable on a phone. */
 const SCAN_MAX_PX = 1200
 
 /**

@@ -28,12 +28,11 @@ const qrText = computed(() => {
  *
  * A styled code (every module a dot covering 80% of its cell, rounded corners)
  * is still read by phone camera apps, which use tolerant ML decoders, but not
- * by the strict grid readers: the 20% gap between neighbours makes each module
- * a separate round blob, and once a camera softens the edges jsQR — the decoder
- * on /scan — can no longer line the grid up. An invoice's link is long (the
- * whole code rides in its path), so the modules are small and the gap is all
- * it takes. Measured against jsQR on the same code and size, plain modules read
- * where dots do not.
+ * by the strict grid readers behind the scanner on /scan: the 20% gap between
+ * neighbours makes each module a separate round blob, and once a camera
+ * softens the edges the grid can no longer be lined up. An invoice's link is
+ * long (the whole code rides in its path), so the modules are small and the
+ * gap is all it takes. Plain modules read where dots did not.
  */
 watch(
   qrText,

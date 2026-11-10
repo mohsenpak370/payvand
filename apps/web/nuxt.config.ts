@@ -157,11 +157,10 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      // Both are CommonJS and only load in the browser. `qrcode` is reached
-      // with a dynamic import from PaymentQr, and without pre-bundling Vite
-      // serves the raw file, where `require` does not exist and the QR never
-      // appears.
-      include: ['jsqr', 'qrcode']
+      // CommonJS, loaded only in the browser. `qrcode` is reached with a
+      // dynamic import from PaymentQr, and without pre-bundling Vite serves
+      // the raw file, where `require` does not exist and the QR never appears.
+      include: ['qrcode']
     }
   },
 
