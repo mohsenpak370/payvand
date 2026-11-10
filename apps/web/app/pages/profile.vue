@@ -139,10 +139,11 @@ const transactions = ref<TransactionsResponse | null>(null)
 const txLoading = ref(false)
 const txFailure = ref('')
 
-// Both lists run long. They start folded, so someone who came for the wallet
-// or the allowance is not scrolled past their whole history.
+// Both lists run long. The saved codes start folded, so someone who came for
+// the wallet or the allowance is not scrolled past them — but the payments are
+// the record of what happened and who it happened with, so they start open.
 const savedOpen = ref(false)
-const txOpen = ref(false)
+const txOpen = ref(true)
 
 // Payment codes this account saved. The code is the invoice, so everything
 // shown on a card comes out of the payload the API kept.
@@ -195,6 +196,52 @@ async function refreshTransactions() {
 
 function shorten(value: string): string {
   return value.length > 12 ? `${value.slice(0, 4)}…${value.slice(-4)}` : value
+}
+
+/**
+ * Finding one payment. A seller who did not create the code — the payment was
+ * read out from the customer's screen — has only the reference code and the
+ * day to go on, so those are the two ways in.
+ */
+const txQuery = ref('')
+const txFrom = ref('')
+const txTo = ref('')
+
+/** The day input as unix seconds, at the start or the end of that day. */
+function dayBound(date: string, end: boolean): number | null {
+  if (!date) return null
+  const at = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(at.getTime())) return null
+  return Math.floor(at.getTime() / 1000) + (end ? 86_399 : 0)
+}
+
+const txFiltering = computed(() => Boolean(txQuery.value.trim() || txFrom.value || txTo.value))
+
+const filteredTransactions = computed(() => {
+  const items = transactions.value?.items ?? []
+  const query = txQuery.value.trim().toUpperCase()
+  const from = dayBound(txFrom.value, false)
+  const to = dayBound(txTo.value, true)
+  return items.filter((item) => {
+    // A code is matched on the whole string, not by prefix: a customer reading
+    // eight characters out does not guarantee they are the first eight. A
+    // longer paste is a payment address, so it is matched as one.
+    if (query && !referenceCode(item.id).includes(query) && !item.id.toUpperCase().startsWith(query)) {
+      return false
+    }
+    // An invoice that is still unpaid has no settle time; the day it was
+    // created is the only date it has.
+    const at = item.settled_at_unix || item.created_at_unix
+    if (from !== null && at < from) return false
+    if (to !== null && at > to) return false
+    return true
+  })
+})
+
+function clearTxFilters() {
+  txQuery.value = ''
+  txFrom.value = ''
+  txTo.value = ''
 }
 
 function formatDate(seconds: number): string {
@@ -612,7 +659,7 @@ onMounted(() => {
               <p class="text-sm text-muted">
                 {{
                   transactions
-                    ? `${transactions.total} payment${transactions.total === 1 ? '' : 's'} on ${networkLabel(transactions.cluster)}`
+                    ? `${txFiltering ? `${filteredTransactions.length} of ` : ''}${transactions.total} payment${transactions.total === 1 ? '' : 's'} on ${networkLabel(transactions.cluster)}`
                     : 'Everything your wallet has paid or been paid.'
                 }}
               </p>
@@ -631,6 +678,53 @@ onMounted(() => {
         </template>
 
         <div class="flex flex-col gap-3">
+          <!--
+            Finding one payment: the code the customer read out, or the days it
+            could have happened on. Both sides of a payment show the same code,
+            so the payer can read theirs to whoever took the money.
+          -->
+          <div
+            v-if="transactions && transactions.items.length"
+            class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
+          >
+            <UFormField
+              label="Reference code"
+              class="min-w-0 flex-1"
+            >
+              <UInput
+                v-model="txQuery"
+                icon="i-lucide-search"
+                placeholder="The code the customer read out"
+                class="w-full"
+                spellcheck="false"
+                autocapitalize="characters"
+              />
+            </UFormField>
+            <div class="flex flex-wrap gap-2">
+              <UFormField label="From">
+                <UInput
+                  v-model="txFrom"
+                  type="date"
+                />
+              </UFormField>
+              <UFormField label="To">
+                <UInput
+                  v-model="txTo"
+                  type="date"
+                />
+              </UFormField>
+            </div>
+            <UButton
+              v-if="txFiltering"
+              label="Clear"
+              icon="i-lucide-x"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              @click="clearTxFilters"
+            />
+          </div>
+
           <div
             v-if="!linkedWallet"
             class="flex flex-col items-start gap-3 rounded-xl border border-dashed border-default p-4"
@@ -665,6 +759,14 @@ onMounted(() => {
             No transactions yet — your first payment will show up here.
           </p>
 
+          <p
+            v-else-if="txFiltering && !filteredTransactions.length"
+            class="py-4 text-center text-sm text-muted"
+          >
+            No payment matches that code. Check the reference the customer read out, or widen the
+            dates.
+          </p>
+
           <UButton
             v-else-if="transactions && !txOpen"
             :label="`Show ${transactions.items.length} ${transactions.items.length === 1 ? 'payment' : 'payments'}`"
@@ -685,7 +787,7 @@ onMounted(() => {
               flex item's automatic minimum and widen the whole card.
             -->
             <li
-              v-for="item in transactions.items"
+              v-for="item in filteredTransactions"
               :key="item.id"
               class="flex min-w-0 items-center gap-3 py-2"
             >
@@ -698,8 +800,11 @@ onMounted(() => {
                 <p class="truncate text-sm">
                   {{ item.memo || (item.direction === 'received' ? 'Payment received' : 'Payment sent') }}
                 </p>
+                <!-- The code first: it is the part a customer reads out and
+                     the part a seller searches for, so it has to be legible. -->
                 <p class="truncate text-xs text-muted">
-                  {{ formatDate(item.settled_at_unix || item.created_at_unix) }}
+                  <span class="font-mono tracking-wider text-default">{{ referenceCode(item.id) }}</span>
+                  · {{ formatDate(item.settled_at_unix || item.created_at_unix) }}
                   · {{ item.direction === 'received' ? 'from' : 'to' }}
                   {{ shorten(item.counterparty) }}
                 </p>

@@ -30,6 +30,14 @@ const SHOP_CHOICES = [
   { label: 'Yes — add a Shops link to the navigation', value: true },
   { label: 'No — I charge for one thing at a time', value: false }
 ]
+
+// A payment settling — or failing — makes a short sound, because the person
+// paying is holding the phone and looking at the shop, not at the screen.
+const { enabled: soundsEnabled, setEnabled: setSoundsEnabled } = useTransactionSounds()
+const soundsChoice = computed({
+  get: () => soundsEnabled.value,
+  set: (next: boolean) => setSoundsEnabled(next)
+})
 </script>
 
 <template>
@@ -119,8 +127,31 @@ const SHOP_CHOICES = [
         </div>
       </UCard>
 
+      <!-- Sounds: the two tones a payment makes. -->
+      <UCard class="min-w-0">
+        <template #header>
+          <div>
+            <h2 class="text-base font-semibold">
+              Sounds
+            </h2>
+            <p class="text-sm text-muted">
+              A short rise when a payment goes through, a low buzz when it does not.
+            </p>
+          </div>
+        </template>
+
+        <div class="flex flex-col gap-2">
+          <UFormField label="Payment sounds">
+            <USwitch
+              v-model="soundsChoice"
+              label="Play a sound when a payment finishes"
+            />
+          </UFormField>
+        </div>
+      </UCard>
+
       <p class="text-xs text-muted">
-        Both of these follow this browser, not your account — a phone you sign in on keeps its own.
+        All of these follow this browser, not your account — a phone you sign in on keeps its own.
       </p>
     </div>
   </UPageSection>

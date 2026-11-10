@@ -68,6 +68,57 @@ const heading = computed(() => paymentName.value || paymentMemo.value || 'Paymen
 
 const discountOpen = ref(false)
 
+// The result of this visit's payment, announced over the sheet: a settled
+// invoice or a refusal, with the code the buyer can read back to the seller.
+const resultOpen = ref(false)
+const resultKind = ref<'success' | 'error'>('success')
+// The address that was actually paid, not the invoice's own id: an invoice
+// that takes several currencies has one address per currency, and the seller's
+// transaction list is keyed by the one the money went to.
+const refCode = computed(() => {
+  const paid = record.value?.payment_pda || payload.value?.id
+  return paid ? referenceCode(paid) : ''
+})
+const sellerShort = computed(() => {
+  const seller = payload.value?.seller ?? ''
+  return seller.length > 12 ? `${seller.slice(0, 4)}…${seller.slice(-4)}` : seller
+})
+const { playSuccess, playFailure } = useTransactionSounds()
+
+// Only a payment made here is announced. A link that opens already paid says
+// so on the sheet; nobody was waiting for a sound by then.
+watch(settled, (isSettled) => {
+  if (!isSettled || !signature.value) return
+  resultKind.value = 'success'
+  resultOpen.value = true
+  playSuccess()
+})
+
+watch(failure, (message) => {
+  if (!message) return
+  resultKind.value = 'error'
+  resultOpen.value = true
+  playFailure()
+})
+
+const successLine = computed(() =>
+  sellerShort.value ? `${payableLabel.value} to ${sellerShort.value}` : payableLabel.value
+)
+
+const copiedRef = ref(false)
+
+async function copyRefCode() {
+  try {
+    await navigator.clipboard.writeText(refCode.value)
+  } catch {
+    return
+  }
+  copiedRef.value = true
+  setTimeout(() => {
+    copiedRef.value = false
+  }, 2_000)
+}
+
 // Written once and printed on the sheet: paper has nothing to click.
 const detailRows = computed(() => [
   { label: 'Seller', value: String(payload.value?.seller ?? ''), mono: true },
@@ -388,6 +439,15 @@ useSeoMeta({
                   title="Paid"
                   description="This invoice is settled — there is nothing left to do."
                 />
+                <!-- The code stays on the sheet too, not only in the result
+                     dialog the buyer may have already dismissed. -->
+                <p
+                  v-if="refCode"
+                  class="text-xs text-muted"
+                >
+                  Reference code
+                  <span class="font-mono tracking-wider text-default">{{ refCode }}</span>
+                </p>
                 <p
                   v-if="signature || record?.settled_by"
                   class="overflow-hidden text-xs text-muted font-mono text-ellipsis"
@@ -707,6 +767,81 @@ useSeoMeta({
         />
       </div>
     </main>
+
+    <!-- The outcome of the payment just made, in one screen. -->
+    <UModal
+      v-model:open="resultOpen"
+      :transition="false"
+      :ui="{ content: 'max-w-sm' }"
+    >
+      <template #body>
+        <div
+          v-if="resultKind === 'success'"
+          class="flex flex-col items-center gap-3 text-center"
+        >
+          <UIcon
+            name="i-lucide-circle-check"
+            class="size-12 text-success"
+          />
+          <p class="text-lg font-semibold">
+            Payment sent
+          </p>
+          <p class="text-sm text-muted">
+            {{ successLine }}
+          </p>
+
+          <div class="mt-1 w-full rounded-xl border border-default p-3">
+            <p class="text-xs text-muted">
+              Reference code
+            </p>
+            <p class="font-mono text-2xl font-semibold tracking-[0.2em]">
+              {{ refCode }}
+            </p>
+            <p class="mt-1 text-xs text-muted">
+              Read this to the seller — they can find this payment with it.
+            </p>
+          </div>
+
+          <div class="mt-1 flex w-full gap-2">
+            <UButton
+              :icon="copiedRef ? 'i-lucide-check' : 'i-lucide-copy'"
+              :label="copiedRef ? 'Copied' : 'Copy code'"
+              color="neutral"
+              variant="soft"
+              class="flex-1 justify-center"
+              @click="copyRefCode"
+            />
+            <UButton
+              label="Done"
+              class="flex-1 justify-center"
+              @click="resultOpen = false"
+            />
+          </div>
+        </div>
+
+        <div
+          v-else
+          class="flex flex-col items-center gap-3 text-center"
+        >
+          <UIcon
+            name="i-lucide-circle-alert"
+            class="size-12 text-error"
+          />
+          <p class="text-lg font-semibold">
+            Payment did not go through
+          </p>
+          <p class="text-sm text-muted">
+            {{ failure }}
+          </p>
+          <UButton
+            label="Close"
+            block
+            class="mt-1"
+            @click="resultOpen = false"
+          />
+        </div>
+      </template>
+    </UModal>
 
     <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
       Powered by

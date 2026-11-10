@@ -18,6 +18,7 @@ definePageMeta({ middleware: 'auth' })
 const { cluster } = useRuntimeConfig().public
 const api = usePaymentApi()
 const shopApi = useShopApi()
+const { playSuccess } = useTransactionSounds()
 // Pricing from a menu is only offered to sellers who turned shops on in
 // settings — everyone else creates codes the way they always have.
 const { shopsEnabled } = useShopPreference()
@@ -340,6 +341,9 @@ async function refreshStatus() {
         description: settled.description || current.description
       }
       paidCode.value = targets[settledIndex]?.code ?? null
+      // The seller is holding this screen up for the customer, so the payment
+      // arriving is worth hearing without having to watch the badge.
+      playSuccess()
       return
     }
 

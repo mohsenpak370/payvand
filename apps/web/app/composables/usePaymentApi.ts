@@ -160,6 +160,20 @@ export function paymentUrl(payload: string): string {
 }
 
 /**
+ * The short reference both sides of a payment can say out loud: the first eight
+ * characters of the payment address, uppercased so a code read aloud or typed
+ * back never fails on case. The address is in the seller's transaction list and
+ * in the buyer's own code, so the two sides compute the same string without
+ * asking the API for it.
+ *
+ * Base58 leaves out 0, O, I and l already; folding the case costs a little room
+ * (58^8 becomes roughly 33^8) and buys a code that survives being spoken.
+ */
+export function referenceCode(id: string): string {
+  return id.slice(0, 8).toUpperCase()
+}
+
+/**
  * Base64url without padding, so the invoice fits in one URL path segment.
  * The API decodes the same token back into the invoice.
  */
