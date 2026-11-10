@@ -56,3 +56,11 @@ screenshots/
 # every root `pnpm <script>` run). Leading slash: the app's real lockfile
 # at apps/web/pnpm-lock.yaml must stay committed.
 /pnpm-lock.yaml
+
+# Agent skill packs — installed per machine, ~1900 files and 12 MB, and not
+# part of the app: nothing at runtime reads them. `.claude/skills` is only
+# symlinks into `.agents/skills`.
+.agents/
+agent/
+.claude/skills/
+skills-lock.json
