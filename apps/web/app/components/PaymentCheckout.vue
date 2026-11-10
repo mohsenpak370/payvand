@@ -768,10 +768,14 @@ useSeoMeta({
       </div>
     </main>
 
-    <!-- The outcome of the payment just made, in one screen. -->
+    <!--
+      The outcome of the payment just made, in one screen. Unmounted on close
+      so its entrance plays again if the buyer pays a second time.
+    -->
     <UModal
       v-model:open="resultOpen"
       :transition="false"
+      unmount-on-hide
       :ui="{ content: 'max-w-sm' }"
     >
       <template #body>
@@ -779,22 +783,38 @@ useSeoMeta({
           v-if="resultKind === 'success'"
           class="flex flex-col items-center gap-3 text-center"
         >
-          <UIcon
-            name="i-lucide-circle-check"
-            class="size-12 text-success"
-          />
-          <p class="text-lg font-semibold">
+          <div
+            class="relative grid size-18 place-items-center rounded-full bg-success/10 text-success animate-pay-result-pop motion-reduce:animate-none"
+          >
+            <UIcon
+              name="i-lucide-circle-check"
+              class="size-12"
+            />
+            <span
+              class="absolute inset-0 rounded-full border-2 border-current opacity-0 animate-pay-result-halo motion-reduce:hidden"
+              aria-hidden="true"
+            />
+          </div>
+          <p
+            class="text-lg font-semibold animate-pay-rise-1 motion-reduce:animate-none"
+          >
             Payment sent
           </p>
-          <p class="text-sm text-muted">
+          <p
+            class="text-sm text-muted animate-pay-rise-1 motion-reduce:animate-none"
+          >
             {{ successLine }}
           </p>
 
-          <div class="mt-1 w-full rounded-xl border border-default p-3">
+          <div
+            class="mt-1 w-full rounded-xl border border-default p-3 animate-pay-rise-2 motion-reduce:animate-none"
+          >
             <p class="text-xs text-muted">
               Reference code
             </p>
-            <p class="font-mono text-2xl font-semibold tracking-[0.2em]">
+            <p
+              class="font-mono text-2xl font-semibold tracking-[0.2em] animate-pay-result-code motion-reduce:animate-none"
+            >
               {{ refCode }}
             </p>
             <p class="mt-1 text-xs text-muted">
@@ -802,7 +822,9 @@ useSeoMeta({
             </p>
           </div>
 
-          <div class="mt-1 flex w-full gap-2">
+          <div
+            class="mt-1 flex w-full gap-2 animate-pay-rise-3 motion-reduce:animate-none"
+          >
             <UButton
               :icon="copiedRef ? 'i-lucide-check' : 'i-lucide-copy'"
               :label="copiedRef ? 'Copied' : 'Copy code'"
@@ -823,22 +845,33 @@ useSeoMeta({
           v-else
           class="flex flex-col items-center gap-3 text-center"
         >
-          <UIcon
-            name="i-lucide-circle-alert"
-            class="size-12 text-error"
-          />
-          <p class="text-lg font-semibold">
+          <div
+            class="relative grid size-18 place-items-center rounded-full bg-error/10 text-error animate-pay-result-pop-error motion-reduce:animate-none"
+          >
+            <UIcon
+              name="i-lucide-circle-alert"
+              class="size-12"
+            />
+          </div>
+          <p
+            class="text-lg font-semibold animate-pay-rise-1 motion-reduce:animate-none"
+          >
             Payment did not go through
           </p>
-          <p class="text-sm text-muted">
+          <p
+            class="text-sm text-muted animate-pay-rise-2 motion-reduce:animate-none"
+          >
             {{ failure }}
           </p>
-          <UButton
-            label="Close"
-            block
-            class="mt-1"
-            @click="resultOpen = false"
-          />
+          <div
+            class="mt-1 w-full animate-pay-rise-3 motion-reduce:animate-none"
+          >
+            <UButton
+              label="Close"
+              block
+              @click="resultOpen = false"
+            />
+          </div>
         </div>
       </template>
     </UModal>
