@@ -108,7 +108,6 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// One route's allowance: how many hits per caller inside a window.
 struct Throttle {
     bucket: &'static str,
     limit: u32,

@@ -70,7 +70,6 @@ const soundsChoice = computed({
     :description="$t('settings.description')"
   >
     <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6">
-      <!-- Language of the app itself, and the direction that follows it. -->
       <UCard class="min-w-0">
         <template #header>
           <div>
@@ -92,7 +91,6 @@ const soundsChoice = computed({
         </UFormField>
       </UCard>
 
-      <!-- Currency of the hints shown next to every price. -->
       <UCard class="min-w-0">
         <template #header>
           <div>
@@ -123,7 +121,6 @@ const soundsChoice = computed({
         </div>
       </UCard>
 
-      <!-- Shops: a catalogue of products instead of a typed amount. -->
       <UCard class="min-w-0">
         <template #header>
           <div>
@@ -171,7 +168,6 @@ const soundsChoice = computed({
         </div>
       </UCard>
 
-      <!-- Sounds: the two tones a payment makes. -->
       <UCard class="min-w-0">
         <template #header>
           <div>

@@ -284,11 +284,6 @@ async function createPayment() {
 }
 
 /**
- * The invoice address plus one address per discount code: the same seller
- * and reference priced at each possible amount. Whichever address gets
- * funded tells us the full price — or exactly which code the buyer used.
- */
-/**
  * Every address this invoice can be settled on: its currency at full price,
  * plus the same currency at each discount code's price. Whichever gets funded
  * says what was paid and which code the buyer used.

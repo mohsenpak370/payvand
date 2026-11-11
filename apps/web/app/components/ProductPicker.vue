@@ -24,7 +24,6 @@ const total = computed(() =>
   lines.value.reduce((sum, line) => sum + line.product.price_lamports * line.quantity, 0)
 )
 
-/** A product's line in the cart, if it has one. */
 function lineFor(product: Product): CartLine | undefined {
   return lines.value.find(line => line.product.id === product.id)
 }

@@ -303,7 +303,6 @@ onMounted(() => {
         />
       </div>
 
-      <!-- Wallet: connect it, then link it to this account. -->
       <UCard class="min-w-0">
         <template #header>
           <div class="flex items-center justify-between gap-3">
@@ -430,7 +429,6 @@ onMounted(() => {
         </div>
       </UCard>
 
-      <!-- Monthly allowance. -->
       <UCard class="min-w-0">
         <template #header>
           <div>
@@ -658,7 +656,6 @@ onMounted(() => {
         </div>
       </UCard>
 
-      <!-- Transactions. -->
       <UCard class="min-w-0">
         <template #header>
           <div class="flex items-center justify-between gap-3">

@@ -24,7 +24,6 @@ pub struct Budget {
 #[account]
 #[derive(Debug)]
 pub struct Payment {
-    /// Who is being paid.
     pub seller: Pubkey,
     /// Free-form lookup key chosen when the invoice was opened.
     pub reference: Pubkey,
@@ -46,7 +45,6 @@ pub struct Payment {
 #[account]
 #[derive(Debug)]
 pub struct TokenPayment {
-    /// Who is being paid.
     pub seller: Pubkey,
     /// Free-form lookup key chosen when the invoice was opened.
     pub reference: Pubkey,

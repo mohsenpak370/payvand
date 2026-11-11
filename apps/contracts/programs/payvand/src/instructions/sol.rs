@@ -180,7 +180,6 @@ pub fn settle_payment_handler<'info, 'ctx>(
         );
     }
 
-    // Lamports move from the payer straight to the seller.
     anchor_lang::system_program::transfer(
         CpiContext::new(
             anchor_lang::system_program::ID,
@@ -226,7 +225,6 @@ pub fn open_budget_handler<'info, 'ctx>(
     );
     require_keys_neq!(session, Pubkey::default(), PaymentError::InvalidSessionKey);
 
-    // Top the session key's fee float back up (only when it is short).
     let float_gap = SESSION_FEE_FLOAT.saturating_sub(ctx.accounts.session_key.lamports());
     if float_gap > 0 {
         anchor_lang::system_program::transfer(

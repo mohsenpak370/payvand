@@ -633,7 +633,6 @@ fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRec
     }
 }
 
-/// The record for an address whose account decoded successfully.
 fn record_from_chain(
     pubkey: Pubkey,
     payment: OnchainPayment,
@@ -951,7 +950,6 @@ fn decode_token_payment(data: &[u8]) -> Option<OnchainTokenPayment> {
     })
 }
 
-/// The record for an address whose token invoice decoded successfully.
 fn token_record_from_chain(
     pubkey: Pubkey,
     payment: OnchainTokenPayment,

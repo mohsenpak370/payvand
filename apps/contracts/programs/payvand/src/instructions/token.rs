@@ -205,8 +205,6 @@ pub struct CloseTokenBudget<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-// ---- token invoices ---------------------------------------------------
-
 pub fn settle_token_payment_handler<'info, 'ctx>(
     ctx: Context<'ctx, SettleTokenPayment<'info>>,
     amount: u64,

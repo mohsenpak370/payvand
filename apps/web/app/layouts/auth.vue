@@ -129,7 +129,6 @@ const points = computed(() => [
       </div>
     </section>
 
-    <!-- Form half: centred, single column, no card. -->
     <section class="flex items-center justify-center px-6 py-10 lg:px-10 xl:px-14">
       <div class="w-full max-w-sm">
         <div class="mb-8 flex items-center gap-2.5 lg:hidden">

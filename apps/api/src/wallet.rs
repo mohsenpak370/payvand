@@ -341,7 +341,6 @@ pub struct TransactionsResponse {
     pub cluster: String,
 }
 
-/// The signed-in account's transactions for its linked wallet.
 pub async fn transactions(
     State(state): State<crate::AppState>,
     headers: HeaderMap,

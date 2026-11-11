@@ -125,7 +125,6 @@ export function usePaymentCheckout() {
       ?? { currency: 'sol', mint: '', decimals: 9, amount: 0, payment_pda: '' }
     )
   })
-  /** True when the seller offered more than one way to pay. */
   const offersChoice = computed(() => options.value.length > 1)
 
   // The allowance path is three separate things agreeing: the connected wallet

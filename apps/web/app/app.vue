@@ -42,7 +42,6 @@ useSeoMeta({
 
 <template>
   <UApp>
-    <!-- Links the web manifest that makes the app installable. -->
     <NuxtPwaManifest />
 
     <!--

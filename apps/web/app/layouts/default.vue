@@ -1,6 +1,4 @@
 <script setup>
-// The app shell: every page gets this header and footer unless it opts into
-// another layout (`auth`, `blank`).
 const { t } = useI18n()
 const { cluster } = useRuntimeConfig().public
 const { user, signout } = useAuth()
@@ -15,11 +13,6 @@ async function onSignOut() {
   await navigateTo('/')
 }
 
-/**
- * The account menu: what used to be the Profile / email / Sign out cluster
- * in the header. `Admin` joins it only once the API has confirmed the
- * account is listed in `ADMIN_EMAILS`.
- */
 const accountMenu = computed(() => [
   [
     { label: t('app.account.profile'), icon: 'i-lucide-circle-user-round', to: '/profile' },
@@ -39,15 +32,7 @@ const accountMenu = computed(() => [
 
 <template>
   <div>
-    <!--
-      The theme hides the centre slot and shows the burger toggle below `lg`,
-      so the three slot groups already divide into "desktop header" and
-      "mobile menu" without extra breakpoints: #left renders in both, the
-      default slot only on desktop, #right only on desktop, and #body only
-      inside the menu.
-    -->
     <UHeader>
-      <!-- Logo, product name and cluster. -->
       <template #left>
         <NuxtLink
           to="/"
@@ -59,25 +44,15 @@ const accountMenu = computed(() => [
             alt=""
             width="356"
             height="368"
-            class="h-[2.625rem] w-auto shrink-0"
+            class="h-10.5 w-auto shrink-0"
           >
-          <!--
-            The cluster pill hangs off the name's top-right corner instead of
-            standing beside it, matching the brand row on the auth pages, so
-            the cluster reads as a tag on the name rather than a third item.
-          -->
-          <!--
-            Split in two so the first syllable keeps the brand colour, and
-            translated as a pair: Persian reads its own name here rather than
-            the Latin one ("پی" + "وند").
-          -->
           <span class="relative text-2xl font-bold">
             <span class="text-primary">{{ $t('app.brandWord.lead') }}</span>{{ $t('app.brandWord.rest') }}
             <UBadge
               color="success"
               variant="subtle"
               size="sm"
-              class="absolute -top-2 start-full ms-1"
+              class="absolute -top-2 inset-s-full ms-1"
             >
               {{ cluster }}
             </UBadge>
@@ -85,11 +60,6 @@ const accountMenu = computed(() => [
         </NuxtLink>
       </template>
 
-      <!--
-        Centred on desktop; `hidden lg:flex` comes from the theme. Plain text
-        links rather than buttons: these are navigation, and a hover underline
-        reads as one without the button chrome competing with Sign up.
-      -->
       <template #default>
         <nav
           :aria-label="$t('app.nav.primary')"
@@ -116,22 +86,25 @@ const accountMenu = computed(() => [
         </nav>
       </template>
 
-      <!-- Account controls on the right of the desktop header. -->
       <template #right>
         <nav
           :aria-label="$t('app.nav.account')"
           class="hidden items-center gap-1 lg:flex"
         >
           <template v-if="user">
-            <!-- Account: email on the trigger, everything else in the menu. -->
-            <UDropdownMenu :items="accountMenu">
+            <UDropdownMenu
+              :items="accountMenu"
+              :ui="{
+                content: 'w-44'
+              }"
+            >
               <UButton
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-circle-user-round"
                 trailing-icon="i-lucide-chevrons-up-down"
                 :label="user.email"
-                class="max-w-56"
+                class="max-w-44"
               />
             </UDropdownMenu>
           </template>
@@ -193,7 +166,7 @@ const accountMenu = computed(() => [
 
           <template v-if="user">
             <span
-              class="text-muted inline-flex max-w-full items-center gap-1.5 rounded-full bg-elevated/50 px-2.5 py-1 text-xs"
+              class="text-muted inline-flex max-w-full items-center gap-1.5 rounded-full bg-elevated/50 px-2.5 py-2 text-xs"
             >
               <UIcon
                 name="i-lucide-user-round"

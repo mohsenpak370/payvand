@@ -168,7 +168,6 @@ export function useAuth() {
     return response.message
   }
 
-  /** Exchanges the emailed one-time token for a new password. */
   async function resetPassword(token: string, password: string): Promise<void> {
     await $fetch(`${base}/api/auth/reset-password`, {
       method: 'POST',

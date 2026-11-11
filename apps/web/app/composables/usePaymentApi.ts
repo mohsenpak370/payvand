@@ -2,7 +2,6 @@ import type { FiatCurrency } from './useFiat'
 
 export type PaymentStatus = 'pending' | 'settled' | 'missing'
 
-/** The currencies an invoice can be priced in. */
 export type SupportedCurrency = 'sol' | 'usdc' | 'eurc'
 
 /**
@@ -297,7 +296,6 @@ export function currencyDecimals(currency: SupportedCurrency): number {
   return currency === 'sol' ? 9 : 6
 }
 
-/** Short label for a currency, as the seller and buyer both read it. */
 export function currencySymbol(currency: SupportedCurrency): string {
   if (currency === 'usdc') return 'USDC'
   if (currency === 'eurc') return 'EURC'
@@ -312,7 +310,6 @@ export function solToLamports(sol: number): number {
   return Math.round(sol * 1_000_000_000)
 }
 
-/** Plain-language label for a payment status badge. */
 export function statusLabel(status: PaymentStatus): string {
   if (status === 'settled') return appT('status.paid')
   // A fresh invoice has no on-chain account until the customer pays — to

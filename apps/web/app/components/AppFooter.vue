@@ -1,15 +1,7 @@
 <script setup lang="ts">
 const { t } = useI18n()
-// The build stamps the root package.json's version here, so the footer and the
-// release number cannot disagree.
 const { version } = useRuntimeConfig().public
 
-/**
- * The brand block takes the grid's first column, so the groups sit beside it
- * rather than wrapping underneath. The account group changes with the session
- * — the same links the header shows, for a reader who scrolled instead of
- * looking up.
- */
 const columns = computed(() => [
   {
     label: t('footer.groups.product'),
@@ -31,10 +23,6 @@ const columns = computed(() => [
 
 <template>
   <UFooter>
-    <!--
-      UFooter renders the top slot outside its container, so the columns bring
-      their own to line up with the header and every page below.
-    -->
     <template #top>
       <UContainer>
         <UFooterColumns :columns="columns">
@@ -52,16 +40,12 @@ const columns = computed(() => [
                   height="368"
                   class="h-8 w-auto shrink-0"
                 >
-                <!--
-                  The cluster pill repeats the header's, because whether the
-                  money here is real decides how the rest of the page reads.
-                -->
                 <span class="relative text-xl font-bold">
-                  <span class="text-primary">Pay</span>vand
+                  <span class="text-primary">{{ $t('app.brandWord.lead') }}</span>{{ $t('app.brandWord.rest') }}
                 </span>
               </NuxtLink>
 
-              <p class="text-muted mt-4 text-sm leading-relaxed">
+              <p class="text-muted mt-4 pr-4 text-sm leading-relaxed">
                 {{ $t('footer.tagline') }}
               </p>
             </div>

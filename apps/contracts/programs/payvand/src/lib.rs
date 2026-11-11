@@ -36,8 +36,6 @@ declare_id!("4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J");
 pub mod payvand {
     use super::*;
 
-    // ---- SOL invoices -----------------------------------------------------
-
     /// Buyer pays an invoice. The invoice account is created (and funded by
     /// the buyer) inside this same transaction, so the seller never has to
     /// sign anything to open a payment code — the QR is just an address plus
@@ -57,8 +55,6 @@ pub mod payvand {
     pub fn close_payment(ctx: Context<ClosePayment>, amount: u64) -> Result<()> {
         instructions::sol::close_payment_handler(ctx, amount)
     }
-
-    // ---- SOL allowance ----------------------------------------------------
 
     /// Buyer funds this month's spending budget and registers a session key.
     /// This is the ONE wallet signature the whole feature needs: afterwards
@@ -87,8 +83,6 @@ pub mod payvand {
         instructions::sol::close_budget_handler(ctx)
     }
 
-    // ---- token invoices ---------------------------------------------------
-
     /// Buyer pays a token-denominated invoice straight from their wallet.
     ///
     /// Same guarantee as `settle_payment`: the amount rides in the PDA seeds,
@@ -109,8 +103,6 @@ pub mod payvand {
     pub fn close_token_payment(ctx: Context<CloseTokenPayment>, amount: u64) -> Result<()> {
         instructions::token::close_token_payment_handler(ctx, amount)
     }
-
-    // ---- token allowance --------------------------------------------------
 
     /// Buyer opens (or tops up) this month's budget for one token and
     /// registers a session key for it. One wallet signature per token; after

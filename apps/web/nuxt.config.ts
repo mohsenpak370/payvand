@@ -100,7 +100,6 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-06-30',
 
   nitro: {
-    // Prerendered guide pages, one per markdown file in content/learn.
     prerender: {
       routes: ['/learn', ...learnGuides]
     },

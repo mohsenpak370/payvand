@@ -20,7 +20,6 @@ const codes = ref<KeptCode[]>([])
 const loading = ref(true)
 const failure = ref('')
 
-/** A saved code as a row: what it is for, what it charges, where it opens. */
 function describe(saved: SavedPayment): KeptCode | null {
   try {
     const payload = parseQrPayload(saved.payload)

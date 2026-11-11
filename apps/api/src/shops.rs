@@ -88,7 +88,6 @@ fn required_text(raw: &str, max: usize, field: &str) -> ApiResult<String> {
     Ok(value)
 }
 
-/// Trimmed, optional text with the same limit.
 fn optional_text(raw: &str, max: usize, field: &str) -> ApiResult<String> {
     let value = raw.trim().to_string();
     if value.chars().count() > max {
@@ -331,7 +330,6 @@ pub async fn update(
     }))
 }
 
-/// Adds a product to one of the account's shops.
 pub async fn create_product(
     State(state): State<crate::AppState>,
     headers: HeaderMap,

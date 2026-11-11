@@ -339,8 +339,6 @@ export function useBudget() {
     throw new Error(appT('errors.notConfirmed'))
   }
 
-  // ---- token allowances ---------------------------------------------------
-
   /** The token account a budget PDA owns for one mint: where its tokens sit. */
   async function tokenVault(budgetPda: Address, mint: Address): Promise<Address> {
     return await deriveAssociatedTokenAddress(budgetPda, mint)
