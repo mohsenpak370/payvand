@@ -211,6 +211,34 @@ html[lang='fa-IR'] {
 }
 
 /*
+ * Arrows carry a direction, so in Persian they point the way the page reads:
+ * "onward" has to aim left, "back" right, and the two door icons open the same
+ * way they would in a Persian interface. Icons are masks here, so a horizontal
+ * flip mirrors the shape exactly. It is the standalone `scale` property rather
+ * than a transform, which leaves a component's own transform (a spinner's spin,
+ * a hover nudge) intact. Vertical chevrons and glyph-only icons stay as drawn.
+ */
+[dir='rtl']
+  :is(
+    .i-lucide\:arrow-left,
+    .i-lucide\:arrow-right,
+    .i-lucide\:arrow-up-left,
+    .i-lucide\:arrow-up-right,
+    .i-lucide\:arrow-down-left,
+    .i-lucide\:arrow-down-right,
+    .i-lucide\:chevron-left,
+    .i-lucide\:chevron-right,
+    .i-lucide\:chevrons-left,
+    .i-lucide\:chevrons-right,
+    .i-lucide\:move-left,
+    .i-lucide\:move-right,
+    .i-lucide\:log-in,
+    .i-lucide\:log-out
+  ) {
+  scale: -1 1;
+}
+
+/*
  * Primary surfaces keep their light-mode colour in the dark theme: the logo's
  * blue, with white on it. Nuxt UI steps primary up to the 400 tint in dark and
  * turns its label near-black, which leaves the one action a screen is about
