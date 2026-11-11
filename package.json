@@ -14,7 +14,7 @@
     "anchor:keys": "cd apps/contracts && anchor keys list",
     "prepare": "husky"
   },
-  "packageManager": "pnpm@12.14.0",
+  "packageManager": "pnpm@12.18.0",
   "devDependencies": {
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0"
