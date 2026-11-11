@@ -15,6 +15,11 @@
       "title": "Payvand — Solana QR payments",
       "description": "Payvand makes taking payment simple: sellers create a QR code, customers scan it and pay from their wallet — no card reader, no account setup for the customer."
     },
+    "update": {
+      "title": "A new version is ready",
+      "description": "This page keeps working as it is. Reload when you are done here to pick up the update.",
+      "action": "Reload"
+    },
     "nav": {
       "primary": "Primary",
       "account": "Account",

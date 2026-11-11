@@ -209,7 +209,11 @@ export default defineNuxtConfig({
   // deliberately caches no navigation responses, because an invoice or a
   // payment status read from a cache would be a stale one.
   pwa: {
-    registerType: 'autoUpdate',
+    // A new deployment installs a new service worker. Taking over immediately
+    // reloads the page under whoever is on it, which on the checkout can land
+    // mid-payment; the update waits instead and app/plugins/update.client.ts
+    // offers it.
+    registerType: 'prompt',
     manifest: {
       id: '/',
       // The launch splash prints this under the icon and truncates anything
