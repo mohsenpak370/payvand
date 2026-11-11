@@ -198,6 +198,15 @@ const shopChoices = computed(() => shops.value.map(shop => ({ label: shop.name, 
 const savedShop = computed(() => shops.value.find(shop => shop.id === savedShopId.value))
 
 /**
+ * Printing is the seller's own action: they are the one putting the code on a
+ * wall. A buyer paying a one-time invoice has nothing to print, so the button
+ * only shows to the account that made the code.
+ */
+const isMyCode = computed(
+  () => Boolean(user.value && payload.value?.seller_user && user.value.id === payload.value.seller_user)
+)
+
+/**
  * The code a Solana wallet understands, offered as a link for someone whose
  * wallet registers the `solana:` scheme (Phantom and Solflare both do). The
  * page stays the default: this is the escape hatch, not the main path.
@@ -276,6 +285,9 @@ async function saveToShop() {
  * The print dialog is the only Save-as-PDF the browsers agree on, and it keeps
  * the code as vectors — a rasterised PDF would scan badly once printed at
  * receipt size. The page is styled for paper, so this just opens it.
+ *
+ * Only the seller's own code reaches this: the button beside it is behind
+ * `isMyCode`, and a buyer has nothing to fix to a wall.
  */
 function saveAsPdf() {
   window.print()
@@ -755,6 +767,7 @@ useSeoMeta({
             />
           </template>
           <UButton
+            v-if="isMyCode"
             :label="$t('checkout.save.asPdf')"
             icon="i-lucide-file-down"
             color="neutral"

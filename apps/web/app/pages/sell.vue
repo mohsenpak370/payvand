@@ -13,6 +13,12 @@ import { cartTotalLamports } from '~/composables/useShop'
 
 const { t } = useI18n()
 
+// The code is drawn at 320 and PaymentQr pads it by p-3 (0.75rem) a side, so
+// the piece of paper the seller holds up is 344 wide. The button that presents
+// it takes that width rather than the card's, so the two line up.
+const CODE_SIZE = 320
+const codePaperWidth = `${CODE_SIZE + 24}px`
+
 useSeoMeta({ title: t('sell.metaTitle') })
 
 definePageMeta({ middleware: 'auth' })
@@ -671,22 +677,28 @@ onBeforeUnmount(() => {
           v-if="qrPayload && record"
           class="flex flex-col items-center gap-4"
         >
-          <PaymentQr
-            :payload="qrPayload"
-            :size="320"
-          />
+          <!-- The code and the way to present it share one width. -->
+          <div
+            class="flex w-full flex-col items-center gap-4"
+            :style="{ maxWidth: codePaperWidth }"
+          >
+            <PaymentQr
+              :payload="qrPayload"
+              :size="CODE_SIZE"
+            />
 
-          <!--
-            The seller is the one showing the code, usually on this phone, so
-            the way to hand it over is here rather than on the payment page the
-            customer would have to open first.
-          -->
-          <UButton
-            :label="$t('sell.showToCustomer')"
-            icon="i-lucide-maximize"
-            block
-            @click="presentOpen = true"
-          />
+            <!--
+              The seller is the one showing the code, usually on this phone, so
+              the way to hand it over is here rather than on the payment page the
+              customer would have to open first.
+            -->
+            <UButton
+              :label="$t('sell.showToCustomer')"
+              icon="i-lucide-maximize"
+              block
+              @click="presentOpen = true"
+            />
+          </div>
 
           <p class="text-center text-xs text-muted">
             {{ $t('sell.scanHint') }}

@@ -160,6 +160,21 @@
 }
 
 /*
+ * Primary surfaces keep their light-mode colour in the dark theme: the logo's
+ * blue, with white on it. Nuxt UI steps primary up to the 400 tint in dark and
+ * turns its label near-black, which leaves the one action a screen is about
+ * looking like a pale chip next to the neutral buttons. Only solid primary
+ * surfaces carry both classes, so soft tints and links are untouched.
+ */
+.dark {
+  --ui-primary: var(--ui-color-primary-500);
+}
+
+.dark .bg-primary.text-inverted {
+  color: #fff;
+}
+
+/*
  * A printed payment is the receipt, so it prints as the page looks — page
  * background, bordered card, coloured text — instead of being washed out to a
  * blank sheet. Browsers drop backgrounds from print jobs unless told to keep
