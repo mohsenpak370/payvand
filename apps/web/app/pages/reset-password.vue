@@ -3,7 +3,7 @@ const { t } = useI18n()
 
 useSeoMeta({ title: t('resetPassword.metaTitle') })
 
-definePageMeta({ header: false, footer: false })
+definePageMeta({ layout: 'blank' })
 
 const route = useRoute()
 const { resetPassword } = useAuth()

@@ -2,7 +2,7 @@
 // Links handed out before the checkout had its own path carry the invoice in
 // `?p=`; they are already printed and shared, so they must keep working. The
 // canonical address is `/p/<token>`, which keeps the code short.
-definePageMeta({ header: false, footer: false })
+definePageMeta({ layout: 'blank' })
 
 const route = useRoute()
 const embedded = computed(() => {

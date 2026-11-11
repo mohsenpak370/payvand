@@ -5,7 +5,7 @@ const { t } = useI18n()
 
 useSeoMeta({ title: t('signup.metaTitle') })
 
-definePageMeta({ layout: 'auth', header: false, footer: false })
+definePageMeta({ layout: 'auth' })
 
 const route = useRoute()
 const router = useRouter()

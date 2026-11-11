@@ -2,9 +2,9 @@
 const { t } = useI18n()
 const { cluster } = useRuntimeConfig().public
 
-// The app header is hidden on these pages (see `header: false` in their
-// page meta), so the brand row carries the raw cluster name itself; the copy
-// below says what that cluster means for whoever is about to sign in.
+// This layout has no app header, so the brand row carries the raw cluster
+// name itself; the copy below says what that cluster means for whoever is
+// about to sign in.
 const mode = computed(() =>
   cluster === 'devnet' || cluster === 'testnet'
     ? t('common.testMode')
@@ -31,12 +31,15 @@ const points = computed(() => [
 </script>
 
 <template>
-  <div class="grid lg:min-h-[calc(100svh_-_var(--ui-header-height))] lg:grid-cols-2">
+  <UMain
+    class="grid lg:min-h-[calc(100svh_-_var(--ui-header-height))] lg:grid-cols-2"
+    :style="{ '--ui-header-height': '0px' }"
+  >
     <!--
-      Fill exactly what UMain gives us: its own min-height is
-      `calc(100vh - var(--ui-header-height))`, so matching it keeps the
-      split flush with the app shell instead of leaving a dead band above
-      the footer. The form column still grows past it on short viewports.
+      UMain's own min-height is `calc(100vh - var(--ui-header-height))`; with
+      the header height zeroed here it fills the viewport, so the split stays
+      flush with the app shell instead of leaving a dead band above the
+      footer. The form column still grows past it on short viewports.
     -->
     <!--
       Brand half of the split. Desktop only: below `lg` the form column
@@ -159,5 +162,5 @@ const points = computed(() => [
         <slot />
       </div>
     </section>
-  </div>
+  </UMain>
 </template>
