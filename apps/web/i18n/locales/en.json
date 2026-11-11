@@ -11,6 +11,10 @@
   },
   "app": {
     "brandHome": "Payvand home",
+    "brandWord": {
+      "lead": "Pay",
+      "rest": "vand"
+    },
     "meta": {
       "title": "Payvand — Solana QR payments",
       "description": "Payvand makes taking payment simple: sellers create a QR code, customers scan it and pay from their wallet — no card reader, no account setup for the customer."

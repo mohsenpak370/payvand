@@ -211,19 +211,6 @@ html[lang='fa-IR'] {
 }
 
 /*
- * Persian mirrors the page, but not everything in it. The header keeps its own
- * left-to-right layout — the mark, the cluster pill and the nav order are the
- * design, not a translation — and a button keeps the icon-first order and
- * padding it was built with. The copy inside still shapes right to left; only
- * the arrangement around it stays put.
- */
-[dir='rtl'] header,
-[dir='rtl'] button[data-slot='base'],
-[dir='rtl'] a[data-slot='base'] {
-  direction: ltr;
-}
-
-/*
  * Primary surfaces keep their light-mode colour in the dark theme: the logo's
  * blue, with white on it. Nuxt UI steps primary up to the 400 tint in dark and
  * turns its label near-black, which leaves the one action a screen is about

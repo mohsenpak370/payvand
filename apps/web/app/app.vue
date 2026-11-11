@@ -113,8 +113,13 @@ const accountMenu = computed(() => [
             standing beside it, matching the brand row on the auth pages, so
             the cluster reads as a tag on the name rather than a third item.
           -->
+          <!--
+            Split in two so the first syllable keeps the brand colour, and
+            translated as a pair: Persian reads its own name here rather than
+            the Latin one ("پی" + "وند").
+          -->
           <span class="relative text-2xl font-bold">
-            <span class="text-primary">Pay</span>vand
+            <span class="text-primary">{{ $t('app.brandWord.lead') }}</span>{{ $t('app.brandWord.rest') }}
             <UBadge
               color="success"
               variant="subtle"
