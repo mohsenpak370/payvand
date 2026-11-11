@@ -3,6 +3,8 @@ const emit = defineEmits<{
   decoded: [text: string]
 }>()
 
+const { t } = useI18n()
+
 const videoRef = ref<HTMLVideoElement>()
 const message = ref('')
 const scanning = ref(false)
@@ -80,7 +82,7 @@ async function start() {
   // permission prompt will never appear. Say so instead of pretending the
   // user denied something.
   if (!navigator.mediaDevices?.getUserMedia) {
-    message.value = 'Camera needs a secure connection — open this page over https (or localhost).'
+    message.value = t('scanner.insecure')
     return
   }
 
@@ -91,7 +93,7 @@ async function start() {
    */
   waitNotice = window.setTimeout(() => {
     if (!scanning.value) {
-      message.value = 'The camera has not started. Allow camera access for this site, then try again.'
+      message.value = t('scanner.notStarted')
     }
   }, 15_000)
 
@@ -113,7 +115,7 @@ async function start() {
     })
   } catch {
     clearTimeout(waitNotice)
-    message.value = 'Camera permission was denied or no camera is available.'
+    message.value = t('scanner.denied')
     return
   }
   clearTimeout(waitNotice)
@@ -225,8 +227,10 @@ async function tick(now: number) {
          * the frame, which is the one thing they can fix.
          */
         hint.value = rxingUnavailable
-          ? 'This browser cannot read payment codes. Open the link with your camera app instead — it goes to the same page.'
-          : `No code yet${cameraLabel ? ` (camera ${cameraLabel})` : ''} — move closer, so it fills the frame.`
+          ? t('scanner.noDecoder')
+          : cameraLabel
+            ? t('scanner.noCodeWithCamera', { camera: cameraLabel })
+            : t('scanner.noCode')
       }
     } catch {
       // A frame that cannot be read is no reason to give up the camera.
@@ -409,7 +413,7 @@ defineExpose({ start, stop })
         v-if="scanning && framesFlowing"
         class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-4 pt-10 pb-4 text-center text-xs text-white/80"
       >
-        {{ hint || 'Point the camera at the payment code' }}
+        {{ hint || $t('scanner.pointCamera') }}
       </p>
 
       <!--
@@ -427,11 +431,11 @@ defineExpose({ start, stop })
             :class="['size-8 text-white/60', message || playBlocked ? '' : 'animate-spin']"
           />
           <p class="text-sm text-white/70">
-            {{ message || (playBlocked ? 'The camera is waiting for a tap to start.' : 'Starting the camera…') }}
+            {{ message || (playBlocked ? $t('scanner.waitingTap') : $t('scanner.starting')) }}
           </p>
           <UButton
             v-if="message"
-            label="Try again"
+            :label="$t('scanner.tryAgain')"
             size="sm"
             color="neutral"
             variant="solid"
@@ -440,7 +444,7 @@ defineExpose({ start, stop })
           />
           <UButton
             v-else-if="playBlocked"
-            label="Start the camera"
+            :label="$t('scanner.startCamera')"
             size="sm"
             color="neutral"
             variant="solid"

@@ -6,6 +6,7 @@ import type { Product } from '~/composables/useShop'
 // and turns a cart of it into a receipt.
 const props = defineProps<{ shopId: string }>()
 
+const { t } = useI18n()
 const api = useShopApi()
 
 const shopName = ref('')
@@ -63,7 +64,7 @@ async function load() {
     shopDescription.value = shop.description
     products.value = shop.products
   } catch (error) {
-    loadFailure.value = apiErrorMessage(error, 'Could not open this shop.')
+    loadFailure.value = apiErrorMessage(error, t('shopEditor.loadFailure'))
   } finally {
     loading.value = false
   }
@@ -81,7 +82,7 @@ async function saveShop() {
     shopName.value = shop.name
     shopDescription.value = shop.description
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not save the shop.')
+    failure.value = apiErrorMessage(error, t('shopEditor.saveFailure'))
   } finally {
     savingShop.value = false
   }
@@ -124,7 +125,7 @@ async function submitProduct() {
     }
     resetForm()
   } catch (error) {
-    productFailure.value = apiErrorMessage(error, 'Could not save the product.')
+    productFailure.value = apiErrorMessage(error, t('shopEditor.productFailureTitle'))
   } finally {
     productBusy.value = false
   }
@@ -132,7 +133,7 @@ async function submitProduct() {
 
 async function removeProduct(product: Product) {
   const confirmed = window.confirm(
-    `Remove “${product.name}”?\n\nInvoices already created keep their receipt — this only takes it off the menu.`
+    t('shopEditor.removeConfirm', { name: product.name })
   )
   if (!confirmed) return
 
@@ -142,8 +143,13 @@ async function removeProduct(product: Product) {
     products.value = products.value.filter(item => item.id !== product.id)
     if (editingId.value === product.id) resetForm()
   } catch (error) {
-    productFailure.value = apiErrorMessage(error, 'Could not remove the product.')
+    productFailure.value = apiErrorMessage(error, t('shopEditor.productFailureTitle'))
   }
+}
+
+/** "1 product" / "2 products", in whatever forms the locale defines. */
+function productCount(count: number) {
+  return t('shopEditor.products', { count }, count)
 }
 
 onMounted(load)
@@ -156,7 +162,7 @@ onMounted(load)
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      title="Could not open this shop"
+      :title="$t('shopEditor.loadFailureTitle')"
       :description="loadFailure"
     />
 
@@ -164,7 +170,7 @@ onMounted(load)
       v-else-if="loading"
       class="py-8 text-center text-sm text-muted"
     >
-      Reading your shop…
+      {{ $t('shopEditor.loading') }}
     </p>
 
     <template v-else>
@@ -173,10 +179,10 @@ onMounted(load)
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Shop details
+                {{ $t('shopEditor.detailsTitle') }}
               </h2>
               <p class="text-sm text-muted">
-                What this shop is called, and what it sells in a line.
+                {{ $t('shopEditor.detailsSubtitle') }}
               </p>
             </div>
             <UBadge
@@ -184,7 +190,7 @@ onMounted(load)
               variant="subtle"
               class="shrink-0 whitespace-nowrap"
             >
-              {{ products.length }} {{ products.length === 1 ? 'product' : 'products' }}
+              {{ productCount(products.length) }}
             </UBadge>
           </div>
         </template>
@@ -193,18 +199,18 @@ onMounted(load)
           <!-- Each field on its own row: the name and the description are two
                things to write, not one line to fill. -->
           <div class="flex flex-col gap-3">
-            <UFormField label="Shop name">
+            <UFormField :label="$t('shopEditor.nameLabel')">
               <UInput
                 v-model="shopName"
                 class="w-full"
                 :maxlength="48"
               />
             </UFormField>
-            <UFormField label="Description">
+            <UFormField :label="$t('shopEditor.descriptionLabel')">
               <UInput
                 v-model="shopDescription"
                 class="w-full"
-                placeholder="Flat whites and fresh bread"
+                :placeholder="$t('shopEditor.descriptionPlaceholder')"
                 :maxlength="160"
               />
             </UFormField>
@@ -215,12 +221,12 @@ onMounted(load)
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not save the shop"
+            :title="$t('shopEditor.saveFailureTitle')"
             :description="failure"
           />
 
           <UButton
-            label="Save shop"
+            :label="$t('shopEditor.saveShop')"
             icon="i-lucide-check"
             :loading="savingShop"
             :disabled="!shopName.trim() || savingShop"
@@ -235,13 +241,13 @@ onMounted(load)
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Products
+                {{ $t('shopEditor.productsTitle') }}
               </h2>
               <p class="text-sm text-muted">
-                What the payment page offers as a receipt.
+                {{ $t('shopEditor.productsSubtitle') }}
               </p>
             </div>
-            <span class="text-xs text-muted">Prices are charged in SOL</span>
+            <span class="text-xs text-muted">{{ $t('shopEditor.pricesInSol') }}</span>
           </div>
         </template>
 
@@ -282,7 +288,7 @@ onMounted(load)
                   variant="ghost"
                   size="xs"
                   square
-                  :aria-label="`Edit ${product.name}`"
+                  :aria-label="$t('shopEditor.editAria', { name: product.name })"
                   @click="editProduct(product)"
                 />
                 <UButton
@@ -291,7 +297,7 @@ onMounted(load)
                   variant="ghost"
                   size="xs"
                   square
-                  :aria-label="`Remove ${product.name}`"
+                  :aria-label="$t('shopEditor.removeAria', { name: product.name })"
                   @click="removeProduct(product)"
                 />
               </div>
@@ -301,20 +307,20 @@ onMounted(load)
             v-else
             class="text-sm text-muted"
           >
-            No products yet — add the first one below.
+            {{ $t('shopEditor.emptyProducts') }}
           </p>
 
           <div class="flex flex-col gap-3 border-t border-default pt-4">
             <div class="grid gap-3 sm:grid-cols-2">
-              <UFormField label="Product">
+              <UFormField :label="$t('shopEditor.productLabel')">
                 <UInput
                   v-model="productName"
                   class="w-full"
-                  placeholder="Flat white"
+                  :placeholder="$t('shopEditor.productPlaceholder')"
                   :maxlength="32"
                 />
               </UFormField>
-              <UFormField label="Price">
+              <UFormField :label="$t('shopEditor.priceLabel')">
                 <div class="flex items-stretch gap-2">
                   <UInput
                     v-model="productPrice"
@@ -322,25 +328,25 @@ onMounted(load)
                     min="0"
                     :step="priceUnit === 'sol' ? '0.001' : '0.01'"
                     class="min-w-0 flex-1"
-                    placeholder="0.05"
+                    :placeholder="$t('shopEditor.pricePlaceholder')"
                   />
                   <USelect
                     v-model="priceUnit"
                     :items="priceUnits"
                     class="w-24"
-                    aria-label="Unit of the price"
+                    :aria-label="$t('shopEditor.priceUnitAria')"
                   />
                 </div>
               </UFormField>
               <UFormField
-                label="Details"
-                help="Optional — size, what is in it, anything the customer should know."
+                :label="$t('shopEditor.detailsLabel')"
+                :help="$t('shopEditor.detailsHelp')"
                 class="sm:col-span-2"
               >
                 <UInput
                   v-model="productDetails"
                   class="w-full"
-                  placeholder="Large, oat milk"
+                  :placeholder="$t('shopEditor.detailsPlaceholder')"
                   :maxlength="160"
                 />
               </UFormField>
@@ -350,7 +356,7 @@ onMounted(load)
               v-if="priceUnit !== 'sol' && !rates"
               class="text-xs text-muted"
             >
-              Reading today's rate…
+              {{ $t('shopEditor.readingRate') }}
             </p>
 
             <UAlert
@@ -358,13 +364,13 @@ onMounted(load)
               color="error"
               variant="subtle"
               icon="i-lucide-circle-alert"
-              title="Could not save the product"
+              :title="$t('shopEditor.productFailureTitle')"
               :description="productFailure"
             />
 
             <div class="flex flex-wrap items-center gap-2">
               <UButton
-                :label="editingId ? 'Save changes' : 'Add product'"
+                :label="editingId ? $t('shopEditor.saveChanges') : $t('shopEditor.addProduct')"
                 :icon="editingId ? 'i-lucide-check' : 'i-lucide-plus'"
                 :loading="productBusy"
                 :disabled="!canSubmitProduct"
@@ -372,7 +378,7 @@ onMounted(load)
               />
               <UButton
                 v-if="editingId"
-                label="Cancel"
+                :label="$t('common.cancel')"
                 color="neutral"
                 variant="ghost"
                 @click="resetForm"

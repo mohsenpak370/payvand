@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { t } = useI18n()
 const route = useRoute()
 
 const { data: guide } = await useAsyncData(route.path, () =>
@@ -6,7 +7,7 @@ const { data: guide } = await useAsyncData(route.path, () =>
 )
 
 if (!guide.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Guide not found', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('learn.guideNotFound'), fatal: true })
 }
 
 // Previous/next inside the collection, which is what makes the guides read as
@@ -16,7 +17,7 @@ const { data: surround } = await useAsyncData(`${route.path}-surround`, () =>
 )
 
 useSeoMeta({
-  title: `${guide.value.title} — Payvand`,
+  title: t('learn.guideMetaTitle', { title: guide.value.title }),
   description: guide.value.description
 })
 </script>
@@ -44,7 +45,7 @@ useSeoMeta({
           name="i-lucide-arrow-left"
           class="size-4 shrink-0"
         />
-        All guides
+        {{ $t('learn.allGuides') }}
       </NuxtLink>
 
       <UPageHeader
@@ -57,7 +58,7 @@ useSeoMeta({
           #headline
         >
           <UBadge
-            label="Technical discussion"
+            :label="$t('learn.technicalDiscussion')"
             icon="i-lucide-cpu"
             color="neutral"
             variant="subtle"

@@ -1,7 +1,9 @@
 <script setup lang="ts">
+const { t } = useI18n()
+
 useSeoMeta({
-  title: 'Learn — Payvand',
-  description: 'Crypto explained to someone who has never used it: how a blockchain works, what Solana is, what a wallet does, and how to stay safe. No prior knowledge assumed.'
+  title: t('learn.metaTitle'),
+  description: t('learn.metaDescription')
 })
 
 // Reading order is the `order` field, not the filenames, so guides can be
@@ -13,36 +15,36 @@ const { data: guides } = await useAsyncData('learn-guides', () =>
 const groups = computed(() => [
   {
     key: 'basics',
-    title: 'Start here: the ideas',
-    description: 'What money on a blockchain actually is, in the order that makes sense. No prior knowledge assumed.',
+    title: t('learn.groups.basics.title'),
+    description: t('learn.groups.basics.description'),
     icon: 'i-lucide-book-open',
     items: (guides.value ?? []).filter(guide => guide.category === 'basics')
   },
   {
     key: 'solana',
-    title: 'Solana, in plain words',
-    description: 'The network under Payvand: why it is fast, what a payment costs, and when it is really done.',
+    title: t('learn.groups.solana.title'),
+    description: t('learn.groups.solana.description'),
     icon: 'i-lucide-zap',
     items: (guides.value ?? []).filter(guide => guide.category === 'solana')
   },
   {
     key: 'payvand',
-    title: 'Using Payvand',
-    description: 'The monthly allowance, the practice money, and what each button on the screen does.',
+    title: t('learn.groups.payvand.title'),
+    description: t('learn.groups.payvand.description'),
     icon: 'i-lucide-qr-code',
     items: (guides.value ?? []).filter(guide => guide.category === 'payvand')
   },
   {
     key: 'safety',
-    title: 'Staying safe',
-    description: 'The handful of habits that prevent almost every crypto loss.',
+    title: t('learn.groups.safety.title'),
+    description: t('learn.groups.safety.description'),
     icon: 'i-lucide-shield-check',
     items: (guides.value ?? []).filter(guide => guide.category === 'safety')
   },
   {
     key: 'technical',
-    title: 'Under the hood (technical)',
-    description: 'The actual mechanics — transaction bytes, PDAs, shreds, certificates — each with links to the official docs.',
+    title: t('learn.groups.technical.title'),
+    description: t('learn.groups.technical.description'),
     icon: 'i-lucide-cpu',
     items: (guides.value ?? []).filter(guide => guide.category === 'technical')
   }
@@ -52,9 +54,9 @@ const groups = computed(() => [
 <template>
   <div>
     <UPageHero
-      headline="Learn"
-      title="Crypto, explained like a person"
-      description="Short guides for someone who has never used a wallet. Start with what a blockchain is, then what Solana does, then how this app and its allowance work — and read the safety guides before you use real money."
+      :headline="$t('learn.hero.headline')"
+      :title="$t('learn.hero.title')"
+      :description="$t('learn.hero.description')"
       :ui="{ title: 'leading-tight' }"
     />
 
@@ -86,7 +88,7 @@ const groups = computed(() => [
             #footer
           >
             <UBadge
-              label="Technical"
+              :label="$t('learn.technicalBadge')"
               icon="i-lucide-cpu"
               color="neutral"
               variant="subtle"
@@ -99,8 +101,7 @@ const groups = computed(() => [
 
     <UPageSection>
       <p class="text-muted text-sm">
-        These guides are general education about how the tools work — not financial advice, and
-        not a promise about the price of anything.
+        {{ $t('learn.disclaimer') }}
       </p>
     </UPageSection>
   </div>

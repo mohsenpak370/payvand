@@ -59,7 +59,7 @@ export type CheckoutStage
  */
 export async function verifyPaymentCode(parsed: PaymentQrPayload): Promise<PaymentOption[]> {
   const offered = paymentOptions(parsed)
-  if (!offered.length) throw new Error('This payment code has no price.')
+  if (!offered.length) throw new Error(appT('errors.noPrice'))
 
   for (const option of offered) {
     const derived = option.currency === 'sol'
@@ -75,7 +75,7 @@ export async function verifyPaymentCode(parsed: PaymentQrPayload): Promise<Payme
           option.amount
         )
     if (derived !== option.payment_pda) {
-      throw new Error('These details do not match the code. Ask the seller for a new link.')
+      throw new Error(appT('errors.detailsMismatch'))
     }
   }
 
@@ -370,7 +370,7 @@ export function usePaymentCheckout() {
         void refreshRecord()
       }, STATUS_POLL_MS)
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Could not read this payment link.'
+      error.value = cause instanceof Error ? cause.message : appT('errors.unreadableLink')
     } finally {
       loading.value = false
     }
@@ -458,7 +458,7 @@ export function usePaymentCheckout() {
         endpoint: current.endpoint
       })
     } catch (cause) {
-      failure.value = cause instanceof Error ? cause.message : 'The payment could not be sent.'
+      failure.value = cause instanceof Error ? cause.message : appT('errors.notSent')
     } finally {
       busy.value = false
     }
@@ -488,7 +488,7 @@ export function usePaymentCheckout() {
       activePda.value = (await addressFor(selected.value, payableAmount.value)).toString()
       await refreshBudget()
     } catch (cause) {
-      discountError.value = apiErrorMessage(cause, 'That discount code could not be applied.')
+      discountError.value = apiErrorMessage(cause, appT('errors.discountFailed'))
     } finally {
       discountBusy.value = false
     }

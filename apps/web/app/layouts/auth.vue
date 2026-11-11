@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { t } = useI18n()
 const { cluster } = useRuntimeConfig().public
 
 // The app header is hidden on these pages (see `header: false` in their
@@ -6,27 +7,27 @@ const { cluster } = useRuntimeConfig().public
 // below says what that cluster means for whoever is about to sign in.
 const mode = computed(() =>
   cluster === 'devnet' || cluster === 'testnet'
-    ? 'Test mode — payments use free test SOL'
-    : 'Live — accepting real SOL'
+    ? t('common.testMode')
+    : t('common.liveMode')
 )
 
-const points = [
+const points = computed(() => [
   {
     icon: 'i-lucide-qr-code',
-    title: 'A payment code in seconds',
-    description: 'Enter an amount and show the QR code — that is the whole checkout.'
+    title: t('authLayout.points.code.title'),
+    description: t('authLayout.points.code.description')
   },
   {
     icon: 'i-lucide-scan-line',
-    title: 'Your customer scans and pays',
-    description: 'They approve from their own wallet. No card reader, no app to install.'
+    title: t('authLayout.points.scan.title'),
+    description: t('authLayout.points.scan.description')
   },
   {
     icon: 'i-lucide-zap',
-    title: 'Paid while they are still there',
-    description: 'The code flips to Paid and you both watch it happen.'
+    title: t('authLayout.points.paid.title'),
+    description: t('authLayout.points.paid.description')
   }
-]
+])
 </script>
 
 <template>
@@ -61,7 +62,7 @@ const points = [
           -->
           <NuxtLink
             to="/"
-            aria-label="Payvand home"
+            :aria-label="$t('app.brandHome')"
             class="focus-visible:outline-3 outline-blue-300/60 flex items-center gap-3 rounded-md"
           >
             <img
@@ -97,11 +98,10 @@ const points = [
             {{ mode }}
           </p>
           <h1 class="mt-3 text-4xl leading-tight font-bold xl:text-5xl">
-            Get paid on Solana with a QR code.
+            {{ $t('authLayout.headline') }}
           </h1>
           <p class="mt-4 text-base leading-relaxed text-white/70">
-            A seller creates a payment code in seconds, the customer scans it
-            with their phone and approves the payment — that's it.
+            {{ $t('authLayout.subtitle') }}
           </p>
 
           <ul class="mt-10 flex flex-col gap-5">
@@ -132,7 +132,7 @@ const points = [
         <div class="mb-8 flex items-center gap-2.5 lg:hidden">
           <NuxtLink
             to="/"
-            aria-label="Payvand home"
+            :aria-label="$t('app.brandHome')"
             class="focus-visible:outline-3 outline-primary/25 flex items-center gap-2.5 rounded-md"
           >
             <img

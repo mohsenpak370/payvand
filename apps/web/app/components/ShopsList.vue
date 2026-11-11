@@ -4,6 +4,7 @@ import type { ShopWithProducts } from '~/composables/useShop'
 // A seller may keep several shops — a café and a bakery. The /shops page lists
 // them; each one opens on its own page, where its catalogue is edited. The
 // form lives in a modal so an empty page is not a form to fill in by accident.
+const { t } = useI18n()
 const api = useShopApi()
 
 const shops = ref<ShopWithProducts[]>([])
@@ -23,7 +24,7 @@ async function load() {
   try {
     shops.value = await api.list()
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not load your shops.')
+    failure.value = apiErrorMessage(error, t('shopsList.loadFailure'))
   } finally {
     loading.value = false
   }
@@ -47,10 +48,15 @@ async function createShop() {
     formOpen.value = false
     await navigateTo(`/shops/${shop.id}`)
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not create the shop.')
+    failure.value = apiErrorMessage(error, t('shopsList.createFailure'))
   } finally {
     creating.value = false
   }
+}
+
+/** "1 product" / "2 products", in whatever forms the locale defines. */
+function productCount(count: number) {
+  return t('shopsList.products', { count }, count)
 }
 
 onMounted(load)
@@ -62,14 +68,14 @@ onMounted(load)
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <h2 class="text-base font-semibold">
-            Your shops
+            {{ $t('shopsList.title') }}
           </h2>
           <p class="text-sm text-muted">
-            Create and save the products you sell, then use them to create payments.
+            {{ $t('shopsList.subtitle') }}
           </p>
         </div>
         <UButton
-          label="New shop"
+          :label="$t('shopsList.newShop')"
           icon="i-lucide-plus"
           size="sm"
           class="shrink-0"
@@ -84,7 +90,7 @@ onMounted(load)
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
-        title="Shop error"
+        :title="$t('shopsList.errorTitle')"
         :description="failure"
       />
 
@@ -92,7 +98,7 @@ onMounted(load)
         v-if="loading"
         class="py-4 text-center text-sm text-muted"
       >
-        Reading your shops…
+        {{ $t('shopsList.loading') }}
       </p>
 
       <template v-else>
@@ -118,13 +124,12 @@ onMounted(load)
               <!-- One line even on a narrow phone: "2 products" is a count, not
                    a phrase worth wrapping. -->
               <p class="mt-0.5 text-xs whitespace-nowrap text-muted">
-                {{ shop.products.length }}
-                {{ shop.products.length === 1 ? 'product' : 'products' }}
+                {{ productCount(shop.products.length) }}
               </p>
             </div>
             <UButton
               :to="`/shops/${shop.id}`"
-              label="Open shop"
+              :label="$t('shopsList.openShop')"
               icon="i-lucide-arrow-right"
               trailing
               color="neutral"
@@ -138,36 +143,36 @@ onMounted(load)
           v-else
           class="text-sm text-muted"
         >
-          No shops yet — create one to save your first products.
+          {{ $t('shopsList.empty') }}
         </p>
       </template>
     </div>
 
     <UModal
       v-model:open="formOpen"
-      title="New shop"
-      description="A shop holds the products you sell. You can add products once it exists."
+      :title="$t('shopsList.newShop')"
+      :description="$t('shopsList.modalDescription')"
       :ui="{ content: 'max-w-md' }"
     >
       <template #body>
         <div class="flex flex-col gap-4">
-          <UFormField label="Shop name">
+          <UFormField :label="$t('shopsList.nameLabel')">
             <UInput
               v-model="name"
               class="w-full"
-              placeholder="Corner Shop"
+              :placeholder="$t('shopsList.namePlaceholder')"
               :maxlength="48"
               autofocus
             />
           </UFormField>
           <UFormField
-            label="Short description"
-            help="Optional — a line about what the shop sells."
+            :label="$t('shopsList.descriptionLabel')"
+            :help="$t('shopsList.descriptionHelp')"
           >
             <UInput
               v-model="description"
               class="w-full"
-              placeholder="Flat whites and fresh bread"
+              :placeholder="$t('shopsList.descriptionPlaceholder')"
               :maxlength="160"
             />
           </UFormField>
@@ -177,7 +182,7 @@ onMounted(load)
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not create the shop"
+            :title="$t('shopsList.createFailure')"
             :description="failure"
           />
         </div>
@@ -186,13 +191,13 @@ onMounted(load)
       <template #footer>
         <div class="flex w-full items-center justify-end gap-2">
           <UButton
-            label="Cancel"
+            :label="$t('common.cancel')"
             color="neutral"
             variant="ghost"
             @click="formOpen = false"
           />
           <UButton
-            label="Create shop"
+            :label="$t('shopsList.createShop')"
             icon="i-lucide-store"
             :loading="creating"
             :disabled="!canCreate"

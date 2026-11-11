@@ -62,7 +62,7 @@ async function canHoldSessionKey(): Promise<boolean> {
 
 function openDatabase(): Promise<IDBDatabase> {
   if (typeof indexedDB === 'undefined') {
-    return Promise.reject(new Error('IndexedDB is unavailable.'))
+    return Promise.reject(new Error(appT('errors.indexedDbUnavailable')))
   }
   databasePromise ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
@@ -72,7 +72,7 @@ function openDatabase(): Promise<IDBDatabase> {
       }
     }
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('Could not open the key store.'))
+    request.onerror = () => reject(request.error ?? new Error(appT('errors.keyStoreOpen')))
   })
   return databasePromise
 }
@@ -86,9 +86,9 @@ async function withStore<T>(
     const transaction = database.transaction(STORE_NAME, mode)
     const request = run(transaction.objectStore(STORE_NAME))
     request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('The key store request failed.'))
+    request.onerror = () => reject(request.error ?? new Error(appT('errors.keyStoreRequest')))
     transaction.onabort
-      = () => reject(transaction.error ?? new Error('The key store transaction was aborted.'))
+      = () => reject(transaction.error ?? new Error(appT('errors.keyStoreAborted')))
   })
 }
 
@@ -158,10 +158,7 @@ export async function ensureSessionSigner(buyer: Address): Promise<KeyPairSigner
   if (existing) return existing
 
   if (!(await canHoldSessionKey())) {
-    throw new Error(
-      'This browser cannot create the key that pays without a wallet. '
-      + 'Update Chrome, Edge, Safari or Firefox, then try again.'
-    )
+    throw new Error(appT('errors.noSessionKeySupport'))
   }
 
   const seed = crypto.getRandomValues(new Uint8Array(32))

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // One shop, opened from /shops. Everything on this page belongs to the
 // signed-in account: the API scopes each read and write to it.
-useSeoMeta({ title: 'Shop — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('shops.shopMetaTitle') })
 
 definePageMeta({ middleware: 'auth' })
 
@@ -11,8 +13,8 @@ const shopId = computed(() => String(route.params.id ?? ''))
 
 <template>
   <UPageSection
-    title="Shop"
-    description="Your products, the prices the payment page charges, and the codes you saved here."
+    :title="$t('shops.shopTitle')"
+    :description="$t('shops.shopDescription')"
   >
     <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
       <NuxtLink
@@ -23,7 +25,7 @@ const shopId = computed(() => String(route.params.id ?? ''))
           name="i-lucide-arrow-left"
           class="size-4"
         />
-        Back to your shops
+        {{ $t('shops.backToShops') }}
       </NuxtLink>
 
       <ShopEditor :shop-id="shopId" />

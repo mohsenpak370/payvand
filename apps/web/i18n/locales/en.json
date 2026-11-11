@@ -1,0 +1,951 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "copied": "Copied",
+    "done": "Done",
+    "testMode": "Test mode — payments use free test SOL",
+    "liveMode": "Live — accepting real SOL",
+    "clear": "Clear",
+    "loading": "Loading…"
+  },
+  "app": {
+    "brandHome": "Payvand home",
+    "meta": {
+      "title": "Payvand — Solana QR payments",
+      "description": "Payvand makes taking payment simple: sellers create a QR code, customers scan it and pay from their wallet — no card reader, no account setup for the customer."
+    },
+    "nav": {
+      "primary": "Primary",
+      "account": "Account",
+      "menu": "Menu",
+      "createPayment": "Create a payment",
+      "scanAndPay": "Scan and pay",
+      "learn": "Learn",
+      "learnAboutCrypto": "Learn about crypto"
+    },
+    "account": {
+      "profile": "Profile",
+      "shops": "Shops",
+      "settings": "Settings",
+      "admin": "Admin",
+      "signOut": "Sign out"
+    },
+    "auth": {
+      "signIn": "Sign in",
+      "signUp": "Sign up"
+    }
+  },
+  "footer": {
+    "groups": {
+      "product": "Product",
+      "legal": "Legal"
+    },
+    "links": {
+      "createPayment": "Create a payment",
+      "scanAndPay": "Scan and pay",
+      "learn": "Learn about crypto",
+      "terms": "Terms of use",
+      "privacy": "Privacy policy"
+    },
+    "tagline": "One QR code, scanned with a wallet. The money goes straight from the customer to the seller — never through us.",
+    "copyright": "© {year} Payvand · Built on Solana · {version}",
+    "solanaDocs": "Solana docs"
+  },
+  "home": {
+    "hero": {
+      "title": "Simple payments on Solana",
+      "description": "A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it.",
+      "createCta": "Create a payment QR",
+      "scanCta": "Scan and pay"
+    },
+    "how": {
+      "title": "How a payment moves",
+      "description": "Three steps, no account setup for your customer.",
+      "create": {
+        "title": "Create a payment code",
+        "description": "Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fees."
+      },
+      "scan": {
+        "title": "Your customer scans and pays",
+        "description": "They scan the code, check the amount, and approve the payment from their own wallet. No app to install."
+      },
+      "paid": {
+        "title": "Paid in seconds",
+        "description": "The money arrives in your wallet and the code updates to say Paid — you both see it at the same time."
+      }
+    },
+    "cta": {
+      "description": "Open the seller page, enter an amount, and show the code to your customer. It takes about a minute.",
+      "startSelling": "Start selling"
+    }
+  },
+  "admin": {
+    "metaTitle": "Admin — Payvand",
+    "title": "Admin",
+    "description": "Platform oversight: accounts, live sessions, discount codes and the waiting list.",
+    "forbiddenTitle": "No admin access",
+    "forbiddenDescription": "This account is not listed in the API's ADMIN_EMAILS setting, so the admin endpoints answer 403. Add the address there (and redeploy) to grant access.",
+    "stats": {
+      "accounts": "Accounts",
+      "sessions": "Live sessions",
+      "discounts": "Discount codes",
+      "resets": "Pending resets"
+    },
+    "waitlist": {
+      "title": "Waiting list",
+      "count": "{count} address for a live cluster | {count} addresses for a live cluster",
+      "fallback": "Sellers who want to take real payments",
+      "errorTitle": "Waiting list",
+      "loadFailure": "Could not read the waiting list.",
+      "reading": "Reading the list…",
+      "empty": "Nobody has joined yet. The card on the home page adds the first address.",
+      "joined": "Joined {date}",
+      "removeAria": "Remove from the waiting list",
+      "removeConfirm": "Remove {email} from the waiting list?\n\nThe address is deleted, so nobody can email it from here again.",
+      "removeFailure": "Could not remove that address."
+    },
+    "feed": {
+      "title": "Recent payments",
+      "count": "{count} invoice on {cluster} | {count} invoices on {cluster}",
+      "fallback": "Read live from the cluster",
+      "errorTitle": "Cluster unavailable",
+      "loadFailure": "Could not read recent payments from the cluster.",
+      "reading": "Reading the cluster…",
+      "empty": "No payments on chain yet.",
+      "when": "When",
+      "seller": "Seller",
+      "amount": "Amount",
+      "memo": "Memo",
+      "status": "Status",
+      "paidBy": "Paid by"
+    },
+    "users": {
+      "searchPlaceholder": "Search by email…",
+      "search": "Search",
+      "errorTitle": "Something went wrong",
+      "loadFailure": "Could not load the admin data.",
+      "empty": "No accounts match.",
+      "account": "Account",
+      "signedUp": "Signed up",
+      "sessions": "Sessions",
+      "codes": "Codes",
+      "actions": "Actions",
+      "delete": "Delete",
+      "deleteFailure": "Could not delete that account.",
+      "deleteConfirm": "Delete {email}?\n\nThis removes the account, its sessions, its discount codes and any pending reset links. This cannot be undone.",
+      "range": "{from}–{to} of {total} accounts",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
+  "authLayout": {
+    "headline": "Get paid on Solana with a QR code.",
+    "subtitle": "A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it.",
+    "points": {
+      "code": {
+        "title": "A payment code in seconds",
+        "description": "Enter an amount and show the QR code — that is the whole checkout."
+      },
+      "scan": {
+        "title": "Your customer scans and pays",
+        "description": "They approve from their own wallet. No card reader, no app to install."
+      },
+      "paid": {
+        "title": "Paid while they are still there",
+        "description": "The code flips to Paid and you both watch it happen."
+      }
+    }
+  },
+  "signin": {
+    "metaTitle": "Sign in — Payvand",
+    "title": "Sign in",
+    "subtitle": "Welcome back. Sign in to create payment codes and track what you get paid.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you{'@'}example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Your password",
+    "forgot": "Forgot password?",
+    "enterEmail": "Enter your email address.",
+    "enterPassword": "Enter your password.",
+    "failure": "Could not sign in. Check your email and password.",
+    "submit": "Sign in",
+    "or": "or",
+    "disconnect": "Disconnect",
+    "withWallet": "Sign in with wallet",
+    "continueWithWallet": "Continue with a wallet",
+    "noWalletFound": "No wallet detected. Install an extension such as Phantom or Solflare, then reload the page.",
+    "walletNotConnected": "The wallet is not connected. Try again, or sign in with your email and password.",
+    "cancelled": "You cancelled the request in your wallet.",
+    "declined": "The wallet declined to sign, or the request expired. Try again.",
+    "noWalletLine": "No wallet detected.",
+    "installPhantom": "Install Phantom",
+    "installSolflare": "Solflare",
+    "afterInstall": ", then reload the page.",
+    "walletHint": "Sign in with a wallet you have already linked to this account.",
+    "newHere": "New to Payvand?",
+    "createAccount": "Create an account"
+  },
+  "signup": {
+    "metaTitle": "Create account — Payvand",
+    "title": "Create your account",
+    "subtitle": "One login for the codes you create and the payments you take. Right after signup we take you to your profile to connect a Solana wallet.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you{'@'}example.com",
+    "passwordLabel": "Password",
+    "passwordHelp": "At least {length} characters.",
+    "passwordPlaceholder": "Choose a password",
+    "confirmLabel": "Confirm password",
+    "confirmPlaceholder": "Re-enter your password",
+    "enterEmail": "Enter your email address.",
+    "passwordMin": "The password must be at least {length} characters.",
+    "mismatch": "The two passwords do not match.",
+    "createFailure": "Could not create the account.",
+    "submit": "Create account",
+    "haveAccount": "Already have an account?",
+    "signIn": "Sign in"
+  },
+  "forgotPassword": {
+    "metaTitle": "Forgot password — Payvand",
+    "title": "Reset your password",
+    "subtitle": "We'll email you a one-time link to choose a new password. The link is valid for one hour.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you{'@'}example.com",
+    "enterEmail": "Enter your email address.",
+    "sentTitle": "Check your inbox",
+    "failure": "Could not send the request. Try again.",
+    "submit": "Send reset link",
+    "remembered": "Remembered it?",
+    "backToSignIn": "Back to sign in"
+  },
+  "resetPassword": {
+    "metaTitle": "Choose a new password — Payvand",
+    "changedTitle": "Password changed",
+    "changedDescription": "Your previous password no longer works and every existing session was signed out.",
+    "chooseTitle": "Choose a new password",
+    "chooseDescription": "Pick a new password for your account. For safety, this link can only be used once.",
+    "invalidTitle": "This link is invalid or has expired",
+    "invalidDescription": "Password reset links are single-use and valid for one hour. Request a fresh one and open it right away.",
+    "requestNew": "Request a new link",
+    "successTitle": "Your password has been changed",
+    "successDescription": "Sign in with your new password to continue.",
+    "newPasswordLabel": "New password",
+    "newPasswordPlaceholder": "At least 8 characters",
+    "confirmLabel": "Confirm password",
+    "confirmPlaceholder": "Repeat the new password",
+    "failureTitle": "Could not reset the password",
+    "expired": "This reset link is invalid or has expired. Request a new one.",
+    "passwordMin": "The password must be at least {length} characters.",
+    "mismatch": "The two passwords do not match.",
+    "submit": "Save new password"
+  },
+  "budget": {
+    "metaTitle": "Budget — Payvand",
+    "title": "Monthly spending budget",
+    "description": "Set a limit once and your wallet signs only for that: the amount leaves your wallet into a program account the chain derives from your wallet — not to Payvand, not to the seller. Only your wallet can take it back out, while this device's session key spends from it inside the limit with no approval popups.",
+    "cardTitle": "Your budget",
+    "display": {
+      "monthlyLimit": "Monthly limit",
+      "leftThisMonth": "Left this month",
+      "pot": "Pot (leftover included)",
+      "sessionKey": "Session key",
+      "anotherDevice": "another device"
+    },
+    "whereMoney": {
+      "title": "Where the money sits.",
+      "body": "The pot is a program account derived from your wallet: setting or refilling a limit moves that amount out of your wallet and into it, and only your wallet can take it back out. This device's session key can spend from it, but never more than the limit. The limit resets on the 1st of each month, the pot keeps whatever you did not spend, and closing the budget returns every unit to your wallet."
+    },
+    "keepSmall": {
+      "title": "Keep it small on purpose.",
+      "body": "A limit you could lose without changing your month is doing its job — that is why payments from it never ask for an approval. Pair it with a wallet used only for spending, apart from savings:",
+      "twoWallets": "how to keep two wallets"
+    },
+    "foreign": {
+      "title": "This allowance is registered to another device",
+      "withKey": "The key that pays silently here belongs to a different device ({key}). Taking it over needs one approval, moves no funds, and stops the other device from spending.",
+      "description": "The key that pays silently for this allowance lives on another device. Taking it over needs one approval, moves no funds, and stops the other device from spending.",
+      "action": "Use this device instead"
+    },
+    "limitLabel": "Monthly limit ({currency})",
+    "limitHelp": "Applied on the next signature — top up, lower, or raise it any time.",
+    "lowLimitTitle": "Keep the limit low",
+    "lowLimitWarning": "Any device holding your session key can pay up to this amount without asking your wallet, so it is also the most a stolen phone or laptop could spend. Start low and raise it whenever you need more.",
+    "refill": "Refill to {amount}",
+    "saveLimit": "Save limit / top up",
+    "closeBudget": "Close {currency} budget & reclaim funds",
+    "killSwitch": {
+      "title": "Closing the budget is the kill switch.",
+      "body": "It revokes the session key on every device, returns everything left to your wallet, and stops silent payments at once — then a new limit can be set whenever you are ready."
+    },
+    "enable": "Enable monthly budget",
+    "oneApproval": {
+      "title": "What this one approval does.",
+      "body": "It moves the limit out of your wallet into a program account the chain derives from your wallet — not to Payvand, and not to the seller — and registers a session key that stays on this device. Payments inside the limit then go through with no popups, and only your wallet can withdraw the pot."
+    },
+    "startSmall": "Start small: the most a lost phone can spend is this limit, which is why payments never ask for an approval. Keep this wallet separate from your savings —",
+    "connectPrompt": "Connect your wallet to see your budget.",
+    "errors": {
+      "genericTitle": "Something went wrong",
+      "notSentTitle": "Transaction not sent",
+      "rejected": "You rejected the request in your wallet.",
+      "rpcFailure": "Your wallet could not submit the transaction. If it warned that it could not simulate the transaction, the wallet most likely lacks SOL for this limit — check its balance, then try again.",
+      "timeout": "The network is taking longer than usual to confirm. Check your wallet activity before retrying.",
+      "rejectedFallback": "The wallet rejected the request.",
+      "badLimit": "Enter a monthly limit greater than 0 {currency}.",
+      "nothingToTakeOver": "Nothing left to take over",
+      "emptyPot": "This month's {currency} pot is empty, so there is nothing for a session key to spend yet. Set a limit with the button below — that same approval also registers this device.",
+      "notEnoughSol": "Not enough SOL",
+      "notEnoughSolBody": "This wallet holds {balance} SOL, but enabling a {limit} SOL budget needs about {total} SOL in one signature ({topUp} into the pot, {feeFloat} session-key fee float, {rent} account rent, {fee} network fee). Lower the limit or top up the wallet — on devnet, https://faucet.solana.com sends free test SOL.",
+      "notEnoughSolFees": "Not enough SOL for fees",
+      "feeBody": "This wallet needs about {total} SOL for the account rent and network fee of a {currency} allowance. On devnet, https://faucet.solana.com sends free test SOL.",
+      "notEnoughToken": "Not enough {currency}",
+      "tokenBody": "This wallet holds {held}, but this moves {needed} into the pot to reach {limit}. Lower the limit, or get free test tokens from https://faucet.circle.com and try again.",
+      "readFailure": "Could not read your budget.",
+      "noBudgetToClose": "There is no budget to close yet."
+    },
+    "success": {
+      "rotated": "This device now pays silently, and the key the other device held stopped working at once. Nothing moved: the limit is now {limit}, what the pot already held, and the monthly counter restarts at zero. Top up from here whenever you want a bigger one.",
+      "refilled": "Refilled — the pot holds {limit} again and every payment inside it is back to no popups. The monthly counter restarts with a refill, so the whole limit is spendable from now.",
+      "updated": "Budget updated — your limit and pot are in sync again.",
+      "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
+      "closed": "{currency} budget closed — everything left went back to your wallet."
+    }
+  },
+  "calculator": {
+    "title": "Calculator",
+    "deleteLastDigit": "Delete last digit",
+    "enterAmount": "Enter an amount",
+    "useAmount": "Use amount"
+  },
+  "checkout": {
+    "fallbackHeading": "Payment",
+    "metaTitle": "Payment — Payvand",
+    "metaTitleWithName": "{name} — Payvand",
+    "loading": "Reading the payment…",
+    "invalidTitle": "This payment link cannot be opened",
+    "goHome": "Go to Payvand",
+    "total": "Total",
+    "referenceCode": "Reference code",
+    "details": {
+      "seller": "Seller",
+      "network": "Network",
+      "status": "Status"
+    },
+    "wallet": {
+      "openIn": "Open in {wallet}",
+      "connect": "Connect {wallet}"
+    },
+    "settled": {
+      "title": "Paid",
+      "description": "This invoice is settled — there is nothing left to do.",
+      "signature": "Signature {signature}",
+      "paidBy": "Paid by {wallet}"
+    },
+    "auto": {
+      "paying": "Paying {amount} from your allowance",
+      "sendingIn": "No wallet approval needed. Sending in {seconds}s."
+    },
+    "pay": "Pay {amount}",
+    "payWith": "Pay with {wallet}",
+    "yourWallet": "your wallet",
+    "silentHint": "Paid from your monthly allowance — no wallet popup.",
+    "walletHint": "Approve in {wallet}. Nothing is sent until you do.",
+    "obstacleTitle": "Your allowance cannot cover this",
+    "allowanceOffer": {
+      "title": "Pay in one tap next time",
+      "description": "A monthly allowance lets payments inside it go through without any wallet popup.",
+      "action": "Set a monthly allowance"
+    },
+    "deviceSetup": {
+      "title": "Finish setting up this device",
+      "description": "Your allowance needs one approval on this device before it can pay without a wallet popup. After that it is one tap.",
+      "action": "Set up this device"
+    },
+    "pick": {
+      "title": "Choose a wallet to pay",
+      "none": "No Solana wallet found in this browser. Install one and reload, or scan this page's code with your phone.",
+      "openInWallet": "Open in a Solana wallet"
+    },
+    "failureTitle": "Payment failed",
+    "discount": {
+      "off": "{percent}% off",
+      "badge": "{code} · {percent}% off",
+      "haveCode": "Have a discount code?",
+      "apply": "Apply",
+      "remove": "Remove",
+      "placeholder": "SAVE10"
+    },
+    "save": {
+      "savedTo": "Saved to {shop}",
+      "savedToShop": "Saved to your shop",
+      "shopAria": "Shop to save this code in",
+      "action": "Save to my shop",
+      "asPdf": "Save as PDF",
+      "failure": "Could not save this payment.",
+      "failureTitle": "Could not save the payment"
+    },
+    "result": {
+      "sent": "Payment sent",
+      "sentLine": "{amount} to {seller}",
+      "readToSeller": "Read this to the seller — they can find this payment with it.",
+      "copyCode": "Copy code",
+      "failed": "Payment did not go through"
+    },
+    "poweredBy": "Powered by"
+  },
+  "status": {
+    "paid": "Paid",
+    "awaitingPayment": "Awaiting payment"
+  },
+  "network": {
+    "localnet": "Local test network",
+    "devnet": "Test network (devnet)",
+    "testnet": "Test network (testnet)",
+    "mainnet": "Main network (mainnet)"
+  },
+  "fiat": {
+    "usd": "US dollars (USD)",
+    "eur": "Euros (EUR)"
+  },
+  "errors": {
+    "unreadableSolanaCode": "That is a Solana payment code Payvand cannot read.",
+    "notPaymentCode": "That does not look like a Payvand payment code.",
+    "notOurCode": "That is not a Payvand payment code.",
+    "noPrice": "This payment code has no price.",
+    "detailsMismatch": "These details do not match the code. Ask the seller for a new link.",
+    "unreadableLink": "Could not read this payment link.",
+    "notSent": "The payment could not be sent.",
+    "discountFailed": "That discount code could not be applied.",
+    "notBudgetAccount": "That address is not a budget account.",
+    "notTokenBudgetAccount": "That address is not a token budget account.",
+    "solForLimit": "This wallet does not hold enough SOL for that limit. Lower it or top the wallet up first.",
+    "rejectedOnChain": "The transaction would be rejected on-chain, so it was not sent. If you have no budget yet, the limit must be greater than 0; otherwise reload the page and try again.",
+    "noSessionKey": "This device has no session key for your budget — open it once on this device.",
+    "noSessionKeyHere": "No session key on this device — open your budget here first.",
+    "limitUsedUp": "The monthly limit is used up for this month.",
+    "tokenLimitUsedUp": "The monthly limit for this token is used up.",
+    "nearlyEmpty": "The budget is nearly empty — top it up from the budget page.",
+    "tokenNearlyEmpty": "The allowance does not hold enough of this token — top it up from the budget page.",
+    "paymentRejected": "The payment was rejected on-chain.",
+    "notConfirmed": "The payment was sent but did not confirm in time — watch the invoice status.",
+    "indexedDbUnavailable": "IndexedDB is unavailable.",
+    "keyStoreOpen": "Could not open the key store.",
+    "keyStoreRequest": "The key store request failed.",
+    "keyStoreAborted": "The key store transaction was aborted.",
+    "noSessionKeySupport": "This browser cannot create the key that pays without a wallet. Update Chrome, Edge, Safari or Firefox, then try again."
+  },
+  "learn": {
+    "metaTitle": "Learn — Payvand",
+    "metaDescription": "Crypto explained to someone who has never used it: how a blockchain works, what Solana is, what a wallet does, and how to stay safe. No prior knowledge assumed.",
+    "hero": {
+      "headline": "Learn",
+      "title": "Crypto, explained like a person",
+      "description": "Short guides for someone who has never used a wallet. Start with what a blockchain is, then what Solana does, then how this app and its allowance work — and read the safety guides before you use real money."
+    },
+    "groups": {
+      "basics": {
+        "title": "Start here: the ideas",
+        "description": "What money on a blockchain actually is, in the order that makes sense. No prior knowledge assumed."
+      },
+      "solana": {
+        "title": "Solana, in plain words",
+        "description": "The network under Payvand: why it is fast, what a payment costs, and when it is really done."
+      },
+      "payvand": {
+        "title": "Using Payvand",
+        "description": "The monthly allowance, the practice money, and what each button on the screen does."
+      },
+      "safety": {
+        "title": "Staying safe",
+        "description": "The handful of habits that prevent almost every crypto loss."
+      },
+      "technical": {
+        "title": "Under the hood (technical)",
+        "description": "The actual mechanics — transaction bytes, PDAs, shreds, certificates — each with links to the official docs."
+      }
+    },
+    "technicalBadge": "Technical",
+    "technicalDiscussion": "Technical discussion",
+    "disclaimer": "These guides are general education about how the tools work — not financial advice, and not a promise about the price of anything.",
+    "guideMetaTitle": "{title} — Payvand",
+    "guideNotFound": "Guide not found",
+    "allGuides": "All guides"
+  },
+  "privacy": {
+    "metaTitle": "Privacy policy — Payvand",
+    "metaDescription": "What Payvand stores, why it stores it, and what stays in your browser: an email and a hashed password, the shops and codes you create, and no tracking, no ads and no wallet keys.",
+    "updated": "8 November 2026",
+    "title": "Privacy policy",
+    "description": "What Payvand stores, why it stores it, and what never leaves your browser.",
+    "short": {
+      "title": "The short version",
+      "email": "An account is an email address and a password. We keep the email and a one-way hash of the password — never the password itself.",
+      "keep": "We keep what you create: shops, products, payment codes and discount codes.",
+      "noAds": "No advertising, no analytics, no tracking pixels, and no selling or sharing your data for marketing. There is none of it in the app to switch off.",
+      "keys": "Your wallet's keys never reach us, so we cannot move your money or read your balance without asking the network, as anyone can.",
+      "chain": "Payments are recorded on a public blockchain: visible to anyone, permanently, and not deletable by us or by you."
+    },
+    "store": {
+      "title": "What we store, and why",
+      "accountLead": "Your account.",
+      "accountBody": "The email address (to sign in and to reach you), a hash of your password made with Argon2, and the wallet address once you link one (so the app knows which shops, payments and discount codes are yours).",
+      "sessionsLead": "Sessions.",
+      "sessionsBody": "A random token, kept hashed, with the time it was created and the time it expires. A session lasts 30 days; signing out deletes it.",
+      "createdLead": "What you create.",
+      "createdBody": "Shop names and descriptions, product names, details and prices, saved payment codes, and discount codes with their percentages.",
+      "resetsLead": "Password resets.",
+      "resetsBody": "A hashed token that works once and expires after an hour.",
+      "waitlistLead": "The waiting list.",
+      "waitlistBody": "The email address you submit, until it is used or removed.",
+      "logsLead": "Server logs.",
+      "logsBody": "Errors are logged so the service can be fixed. The log does not contain passwords, and error messages shown to the app no longer contain database detail."
+    },
+    "visible": {
+      "title": "What other people can see",
+      "codeLead": "A payment code.",
+      "codeBody": "It travels in a URL or a QR code and contains the seller's wallet address, the amount, a reference, the item name and the memo the seller typed. When the code was made while signed in, it also carries the seller's account id as a hint, so the checkout knows to offer that seller's discount codes. Anyone holding the code sees all of that.",
+      "shopLead": "A shop.",
+      "shopBody": "Shops have a public link: the name, description, products and prices on it are readable by anyone with the link.",
+      "chainLead": "The blockchain.",
+      "chainBody": "A payment writes the two wallet addresses, the amount and the time into a public ledger that anyone can read and nobody can edit.",
+      "email": "Your email address and password hash are not published anywhere and do not appear in a payment code."
+    },
+    "keys": {
+      "title": "Wallet keys are not ours to hold",
+      "real": "Every real payment is approved inside your own wallet. Payvand never has the keys to it and cannot sign for it.",
+      "budget": "The practice budget is signed with a key your browser generates and keeps as a non-extractable browser key: it can sign while you use the app, but it cannot be read back out — not by this app, not by a script on the page. It never leaves your device, and we have no copy.",
+      "never": "We never ask for a seed phrase and never store private keys. There is nothing here for a thief to take but an email address and a hash."
+    },
+    "browser": {
+      "title": "What is kept in your browser",
+      "localLead": "Local storage.",
+      "localBody": "Your session token and a copy of your profile, so the header does not flicker while it loads; the currency you chose; the wallet you connected last; and your light or dark theme.",
+      "indexedLead": "IndexedDB.",
+      "indexedBody": "The practice budget's key, in the form described above.",
+      "cacheLead": "The installed app's cache.",
+      "cacheBody": "It keeps the app's own files so it opens offline. It deliberately never caches payment pages or payment status, so you are never shown a stale amount.",
+      "none": "There are no advertising or analytics cookies. Clearing this site's data signs you out on that device and forgets those choices."
+    },
+    "others": {
+      "title": "Who else is involved",
+      "hosting": "A hosting provider runs the website and the API.",
+      "db": "A hosted SQL database (libSQL) stores the accounts, shops and codes.",
+      "solana": "The Solana network, reached through an RPC provider, is read for balances and payment status. Payments themselves are sent by your wallet, not by us.",
+      "email": "An email provider delivers the few messages the app sends: sign-in notices, password resets, and a note if someone tries to sign up with your address.",
+      "body": "These providers handle the data only to run the service for us. We do not sell it, we do not share it for advertising, and there is no analytics network watching these pages."
+    },
+    "retention": {
+      "title": "How long we keep it",
+      "account": "Your account and everything you create: until the account is deleted.",
+      "sessions": "Sessions: 30 days, then expired and swept away.",
+      "resets": "Password reset links: one hour.",
+      "waitlist": "Waiting list entries: until the invitation is used or the address is removed.",
+      "logs": "Server logs: as long as the hosting provider keeps them, usually days to weeks.",
+      "chain": "Anything written to the Solana blockchain: forever. Nobody can delete it, including us."
+    },
+    "deletion": {
+      "title": "Deleting your data",
+      "body": "Ask us and we will remove the account: its email, password hash, linked wallet, shops, products, saved payment codes, discount codes, sessions and any pending reset link. Deleting the account does not, and cannot, remove payments already recorded on the blockchain — that history belongs to the network, not to us. There is no self-service delete button yet, so a person does it."
+    },
+    "children": {
+      "title": "Children",
+      "body": "Payvand is not for anyone under 13, or under the age at which you can agree to the terms where you live. We do not knowingly keep an account for a child; if you think one exists, tell us and we will remove it."
+    },
+    "changes": {
+      "title": "Changes, and contact",
+      "body": "If what the app stores changes, this page changes with it and the date at the bottom moves.",
+      "contact": "Questions about your data, or a deletion request: reply to any email Payvand has sent you. The address it came from reaches whoever runs this."
+    },
+    "footer": "Last updated {date}. This page is written to describe what the software actually does, in plain words. See also the",
+    "termsLink": "terms of use",
+    "footerAfter": "."
+  },
+  "profile": {
+    "metaTitle": "Profile — Payvand",
+    "title": "Profile",
+    "signedInAs": "Signed in as {email}",
+    "settings": "Settings",
+    "walletTitle": "Wallet",
+    "walletDescription": "Link your Solana wallet to pay without typing a password and to see your transactions.",
+    "linked": "Linked",
+    "welcomeTitle": "Welcome to Payvand — one last step",
+    "welcomeDescription": "Connect your Solana wallet below. One signature, no transaction — it lets you sign in with your wallet and keeps your payments together.",
+    "linkedTitle": "Linked to your account",
+    "linkedSignsIn": "This wallet signs you in:",
+    "connectTitle": "Connect it to your account",
+    "connectDescription": "One signature now, so you can sign in with this wallet later. It authorises no transaction.",
+    "differentWalletTitle": "A different wallet is connected",
+    "differentWalletDescription": "Linked: {linked} · Connected: {connected}. Switch if this account should use the connected one.",
+    "linkFailureTitle": "Could not link the wallet",
+    "linkFailure": "The wallet declined to sign, or the request expired. Try again.",
+    "unlinkFailureTitle": "Could not unlink the wallet",
+    "unlinkFailure": "Could not unlink the wallet.",
+    "unlinkConfirm": "Unlink this wallet?\n\nWallet sign-in stops until you link it again, and its transactions disappear from this page. Your email and password keep working.",
+    "linkThisWallet": "Link this wallet",
+    "cannotSign": "This wallet cannot sign messages",
+    "switchWallet": "Switch to this wallet",
+    "unlinkHint": "Unlinking stops wallet sign-in; your email and password keep working.",
+    "unlink": "Unlink wallet",
+    "allowanceTitle": "Monthly allowance",
+    "allowanceDescription": "Set a limit once — payments inside it need no wallet approval at all.",
+    "connectForAllowance": "Connect a wallet to see and set its allowance.",
+    "allowanceErrorTitle": "Could not read your allowance",
+    "allowanceError": "Could not read your allowance.",
+    "allowanceLoading": "Reading your allowance…",
+    "noAllowance": "No allowance set yet",
+    "noAllowanceBody": "Pick a monthly budget in one wallet signature. Every payment inside it afterwards goes through with a single tap — no popups.",
+    "setAllowance": "Set my monthly allowance",
+    "monthlyLimit": "Monthly limit (SOL)",
+    "spentThisMonth": "Spent this month",
+    "remaining": "Remaining",
+    "usedThisMonth": "Used this month",
+    "potAvailable": "Pot available: {amount} SOL",
+    "manageAllowance": "Manage allowance",
+    "savedTitle": "Saved payments",
+    "savedDescription": "Codes you saved — open one to share it or pay it again.",
+    "refresh": "Refresh",
+    "savedErrorTitle": "Could not load saved payments",
+    "savedFailure": "Could not load your saved payments.",
+    "savedLoading": "Loading saved payments…",
+    "savedEmpty": "Nothing saved yet — open a payment link and press “Save to my shop”.",
+    "showSaved": "Show {count} saved code | Show {count} saved codes",
+    "hide": "Hide",
+    "openPayment": "Open payment",
+    "paymentFallback": "Payment",
+    "txTitle": "Transactions",
+    "txDescription": "Everything your wallet has paid or been paid.",
+    "txCount": "{count} payment on {cluster} | {count} payments on {cluster}",
+    "txCountFiltered": "{shown} of {total} payment on {cluster} | {shown} of {total} payments on {cluster}",
+    "txErrorTitle": "Could not load transactions",
+    "txFailure": "Could not load your transactions.",
+    "txLoading": "Loading transactions…",
+    "txEmpty": "No transactions yet — your first payment will show up here.",
+    "txNoMatch": "No payment matches that code. Check the reference the customer read out, or widen the dates.",
+    "referenceCodeLabel": "Reference code",
+    "referencePlaceholder": "The code the customer read out",
+    "from": "From",
+    "to": "To",
+    "linkToSeeTx": "Link your wallet to see transactions",
+    "linkToSeeTxBody": "Your payment history follows the wallet, so it appears here once the wallet is linked above.",
+    "showPayments": "Show {count} payment | Show {count} payments",
+    "directionFrom": "from",
+    "directionTo": "to",
+    "paymentReceived": "Payment received",
+    "paymentSent": "Payment sent"
+  },
+  "scan": {
+    "metaTitle": "Scan and pay — Payvand",
+    "title": "Scan and pay",
+    "description": "Point your camera at the seller's code, check the amount, and approve the payment in your wallet.",
+    "heading": "Scan the code",
+    "readError": "Could not read the code",
+    "couldNotRead": "Could not read that code.",
+    "pasteToggle": "Can't scan it? Paste the code",
+    "pasteLabel": "Paste the code text",
+    "load": "Load",
+    "scanAnother": "Scan another"
+  },
+  "pay": {
+    "metaTitle": "Payment — Payvand",
+    "opening": "Opening the payment…",
+    "noPaymentTitle": "No payment in this link",
+    "noPaymentBody": "Payment pages open from the link the seller shares. Ask them for it, or scan their QR code with your phone."
+  },
+  "scanner": {
+    "insecure": "Camera needs a secure connection — open this page over https (or localhost).",
+    "notStarted": "The camera has not started. Allow camera access for this site, then try again.",
+    "denied": "Camera permission was denied or no camera is available.",
+    "noDecoder": "This browser cannot read payment codes. Open the link with your camera app instead — it goes to the same page.",
+    "noCode": "No code yet — move closer, so it fills the frame.",
+    "noCodeWithCamera": "No code yet (camera {camera}) — move closer, so it fills the frame.",
+    "pointCamera": "Point the camera at the payment code",
+    "waitingTap": "The camera is waiting for a tap to start.",
+    "starting": "Starting the camera…",
+    "tryAgain": "Try again",
+    "startCamera": "Start the camera"
+  },
+  "sell": {
+    "metaTitle": "Sell — Payvand",
+    "pageTitle": "Create a payment QR",
+    "pageDescription": "Enter what you want to charge, create the code, and show it to your customer.",
+    "invoiceHeading": "1. Invoice",
+    "showHeading": "2. Show the code",
+    "pricingLabel": "Pricing",
+    "priceModes": {
+      "amount": "Type an amount",
+      "products": "From my shops"
+    },
+    "priceLabel": "Price",
+    "pricePlaceholderSol": "0.01",
+    "pricePlaceholderToken": "5.00",
+    "currencyAria": "Currency the customer pays in",
+    "calculatorAria": "Open the calculator",
+    "amountHelpCart": "The total of the products above — clear them to type a price instead.",
+    "amountHelpProducts": "What the customer pays.",
+    "amountHelpTyped": "What the customer pays, in {currency}.",
+    "discountLabel": "Discount",
+    "discountHelpSelected": "Buyers pay {price} — {percent}% off, applied for them.",
+    "discountHelp": "Optional — ride one of your codes along with this QR so buyers get it without typing it.",
+    "discountNone": "No discount",
+    "discountOption": "{code} · {percent}% off",
+    "nameLabel": "Name",
+    "nameHelp": "The heading your customer sees above the amount — like “Coffee for two”.",
+    "namePlaceholder": "What is this payment?",
+    "hideDetails": "Hide description and note",
+    "addDetails": "Add a description or note",
+    "descriptionLabel": "Description",
+    "descriptionHelp": "Optional detail under the name — what is included, where, when.",
+    "descriptionPlaceholder": "Two flat whites at the corner shop",
+    "memoLabel": "Memo",
+    "memoHelp": "Recorded on chain with the payment, so wallets and explorers show it too.",
+    "memoPlaceholder": "Coffee",
+    "createFailureTitle": "Could not create the payment",
+    "createFailure": "Could not create the payment.",
+    "createCode": "Create payment code",
+    "connectFirst": "Connect your seller wallet first.",
+    "enterPrice": "Enter a price greater than 0.",
+    "memoTooLong": "The note is too long — please shorten it.",
+    "nameTooLong": "The name is too long — please shorten it.",
+    "descriptionTooLong": "The description is too long — please shorten it.",
+    "newPayment": "New payment",
+    "showToCustomer": "Show to customer",
+    "scanHint": "Any phone camera opens this — and the page takes the payment.",
+    "openPage": "Open payment page",
+    "linkCopied": "Link copied",
+    "copyLink": "Copy link",
+    "percentOff": "{percent}% off",
+    "savedBadge": "{code} · saved {amount}",
+    "showCodeText": "Can't scan it? Show the code text",
+    "paymentId": "Payment ID",
+    "paidBy": "Paid by",
+    "paymentCode": "Payment code",
+    "copyCode": "Copy code",
+    "pasteHint": "If the QR cannot be scanned, your customer can paste this on the pay page.",
+    "hideDetailsButton": "Hide details",
+    "emptyCode": "Your QR code will appear here once the payment is created.",
+    "discountsTitle": "Discount codes",
+    "discountsSubtitle": "Optional — buyers type a code at checkout to pay less.",
+    "hide": "Hide",
+    "codesCount": "{count} code | {count} codes",
+    "addCode": "Add code",
+    "deleteAria": "Delete {code}",
+    "noCodes": "No codes yet — add one so buyers can get a discount.",
+    "codeLabel": "Code",
+    "codePlaceholder": "SAVE10",
+    "percentLabel": "Percent off",
+    "percentPlaceholder": "10",
+    "codeErrorTitle": "Discount code error",
+    "addDiscountFailure": "Could not add the discount code.",
+    "deleteDiscountFailure": "Could not delete the discount code.",
+    "presentFallbackTitle": "Payment code",
+    "scanToPay": "Scan this with a phone camera to pay."
+  },
+  "productPicker": {
+    "fromYourShops": "From your shops",
+    "clear": "Clear",
+    "decreaseAria": "One fewer {name}",
+    "increaseAria": "One more {name}",
+    "total": "Total",
+    "limit": "A receipt fits {max} different products — make a second payment for more."
+  },
+  "shopPayment": {
+    "title": "Create a payment",
+    "newPayment": "New payment",
+    "loadingMenu": "Loading this shop's menu…",
+    "emptyMenu": "Add a product above and this becomes a payable menu.",
+    "scanHint": "Any phone camera opens this — and the page takes the payment.",
+    "openPage": "Open payment page",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "connectFirst": "Connect your seller wallet first.",
+    "pickSomething": "Pick something from the shop first.",
+    "createFailure": "Could not create the payment.",
+    "alertTitle": "Could not create the payment",
+    "createCode": "Create payment code",
+    "connectHint": "Connect your seller wallet to create the code."
+  },
+  "shopsList": {
+    "title": "Your shops",
+    "subtitle": "Create and save the products you sell, then use them to create payments.",
+    "newShop": "New shop",
+    "errorTitle": "Shop error",
+    "loadFailure": "Could not load your shops.",
+    "createFailure": "Could not create the shop.",
+    "loading": "Reading your shops…",
+    "products": "{count} product | {count} products",
+    "openShop": "Open shop",
+    "empty": "No shops yet — create one to save your first products.",
+    "modalDescription": "A shop holds the products you sell. You can add products once it exists.",
+    "nameLabel": "Shop name",
+    "namePlaceholder": "Corner Shop",
+    "descriptionLabel": "Short description",
+    "descriptionHelp": "Optional — a line about what the shop sells.",
+    "descriptionPlaceholder": "Flat whites and fresh bread",
+    "createShop": "Create shop"
+  },
+  "shopEditor": {
+    "loadFailureTitle": "Could not open this shop",
+    "loadFailure": "Could not open this shop.",
+    "loading": "Reading your shop…",
+    "detailsTitle": "Shop details",
+    "detailsSubtitle": "What this shop is called, and what it sells in a line.",
+    "products": "{count} product | {count} products",
+    "nameLabel": "Shop name",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Flat whites and fresh bread",
+    "saveFailureTitle": "Could not save the shop",
+    "saveFailure": "Could not save the shop.",
+    "saveShop": "Save shop",
+    "productsTitle": "Products",
+    "productsSubtitle": "What the payment page offers as a receipt.",
+    "pricesInSol": "Prices are charged in SOL",
+    "editAria": "Edit {name}",
+    "removeAria": "Remove {name}",
+    "removeConfirm": "Remove “{name}”?\n\nInvoices already created keep their receipt — this only takes it off the menu.",
+    "emptyProducts": "No products yet — add the first one below.",
+    "productLabel": "Product",
+    "productPlaceholder": "Flat white",
+    "priceLabel": "Price",
+    "pricePlaceholder": "0.05",
+    "priceUnitAria": "Unit of the price",
+    "detailsLabel": "Details",
+    "detailsHelp": "Optional — size, what is in it, anything the customer should know.",
+    "detailsPlaceholder": "Large, oat milk",
+    "readingRate": "Reading today's rate…",
+    "productFailureTitle": "Could not save the product",
+    "saveChanges": "Save changes",
+    "addProduct": "Add product"
+  },
+  "shops": {
+    "metaTitle": "Shops — Payvand",
+    "title": "Shops",
+    "description": "Each shop holds the products you sell. Open one to edit its catalogue or to price a payment from it.",
+    "backToProfile": "Back to your profile",
+    "shopMetaTitle": "Shop — Payvand",
+    "shopTitle": "Shop",
+    "shopDescription": "Your products, the prices the payment page charges, and the codes you saved here.",
+    "backToShops": "Back to your shops"
+  },
+  "settings": {
+    "metaTitle": "Settings — Payvand",
+    "title": "Settings",
+    "description": "How prices are shown, and which parts of the app you want to see.",
+    "languageTitle": "Language",
+    "languageDescription": "The language used for menus and labels in this app. Guide text and on-chain memos are not translated.",
+    "languageLabel": "App language",
+    "currencyTitle": "Currency",
+    "currencyDescription": "Payments are charged in SOL. This is the money shown next to a price.",
+    "currencyLabel": "Show prices in",
+    "rateHint": "1 SOL ≈ {rate}",
+    "shopsTitle": "Shops",
+    "shopsDescription": "A shop keeps the products you sell, so a payment can be priced from a list rather than typed in every time.",
+    "useShops": "Use shops",
+    "shopsOffHint": "Turning them off only hides the link — any shop page you have already shared keeps working.",
+    "openShops": "Open shops",
+    "shopChoices": {
+      "on": "Yes — add a Shops link to the navigation",
+      "off": "No — I charge for one thing at a time"
+    },
+    "soundsTitle": "Sounds",
+    "soundsDescription": "A short rise when a payment goes through, a low buzz when it does not.",
+    "soundsLabel": "Payment sounds",
+    "soundsSwitch": "Play a sound when a payment finishes",
+    "browserNote": "All of these follow this browser, not your account — a phone you sign in on keeps its own."
+  },
+  "terms": {
+    "metaTitle": "Terms of use — Payvand",
+    "metaDescription": "What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, we never hold the money, and a paid transaction cannot be taken back.",
+    "updated": "8 November 2026",
+    "title": "Terms of use",
+    "description": "What Payvand does, what it does not do, and the handful of rules that come with using it.",
+    "what": {
+      "title": "What Payvand is",
+      "body": "Payvand turns an amount into a payment code. A seller types in what something costs, the app builds a QR code, and a customer scans it with a Solana wallet and approves one transaction. The money moves from the customer's wallet to the seller's wallet over the Solana network — there is no account in the middle and no card processor.",
+      "accept": "Using the app means you accept these terms. If you do not, please do not use it."
+    },
+    "money": {
+      "title": "We never hold the money",
+      "hold": "Payvand does not hold, receive or pass on your funds at any point, and has no way to move, freeze or take them.",
+      "reverse": "We cannot cancel, reverse or refund a payment. Only the recipient can send money back, from their own wallet.",
+      "seed": "We never ask for a seed phrase or a private key, and nobody working on Payvand will ever ask you for one. Anyone who does is not us.",
+      "budgetBefore": "The only thing the app can sign without your wallet is the practice budget, with a key your own browser creates and keeps (see the",
+      "privacyLink": "privacy policy",
+      "budgetAfter": ")."
+    },
+    "account": {
+      "title": "Your account",
+      "email": "An account is an email address and a password. The password is stored as a one-way hash, never as the password itself.",
+      "password": "Keep the password to yourself. What happens under your account is your responsibility, so tell us if you think someone else has it.",
+      "wallet": "Link a wallet address you actually control: that link is how the app recognises your shops, your payments and your discount codes.",
+      "close": "You can close your account by asking us (see Contact). Removing an account also removes its shops, products, payment codes, discount codes and sessions.",
+      "age": "You must be old enough to agree to these terms where you live, and at least 13."
+    },
+    "selling": {
+      "title": "If you are selling",
+      "record": "You are the seller of record. Prices, descriptions, taxes, receipts, refunds and consumer law are yours to get right, not ours.",
+      "final": "A payment that lands is final. If you want to give money back, send it back from your wallet — we cannot do it for you.",
+      "public": "What you publish is public. A payment code carries your wallet address, the amount, a reference, and the item name and memo you typed. Do not put anything private in those fields.",
+      "law": "Do not sell anything you are not allowed to sell where you are, and do not use Payvand for fraud, money laundering or to get around sanctions."
+    },
+    "paying": {
+      "title": "If you are paying",
+      "read": "Read the amount and the address your wallet shows before you approve. The wallet is the last place anything can be checked, and it is telling you the truth.",
+      "undo": "A confirmed payment cannot be undone by us, by the app, or by the seller's goodwill alone.",
+      "fiat": "A price shown in your own currency is an indicative conversion at a market rate, not a quote from us, and the network settles in SOL.",
+      "trust": "Only pay codes from sellers you trust. A QR code is just data: anyone can print it, edit it or send you one."
+    },
+    "fees": {
+      "title": "Fees",
+      "body": "Payvand charges nothing for making or scanning a payment code. The Solana network charges a small fee for the transaction, and a payment creates a record on chain that costs a little rent — both are paid from the customer's wallet, and the wallet shows the total before you approve anything."
+    },
+    "testMoney": {
+      "title": "Test money",
+      "before": "When the badge in the corner says",
+      "after": ", the app is running on Solana's test network and the SOL involved is not worth anything. It is there so you can practise. It is not a promise that real money behaves the same way, and nothing on devnet has value."
+    },
+    "fairUse": {
+      "title": "Fair use",
+      "body": "Do not attack the service or work around its limits: no scanning for weaknesses without asking first, no automated guessing of passwords or discount codes, no scraping, no hammering the API. We may suspend or remove an account that does any of that, and we may report it."
+    },
+    "availability": {
+      "title": "Availability, and what we do not promise",
+      "asIs": "Payvand is provided as it is. We do not promise it will be available, that it will not lose data, or that it will keep working the same way — it may change or be discontinued.",
+      "advice": "Nothing here is financial, investment, tax or legal advice.",
+      "liability": "To the extent the law allows, we are not liable for indirect or consequential loss, for a payment you approved in your wallet, or for what a seller does or sells. Our total liability is limited to what you have paid us to use Payvand, which is nothing.",
+      "limits": "Some places do not allow limits like these. Where that is the case, they apply only as far as the law there allows."
+    },
+    "changes": {
+      "title": "Changes, and contact",
+      "body": "We will update this page when the app changes, and change the date at the bottom. Using Payvand after a change means you accept the new version.",
+      "contact": "Questions about these terms: reply to any email Payvand has sent you. The address it came from reaches whoever runs this."
+    },
+    "footer": "Last updated {date}. This page is written to describe what the software actually does, in plain words."
+  },
+  "wallet": {
+    "disconnect": "Disconnect",
+    "none": "No wallet detected. Install a Solana wallet extension and reload."
+  },
+  "qr": {
+    "generating": "Generating QR code…"
+  },
+  "waitlist": {
+    "title": "This is a test build",
+    "body": "Payvand is a proof of concept. Codes, scanning and receipts all work, but every payment runs on a Solana test network with free test SOL — no real money moves.",
+    "invite": "Want to take real payments? Leave your email and we'll tell you when Payvand is ready for a live wallet.",
+    "alertTitle": "Waiting list",
+    "joinFailure": "Could not add you to the list. Try again in a moment.",
+    "placeholder": "you{'@'}example.com",
+    "join": "Join the waiting list",
+    "successTitle": "You're on the list.",
+    "successBody": "We'll email you when Payvand can take real payments."
+  },
+  "shopCodes": {
+    "title": "Payment codes",
+    "subtitle": "Links you saved to this shop.",
+    "loading": "Loading saved codes…",
+    "loadError": "Could not load these codes",
+    "empty": "Nothing filed here yet — open a payment link and press “Save to my shop”.",
+    "fallbackLabel": "Payment code",
+    "open": "Open"
+  }
+}

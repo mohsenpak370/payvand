@@ -1,12 +1,49 @@
 <script setup lang="ts">
+import type { ButtonProps } from '@nuxt/ui'
+
+const { t } = useI18n()
 const { cluster } = useRuntimeConfig().public
 
 // "Running on devnet" means nothing to a shop owner; say what it costs them.
 const ctaTitle = computed(() =>
   cluster === 'devnet' || cluster === 'testnet'
-    ? 'Test mode — payments use free test SOL'
-    : 'Live — accepting real SOL'
+    ? t('common.testMode')
+    : t('common.liveMode')
 )
+
+const heroLinks = computed<ButtonProps[]>(() => [{
+  label: t('home.hero.createCta'),
+  to: '/sell',
+  icon: 'i-lucide-qr-code',
+  size: 'xl'
+}, {
+  label: t('home.hero.scanCta'),
+  to: '/scan',
+  icon: 'i-lucide-scan-line',
+  size: 'xl',
+  color: 'neutral',
+  variant: 'subtle'
+}])
+
+const steps = computed(() => [{
+  icon: 'i-lucide-monitor-smartphone',
+  title: t('home.how.create.title'),
+  description: t('home.how.create.description')
+}, {
+  icon: 'i-lucide-scan-qr-code',
+  title: t('home.how.scan.title'),
+  description: t('home.how.scan.description')
+}, {
+  icon: 'i-lucide-circle-check',
+  title: t('home.how.paid.title'),
+  description: t('home.how.paid.description')
+}])
+
+const ctaLinks = computed<ButtonProps[]>(() => [{
+  label: t('home.cta.startSelling'),
+  to: '/sell',
+  icon: 'i-lucide-arrow-right'
+}])
 </script>
 
 <template>
@@ -19,22 +56,10 @@ const ctaTitle = computed(() =>
     -->
     <UPageHero
       class="flex min-h-[calc(100svh-var(--ui-header-height))] flex-col justify-center"
-      title="Simple payments on Solana"
+      :title="$t('home.hero.title')"
       :ui="{ title: 'leading-tight' }"
-      description="A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it."
-      :links="[{
-        label: 'Create a payment QR',
-        to: '/sell',
-        icon: 'i-lucide-qr-code',
-        size: 'xl'
-      }, {
-        label: 'Scan and pay',
-        to: '/scan',
-        icon: 'i-lucide-scan-line',
-        size: 'xl',
-        color: 'neutral',
-        variant: 'subtle'
-      }]"
+      :description="$t('home.hero.description')"
+      :links="heroLinks"
     />
 
     <UPageSection>
@@ -43,33 +68,17 @@ const ctaTitle = computed(() =>
 
     <UPageSection
       id="how"
-      title="How a payment moves"
-      description="Three steps, no account setup for your customer."
-      :features="[{
-        icon: 'i-lucide-monitor-smartphone',
-        title: 'Create a payment code',
-        description: 'Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fees.'
-      }, {
-        icon: 'i-lucide-scan-qr-code',
-        title: 'Your customer scans and pays',
-        description: 'They scan the code, check the amount, and approve the payment from their own wallet. No app to install.'
-      }, {
-        icon: 'i-lucide-circle-check',
-        title: 'Paid in seconds',
-        description: 'The money arrives in your wallet and the code updates to say Paid — you both see it at the same time.'
-      }]"
+      :title="$t('home.how.title')"
+      :description="$t('home.how.description')"
+      :features="steps"
     />
 
     <UPageSection>
       <UPageCTA
         :title="ctaTitle"
-        description="Open the seller page, enter an amount, and show the code to your customer. It takes about a minute."
+        :description="$t('home.cta.description')"
         variant="subtle"
-        :links="[{
-          label: 'Start selling',
-          to: '/sell',
-          icon: 'i-lucide-arrow-right'
-        }]"
+        :links="ctaLinks"
       />
     </UPageSection>
   </div>

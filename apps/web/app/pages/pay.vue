@@ -16,7 +16,9 @@ onMounted(async () => {
   }
 })
 
-useSeoMeta({ title: 'Payment — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('pay.metaTitle') })
 </script>
 
 <template>
@@ -26,7 +28,7 @@ useSeoMeta({ title: 'Payment — Payvand' })
         v-if="embedded"
         class="text-sm text-muted"
       >
-        Opening the payment…
+        {{ $t('pay.opening') }}
       </div>
 
       <div
@@ -38,23 +40,22 @@ useSeoMeta({ title: 'Payment — Payvand' })
           class="size-8 text-muted"
         />
         <h1 class="text-base font-semibold">
-          No payment in this link
+          {{ $t('pay.noPaymentTitle') }}
         </h1>
         <p class="text-sm text-muted">
-          Payment pages open from the link the seller shares. Ask them for it, or scan their QR
-          code with your phone.
+          {{ $t('pay.noPaymentBody') }}
         </p>
         <NuxtLink
           to="/"
           class="mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
         >
-          Go to Payvand
+          {{ $t('checkout.goHome') }}
         </NuxtLink>
       </div>
     </main>
 
     <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted">
-      Powered by
+      {{ $t('checkout.poweredBy') }}
       <NuxtLink
         to="/"
         class="font-medium text-primary underline-offset-4 hover:underline"

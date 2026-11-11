@@ -18,8 +18,8 @@ interface Key {
   key: string
   label?: string
   icon?: string
-  /** Spoken name for an icon-only key. */
-  aria?: string
+  /** Locale key for the spoken name of an icon-only key. */
+  ariaKey?: string
   tone?: 'operator' | 'equals'
   /** Zero spans three cells, leaving the last one for the decimal point. */
   wide?: boolean
@@ -30,7 +30,7 @@ interface Key {
 const ROWS: Key[][] = [
   [
     { key: 'C', label: 'C' },
-    { key: '⌫', icon: 'i-lucide-delete', aria: 'Delete last digit' },
+    { key: '⌫', icon: 'i-lucide-delete', ariaKey: 'calculator.deleteLastDigit' },
     { key: '÷', label: '÷', tone: 'operator' },
     { key: '×', label: '×', tone: 'operator' }
   ],
@@ -181,7 +181,7 @@ watch(open, (isOpen) => {
   -->
   <UModal
     v-model:open="open"
-    title="Calculator"
+    :title="$t('calculator.title')"
     :transition="false"
     :ui="{ content: 'max-w-xs' }"
   >
@@ -206,7 +206,7 @@ watch(open, (isOpen) => {
               :key="k.key"
               :label="k.icon ? undefined : (k.label ?? k.key)"
               :icon="k.icon"
-              :aria-label="k.aria"
+              :aria-label="k.ariaKey ? $t(k.ariaKey) : undefined"
               class="h-11"
               :class="k.wide ? 'col-span-3' : undefined"
               size="lg"
@@ -226,10 +226,10 @@ watch(open, (isOpen) => {
           seller's currency), so naming one here would be wrong half the time.
         -->
         <p class="text-sm text-muted tabular-nums">
-          {{ canApply ? trim(value) : 'Enter an amount' }}
+          {{ canApply ? trim(value) : $t('calculator.enterAmount') }}
         </p>
         <UButton
-          label="Use amount"
+          :label="$t('calculator.useAmount')"
           :disabled="!canApply"
           @click="apply"
         />

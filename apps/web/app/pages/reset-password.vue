@@ -1,5 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'Choose a new password — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('resetPassword.metaTitle') })
 
 definePageMeta({ header: false, footer: false })
 
@@ -19,11 +21,11 @@ const busy = ref(false)
 async function submit() {
   failure.value = ''
   if (password.value.length < MIN_PASSWORD_LENGTH) {
-    failure.value = `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+    failure.value = t('resetPassword.passwordMin', { length: MIN_PASSWORD_LENGTH })
     return
   }
   if (password.value !== confirm.value) {
-    failure.value = 'The two passwords do not match.'
+    failure.value = t('resetPassword.mismatch')
     return
   }
 
@@ -32,10 +34,7 @@ async function submit() {
     await resetPassword(token.value, password.value)
     done.value = true
   } catch (error) {
-    failure.value = apiErrorMessage(
-      error,
-      'This reset link is invalid or has expired. Request a new one.'
-    )
+    failure.value = apiErrorMessage(error, t('resetPassword.expired'))
   } finally {
     busy.value = false
   }
@@ -44,11 +43,11 @@ async function submit() {
 
 <template>
   <UPageSection
-    :title="done ? 'Password changed' : 'Choose a new password'"
+    :title="done ? $t('resetPassword.changedTitle') : $t('resetPassword.chooseTitle')"
     :description="
       done
-        ? 'Your previous password no longer works and every existing session was signed out.'
-        : 'Pick a new password for your account. For safety, this link can only be used once.'
+        ? $t('resetPassword.changedDescription')
+        : $t('resetPassword.chooseDescription')
     "
   >
     <div class="mx-auto max-w-md">
@@ -58,13 +57,13 @@ async function submit() {
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
-          title="This link is invalid or has expired"
-          description="Password reset links are single-use and valid for one hour. Request a fresh one and open it right away."
+          :title="$t('resetPassword.invalidTitle')"
+          :description="$t('resetPassword.invalidDescription')"
         >
           <template #footer>
             <UButton
               to="/forgot-password"
-              label="Request a new link"
+              :label="$t('resetPassword.requestNew')"
               icon="i-lucide-mail"
               size="sm"
             />
@@ -76,13 +75,13 @@ async function submit() {
           color="success"
           variant="subtle"
           icon="i-lucide-circle-check"
-          title="Your password has been changed"
-          description="Sign in with your new password to continue."
+          :title="$t('resetPassword.successTitle')"
+          :description="$t('resetPassword.successDescription')"
         >
           <template #footer>
             <UButton
               to="/signin"
-              label="Sign in"
+              :label="$t('signin.submit')"
               icon="i-lucide-log-in"
             />
           </template>
@@ -93,25 +92,25 @@ async function submit() {
           class="flex flex-col gap-4"
           @submit.prevent="submit"
         >
-          <UFormField label="New password">
+          <UFormField :label="$t('resetPassword.newPasswordLabel')">
             <UInput
               v-model="password"
               type="password"
               name="new-password"
               autocomplete="new-password"
               class="w-full"
-              placeholder="At least 8 characters"
+              :placeholder="$t('resetPassword.newPasswordPlaceholder')"
             />
           </UFormField>
 
-          <UFormField label="Confirm password">
+          <UFormField :label="$t('resetPassword.confirmLabel')">
             <UInput
               v-model="confirm"
               type="password"
               name="confirm-password"
               autocomplete="new-password"
               class="w-full"
-              placeholder="Repeat the new password"
+              :placeholder="$t('resetPassword.confirmPlaceholder')"
             />
           </UFormField>
 
@@ -120,13 +119,13 @@ async function submit() {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not reset the password"
+            :title="$t('resetPassword.failureTitle')"
             :description="failure"
           />
 
           <UButton
             type="submit"
-            label="Save new password"
+            :label="$t('resetPassword.submit')"
             icon="i-lucide-key-round"
             :loading="busy"
             block

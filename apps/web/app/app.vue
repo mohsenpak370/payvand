@@ -1,4 +1,11 @@
 <script setup>
+// The copy lives in i18n/locales/<code>.json, so the document language and
+// direction come from the same place the words do: the browser and a screen
+// reader pronounce the page as the language it is actually written in, and a
+// right-to-left locale lays the whole app out that way.
+const { t, locale, locales } = useI18n()
+const activeLocale = computed(() => locales.value.find(entry => entry.code === locale.value))
+
 useHead({
   meta: [
     { name: 'viewport', content: 'width=device-width, initial-scale=1' },
@@ -14,13 +21,14 @@ useHead({
     { rel: 'icon', type: 'image/png', href: '/logo.png' },
     { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' }
   ],
-  htmlAttrs: {
-    lang: 'en'
-  }
+  htmlAttrs: computed(() => ({
+    lang: activeLocale.value?.language ?? String(locale.value),
+    dir: activeLocale.value?.dir ?? 'ltr'
+  }))
 })
 
-const title = 'Payvand — Solana QR payments'
-const description = 'Payvand makes taking payment simple: sellers create a QR code, customers scan it and pay from their wallet — no card reader, no account setup for the customer.'
+const title = computed(() => t('app.meta.title'))
+const description = computed(() => t('app.meta.description'))
 
 useSeoMeta({
   title,
@@ -58,17 +66,17 @@ async function onSignOut() {
  */
 const accountMenu = computed(() => [
   [
-    { label: 'Profile', icon: 'i-lucide-circle-user-round', to: '/profile' },
+    { label: t('app.account.profile'), icon: 'i-lucide-circle-user-round', to: '/profile' },
     ...(showShops.value
-      ? [{ label: 'Shops', icon: 'i-lucide-store', to: '/shops' }]
+      ? [{ label: t('app.account.shops'), icon: 'i-lucide-store', to: '/shops' }]
       : []),
-    { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
+    { label: t('app.account.settings'), icon: 'i-lucide-settings', to: '/settings' },
     ...(isAdmin.value
-      ? [{ label: 'Admin', icon: 'i-lucide-shield-check', to: '/admin' }]
+      ? [{ label: t('app.account.admin'), icon: 'i-lucide-shield-check', to: '/admin' }]
       : [])
   ],
   [
-    { label: 'Sign out', icon: 'i-lucide-log-out', onSelect: onSignOut }
+    { label: t('app.account.signOut'), icon: 'i-lucide-log-out', onSelect: onSignOut }
   ]
 ])
 </script>
@@ -90,7 +98,7 @@ const accountMenu = computed(() => [
       <template #left>
         <NuxtLink
           to="/"
-          aria-label="Payvand home"
+          :aria-label="$t('app.brandHome')"
           class="focus-visible:outline-3 outline-primary/25 flex items-center gap-2 rounded-md p-1 -ms-1"
         >
           <img
@@ -126,26 +134,26 @@ const accountMenu = computed(() => [
       -->
       <template #default>
         <nav
-          aria-label="Primary"
+          :aria-label="$t('app.nav.primary')"
           class="flex items-center gap-6"
         >
           <NuxtLink
             to="/sell"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
-            Create a payment
+            {{ $t('app.nav.createPayment') }}
           </NuxtLink>
           <NuxtLink
             to="/scan"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
-            Scan and pay
+            {{ $t('app.nav.scanAndPay') }}
           </NuxtLink>
           <NuxtLink
             to="/learn"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
-            Learn
+            {{ $t('app.nav.learn') }}
           </NuxtLink>
         </nav>
       </template>
@@ -153,7 +161,7 @@ const accountMenu = computed(() => [
       <!-- Account controls on the right of the desktop header. -->
       <template #right>
         <nav
-          aria-label="Account"
+          :aria-label="$t('app.nav.account')"
           class="hidden items-center gap-1 lg:flex"
         >
           <template v-if="user">
@@ -172,13 +180,13 @@ const accountMenu = computed(() => [
           <template v-else>
             <UButton
               to="/signin"
-              label="Sign in"
+              :label="$t('app.auth.signIn')"
               color="neutral"
               variant="ghost"
             />
             <UButton
               to="/signup"
-              label="Sign up"
+              :label="$t('app.auth.signUp')"
               color="primary"
               variant="soft"
               icon="i-lucide-user-plus"
@@ -192,12 +200,12 @@ const accountMenu = computed(() => [
       <!-- Mobile burger menu: every link that leaves the desktop header. -->
       <template #body>
         <nav
-          aria-label="Menu"
+          :aria-label="$t('app.nav.menu')"
           class="flex flex-col gap-1"
         >
           <UButton
             to="/sell"
-            label="Create a payment"
+            :label="$t('app.nav.createPayment')"
             color="neutral"
             variant="soft"
             icon="i-lucide-qr-code"
@@ -206,7 +214,7 @@ const accountMenu = computed(() => [
           />
           <UButton
             to="/scan"
-            label="Scan and pay"
+            :label="$t('app.nav.scanAndPay')"
             color="neutral"
             variant="soft"
             icon="i-lucide-scan-line"
@@ -215,7 +223,7 @@ const accountMenu = computed(() => [
           />
           <UButton
             to="/learn"
-            label="Learn about crypto"
+            :label="$t('app.nav.learnAboutCrypto')"
             color="neutral"
             variant="soft"
             icon="i-lucide-graduation-cap"
@@ -237,7 +245,7 @@ const accountMenu = computed(() => [
             </span>
             <UButton
               to="/profile"
-              label="Profile"
+              :label="$t('app.account.profile')"
               color="neutral"
               variant="soft"
               icon="i-lucide-circle-user-round"
@@ -247,7 +255,7 @@ const accountMenu = computed(() => [
             <UButton
               v-if="showShops"
               to="/shops"
-              label="Shops"
+              :label="$t('app.account.shops')"
               color="neutral"
               variant="soft"
               icon="i-lucide-store"
@@ -256,7 +264,7 @@ const accountMenu = computed(() => [
             />
             <UButton
               to="/settings"
-              label="Settings"
+              :label="$t('app.account.settings')"
               color="neutral"
               variant="soft"
               icon="i-lucide-settings"
@@ -266,7 +274,7 @@ const accountMenu = computed(() => [
             <UButton
               v-if="isAdmin"
               to="/admin"
-              label="Admin"
+              :label="$t('app.account.admin')"
               color="neutral"
               variant="soft"
               icon="i-lucide-shield-check"
@@ -274,7 +282,7 @@ const accountMenu = computed(() => [
               class="justify-start"
             />
             <UButton
-              label="Sign out"
+              :label="$t('app.account.signOut')"
               color="neutral"
               variant="soft"
               icon="i-lucide-log-out"
@@ -286,7 +294,7 @@ const accountMenu = computed(() => [
           <template v-else>
             <UButton
               to="/signin"
-              label="Sign in"
+              :label="$t('app.auth.signIn')"
               color="neutral"
               variant="soft"
               icon="i-lucide-log-in"
@@ -295,7 +303,7 @@ const accountMenu = computed(() => [
             />
             <UButton
               to="/signup"
-              label="Sign up"
+              :label="$t('app.auth.signUp')"
               color="primary"
               variant="soft"
               icon="i-lucide-user-plus"

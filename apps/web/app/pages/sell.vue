@@ -11,7 +11,9 @@ import { currenciesForCluster } from '~/composables/usePaymentProgram'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 
-useSeoMeta({ title: 'Sell — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('sell.metaTitle') })
 
 definePageMeta({ middleware: 'auth' })
 
@@ -72,10 +74,10 @@ const codeOpen = ref(false)
 // What a seller holds up to the customer's phone: the code, the name, the
 // description and the price on their own screen, without the form around them.
 const presentOpen = ref(false)
-const priceModeItems = [
-  { label: 'Type an amount', value: 'amount' },
-  { label: 'From my shops', value: 'products' }
-]
+const priceModeItems = computed(() => [
+  { label: t('sell.priceModes.amount'), value: 'amount' },
+  { label: t('sell.priceModes.products'), value: 'products' }
+])
 const sellingFromShops = computed(() => priceMode.value === 'products')
 
 // Discount codes, and the price of the open invoice — after settlement the
@@ -99,12 +101,17 @@ const selectedDiscount = computed(
 )
 
 const discountOptions = computed(() => [
-  { label: 'No discount', value: NONE },
+  { label: t('sell.discountNone'), value: NONE },
   ...discounts.value.map(code => ({
-    label: `${code.code} · ${code.percent_off}% off`,
+    label: t('sell.discountOption', { code: code.code, percent: code.percent_off }),
     value: code.code
   }))
 ])
+
+/** "1 code" / "2 codes", in whatever forms the locale defines. */
+function codeCount(count: number) {
+  return t('sell.codesCount', { count }, count)
+}
 
 const canAddCode = computed(() =>
   !codeBusy.value
@@ -159,9 +166,9 @@ const discountedPrice = computed(() => {
 
 /** The price field sets the invoice, and the dropdown says which currency it charges. */
 const amountHelp = computed(() => {
-  if (cartActive.value) return 'The total of the products above — clear them to type a price instead.'
-  if (sellingFromShops.value) return 'What the customer pays.'
-  return `What the customer pays, in ${currencySymbol(priceCurrency.value)}.`
+  if (cartActive.value) return t('sell.amountHelpCart')
+  if (sellingFromShops.value) return t('sell.amountHelpProducts')
+  return t('sell.amountHelpTyped', { currency: currencySymbol(priceCurrency.value) })
 })
 
 // Picking products decides the price: the invoice has to charge exactly what
@@ -212,23 +219,23 @@ async function createPayment() {
 
   const seller = publicKey.value
   if (!seller) {
-    failure.value = 'Connect your seller wallet first.'
+    failure.value = t('sell.connectFirst')
     return
   }
   if (!Number.isFinite(priceUnits.value) || priceUnits.value <= 0) {
-    failure.value = 'Enter a price greater than 0.'
+    failure.value = t('sell.enterPrice')
     return
   }
   if (memo.value.length > 96) {
-    failure.value = 'The note is too long — please shorten it.'
+    failure.value = t('sell.memoTooLong')
     return
   }
   if (name.value.trim().length > 64) {
-    failure.value = 'The name is too long — please shorten it.'
+    failure.value = t('sell.nameTooLong')
     return
   }
   if (description.value.trim().length > 160) {
-    failure.value = 'The description is too long — please shorten it.'
+    failure.value = t('sell.descriptionTooLong')
     return
   }
 
@@ -264,7 +271,7 @@ async function createPayment() {
     // The invoice is made; the next one starts from an empty tray.
     cart.value = []
   } catch (error) {
-    failure.value = error instanceof Error ? error.message : 'Could not create the payment.'
+    failure.value = error instanceof Error ? error.message : t('sell.createFailure')
   } finally {
     busy.value = false
   }
@@ -388,7 +395,7 @@ async function addDiscount() {
     discounts.value = [created, ...discounts.value]
     newCode.value = ''
   } catch (error) {
-    codeFailure.value = apiErrorMessage(error, 'Could not add the discount code.')
+    codeFailure.value = apiErrorMessage(error, t('sell.addDiscountFailure'))
   } finally {
     codeBusy.value = false
   }
@@ -400,7 +407,7 @@ async function removeDiscount(discount: DiscountCode) {
     await api.deleteDiscount(discount.id)
     discounts.value = discounts.value.filter(code => code.id !== discount.id)
   } catch (error) {
-    codeFailure.value = apiErrorMessage(error, 'Could not delete the discount code.')
+    codeFailure.value = apiErrorMessage(error, t('sell.deleteDiscountFailure'))
   }
 }
 
@@ -479,15 +486,15 @@ onBeforeUnmount(() => {
 
 <template>
   <UPageSection
-    title="Create a payment QR"
-    description="Enter what you want to charge, create the code, and show it to your customer."
+    :title="$t('sell.pageTitle')"
+    :description="$t('sell.pageDescription')"
   >
     <div class="grid gap-6 lg:grid-cols-2">
       <UCard>
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-base font-semibold">
-              1. Invoice
+              {{ $t('sell.invoiceHeading') }}
             </h2>
             <WalletConnect />
           </div>
@@ -496,7 +503,7 @@ onBeforeUnmount(() => {
         <div class="flex flex-col gap-4">
           <UFormField
             v-if="shopsEnabled && hasProducts"
-            label="Pricing"
+            :label="$t('sell.pricingLabel')"
           >
             <URadioGroup
               v-model="priceMode"
@@ -516,7 +523,7 @@ onBeforeUnmount(() => {
           -->
           <UFormField
             v-if="!sellingFromShops"
-            label="Price"
+            :label="$t('sell.priceLabel')"
             :help="amountHelp"
           >
             <div class="flex items-stretch gap-2">
@@ -526,21 +533,21 @@ onBeforeUnmount(() => {
                 min="0"
                 :step="priceCurrency === 'sol' ? '0.001' : '0.01'"
                 class="min-w-0 flex-1"
-                :placeholder="priceCurrency === 'sol' ? '0.01' : '5.00'"
+                :placeholder="priceCurrency === 'sol' ? $t('sell.pricePlaceholderSol') : $t('sell.pricePlaceholderToken')"
                 :disabled="cartActive"
               />
               <USelect
                 v-model="priceCurrency"
                 :items="currencyItems"
                 class="w-24"
-                aria-label="Currency the customer pays in"
+                :aria-label="$t('sell.currencyAria')"
                 :disabled="cartActive"
               />
               <UButton
                 icon="i-lucide-calculator"
                 color="neutral"
                 variant="outline"
-                aria-label="Open the calculator"
+                :aria-label="$t('sell.calculatorAria')"
                 :disabled="cartActive"
                 @click="calculatorOpen = true"
               />
@@ -549,10 +556,10 @@ onBeforeUnmount(() => {
 
           <UFormField
             v-if="discounts.length"
-            label="Discount"
+            :label="$t('sell.discountLabel')"
             :help="selectedDiscount
-              ? `Buyers pay ${discountedPrice} — ${selectedDiscount.percent_off}% off, applied for them.`
-              : 'Optional — ride one of your codes along with this QR so buyers get it without typing it.'"
+              ? $t('sell.discountHelpSelected', { price: discountedPrice, percent: selectedDiscount.percent_off })
+              : $t('sell.discountHelp')"
           >
             <USelect
               v-model="discountCode"
@@ -562,13 +569,13 @@ onBeforeUnmount(() => {
           </UFormField>
 
           <UFormField
-            label="Name"
-            help="The heading your customer sees above the amount — like “Coffee for two”."
+            :label="$t('sell.nameLabel')"
+            :help="$t('sell.nameHelp')"
           >
             <UInput
               v-model="name"
               class="w-full"
-              placeholder="What is this payment?"
+              :placeholder="$t('sell.namePlaceholder')"
               :maxlength="64"
             />
           </UFormField>
@@ -577,7 +584,7 @@ onBeforeUnmount(() => {
                note. Folded, because most codes need neither. -->
           <div class="flex flex-col gap-3">
             <UButton
-              :label="detailsOpen ? 'Hide description and note' : 'Add a description or note'"
+              :label="detailsOpen ? $t('sell.hideDetails') : $t('sell.addDetails')"
               :icon="detailsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
               color="neutral"
               variant="ghost"
@@ -589,27 +596,27 @@ onBeforeUnmount(() => {
 
             <template v-if="detailsOpen">
               <UFormField
-                label="Description"
-                help="Optional detail under the name — what is included, where, when."
+                :label="$t('sell.descriptionLabel')"
+                :help="$t('sell.descriptionHelp')"
               >
                 <UTextarea
                   v-model="description"
                   :rows="2"
                   class="w-full"
-                  placeholder="Two flat whites at the corner shop"
+                  :placeholder="$t('sell.descriptionPlaceholder')"
                   :maxlength="160"
                 />
               </UFormField>
 
               <UFormField
-                label="Memo"
-                help="Recorded on chain with the payment, so wallets and explorers show it too."
+                :label="$t('sell.memoLabel')"
+                :help="$t('sell.memoHelp')"
               >
                 <UTextarea
                   v-model="memo"
                   :rows="2"
                   class="w-full"
-                  placeholder="Coffee"
+                  :placeholder="$t('sell.memoPlaceholder')"
                   :maxlength="96"
                 />
               </UFormField>
@@ -628,12 +635,12 @@ onBeforeUnmount(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not create the payment"
+            :title="$t('sell.createFailureTitle')"
             :description="failure"
           />
 
           <UButton
-            label="Create payment code"
+            :label="$t('sell.createCode')"
             icon="i-lucide-qr-code"
             :loading="busy"
             :disabled="!canCreate"
@@ -647,11 +654,11 @@ onBeforeUnmount(() => {
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-base font-semibold">
-              2. Show the code
+              {{ $t('sell.showHeading') }}
             </h2>
             <UButton
               v-if="record"
-              label="New payment"
+              :label="$t('sell.newPayment')"
               color="neutral"
               variant="soft"
               size="sm"
@@ -675,14 +682,14 @@ onBeforeUnmount(() => {
             customer would have to open first.
           -->
           <UButton
-            label="Show to customer"
+            :label="$t('sell.showToCustomer')"
             icon="i-lucide-maximize"
             block
             @click="presentOpen = true"
           />
 
           <p class="text-center text-xs text-muted">
-            Any phone camera opens this — and the page takes the payment.
+            {{ $t('sell.scanHint') }}
           </p>
 
           <div class="flex flex-wrap items-center justify-center gap-2">
@@ -690,12 +697,12 @@ onBeforeUnmount(() => {
               :to="shareLink"
               target="_blank"
               rel="noopener"
-              label="Open payment page"
+              :label="$t('sell.openPage')"
               icon="i-lucide-external-link"
             />
             <UButton
               :icon="copiedLink ? 'i-lucide-check' : 'i-lucide-link'"
-              :label="copiedLink ? 'Link copied' : 'Copy link'"
+              :label="copiedLink ? $t('sell.linkCopied') : $t('sell.copyLink')"
               color="neutral"
               variant="soft"
               @click="copyLink"
@@ -724,7 +731,7 @@ onBeforeUnmount(() => {
                status refresh replaces the record, not this. -->
           <div
             v-if="createdItems.length"
-            class="w-full rounded-xl border border-default text-left"
+            class="w-full rounded-xl border border-default text-start"
           >
             <ul class="divide-y divide-default">
               <li
@@ -757,14 +764,14 @@ onBeforeUnmount(() => {
               color="success"
               variant="subtle"
             >
-              {{ record.discount.percent_off }}% off
+              {{ $t('sell.percentOff', { percent: record.discount.percent_off }) }}
             </UBadge>
             <UBadge
               v-if="paidCode && record.amount_lamports > 0"
               color="success"
               variant="subtle"
             >
-              {{ paidCode }} · saved {{ savedLabel }}
+              {{ $t('sell.savedBadge', { code: paidCode, amount: savedLabel }) }}
             </UBadge>
           </div>
 
@@ -775,7 +782,7 @@ onBeforeUnmount(() => {
           -->
           <UButton
             v-if="!codeOpen"
-            label="Can't scan it? Show the code text"
+            :label="$t('sell.showCodeText')"
             icon="i-lucide-chevron-down"
             color="neutral"
             variant="ghost"
@@ -787,7 +794,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <dl class="w-full space-y-1 text-xs text-muted">
               <div class="flex justify-between gap-3">
-                <dt>Payment ID</dt>
+                <dt>{{ $t('sell.paymentId') }}</dt>
                 <dd class="truncate font-mono">
                   {{ record.payment_pda }}
                 </dd>
@@ -796,7 +803,7 @@ onBeforeUnmount(() => {
                 v-if="record.settled_by"
                 class="flex justify-between gap-3"
               >
-                <dt>Paid by</dt>
+                <dt>{{ $t('sell.paidBy') }}</dt>
                 <dd class="truncate font-mono">
                   {{ record.settled_by }}
                 </dd>
@@ -811,10 +818,10 @@ onBeforeUnmount(() => {
           -->
             <div ref="payloadBox">
               <div class="mb-1.5 flex items-center justify-between gap-3">
-                <span class="text-sm font-medium">Payment code</span>
+                <span class="text-sm font-medium">{{ $t('sell.paymentCode') }}</span>
                 <UButton
                   :icon="copiedCode ? 'i-lucide-check' : 'i-lucide-copy'"
-                  :label="copiedCode ? 'Copied' : 'Copy code'"
+                  :label="copiedCode ? $t('common.copied') : $t('sell.copyCode')"
                   color="neutral"
                   variant="soft"
                   size="xs"
@@ -825,12 +832,12 @@ onBeforeUnmount(() => {
                 {{ qrPayload }}
               </code>
               <p class="mt-1.5 text-xs text-muted">
-                If the QR cannot be scanned, your customer can paste this on the pay page.
+                {{ $t('sell.pasteHint') }}
               </p>
             </div>
 
             <UButton
-              label="Hide details"
+              :label="$t('sell.hideDetailsButton')"
               icon="i-lucide-chevron-up"
               color="neutral"
               variant="ghost"
@@ -845,7 +852,7 @@ onBeforeUnmount(() => {
           v-else
           class="py-10 text-center text-sm text-muted"
         >
-          Your QR code will appear here once the payment is created.
+          {{ $t('sell.emptyCode') }}
         </div>
       </UCard>
 
@@ -854,18 +861,18 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Discount codes
+                {{ $t('sell.discountsTitle') }}
               </h2>
               <p class="text-sm text-muted">
-                Optional — buyers type a code at checkout to pay less.
+                {{ $t('sell.discountsSubtitle') }}
               </p>
             </div>
             <UButton
               :label="discountsOpen
-                ? 'Hide'
+                ? $t('sell.hide')
                 : discounts.length
-                  ? `${discounts.length} ${discounts.length === 1 ? 'code' : 'codes'}`
-                  : 'Add a code'"
+                  ? codeCount(discounts.length)
+                  : $t('sell.addCode')"
               :icon="discountsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
               color="neutral"
               variant="soft"
@@ -887,14 +894,14 @@ onBeforeUnmount(() => {
             <li
               v-for="discount in discounts"
               :key="discount.id"
-              class="flex items-center gap-2 rounded-full border border-default py-1 pl-3 pr-1"
+              class="flex items-center gap-2 rounded-full border border-default py-1 ps-3 pe-1"
             >
               <span class="text-sm font-medium">{{ discount.code }}</span>
               <UBadge
                 color="primary"
                 variant="subtle"
               >
-                {{ discount.percent_off }}% off
+                {{ $t('sell.percentOff', { percent: discount.percent_off }) }}
               </UBadge>
               <UButton
                 icon="i-lucide-x"
@@ -902,7 +909,7 @@ onBeforeUnmount(() => {
                 variant="ghost"
                 size="xs"
                 square
-                :aria-label="`Delete ${discount.code}`"
+                :aria-label="$t('sell.deleteAria', { code: discount.code })"
                 @click="removeDiscount(discount)"
               />
             </li>
@@ -911,23 +918,23 @@ onBeforeUnmount(() => {
             v-else
             class="text-sm text-muted"
           >
-            No codes yet — add one so buyers can get a discount.
+            {{ $t('sell.noCodes') }}
           </p>
 
           <div class="flex flex-wrap items-end gap-3">
             <UFormField
-              label="Code"
+              :label="$t('sell.codeLabel')"
               class="min-w-40 flex-1"
             >
               <UInput
                 v-model="newCode"
                 class="w-full"
-                placeholder="SAVE10"
+                :placeholder="$t('sell.codePlaceholder')"
                 :maxlength="32"
               />
             </UFormField>
             <UFormField
-              label="Percent off"
+              :label="$t('sell.percentLabel')"
               class="w-32"
             >
               <UInput
@@ -936,11 +943,11 @@ onBeforeUnmount(() => {
                 min="1"
                 max="99"
                 class="w-full"
-                placeholder="10"
+                :placeholder="$t('sell.percentPlaceholder')"
               />
             </UFormField>
             <UButton
-              label="Add code"
+              :label="$t('sell.addCode')"
               icon="i-lucide-plus"
               :loading="codeBusy"
               :disabled="!canAddCode"
@@ -953,7 +960,7 @@ onBeforeUnmount(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Discount code error"
+            :title="$t('sell.codeErrorTitle')"
             :description="codeFailure"
           />
         </div>
@@ -974,7 +981,7 @@ onBeforeUnmount(() => {
     <UModal
       v-if="record"
       v-model:open="presentOpen"
-      :title="record.name || 'Payment code'"
+      :title="record.name || $t('sell.presentFallbackTitle')"
       :transition="false"
       :ui="{ content: 'max-w-md' }"
     >
@@ -1001,7 +1008,7 @@ onBeforeUnmount(() => {
           </div>
 
           <p class="text-center text-xs text-muted">
-            Scan this with a phone camera to pay.
+            {{ $t('sell.scanToPay') }}
           </p>
         </div>
       </template>

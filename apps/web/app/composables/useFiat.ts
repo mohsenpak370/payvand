@@ -15,10 +15,7 @@ export interface SolRates {
 
 export const CURRENCY_STORAGE_KEY = 'payvand.currency.v1'
 
-export const CURRENCY_OPTIONS: { label: string, value: FiatCurrency }[] = [
-  { label: 'US dollars (USD)', value: 'usd' },
-  { label: 'Euros (EUR)', value: 'eur' }
-]
+export const FIAT_CURRENCIES: FiatCurrency[] = ['usd', 'eur']
 
 /**
  * The currency a person reads prices in. Shared state, so changing it on the

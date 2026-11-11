@@ -4,11 +4,20 @@ import { defineCollection, defineContentConfig, z } from '@nuxt/content'
 // the index into its groups — the ideas, Solana itself, the app, and staying
 // safe — and `order` is the reading order inside each group, so the index
 // never depends on filenames.
+//
+// The guides sit under `content/en/` because that folder is the locale: the set
+// of files is what an English reader gets. `prefix` hides the folder from the
+// URL, so a guide is still /learn/<slug>; another language becomes a second
+// collection reading `content/<locale>/learn`, and the pages pick one by the
+// current locale.
 export default defineContentConfig({
   collections: {
     learn: defineCollection({
       type: 'page',
-      source: 'learn/*.md',
+      source: {
+        include: 'en/learn/*.md',
+        prefix: '/learn'
+      },
       schema: z.object({
         title: z.string(),
         description: z.string(),

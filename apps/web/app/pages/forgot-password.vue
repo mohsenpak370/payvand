@@ -1,5 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'Forgot password — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('forgotPassword.metaTitle') })
 
 definePageMeta({ layout: 'auth', header: false, footer: false })
 
@@ -13,7 +15,7 @@ const busy = ref(false)
 async function submit() {
   failure.value = ''
   if (!email.value.trim()) {
-    failure.value = 'Enter your email address.'
+    failure.value = t('forgotPassword.enterEmail')
     return
   }
 
@@ -23,7 +25,7 @@ async function submit() {
     // no account — so "sent" only ever shows the server's generic message.
     sent.value = await forgotPassword(email.value)
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not send the request. Try again.')
+    failure.value = apiErrorMessage(error, t('forgotPassword.failure'))
   } finally {
     busy.value = false
   }
@@ -33,25 +35,24 @@ async function submit() {
 <template>
   <div>
     <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
-      Reset your password
+      {{ $t('forgotPassword.title') }}
     </h1>
     <p class="text-muted mt-2 text-sm leading-relaxed">
-      We'll email you a one-time link to choose a new password. The link is
-      valid for one hour.
+      {{ $t('forgotPassword.subtitle') }}
     </p>
 
     <form
       class="mt-8 flex flex-col gap-4"
       @submit.prevent="submit"
     >
-      <UFormField label="Email">
+      <UFormField :label="$t('forgotPassword.emailLabel')">
         <UInput
           v-model="email"
           type="email"
           name="email"
           autocomplete="email"
           class="w-full"
-          placeholder="you@example.com"
+          :placeholder="$t('forgotPassword.emailPlaceholder')"
         />
       </UFormField>
 
@@ -60,7 +61,7 @@ async function submit() {
         color="success"
         variant="subtle"
         icon="i-lucide-mail-check"
-        title="Check your inbox"
+        :title="$t('forgotPassword.sentTitle')"
         :description="sent"
       />
 
@@ -74,7 +75,7 @@ async function submit() {
 
       <UButton
         type="submit"
-        label="Send reset link"
+        :label="$t('forgotPassword.submit')"
         icon="i-lucide-send"
         size="lg"
         :loading="busy"
@@ -84,12 +85,12 @@ async function submit() {
     </form>
 
     <p class="text-muted mt-8 text-center text-sm">
-      Remembered it?
+      {{ $t('forgotPassword.remembered') }}
       <NuxtLink
         to="/signin"
         class="text-primary font-medium"
       >
-        Back to sign in
+        {{ $t('forgotPassword.backToSignIn') }}
       </NuxtLink>
     </p>
   </div>

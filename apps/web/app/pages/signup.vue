@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { MIN_PASSWORD_LENGTH } from '~/composables/useAuth'
 
-useSeoMeta({ title: 'Create account — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('signup.metaTitle') })
 
 definePageMeta({ layout: 'auth', header: false, footer: false })
 
@@ -31,15 +33,15 @@ onMounted(async () => {
 async function submit() {
   failure.value = ''
   if (!email.value.trim()) {
-    failure.value = 'Enter your email address.'
+    failure.value = t('signup.enterEmail')
     return
   }
   if (password.value.length < MIN_PASSWORD_LENGTH) {
-    failure.value = `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+    failure.value = t('signup.passwordMin', { length: MIN_PASSWORD_LENGTH })
     return
   }
   if (password.value !== confirm.value) {
-    failure.value = 'The two passwords do not match.'
+    failure.value = t('signup.mismatch')
     return
   }
 
@@ -54,7 +56,7 @@ async function submit() {
       await router.replace({ path: '/profile', query: { welcome: '1' } })
     }
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not create the account.')
+    failure.value = apiErrorMessage(error, t('signup.createFailure'))
   } finally {
     busy.value = false
   }
@@ -64,31 +66,30 @@ async function submit() {
 <template>
   <div>
     <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
-      Create your account
+      {{ $t('signup.title') }}
     </h1>
     <p class="text-muted mt-2 text-sm leading-relaxed">
-      One login for the codes you create and the payments you take. Right
-      after signup we take you to your profile to connect a Solana wallet.
+      {{ $t('signup.subtitle') }}
     </p>
 
     <form
       class="mt-8 flex flex-col gap-4"
       @submit.prevent="submit"
     >
-      <UFormField label="Email">
+      <UFormField :label="$t('signup.emailLabel')">
         <UInput
           v-model="email"
           type="email"
           name="email"
           autocomplete="email"
           class="w-full"
-          placeholder="you@example.com"
+          :placeholder="$t('signup.emailPlaceholder')"
         />
       </UFormField>
 
       <UFormField
-        label="Password"
-        :help="`At least ${MIN_PASSWORD_LENGTH} characters.`"
+        :label="$t('signup.passwordLabel')"
+        :help="$t('signup.passwordHelp', { length: MIN_PASSWORD_LENGTH })"
       >
         <UInput
           v-model="password"
@@ -96,18 +97,18 @@ async function submit() {
           name="new-password"
           autocomplete="new-password"
           class="w-full"
-          placeholder="Choose a password"
+          :placeholder="$t('signup.passwordPlaceholder')"
         />
       </UFormField>
 
-      <UFormField label="Confirm password">
+      <UFormField :label="$t('signup.confirmLabel')">
         <UInput
           v-model="confirm"
           type="password"
           name="confirm-password"
           autocomplete="new-password"
           class="w-full"
-          placeholder="Re-enter your password"
+          :placeholder="$t('signup.confirmPlaceholder')"
         />
       </UFormField>
 
@@ -121,7 +122,7 @@ async function submit() {
 
       <UButton
         type="submit"
-        label="Create account"
+        :label="$t('signup.submit')"
         icon="i-lucide-user-plus"
         size="lg"
         :loading="busy"
@@ -130,12 +131,12 @@ async function submit() {
     </form>
 
     <p class="text-muted mt-6 text-center text-sm">
-      Already have an account?
+      {{ $t('signup.haveAccount') }}
       <NuxtLink
         :to="{ path: '/signin', query: { next: nextPath } }"
         class="text-primary font-medium"
       >
-        Sign in
+        {{ $t('signup.signIn') }}
       </NuxtLink>
     </p>
   </div>

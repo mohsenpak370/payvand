@@ -6,6 +6,7 @@ import type { SavedPayment } from '~/composables/usePaymentApi'
 // offering the same permanent link the seller handed out.
 const props = defineProps<{ shopId: string }>()
 
+const { t } = useI18n()
 const api = usePaymentApi()
 
 interface KeptCode {
@@ -27,7 +28,7 @@ function describe(saved: SavedPayment): KeptCode | null {
     if (!option) return null
     return {
       id: saved.id,
-      label: payload.name || payload.memo || 'Payment code',
+      label: payload.name || payload.memo || t('shopCodes.fallbackLabel'),
       amount: option.currency === 'sol'
         ? `${lamportsToSol(option.amount)} SOL`
         : `${formatTokenAmount(option.amount, option.decimals)} ${currencySymbol(option.currency)}`,
@@ -49,7 +50,7 @@ async function load() {
       .map(describe)
       .filter((code): code is KeptCode => code !== null)
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not load the codes kept in this shop.')
+    failure.value = apiErrorMessage(error, t('shopCodes.loadError'))
   } finally {
     loading.value = false
   }
@@ -63,10 +64,10 @@ onMounted(load)
     <template #header>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="text-base font-semibold">
-          Payment codes
+          {{ $t('shopCodes.title') }}
         </h2>
         <p class="text-xs text-muted">
-          Links you saved to this shop.
+          {{ $t('shopCodes.subtitle') }}
         </p>
       </div>
     </template>
@@ -75,7 +76,7 @@ onMounted(load)
       v-if="loading"
       class="text-sm text-muted"
     >
-      Loading saved codes…
+      {{ $t('shopCodes.loading') }}
     </p>
 
     <UAlert
@@ -83,7 +84,7 @@ onMounted(load)
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      title="Could not load these codes"
+      :title="$t('shopCodes.loadError')"
       :description="failure"
     />
 
@@ -91,7 +92,7 @@ onMounted(load)
       v-else-if="!codes.length"
       class="text-sm text-muted"
     >
-      Nothing filed here yet — open a payment link and press “Save to my shop”.
+      {{ $t('shopCodes.empty') }}
     </p>
 
     <ul
@@ -113,7 +114,7 @@ onMounted(load)
         </div>
         <UButton
           :to="code.link"
-          label="Open"
+          :label="$t('shopCodes.open')"
           icon="i-lucide-external-link"
           size="xs"
           color="neutral"

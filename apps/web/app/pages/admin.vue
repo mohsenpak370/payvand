@@ -1,5 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'Admin — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('admin.metaTitle') })
 definePageMeta({ middleware: 'auth' })
 
 const {
@@ -65,7 +67,7 @@ async function load() {
     if (statusOf(error) === 403) {
       forbidden.value = true
     } else {
-      failure.value = apiErrorMessage(error, 'Could not load the admin data.')
+      failure.value = apiErrorMessage(error, t('admin.users.loadFailure'))
     }
   } finally {
     loading.value = false
@@ -78,10 +80,7 @@ async function loadFeed() {
   try {
     feed.value = await fetchPayments(20)
   } catch (error) {
-    feedFailure.value = apiErrorMessage(
-      error,
-      'Could not read recent payments from the cluster.'
-    )
+    feedFailure.value = apiErrorMessage(error, t('admin.feed.loadFailure'))
   } finally {
     feedLoading.value = false
   }
@@ -93,19 +92,14 @@ async function loadWaitlist() {
   try {
     waitlist.value = await fetchWaitlist()
   } catch (error) {
-    waitlistFailure.value = apiErrorMessage(
-      error,
-      'Could not read the waiting list.'
-    )
+    waitlistFailure.value = apiErrorMessage(error, t('admin.waitlist.loadFailure'))
   } finally {
     waitlistLoading.value = false
   }
 }
 
 async function removeEntry(entry: WaitlistEntry) {
-  const confirmed = window.confirm(
-    `Remove ${entry.email} from the waiting list?\n\nThe address is deleted, so nobody can email it from here again.`
-  )
+  const confirmed = window.confirm(t('admin.waitlist.removeConfirm', { email: entry.email }))
   if (!confirmed) return
 
   busy.value = true
@@ -113,10 +107,7 @@ async function removeEntry(entry: WaitlistEntry) {
     await removeWaitlistEntry(entry.email)
     await loadWaitlist()
   } catch (error) {
-    waitlistFailure.value = apiErrorMessage(
-      error,
-      'Could not remove that address.'
-    )
+    waitlistFailure.value = apiErrorMessage(error, t('admin.waitlist.removeFailure'))
   } finally {
     busy.value = false
   }
@@ -138,9 +129,7 @@ function pageUp() {
 }
 
 async function remove(row: AdminUser) {
-  const confirmed = window.confirm(
-    `Delete ${row.email}?\n\nThis removes the account, its sessions, its discount codes and any pending reset links. This cannot be undone.`
-  )
+  const confirmed = window.confirm(t('admin.users.deleteConfirm', { email: row.email }))
   if (!confirmed) return
 
   busy.value = true
@@ -153,7 +142,7 @@ async function remove(row: AdminUser) {
     }
     await load()
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not delete that account.')
+    failure.value = apiErrorMessage(error, t('admin.users.deleteFailure'))
   } finally {
     busy.value = false
   }
@@ -181,6 +170,19 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
       : 'neutral'
 }
 
+/** "1 address" / "2 addresses", in whatever forms the locale defines. */
+function addressCount(count: number) {
+  return t('admin.waitlist.count', { count }, count)
+}
+
+/** "1 invoice" / "2 invoices", in whatever forms the locale defines. */
+function invoiceCount(count: number) {
+  return t('admin.feed.count', {
+    count,
+    cluster: networkLabel(feed.value?.cluster ?? '')
+  }, count)
+}
+
 onMounted(() => {
   load()
   loadFeed()
@@ -190,8 +192,8 @@ onMounted(() => {
 
 <template>
   <UPageSection
-    title="Admin"
-    description="Platform oversight: accounts, live sessions, discount codes and the waiting list."
+    :title="$t('admin.title')"
+    :description="$t('admin.description')"
   >
     <!--
       `min-w-0` on this column and on the cards below: in a flex column each
@@ -205,8 +207,8 @@ onMounted(() => {
         color="error"
         variant="subtle"
         icon="i-lucide-shield-x"
-        title="No admin access"
-        description="This account is not listed in the API's ADMIN_EMAILS setting, so the admin endpoints answer 403. Add the address there (and redeploy) to grant access."
+        :title="$t('admin.forbiddenTitle')"
+        :description="$t('admin.forbiddenDescription')"
       />
 
       <template v-else>
@@ -214,25 +216,25 @@ onMounted(() => {
           <UCard>
             <div class="flex flex-col gap-1">
               <span class="text-2xl font-semibold">{{ stats?.users ?? '—' }}</span>
-              <span class="text-sm text-muted">Accounts</span>
+              <span class="text-sm text-muted">{{ $t('admin.stats.accounts') }}</span>
             </div>
           </UCard>
           <UCard>
             <div class="flex flex-col gap-1">
               <span class="text-2xl font-semibold">{{ stats?.active_sessions ?? '—' }}</span>
-              <span class="text-sm text-muted">Live sessions</span>
+              <span class="text-sm text-muted">{{ $t('admin.stats.sessions') }}</span>
             </div>
           </UCard>
           <UCard>
             <div class="flex flex-col gap-1">
               <span class="text-2xl font-semibold">{{ stats?.discount_codes ?? '—' }}</span>
-              <span class="text-sm text-muted">Discount codes</span>
+              <span class="text-sm text-muted">{{ $t('admin.stats.discounts') }}</span>
             </div>
           </UCard>
           <UCard>
             <div class="flex flex-col gap-1">
               <span class="text-2xl font-semibold">{{ stats?.pending_resets ?? '—' }}</span>
-              <span class="text-sm text-muted">Pending resets</span>
+              <span class="text-sm text-muted">{{ $t('admin.stats.resets') }}</span>
             </div>
           </UCard>
         </div>
@@ -242,19 +244,19 @@ onMounted(() => {
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold">
-                  Waiting list
+                  {{ $t('admin.waitlist.title') }}
                 </h2>
                 <p class="text-xs text-muted">
                   {{
                     waitlist
-                      ? `${waitlist.total} address${waitlist.total === 1 ? '' : 'es'} for a live cluster`
-                      : 'Sellers who want to take real payments'
+                      ? addressCount(waitlist.total)
+                      : $t('admin.waitlist.fallback')
                   }}
                 </p>
               </div>
               <UButton
                 icon="i-lucide-refresh-cw"
-                label="Refresh"
+                :label="$t('profile.refresh')"
                 color="neutral"
                 variant="soft"
                 size="sm"
@@ -269,21 +271,20 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Waiting list"
+            :title="$t('admin.waitlist.errorTitle')"
             :description="waitlistFailure"
           />
           <p
             v-else-if="waitlistLoading && !waitlist"
             class="py-6 text-center text-sm text-muted"
           >
-            Reading the list…
+            {{ $t('admin.waitlist.reading') }}
           </p>
           <p
             v-else-if="!waitlist?.items.length"
             class="py-6 text-center text-sm text-muted"
           >
-            Nobody has joined yet. The card on the home page adds the first
-            address.
+            {{ $t('admin.waitlist.empty') }}
           </p>
           <ul
             v-else
@@ -299,7 +300,7 @@ onMounted(() => {
                   {{ entry.email }}
                 </p>
                 <p class="text-xs text-muted">
-                  Joined {{ formatDate(entry.created_at_unix) }}
+                  {{ $t('admin.waitlist.joined', { date: formatDate(entry.created_at_unix) }) }}
                 </p>
               </div>
               <UButton
@@ -308,7 +309,7 @@ onMounted(() => {
                 variant="ghost"
                 size="sm"
                 :disabled="busy"
-                aria-label="Remove from the waiting list"
+                :aria-label="$t('admin.waitlist.removeAria')"
                 @click="removeEntry(entry)"
               />
             </li>
@@ -320,19 +321,19 @@ onMounted(() => {
             <div class="flex items-center justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold">
-                  Recent payments
+                  {{ $t('admin.feed.title') }}
                 </h2>
                 <p class="text-xs text-muted">
                   {{
                     feed
-                      ? `${feed.total} invoice${feed.total === 1 ? '' : 's'} on ${networkLabel(feed.cluster)}`
-                      : 'Read live from the cluster'
+                      ? invoiceCount(feed.total)
+                      : $t('admin.feed.fallback')
                   }}
                 </p>
               </div>
               <UButton
                 icon="i-lucide-refresh-cw"
-                label="Refresh"
+                :label="$t('profile.refresh')"
                 color="neutral"
                 variant="soft"
                 size="sm"
@@ -347,20 +348,20 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Cluster unavailable"
+            :title="$t('admin.feed.errorTitle')"
             :description="feedFailure"
           />
           <p
             v-else-if="feedLoading && !feed"
             class="py-6 text-center text-sm text-muted"
           >
-            Reading the cluster…
+            {{ $t('admin.feed.reading') }}
           </p>
           <p
             v-else-if="feed && feed.items.length === 0"
             class="py-6 text-center text-sm text-muted"
           >
-            No payments on chain yet.
+            {{ $t('admin.feed.empty') }}
           </p>
           <!--
             Six columns cannot fit a phone, so the table keeps a readable
@@ -374,24 +375,24 @@ onMounted(() => {
           >
             <table class="w-full min-w-[44rem] text-sm">
               <thead>
-                <tr class="border-b text-left text-muted">
-                  <th class="py-2 pr-3 font-medium">
-                    When
+                <tr class="border-b text-start text-muted">
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.feed.when') }}
                   </th>
-                  <th class="py-2 pr-3 font-medium">
-                    Seller
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.feed.seller') }}
                   </th>
-                  <th class="py-2 pr-3 text-right font-medium">
-                    Amount
+                  <th class="py-2 pe-3 text-right font-medium">
+                    {{ $t('admin.feed.amount') }}
                   </th>
-                  <th class="py-2 pr-3 font-medium">
-                    Memo
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.feed.memo') }}
                   </th>
-                  <th class="py-2 pr-3 font-medium">
-                    Status
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.feed.status') }}
                   </th>
                   <th class="py-2 font-medium">
-                    Paid by
+                    {{ $t('admin.feed.paidBy') }}
                   </th>
                 </tr>
               </thead>
@@ -401,19 +402,19 @@ onMounted(() => {
                   :key="payment.id"
                   class="border-b last:border-0"
                 >
-                  <td class="py-2 pr-3 whitespace-nowrap text-muted">
+                  <td class="py-2 pe-3 whitespace-nowrap text-muted">
                     {{ formatDateTime(payment.settled_at_unix || payment.created_at_unix) }}
                   </td>
-                  <td class="py-2 pr-3 font-mono text-xs">
+                  <td class="py-2 pe-3 font-mono text-xs">
                     {{ short(payment.seller) }}
                   </td>
-                  <td class="py-2 pr-3 text-right">
+                  <td class="py-2 pe-3 text-right">
                     {{ lamportsToSol(payment.amount_lamports) }}
                   </td>
-                  <td class="max-w-[12rem] truncate py-2 pr-3">
+                  <td class="max-w-[12rem] truncate py-2 pe-3">
                     {{ payment.memo || '—' }}
                   </td>
-                  <td class="py-2 pr-3">
+                  <td class="py-2 pe-3">
                     <UBadge
                       :color="statusColor(payment.status)"
                       variant="subtle"
@@ -438,12 +439,12 @@ onMounted(() => {
             <UInput
               v-model="search"
               class="min-w-0 flex-1"
-              placeholder="Search by email…"
+              :placeholder="$t('admin.users.searchPlaceholder')"
               icon="i-lucide-search"
             />
             <UButton
               type="submit"
-              label="Search"
+              :label="$t('admin.users.search')"
               :loading="loading"
             />
           </form>
@@ -453,7 +454,7 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Something went wrong"
+            :title="$t('admin.users.errorTitle')"
             :description="failure"
           />
 
@@ -461,14 +462,14 @@ onMounted(() => {
             v-else-if="loading"
             class="py-6 text-center text-sm text-muted"
           >
-            Loading…
+            {{ $t('common.loading') }}
           </p>
 
           <p
             v-else-if="rows.length === 0"
             class="py-6 text-center text-sm text-muted"
           >
-            No accounts match.
+            {{ $t('admin.users.empty') }}
           </p>
 
           <div
@@ -477,21 +478,21 @@ onMounted(() => {
           >
             <table class="w-full min-w-[32rem] text-sm">
               <thead>
-                <tr class="border-b text-left text-muted">
-                  <th class="py-2 pr-3 font-medium">
-                    Account
+                <tr class="border-b text-start text-muted">
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.users.account') }}
                   </th>
-                  <th class="py-2 pr-3 font-medium">
-                    Signed up
+                  <th class="py-2 pe-3 font-medium">
+                    {{ $t('admin.users.signedUp') }}
                   </th>
-                  <th class="py-2 pr-3 text-right font-medium">
-                    Sessions
+                  <th class="py-2 pe-3 text-right font-medium">
+                    {{ $t('admin.users.sessions') }}
                   </th>
-                  <th class="py-2 pr-3 text-right font-medium">
-                    Codes
+                  <th class="py-2 pe-3 text-right font-medium">
+                    {{ $t('admin.users.codes') }}
                   </th>
                   <th class="py-2 text-right font-medium">
-                    Actions
+                    {{ $t('admin.users.actions') }}
                   </th>
                 </tr>
               </thead>
@@ -501,7 +502,7 @@ onMounted(() => {
                   :key="row.id"
                   class="border-b last:border-0"
                 >
-                  <td class="py-2 pr-3">
+                  <td class="py-2 pe-3">
                     <div>{{ row.email }}</div>
                     <div
                       v-if="row.wallet"
@@ -510,13 +511,13 @@ onMounted(() => {
                       {{ row.wallet }}
                     </div>
                   </td>
-                  <td class="py-2 pr-3 whitespace-nowrap text-muted">
+                  <td class="py-2 pe-3 whitespace-nowrap text-muted">
                     {{ formatDate(row.created_at) }}
                   </td>
-                  <td class="py-2 pr-3 text-right">
+                  <td class="py-2 pe-3 text-right">
                     {{ row.sessions }}
                   </td>
-                  <td class="py-2 pr-3 text-right">
+                  <td class="py-2 pe-3 text-right">
                     {{ row.codes }}
                   </td>
                   <td class="py-2 text-right">
@@ -525,7 +526,7 @@ onMounted(() => {
                       color="error"
                       variant="subtle"
                       size="xs"
-                      label="Delete"
+                      :label="$t('admin.users.delete')"
                       :loading="busy"
                       @click="remove(row)"
                     />
@@ -539,10 +540,10 @@ onMounted(() => {
             v-if="total > pageSize"
             class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted"
           >
-            <span>{{ pageFrom }}–{{ pageTo }} of {{ total }} accounts</span>
+            <span>{{ $t('admin.users.range', { from: pageFrom, to: pageTo, total }) }}</span>
             <div class="flex gap-2">
               <UButton
-                label="Previous"
+                :label="$t('admin.users.previous')"
                 color="neutral"
                 variant="soft"
                 size="sm"
@@ -550,7 +551,7 @@ onMounted(() => {
                 @click="pageDown"
               />
               <UButton
-                label="Next"
+                :label="$t('admin.users.next')"
                 color="neutral"
                 variant="soft"
                 size="sm"

@@ -23,6 +23,7 @@ const props = withDefaults(
 // connected wallet asks for one approval, and a browser with no wallet gets
 // the list of wallets (on iOS those are deep links into the wallet app).
 
+const { t } = useI18n()
 const api = usePaymentApi()
 const { user, ensureSession } = useAuth()
 const { wallets, selectedWallet, selectWallet } = useSolanaWallets()
@@ -64,7 +65,7 @@ const {
   cancelAutoPay
 } = usePaymentCheckout()
 
-const heading = computed(() => paymentName.value || paymentMemo.value || 'Payment')
+const heading = computed(() => paymentName.value || paymentMemo.value || t('checkout.fallbackHeading'))
 
 const discountOpen = ref(false)
 
@@ -102,7 +103,9 @@ watch(failure, (message) => {
 })
 
 const successLine = computed(() =>
-  sellerShort.value ? `${payableLabel.value} to ${sellerShort.value}` : payableLabel.value
+  sellerShort.value
+    ? t('checkout.result.sentLine', { amount: payableLabel.value, seller: sellerShort.value })
+    : payableLabel.value
 )
 
 const copiedRef = ref(false)
@@ -121,10 +124,10 @@ async function copyRefCode() {
 
 // Written once and printed on the sheet: paper has nothing to click.
 const detailRows = computed(() => [
-  { label: 'Seller', value: String(payload.value?.seller ?? ''), mono: true },
-  { label: 'Network', value: networkLabel(payload.value?.cluster || ''), mono: false },
+  { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true },
+  { label: t('checkout.details.network'), value: networkLabel(payload.value?.cluster || ''), mono: false },
   ...(record.value
-    ? [{ label: 'Status', value: statusLabel(record.value.status), mono: false }]
+    ? [{ label: t('checkout.details.status'), value: statusLabel(record.value.status), mono: false }]
     : [])
 ])
 
@@ -217,7 +220,9 @@ function opensApp(wallet: { source?: string, platform?: string }) {
 }
 
 function walletLabel(wallet: { name: string, source?: string, platform?: string }) {
-  return opensApp(wallet) ? `Open in ${wallet.name}` : `Connect ${wallet.name}`
+  return opensApp(wallet)
+    ? t('checkout.wallet.openIn', { wallet: wallet.name })
+    : t('checkout.wallet.connect', { wallet: wallet.name })
 }
 
 async function pick(wallet: NonNullable<typeof selectedWallet.value>) {
@@ -261,7 +266,7 @@ async function saveToShop() {
     saved.value = true
     savedShopId.value = entry.shop_id ?? shopId.value
   } catch (cause) {
-    saveError.value = apiErrorMessage(cause, 'Could not save this payment.')
+    saveError.value = apiErrorMessage(cause, t('checkout.save.failure'))
   } finally {
     saving.value = false
   }
@@ -292,7 +297,9 @@ watch(() => props.source, (next) => {
 
 // The suggested PDF filename is the page title, so the name leads it.
 useSeoMeta({
-  title: () => (paymentName.value ? `${paymentName.value} — Payvand` : 'Payment — Payvand')
+  title: () => (paymentName.value
+    ? t('checkout.metaTitleWithName', { name: paymentName.value })
+    : t('checkout.metaTitle'))
 })
 </script>
 
@@ -315,7 +322,7 @@ useSeoMeta({
           >
             <div class="aspect-square w-full max-w-[240px] animate-pulse rounded-xl bg-elevated/50" />
             <p class="text-sm text-muted">
-              Reading the payment…
+              {{ $t('checkout.loading') }}
             </p>
           </div>
 
@@ -328,7 +335,7 @@ useSeoMeta({
               class="size-8 text-muted"
             />
             <h1 class="text-base font-semibold">
-              This payment link cannot be opened
+              {{ $t('checkout.invalidTitle') }}
             </h1>
             <p class="text-sm text-muted">
               {{ error }}
@@ -337,7 +344,7 @@ useSeoMeta({
               to="/"
               class="mt-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
             >
-              Go to Payvand
+              {{ $t('checkout.goHome') }}
             </NuxtLink>
           </div>
 
@@ -359,7 +366,7 @@ useSeoMeta({
                  check before paying beats a single total they have to trust. -->
             <div
               v-if="receiptLines.length"
-              class="mt-4 w-full max-w-sm rounded-xl border border-default text-left"
+              class="mt-4 w-full max-w-sm rounded-xl border border-default text-start"
             >
               <ul class="divide-y divide-default">
                 <li
@@ -374,7 +381,7 @@ useSeoMeta({
                 </li>
               </ul>
               <div class="flex items-baseline justify-between gap-3 border-t border-default px-3 py-2 text-sm font-medium">
-                <span>Total</span>
+                <span>{{ $t('checkout.total') }}</span>
                 <span class="tabular-nums">{{ payableLabel }}</span>
               </div>
             </div>
@@ -403,7 +410,7 @@ useSeoMeta({
                 variant="subtle"
                 size="sm"
               >
-                {{ discount.percent_off }}% off
+                {{ $t('checkout.discount.off', { percent: discount.percent_off }) }}
               </UBadge>
               <p class="flex flex-wrap items-baseline justify-center gap-x-2 text-4xl font-bold tabular-nums">
                 {{ payableNumber }}
@@ -436,8 +443,8 @@ useSeoMeta({
                   color="success"
                   variant="subtle"
                   icon="i-lucide-circle-check"
-                  title="Paid"
-                  description="This invoice is settled — there is nothing left to do."
+                  :title="$t('checkout.settled.title')"
+                  :description="$t('checkout.settled.description')"
                 />
                 <!-- The code stays on the sheet too, not only in the result
                      dialog the buyer may have already dismissed. -->
@@ -445,14 +452,16 @@ useSeoMeta({
                   v-if="refCode"
                   class="text-xs text-muted"
                 >
-                  Reference code
+                  {{ $t('checkout.referenceCode') }}
                   <span class="font-mono tracking-wider text-default">{{ refCode }}</span>
                 </p>
                 <p
                   v-if="signature || record?.settled_by"
                   class="overflow-hidden text-xs text-muted font-mono text-ellipsis"
                 >
-                  {{ signature ? `Signature ${signature}` : `Paid by ${record?.settled_by}` }}
+                  {{ signature
+                    ? $t('checkout.settled.signature', { signature })
+                    : $t('checkout.settled.paidBy', { wallet: record?.settled_by ?? '' }) }}
                 </p>
               </div>
 
@@ -462,13 +471,13 @@ useSeoMeta({
                 class="rounded-xl border border-success/40 bg-success/5 p-4"
               >
                 <p class="text-sm font-medium">
-                  Paying {{ payableLabel }} from your allowance
+                  {{ $t('checkout.auto.paying', { amount: payableLabel }) }}
                 </p>
                 <p class="mt-1 text-xs text-muted">
-                  No wallet approval needed. Sending in {{ autoSeconds }}s.
+                  {{ $t('checkout.auto.sendingIn', { seconds: autoSeconds }) }}
                 </p>
                 <UButton
-                  label="Cancel"
+                  :label="$t('common.cancel')"
                   color="neutral"
                   variant="ghost"
                   size="xs"
@@ -480,7 +489,7 @@ useSeoMeta({
               <!-- The allowance already covers it, but the buyer cancelled once. -->
               <template v-else-if="stage === 'silent'">
                 <UButton
-                  :label="`Pay ${payableLabel}`"
+                  :label="$t('checkout.pay', { amount: payableLabel })"
                   icon="i-lucide-zap"
                   :loading="busy"
                   :disabled="!canPay"
@@ -488,14 +497,14 @@ useSeoMeta({
                   @click="pay"
                 />
                 <p class="mt-2 text-xs text-muted">
-                  Paid from your monthly allowance — no wallet popup.
+                  {{ $t('checkout.silentHint') }}
                 </p>
               </template>
 
               <!-- A connected wallet: one tap, straight to its approval. -->
               <template v-else-if="stage === 'wallet'">
                 <UButton
-                  :label="`Pay ${payableLabel}`"
+                  :label="$t('checkout.pay', { amount: payableLabel })"
                   icon="i-lucide-wallet"
                   :loading="busy"
                   :disabled="!canPay"
@@ -503,30 +512,30 @@ useSeoMeta({
                   @click="pay"
                 />
                 <p class="mt-2 text-xs text-muted">
-                  Approve in {{ selectedWallet?.name || 'your wallet' }}. Nothing is sent until you do.
+                  {{ $t('checkout.walletHint', { wallet: selectedWallet?.name || $t('checkout.yourWallet') }) }}
                 </p>
                 <UAlert
                   v-if="budgetObstacle"
                   color="warning"
                   variant="subtle"
                   icon="i-lucide-circle-alert"
-                  title="Your allowance cannot cover this"
+                  :title="$t('checkout.obstacleTitle')"
                   :description="budgetObstacle"
-                  class="mt-3 text-left"
+                  class="mt-3 text-start"
                 />
                 <div
                   v-else-if="!budgetState"
-                  class="mt-3 rounded-xl border border-dashed border-default p-3 text-left"
+                  class="mt-3 rounded-xl border border-dashed border-default p-3 text-start"
                 >
                   <p class="text-xs font-medium">
-                    Pay in one tap next time
+                    {{ $t('checkout.allowanceOffer.title') }}
                   </p>
                   <p class="mt-1 text-xs text-muted">
-                    A monthly allowance lets payments inside it go through without any wallet popup.
+                    {{ $t('checkout.allowanceOffer.description') }}
                   </p>
                   <UButton
                     to="/budget"
-                    label="Set a monthly allowance"
+                    :label="$t('checkout.allowanceOffer.action')"
                     color="primary"
                     variant="soft"
                     size="xs"
@@ -538,22 +547,22 @@ useSeoMeta({
               <!-- A budget exists, but this device cannot sign for it yet. -->
               <div
                 v-else-if="stage === 'setup'"
-                class="flex flex-col gap-2 text-left"
+                class="flex flex-col gap-2 text-start"
               >
                 <UAlert
                   color="info"
                   variant="subtle"
                   icon="i-lucide-key-round"
-                  title="Finish setting up this device"
-                  description="Your allowance needs one approval on this device before it can pay without a wallet popup. After that it is one tap."
+                  :title="$t('checkout.deviceSetup.title')"
+                  :description="$t('checkout.deviceSetup.description')"
                 />
                 <UButton
                   to="/budget"
-                  label="Set up this device"
+                  :label="$t('checkout.deviceSetup.action')"
                   block
                 />
                 <UButton
-                  :label="`Pay with ${selectedWallet?.name || 'your wallet'}`"
+                  :label="$t('checkout.payWith', { wallet: selectedWallet?.name || $t('checkout.yourWallet') })"
                   :loading="busy"
                   :disabled="!canPay"
                   color="neutral"
@@ -569,7 +578,7 @@ useSeoMeta({
                 class="flex flex-col gap-2"
               >
                 <p class="text-sm font-medium">
-                  Choose a wallet to pay
+                  {{ $t('checkout.pick.title') }}
                 </p>
                 <UButton
                   v-for="wallet in wallets"
@@ -585,13 +594,12 @@ useSeoMeta({
                   v-if="!wallets.length"
                   class="text-xs text-muted"
                 >
-                  No Solana wallet found in this browser. Install one and reload, or scan this
-                  page's code with your phone.
+                  {{ $t('checkout.pick.none') }}
                 </p>
                 <UButton
                   v-if="handheld && walletLink"
                   :to="walletLink"
-                  label="Open in a Solana wallet"
+                  :label="$t('checkout.pick.openInWallet')"
                   icon="i-lucide-external-link"
                   color="neutral"
                   variant="ghost"
@@ -604,9 +612,9 @@ useSeoMeta({
                 color="error"
                 variant="subtle"
                 icon="i-lucide-circle-alert"
-                title="Payment failed"
+                :title="$t('checkout.failureTitle')"
                 :description="failure"
-                class="mt-3 text-left"
+                class="mt-3 text-start"
               />
             </div>
 
@@ -617,7 +625,7 @@ useSeoMeta({
             >
               <UButton
                 v-if="!discountOpen"
-                label="Have a discount code?"
+                :label="$t('checkout.discount.haveCode')"
                 color="neutral"
                 variant="ghost"
                 size="xs"
@@ -631,12 +639,12 @@ useSeoMeta({
                   v-model="discountInput"
                   class="flex-1"
                   size="sm"
-                  placeholder="SAVE10"
+                  :placeholder="$t('checkout.discount.placeholder')"
                   :maxlength="32"
                   @focus="cancelAutoPay"
                 />
                 <UButton
-                  label="Apply"
+                  :label="$t('checkout.discount.apply')"
                   size="sm"
                   :loading="discountBusy"
                   :disabled="discountInput.trim().length < 3"
@@ -649,7 +657,7 @@ useSeoMeta({
                 variant="subtle"
                 icon="i-lucide-circle-alert"
                 :description="discountError"
-                class="mt-2 text-left"
+                class="mt-2 text-start"
               />
             </div>
 
@@ -663,10 +671,10 @@ useSeoMeta({
                 color="success"
                 variant="subtle"
               >
-                {{ discount.code }} · {{ discount.percent_off }}% off
+                {{ $t('checkout.discount.badge', { code: discount.code, percent: discount.percent_off }) }}
               </UBadge>
               <UButton
-                label="Remove"
+                :label="$t('checkout.discount.remove')"
                 color="neutral"
                 variant="ghost"
                 size="xs"
@@ -721,7 +729,7 @@ useSeoMeta({
           <UButton
             v-if="saved"
             :to="savedShopId ? `/shops/${savedShopId}` : '/profile'"
-            :label="savedShop ? `Saved to ${savedShop.name}` : 'Saved to your shop'"
+            :label="savedShop ? $t('checkout.save.savedTo', { shop: savedShop.name }) : $t('checkout.save.savedToShop')"
             icon="i-lucide-bookmark-check"
             color="neutral"
             variant="ghost"
@@ -734,10 +742,10 @@ useSeoMeta({
               :items="shopChoices"
               class="w-40"
               size="sm"
-              aria-label="Shop to save this code in"
+              :aria-label="$t('checkout.save.shopAria')"
             />
             <UButton
-              label="Save to my shop"
+              :label="$t('checkout.save.action')"
               icon="i-lucide-bookmark-plus"
               color="neutral"
               variant="ghost"
@@ -747,7 +755,7 @@ useSeoMeta({
             />
           </template>
           <UButton
-            label="Save as PDF"
+            :label="$t('checkout.save.asPdf')"
             icon="i-lucide-file-down"
             color="neutral"
             variant="ghost"
@@ -761,7 +769,7 @@ useSeoMeta({
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
-          title="Could not save the payment"
+          :title="$t('checkout.save.failureTitle')"
           :description="saveError"
           class="mt-2"
         />
@@ -798,7 +806,7 @@ useSeoMeta({
           <p
             class="text-lg font-semibold animate-pay-rise-1 motion-reduce:animate-none"
           >
-            Payment sent
+            {{ $t('checkout.result.sent') }}
           </p>
           <p
             class="text-sm text-muted animate-pay-rise-1 motion-reduce:animate-none"
@@ -810,7 +818,7 @@ useSeoMeta({
             class="mt-1 w-full rounded-xl border border-default p-3 animate-pay-rise-2 motion-reduce:animate-none"
           >
             <p class="text-xs text-muted">
-              Reference code
+              {{ $t('checkout.referenceCode') }}
             </p>
             <p
               class="font-mono text-2xl font-semibold tracking-[0.2em] animate-pay-result-code motion-reduce:animate-none"
@@ -818,7 +826,7 @@ useSeoMeta({
               {{ refCode }}
             </p>
             <p class="mt-1 text-xs text-muted">
-              Read this to the seller — they can find this payment with it.
+              {{ $t('checkout.result.readToSeller') }}
             </p>
           </div>
 
@@ -827,14 +835,14 @@ useSeoMeta({
           >
             <UButton
               :icon="copiedRef ? 'i-lucide-check' : 'i-lucide-copy'"
-              :label="copiedRef ? 'Copied' : 'Copy code'"
+              :label="copiedRef ? $t('common.copied') : $t('checkout.result.copyCode')"
               color="neutral"
               variant="soft"
               class="flex-1 justify-center"
               @click="copyRefCode"
             />
             <UButton
-              label="Done"
+              :label="$t('common.done')"
               class="flex-1 justify-center"
               @click="resultOpen = false"
             />
@@ -856,7 +864,7 @@ useSeoMeta({
           <p
             class="text-lg font-semibold animate-pay-rise-1 motion-reduce:animate-none"
           >
-            Payment did not go through
+            {{ $t('checkout.result.failed') }}
           </p>
           <p
             class="text-sm text-muted animate-pay-rise-2 motion-reduce:animate-none"
@@ -867,7 +875,7 @@ useSeoMeta({
             class="mt-1 w-full animate-pay-rise-3 motion-reduce:animate-none"
           >
             <UButton
-              label="Close"
+              :label="$t('common.close')"
               block
               @click="resultOpen = false"
             />
@@ -877,7 +885,7 @@ useSeoMeta({
     </UModal>
 
     <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
-      Powered by
+      {{ $t('checkout.poweredBy') }}
       <NuxtLink
         to="/"
         class="font-medium text-primary underline-offset-4 hover:underline"

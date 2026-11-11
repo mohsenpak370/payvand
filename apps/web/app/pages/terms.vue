@@ -1,220 +1,184 @@
 <script setup lang="ts">
+const { t } = useI18n()
+
 useSeoMeta({
-  title: 'Terms of use — Payvand',
-  description: 'What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, we never hold the money, and a paid transaction cannot be taken back.'
+  title: t('terms.metaTitle'),
+  description: t('terms.metaDescription')
 })
 
-const updated = '8 November 2026'
+const updated = t('terms.updated')
 </script>
 
 <template>
   <UContainer class="py-8 lg:py-12">
     <UPage>
       <UPageHeader
-        title="Terms of use"
-        description="What Payvand does, what it does not do, and the handful of rules that come with using it."
+        :title="$t('terms.title')"
+        :description="$t('terms.description')"
       />
 
       <UPageBody class="max-w-3xl">
         <div class="space-y-10">
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              What Payvand is
+              {{ $t('terms.what.title') }}
             </h2>
             <p class="text-muted leading-relaxed">
-              Payvand turns an amount into a payment code. A seller types in what something costs,
-              the app builds a QR code, and a customer scans it with a Solana wallet and approves
-              one transaction. The money moves from the customer's wallet to the seller's wallet
-              over the Solana network — there is no account in the middle and no card processor.
+              {{ $t('terms.what.body') }}
             </p>
             <p class="text-muted leading-relaxed">
-              Using the app means you accept these terms. If you do not, please do not use it.
+              {{ $t('terms.what.accept') }}
             </p>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              We never hold the money
+              {{ $t('terms.money.title') }}
             </h2>
             <ul class="text-muted list-disc space-y-2 ps-5 leading-relaxed">
               <li>
-                Payvand does not hold, receive or pass on your funds at any point, and has no way to
-                move, freeze or take them.
+                {{ $t('terms.money.hold') }}
               </li>
               <li>
-                We cannot cancel, reverse or refund a payment. Only the recipient can send money
-                back, from their own wallet.
+                {{ $t('terms.money.reverse') }}
               </li>
               <li>
-                We never ask for a seed phrase or a private key, and nobody working on Payvand will
-                ever ask you for one. Anyone who does is not us.
+                {{ $t('terms.money.seed') }}
               </li>
               <li>
-                The only thing the app can sign without your wallet is the practice budget, with a
-                key your own browser creates and keeps (see the
+                {{ $t('terms.money.budgetBefore') }}
                 <NuxtLink
                   to="/privacy"
                   class="text-primary underline-offset-4 hover:underline"
-                >privacy policy</NuxtLink>).
+                >{{ $t('terms.money.privacyLink') }}</NuxtLink>{{ $t('terms.money.budgetAfter') }}
               </li>
             </ul>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Your account
+              {{ $t('terms.account.title') }}
             </h2>
             <ul class="text-muted list-disc space-y-2 ps-5 leading-relaxed">
               <li>
-                An account is an email address and a password. The password is stored as a one-way
-                hash, never as the password itself.
+                {{ $t('terms.account.email') }}
               </li>
               <li>
-                Keep the password to yourself. What happens under your account is your
-                responsibility, so tell us if you think someone else has it.
+                {{ $t('terms.account.password') }}
               </li>
               <li>
-                Link a wallet address you actually control: that link is how the app recognises your
-                shops, your payments and your discount codes.
+                {{ $t('terms.account.wallet') }}
               </li>
               <li>
-                You can close your account by asking us (see Contact). Removing an account also
-                removes its shops, products, payment codes, discount codes and sessions.
+                {{ $t('terms.account.close') }}
               </li>
               <li>
-                You must be old enough to agree to these terms where you live, and at least 13.
+                {{ $t('terms.account.age') }}
               </li>
             </ul>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              If you are selling
+              {{ $t('terms.selling.title') }}
             </h2>
             <ul class="text-muted list-disc space-y-2 ps-5 leading-relaxed">
               <li>
-                You are the seller of record. Prices, descriptions, taxes, receipts, refunds and
-                consumer law are yours to get right, not ours.
+                {{ $t('terms.selling.record') }}
               </li>
               <li>
-                A payment that lands is final. If you want to give money back, send it back from
-                your wallet — we cannot do it for you.
+                {{ $t('terms.selling.final') }}
               </li>
               <li>
-                What you publish is public. A payment code carries your wallet address, the amount,
-                a reference, and the item name and memo you typed. Do not put anything private in
-                those fields.
+                {{ $t('terms.selling.public') }}
               </li>
               <li>
-                Do not sell anything you are not allowed to sell where you are, and do not use
-                Payvand for fraud, money laundering or to get around sanctions.
+                {{ $t('terms.selling.law') }}
               </li>
             </ul>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              If you are paying
+              {{ $t('terms.paying.title') }}
             </h2>
             <ul class="text-muted list-disc space-y-2 ps-5 leading-relaxed">
               <li>
-                Read the amount and the address your wallet shows before you approve. The wallet is
-                the last place anything can be checked, and it is telling you the truth.
+                {{ $t('terms.paying.read') }}
               </li>
               <li>
-                A confirmed payment cannot be undone by us, by the app, or by the seller's
-                goodwill alone.
+                {{ $t('terms.paying.undo') }}
               </li>
               <li>
-                A price shown in your own currency is an indicative conversion at a market rate, not
-                a quote from us, and the network settles in SOL.
+                {{ $t('terms.paying.fiat') }}
               </li>
               <li>
-                Only pay codes from sellers you trust. A QR code is just data: anyone can print it,
-                edit it or send you one.
+                {{ $t('terms.paying.trust') }}
               </li>
             </ul>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Fees
+              {{ $t('terms.fees.title') }}
             </h2>
             <p class="text-muted leading-relaxed">
-              Payvand charges nothing for making or scanning a payment code. The Solana network
-              charges a small fee for the transaction, and a payment creates a record on chain that
-              costs a little rent — both are paid from the customer's wallet, and the wallet shows
-              the total before you approve anything.
+              {{ $t('terms.fees.body') }}
             </p>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Test money
+              {{ $t('terms.testMoney.title') }}
             </h2>
             <p class="text-muted leading-relaxed">
-              When the badge in the corner says <strong class="text-default font-semibold">devnet</strong>,
-              the app is running on Solana's test network and the SOL involved is not worth anything.
-              It is there so you can practise. It is not a promise that real money behaves the same
-              way, and nothing on devnet has value.
+              {{ $t('terms.testMoney.before') }} <strong class="text-default font-semibold">devnet</strong>{{ $t('terms.testMoney.after') }}
             </p>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Fair use
+              {{ $t('terms.fairUse.title') }}
             </h2>
             <p class="text-muted leading-relaxed">
-              Do not attack the service or work around its limits: no scanning for weaknesses
-              without asking first, no automated guessing of passwords or discount codes, no
-              scraping, no hammering the API. We may suspend or remove an account that does any of
-              that, and we may report it.
+              {{ $t('terms.fairUse.body') }}
             </p>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Availability, and what we do not promise
+              {{ $t('terms.availability.title') }}
             </h2>
             <ul class="text-muted list-disc space-y-2 ps-5 leading-relaxed">
               <li>
-                Payvand is provided as it is. We do not promise it will be available, that it will
-                not lose data, or that it will keep working the same way — it may change or be
-                discontinued.
+                {{ $t('terms.availability.asIs') }}
               </li>
               <li>
-                Nothing here is financial, investment, tax or legal advice.
+                {{ $t('terms.availability.advice') }}
               </li>
               <li>
-                To the extent the law allows, we are not liable for indirect or consequential loss,
-                for a payment you approved in your wallet, or for what a seller does or sells. Our
-                total liability is limited to what you have paid us to use Payvand, which is
-                nothing.
+                {{ $t('terms.availability.liability') }}
               </li>
               <li>
-                Some places do not allow limits like these. Where that is the case, they apply only
-                as far as the law there allows.
+                {{ $t('terms.availability.limits') }}
               </li>
             </ul>
           </section>
 
           <section class="space-y-3">
             <h2 class="text-highlighted text-lg font-semibold">
-              Changes, and contact
+              {{ $t('terms.changes.title') }}
             </h2>
             <p class="text-muted leading-relaxed">
-              We will update this page when the app changes, and change the date at the bottom.
-              Using Payvand after a change means you accept the new version.
+              {{ $t('terms.changes.body') }}
             </p>
             <p class="text-muted leading-relaxed">
-              Questions about these terms: reply to any email Payvand has sent you. The address it
-              came from reaches whoever runs this.
+              {{ $t('terms.changes.contact') }}
             </p>
           </section>
 
           <p class="text-dimmed border-default border-t pt-6 text-sm">
-            Last updated {{ updated }}. This page is written to describe what the software actually
-            does, in plain words.
+            {{ $t('terms.footer', { date: updated }) }}
           </p>
         </div>
       </UPageBody>

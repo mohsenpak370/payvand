@@ -4,7 +4,9 @@ import type { TransactionsResponse } from '~/composables/useAuth'
 import type { PaymentQrPayload, SavedPayment } from '~/composables/usePaymentApi'
 import type { Address } from '@vue-solana/nuxt/kit'
 
-useSeoMeta({ title: 'Profile — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('profile.metaTitle') })
 definePageMeta({ middleware: 'auth' })
 
 const route = useRoute()
@@ -47,10 +49,7 @@ async function linkWalletNow() {
     // The wallet now belongs to the account: the feed becomes available.
     await refreshTransactions()
   } catch (error) {
-    linkFailure.value = apiErrorMessage(
-      error,
-      'The wallet declined to sign, or the request expired. Try again.'
-    )
+    linkFailure.value = apiErrorMessage(error, t('profile.linkFailure'))
   } finally {
     linking.value = false
   }
@@ -61,9 +60,7 @@ const unlinking = ref(false)
 const unlinkFailure = ref('')
 
 async function unlinkWalletNow() {
-  const confirmed = window.confirm(
-    'Unlink this wallet?\n\nWallet sign-in stops until you link it again, and its transactions disappear from this page. Your email and password keep working.'
-  )
+  const confirmed = window.confirm(t('profile.unlinkConfirm'))
   if (!confirmed) return
 
   unlinkFailure.value = ''
@@ -72,7 +69,7 @@ async function unlinkWalletNow() {
     await unlinkWallet()
     await refreshTransactions()
   } catch (error) {
-    unlinkFailure.value = apiErrorMessage(error, 'Could not unlink the wallet.')
+    unlinkFailure.value = apiErrorMessage(error, t('profile.unlinkFailure'))
   } finally {
     unlinking.value = false
   }
@@ -126,7 +123,7 @@ async function refreshBudget() {
     if (loaded) budgetPot.value = await budgetApi.availablePot(loaded)
   } catch (error) {
     budgetError.value
-      = error instanceof Error ? error.message : 'Could not read your allowance.'
+      = error instanceof Error ? error.message : t('profile.allowanceError')
   } finally {
     budgetLoading.value = false
   }
@@ -172,7 +169,7 @@ async function refreshSavedPayments() {
   try {
     savedPayments.value = await paymentApi.listSavedPayments()
   } catch (error) {
-    savedFailure.value = apiErrorMessage(error, 'Could not load your saved payments.')
+    savedFailure.value = apiErrorMessage(error, t('profile.savedFailure'))
   } finally {
     savedLoading.value = false
   }
@@ -188,7 +185,7 @@ async function refreshTransactions() {
   try {
     transactions.value = await myTransactions()
   } catch (error) {
-    txFailure.value = apiErrorMessage(error, 'Could not load your transactions.')
+    txFailure.value = apiErrorMessage(error, t('profile.txFailure'))
   } finally {
     txLoading.value = false
   }
@@ -266,6 +263,17 @@ function statusColor(status: string): 'success' | 'warning' | 'neutral' {
 // that use shops at all — not to everyone who opens their profile.
 const { shopsEnabled } = useShopPreference()
 
+/** "1 payment" / "2 payments", in whatever forms the locale defines. */
+function paymentCount(count: number, shown?: number) {
+  return shown === undefined
+    ? t('profile.txCount', { count, cluster: networkLabel(transactions.value?.cluster ?? '') }, count)
+    : t('profile.txCountFiltered', {
+        shown,
+        total: count,
+        cluster: networkLabel(transactions.value?.cluster ?? '')
+      }, count)
+}
+
 onMounted(() => {
   refreshTransactions()
   if (shopsEnabled.value) refreshSavedPayments()
@@ -274,8 +282,8 @@ onMounted(() => {
 
 <template>
   <UPageSection
-    title="Profile"
-    :description="`Signed in as ${user?.email ?? ''}`"
+    :title="$t('profile.title')"
+    :description="$t('profile.signedInAs', { email: user?.email ?? '' })"
     :ui="{ description: 'break-words' }"
   >
     <!-- `min-w-0` here and on the cards: in a flex column each item defaults to
@@ -287,7 +295,7 @@ onMounted(() => {
       <div class="flex justify-end">
         <UButton
           to="/settings"
-          label="Settings"
+          :label="$t('profile.settings')"
           icon="i-lucide-settings"
           color="neutral"
           variant="ghost"
@@ -301,10 +309,10 @@ onMounted(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Wallet
+                {{ $t('profile.walletTitle') }}
               </h2>
               <p class="text-sm text-muted">
-                Link your Solana wallet to pay without typing a password and to see your transactions.
+                {{ $t('profile.walletDescription') }}
               </p>
             </div>
             <UBadge
@@ -312,7 +320,7 @@ onMounted(() => {
               color="success"
               variant="subtle"
             >
-              Linked
+              {{ $t('profile.linked') }}
             </UBadge>
           </div>
         </template>
@@ -323,8 +331,8 @@ onMounted(() => {
             color="info"
             variant="subtle"
             icon="i-lucide-party-popper"
-            title="Welcome to Payvand — one last step"
-            description="Connect your Solana wallet below. One signature, no transaction — it lets you sign in with your wallet and keeps your payments together."
+            :title="$t('profile.welcomeTitle')"
+            :description="$t('profile.welcomeDescription')"
           />
 
           <WalletConnect />
@@ -334,14 +342,14 @@ onMounted(() => {
             color="success"
             variant="subtle"
             icon="i-lucide-wallet-cards"
-            title="Linked to your account"
+            :title="$t('profile.linkedTitle')"
           >
             <!--
               The address has no spaces to break at, so it is allowed to break
               mid-token; otherwise it pushes the whole card wider than a phone.
             -->
             <template #description>
-              This wallet signs you in:
+              {{ $t('profile.linkedSignsIn') }}
               <span class="break-all">{{ linkedWallet }}</span>
             </template>
           </UAlert>
@@ -351,8 +359,8 @@ onMounted(() => {
             color="info"
             variant="subtle"
             icon="i-lucide-link"
-            title="Connect it to your account"
-            description="One signature now, so you can sign in with this wallet later. It authorises no transaction."
+            :title="$t('profile.connectTitle')"
+            :description="$t('profile.connectDescription')"
           />
 
           <UAlert
@@ -360,8 +368,11 @@ onMounted(() => {
             color="warning"
             variant="subtle"
             icon="i-lucide-repeat"
-            title="A different wallet is connected"
-            :description="`Linked: ${shorten(linkedWallet)} · Connected: ${shorten(publicKey)}. Switch if this account should use the connected one.`"
+            :title="$t('profile.differentWalletTitle')"
+            :description="$t('profile.differentWalletDescription', {
+              linked: shorten(linkedWallet),
+              connected: shorten(publicKey)
+            })"
           />
 
           <UAlert
@@ -369,7 +380,7 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not link the wallet"
+            :title="$t('profile.linkFailureTitle')"
             :description="linkFailure"
           />
 
@@ -378,13 +389,13 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not unlink the wallet"
+            :title="$t('profile.unlinkFailureTitle')"
             :description="unlinkFailure"
           />
 
           <UButton
             v-if="connected && publicKey && !linkedWallet"
-            :label="canSignMessage ? 'Link this wallet' : 'This wallet cannot sign messages'"
+            :label="canSignMessage ? $t('profile.linkThisWallet') : $t('profile.cannotSign')"
             icon="i-lucide-link"
             :loading="linking || signing || connecting"
             :disabled="!canSignMessage"
@@ -393,7 +404,7 @@ onMounted(() => {
 
           <UButton
             v-if="switchNeeded && publicKey && canSignMessage"
-            label="Switch to this wallet"
+            :label="$t('profile.switchWallet')"
             icon="i-lucide-repeat"
             :loading="linking || signing"
             @click="linkWalletNow"
@@ -404,10 +415,10 @@ onMounted(() => {
             class="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-3"
           >
             <p class="text-xs text-muted">
-              Unlinking stops wallet sign-in; your email and password keep working.
+              {{ $t('profile.unlinkHint') }}
             </p>
             <UButton
-              label="Unlink wallet"
+              :label="$t('profile.unlink')"
               icon="i-lucide-unlink"
               color="neutral"
               variant="soft"
@@ -424,10 +435,10 @@ onMounted(() => {
         <template #header>
           <div>
             <h2 class="text-base font-semibold">
-              Monthly allowance
+              {{ $t('profile.allowanceTitle') }}
             </h2>
             <p class="text-sm text-muted">
-              Set a limit once — payments inside it need no wallet approval at all.
+              {{ $t('profile.allowanceDescription') }}
             </p>
           </div>
         </template>
@@ -437,7 +448,7 @@ onMounted(() => {
             v-if="!allowanceAddress"
             class="text-sm text-muted"
           >
-            Connect a wallet to see and set its allowance.
+            {{ $t('profile.connectForAllowance') }}
           </p>
 
           <UAlert
@@ -445,7 +456,7 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not read your allowance"
+            :title="$t('profile.allowanceErrorTitle')"
             :description="budgetError"
           />
 
@@ -453,7 +464,7 @@ onMounted(() => {
             v-else-if="budgetLoading"
             class="py-4 text-center text-sm text-muted"
           >
-            Reading your allowance…
+            {{ $t('profile.allowanceLoading') }}
           </p>
 
           <!-- The prompt: no allowance yet. -->
@@ -466,14 +477,13 @@ onMounted(() => {
                 name="i-lucide-gauge"
                 class="text-primary size-5"
               />
-              <span class="font-medium">No allowance set yet</span>
+              <span class="font-medium">{{ $t('profile.noAllowance') }}</span>
             </div>
             <p class="text-sm text-muted">
-              Pick a monthly budget in one wallet signature. Every payment inside
-              it afterwards goes through with a single tap — no popups.
+              {{ $t('profile.noAllowanceBody') }}
             </p>
             <UButton
-              label="Set my monthly allowance"
+              :label="$t('profile.setAllowance')"
               icon="i-lucide-arrow-right"
               to="/budget"
             />
@@ -484,15 +494,15 @@ onMounted(() => {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               <div class="flex min-w-0 flex-col gap-1">
                 <span class="text-xl font-semibold sm:text-2xl">{{ lamportsToSol(budget.monthlyLimit) }}</span>
-                <span class="text-sm text-muted">Monthly limit (SOL)</span>
+                <span class="text-sm text-muted">{{ $t('profile.monthlyLimit') }}</span>
               </div>
               <div class="flex min-w-0 flex-col gap-1">
                 <span class="text-xl font-semibold sm:text-2xl">{{ lamportsToSol(spentThisMonth) }}</span>
-                <span class="text-sm text-muted">Spent this month</span>
+                <span class="text-sm text-muted">{{ $t('profile.spentThisMonth') }}</span>
               </div>
               <div class="flex min-w-0 flex-col gap-1">
                 <span class="text-success text-xl font-semibold sm:text-2xl">{{ lamportsToSol(remaining) }}</span>
-                <span class="text-sm text-muted">Remaining</span>
+                <span class="text-sm text-muted">{{ $t('profile.remaining') }}</span>
               </div>
             </div>
 
@@ -502,7 +512,7 @@ onMounted(() => {
               class="flex flex-col gap-1.5"
             >
               <div class="flex items-center justify-between text-sm">
-                <span class="text-muted">Used this month</span>
+                <span class="text-muted">{{ $t('profile.usedThisMonth') }}</span>
                 <span class="font-medium">{{ spentPercent }}%</span>
               </div>
               <UProgress
@@ -513,9 +523,9 @@ onMounted(() => {
             </div>
 
             <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
-              <span>Pot available: {{ lamportsToSol(budgetPot) }} SOL</span>
+              <span>{{ $t('profile.potAvailable', { amount: lamportsToSol(budgetPot) }) }}</span>
               <UButton
-                label="Manage allowance"
+                :label="$t('profile.manageAllowance')"
                 color="neutral"
                 variant="soft"
                 size="sm"
@@ -535,15 +545,15 @@ onMounted(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Saved payments
+                {{ $t('profile.savedTitle') }}
               </h2>
               <p class="text-sm text-muted">
-                Codes you saved — open one to share it or pay it again.
+                {{ $t('profile.savedDescription') }}
               </p>
             </div>
             <UButton
               icon="i-lucide-refresh-cw"
-              label="Refresh"
+              :label="$t('profile.refresh')"
               color="neutral"
               variant="soft"
               size="sm"
@@ -559,7 +569,7 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not load saved payments"
+            :title="$t('profile.savedErrorTitle')"
             :description="savedFailure"
           />
 
@@ -567,19 +577,19 @@ onMounted(() => {
             v-else-if="savedLoading && !savedPayments.length"
             class="py-4 text-center text-sm text-muted"
           >
-            Loading saved payments…
+            {{ $t('profile.savedLoading') }}
           </p>
 
           <p
             v-else-if="!savedPayments.length"
             class="py-4 text-center text-sm text-muted"
           >
-            Nothing saved yet — open a payment link and press “Save to my shop”.
+            {{ $t('profile.savedEmpty') }}
           </p>
 
           <UButton
             v-else-if="!savedOpen"
-            :label="`Show ${savedCards.length} saved ${savedCards.length === 1 ? 'code' : 'codes'}`"
+            :label="$t('profile.showSaved', { count: savedCards.length }, savedCards.length)"
             icon="i-lucide-chevron-down"
             color="neutral"
             variant="ghost"
@@ -603,13 +613,13 @@ onMounted(() => {
               />
               <div class="flex min-w-0 flex-col gap-0.5">
                 <p class="text-sm font-medium break-words">
-                  {{ card.code.name || 'Payment' }}
+                  {{ card.code.name || $t('profile.paymentFallback') }}
                 </p>
                 <p class="text-sm font-semibold">
                   {{ lamportsToSol(cardPrice(card.code)) }} SOL
                   <span
                     v-if="card.code.discount"
-                    class="ml-1 text-xs font-normal text-muted line-through"
+                    class="ms-1 text-xs font-normal text-muted line-through"
                   >{{ lamportsToSol(card.code.amount_lamports) }} SOL</span>
                 </p>
                 <p
@@ -625,7 +635,7 @@ onMounted(() => {
                   :to="card.link"
                   target="_blank"
                   rel="noopener"
-                  label="Open payment"
+                  :label="$t('profile.openPayment')"
                   icon="i-lucide-external-link"
                   color="neutral"
                   variant="soft"
@@ -638,7 +648,7 @@ onMounted(() => {
 
           <UButton
             v-if="savedOpen"
-            label="Hide"
+            :label="$t('profile.hide')"
             icon="i-lucide-chevron-up"
             color="neutral"
             variant="ghost"
@@ -654,20 +664,20 @@ onMounted(() => {
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold">
-                Transactions
+                {{ $t('profile.txTitle') }}
               </h2>
               <p class="text-sm text-muted">
                 {{
                   transactions
-                    ? `${txFiltering ? `${filteredTransactions.length} of ` : ''}${transactions.total} payment${transactions.total === 1 ? '' : 's'} on ${networkLabel(transactions.cluster)}`
-                    : 'Everything your wallet has paid or been paid.'
+                    ? paymentCount(transactions.total, txFiltering ? filteredTransactions.length : undefined)
+                    : $t('profile.txDescription')
                 }}
               </p>
             </div>
             <UButton
               v-if="linkedWallet"
               icon="i-lucide-refresh-cw"
-              label="Refresh"
+              :label="$t('profile.refresh')"
               color="neutral"
               variant="soft"
               size="sm"
@@ -688,26 +698,26 @@ onMounted(() => {
             class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end"
           >
             <UFormField
-              label="Reference code"
+              :label="$t('profile.referenceCodeLabel')"
               class="min-w-0 flex-1"
             >
               <UInput
                 v-model="txQuery"
                 icon="i-lucide-search"
-                placeholder="The code the customer read out"
+                :placeholder="$t('profile.referencePlaceholder')"
                 class="w-full"
                 spellcheck="false"
                 autocapitalize="characters"
               />
             </UFormField>
             <div class="flex flex-wrap gap-2">
-              <UFormField label="From">
+              <UFormField :label="$t('profile.from')">
                 <UInput
                   v-model="txFrom"
                   type="date"
                 />
               </UFormField>
-              <UFormField label="To">
+              <UFormField :label="$t('profile.to')">
                 <UInput
                   v-model="txTo"
                   type="date"
@@ -716,7 +726,7 @@ onMounted(() => {
             </div>
             <UButton
               v-if="txFiltering"
-              label="Clear"
+              :label="$t('common.clear')"
               icon="i-lucide-x"
               color="neutral"
               variant="ghost"
@@ -729,10 +739,9 @@ onMounted(() => {
             v-if="!linkedWallet"
             class="flex flex-col items-start gap-3 rounded-xl border border-dashed border-default p-4"
           >
-            <span class="font-medium">Link your wallet to see transactions</span>
+            <span class="font-medium">{{ $t('profile.linkToSeeTx') }}</span>
             <p class="text-sm text-muted">
-              Your payment history follows the wallet, so it appears here once the
-              wallet is linked above.
+              {{ $t('profile.linkToSeeTxBody') }}
             </p>
           </div>
 
@@ -741,7 +750,7 @@ onMounted(() => {
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
-            title="Could not load transactions"
+            :title="$t('profile.txErrorTitle')"
             :description="txFailure"
           />
 
@@ -749,27 +758,26 @@ onMounted(() => {
             v-else-if="txLoading && !transactions"
             class="py-4 text-center text-sm text-muted"
           >
-            Loading transactions…
+            {{ $t('profile.txLoading') }}
           </p>
 
           <p
             v-else-if="transactions && transactions.items.length === 0"
             class="py-4 text-center text-sm text-muted"
           >
-            No transactions yet — your first payment will show up here.
+            {{ $t('profile.txEmpty') }}
           </p>
 
           <p
             v-else-if="txFiltering && !filteredTransactions.length"
             class="py-4 text-center text-sm text-muted"
           >
-            No payment matches that code. Check the reference the customer read out, or widen the
-            dates.
+            {{ $t('profile.txNoMatch') }}
           </p>
 
           <UButton
             v-else-if="transactions && !txOpen"
-            :label="`Show ${transactions.items.length} ${transactions.items.length === 1 ? 'payment' : 'payments'}`"
+            :label="$t('profile.showPayments', { count: transactions.items.length }, transactions.items.length)"
             icon="i-lucide-chevron-down"
             color="neutral"
             variant="ghost"
@@ -798,14 +806,14 @@ onMounted(() => {
               />
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm">
-                  {{ item.memo || (item.direction === 'received' ? 'Payment received' : 'Payment sent') }}
+                  {{ item.memo || (item.direction === 'received' ? $t('profile.paymentReceived') : $t('profile.paymentSent')) }}
                 </p>
                 <!-- The code first: it is the part a customer reads out and
                      the part a seller searches for, so it has to be legible. -->
                 <p class="truncate text-xs text-muted">
                   <span class="font-mono tracking-wider text-default">{{ referenceCode(item.id) }}</span>
                   · {{ formatDate(item.settled_at_unix || item.created_at_unix) }}
-                  · {{ item.direction === 'received' ? 'from' : 'to' }}
+                  · {{ item.direction === 'received' ? $t('profile.directionFrom') : $t('profile.directionTo') }}
                   {{ shorten(item.counterparty) }}
                 </p>
               </div>
@@ -826,7 +834,7 @@ onMounted(() => {
 
           <UButton
             v-if="txOpen"
-            label="Hide"
+            :label="$t('profile.hide')"
             icon="i-lucide-chevron-up"
             color="neutral"
             variant="ghost"

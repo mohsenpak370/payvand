@@ -7,6 +7,7 @@ import { cartTotalLamports } from '~/composables/useShop'
 // no amount to type, no other shop's prices to get mixed in.
 const props = defineProps<{ shopId: string }>()
 
+const { t } = useI18n()
 const shopApi = useShopApi()
 const api = usePaymentApi()
 const { publicKey, connected } = useSolanaWallet()
@@ -41,11 +42,11 @@ async function create() {
   failure.value = ''
   const seller = publicKey.value
   if (!seller) {
-    failure.value = 'Connect your seller wallet first.'
+    failure.value = t('shopPayment.connectFirst')
     return
   }
   if (total.value <= 0) {
-    failure.value = 'Pick something from the shop first.'
+    failure.value = t('shopPayment.pickSomething')
     return
   }
 
@@ -68,7 +69,7 @@ async function create() {
     qrPayload.value = created.qrPayload
     cart.value = []
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not create the payment.')
+    failure.value = apiErrorMessage(error, t('shopPayment.createFailure'))
   } finally {
     busy.value = false
   }
@@ -101,11 +102,11 @@ onMounted(load)
     <template #header>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 class="text-base font-semibold">
-          Create a payment
+          {{ $t('shopPayment.title') }}
         </h2>
         <UButton
           v-if="qrPayload"
-          label="New payment"
+          :label="$t('shopPayment.newPayment')"
           color="neutral"
           variant="soft"
           size="xs"
@@ -118,14 +119,14 @@ onMounted(load)
       v-if="loading"
       class="text-sm text-muted"
     >
-      Loading this shop's menu…
+      {{ $t('shopPayment.loadingMenu') }}
     </p>
 
     <p
       v-else-if="!shop || !shop.products.length"
       class="text-sm text-muted"
     >
-      Add a product above and this becomes a payable menu.
+      {{ $t('shopPayment.emptyMenu') }}
     </p>
 
     <div
@@ -140,7 +141,7 @@ onMounted(load)
       />
 
       <p class="text-center text-xs text-muted">
-        Any phone camera opens this — and the page takes the payment.
+        {{ $t('shopPayment.scanHint') }}
       </p>
 
       <div class="flex flex-wrap items-center justify-center gap-2">
@@ -148,12 +149,12 @@ onMounted(load)
           :to="shareLink"
           target="_blank"
           rel="noopener"
-          label="Open payment page"
+          :label="$t('shopPayment.openPage')"
           icon="i-lucide-external-link"
         />
         <UButton
           :icon="copiedLink ? 'i-lucide-check' : 'i-lucide-link'"
-          :label="copiedLink ? 'Link copied' : 'Copy link'"
+          :label="copiedLink ? $t('shopPayment.linkCopied') : $t('shopPayment.copyLink')"
           color="neutral"
           variant="soft"
           @click="copyLink"
@@ -175,12 +176,12 @@ onMounted(load)
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
-        title="Could not create the payment"
+        :title="$t('shopPayment.alertTitle')"
         :description="failure"
       />
 
       <UButton
-        label="Create payment code"
+        :label="$t('shopPayment.createCode')"
         icon="i-lucide-qr-code"
         :loading="busy"
         :disabled="!canCreate"
@@ -192,7 +193,7 @@ onMounted(load)
         v-if="!connected"
         class="text-center text-xs text-muted"
       >
-        Connect your seller wallet to create the code.
+        {{ $t('shopPayment.connectHint') }}
       </p>
     </div>
   </UCard>

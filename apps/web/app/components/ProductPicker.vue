@@ -70,10 +70,10 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
 <template>
   <div class="flex flex-col gap-3 rounded-xl border border-default p-3">
     <div class="flex items-center justify-between gap-3">
-      <span class="text-sm font-medium">From your shops</span>
+      <span class="text-sm font-medium">{{ $t('productPicker.fromYourShops') }}</span>
       <UButton
         v-if="lines.length"
-        label="Clear"
+        :label="$t('productPicker.clear')"
         color="neutral"
         variant="ghost"
         size="xs"
@@ -111,7 +111,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
             size="xs"
             square
             :disabled="quantityFor(product) === 0"
-            :aria-label="`One fewer ${product.name}`"
+            :aria-label="$t('productPicker.decreaseAria', { name: product.name })"
             @click="decrease(product)"
           />
           <span class="w-6 text-center text-sm tabular-nums">{{ quantityFor(product) }}</span>
@@ -121,7 +121,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
             variant="outline"
             size="xs"
             square
-            :aria-label="`One more ${product.name}`"
+            :aria-label="$t('productPicker.increaseAria', { name: product.name })"
             :disabled="quantityFor(product) === 0 && atLineLimit"
             @click="increase(product)"
           />
@@ -130,7 +130,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
     </ul>
 
     <div class="flex items-baseline justify-between gap-3 border-t border-default pt-2 text-sm">
-      <span class="font-medium">Total</span>
+      <span class="font-medium">{{ $t('productPicker.total') }}</span>
       <span class="tabular-nums">
         {{ lamportsToSol(total) }} SOL
         <span
@@ -144,7 +144,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
       v-if="atLineLimit"
       class="text-xs text-muted"
     >
-      A receipt fits {{ MAX_LINES }} different products — make a second payment for more.
+      {{ $t('productPicker.limit', { max: MAX_LINES }) }}
     </p>
   </div>
 </template>

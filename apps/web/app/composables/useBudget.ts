@@ -146,7 +146,7 @@ export function useBudget() {
     const bytes = Uint8Array.from(atob(info.value.data[0]), c => c.charCodeAt(0))
     const expected = await accountDiscriminator('Budget')
     if (!expected.every((byte, i) => bytes[i] === byte)) {
-      throw new Error('That address is not a budget account.')
+      throw new Error(appT('errors.notBudgetAccount'))
     }
 
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -240,15 +240,9 @@ export function useBudget() {
       throw new Error(loggedMessage)
     }
     if (simulation.value.logs?.some(line => line.includes('insufficient lamports'))) {
-      throw new Error(
-        'This wallet does not hold enough SOL for that limit. Lower it or top the wallet up first.'
-      )
+      throw new Error(appT('errors.solForLimit'))
     }
-    throw new Error(
-      'The transaction would be rejected on-chain, so it was not sent. '
-      + 'If you have no budget yet, the limit must be greater than 0; '
-      + 'otherwise reload the page and try again.'
-    )
+    throw new Error(appT('errors.rejectedOnChain'))
   }
 
   /**
@@ -261,14 +255,14 @@ export function useBudget() {
   ): Promise<string | null> {
     const session = await peekSessionSigner(budget.buyer)
     if (!session || session.address !== budget.sessionKey) {
-      return 'This device has no session key for your budget — open it once on this device.'
+      return appT('errors.noSessionKey')
     }
     if (amount > remainingThisMonth(budget)) {
-      return 'The monthly limit is used up for this month.'
+      return appT('errors.limitUsedUp')
     }
     const needed = amount + (await rentMinimum(PAYMENT_SPACE))
     if ((await availablePot(budget)) < needed) {
-      return 'The budget is nearly empty — top it up from the budget page.'
+      return appT('errors.nearlyEmpty')
     }
     return null
   }
@@ -289,7 +283,7 @@ export function useBudget() {
   ): Promise<string> {
     const session = await peekSessionSigner(buyer)
     if (!session) {
-      throw new Error('No session key on this device — open your budget here first.')
+      throw new Error(appT('errors.noSessionKeyHere'))
     }
 
     const instruction = buildInstruction(
@@ -335,14 +329,14 @@ export function useBudget() {
     for (let i = 0; i < 90; i++) {
       const status = (await client.rpc.getSignatureStatuses([signature]).send()).value[0]
       if (status) {
-        if (status.err) throw new Error('The payment was rejected on-chain.')
+        if (status.err) throw new Error(appT('errors.paymentRejected'))
         return signature
       }
       await new Promise((resolve) => {
         setTimeout(resolve, 1000)
       })
     }
-    throw new Error('The payment was sent but did not confirm in time — watch the invoice status.')
+    throw new Error(appT('errors.notConfirmed'))
   }
 
   // ---- token allowances ---------------------------------------------------
@@ -366,7 +360,7 @@ export function useBudget() {
     const bytes = Uint8Array.from(atob(info.value.data[0]), c => c.charCodeAt(0))
     const expected = await accountDiscriminator('TokenBudget')
     if (!expected.every((byte, i) => bytes[i] === byte)) {
-      throw new Error('That address is not a token budget account.')
+      throw new Error(appT('errors.notTokenBudgetAccount'))
     }
 
     // No vault yet simply means nobody has funded it for this token.
@@ -403,13 +397,13 @@ export function useBudget() {
   ): Promise<string | null> {
     const session = await peekSessionSigner(budget.buyer)
     if (!session || session.address !== budget.sessionKey) {
-      return 'This device has no session key for your budget — open it once on this device.'
+      return appT('errors.noSessionKey')
     }
     if (amount > tokenRemainingThisMonth(budget)) {
-      return 'The monthly limit for this token is used up.'
+      return appT('errors.tokenLimitUsedUp')
     }
     if (budget.amount < amount) {
-      return 'The allowance does not hold enough of this token — top it up from the budget page.'
+      return appT('errors.tokenNearlyEmpty')
     }
     return null
   }
@@ -428,7 +422,7 @@ export function useBudget() {
   ): Promise<string> {
     const session = await peekSessionSigner(buyer)
     if (!session) {
-      throw new Error('No session key on this device — open your budget here first.')
+      throw new Error(appT('errors.noSessionKeyHere'))
     }
 
     const budgetPda = await deriveTokenBudgetPda(buyer, params.mint)

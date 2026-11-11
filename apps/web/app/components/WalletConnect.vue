@@ -105,7 +105,7 @@ function shorten(value: string) {
         {{ shorten(publicKey) }}
       </UBadge>
       <UButton
-        label="Disconnect"
+        :label="$t('wallet.disconnect')"
         color="neutral"
         variant="soft"
         size="sm"
@@ -128,7 +128,7 @@ function shorten(value: string) {
         v-if="!wallets.length"
         class="text-sm text-muted"
       >
-        No wallet detected. Install a Solana wallet extension and reload.
+        {{ $t('wallet.none') }}
       </p>
     </template>
   </div>

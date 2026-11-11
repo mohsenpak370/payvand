@@ -1,5 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'Scan and pay — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('scan.metaTitle') })
 
 // The camera is this page's whole job: read a code, prove it matches its own
 // details, then hand it to the shared checkout. Everything after that — which
@@ -32,7 +34,7 @@ async function load(raw: string) {
     scanned.value = text
     manualPayload.value = ''
   } catch (error) {
-    scanError.value = error instanceof Error ? error.message : 'Could not read that code.'
+    scanError.value = error instanceof Error ? error.message : t('scan.couldNotRead')
   }
 }
 
@@ -60,14 +62,14 @@ onMounted(async () => {
     -->
     <UPageSection
       v-if="!scanned"
-      title="Scan and pay"
-      description="Point your camera at the seller's code, check the amount, and approve the payment in your wallet."
+      :title="$t('scan.title')"
+      :description="$t('scan.description')"
     >
       <div class="mx-auto w-full max-w-2xl">
         <UCard>
           <template #header>
             <h2 class="text-xl font-semibold">
-              Scan the code
+              {{ $t('scan.heading') }}
             </h2>
           </template>
 
@@ -86,13 +88,13 @@ onMounted(async () => {
               color="error"
               variant="subtle"
               icon="i-lucide-circle-alert"
-              title="Could not read the code"
+              :title="$t('scan.readError')"
               :description="scanError"
             />
 
             <UButton
               v-if="!pasteOpen"
-              label="Can't scan it? Paste the code"
+              :label="$t('scan.pasteToggle')"
               icon="i-lucide-chevron-down"
               color="neutral"
               variant="ghost"
@@ -104,7 +106,7 @@ onMounted(async () => {
 
             <UFormField
               v-else
-              label="Paste the code text"
+              :label="$t('scan.pasteLabel')"
             >
               <div class="flex w-full flex-col gap-2">
                 <UTextarea
@@ -114,7 +116,7 @@ onMounted(async () => {
                   placeholder="{&quot;v&quot;:1,&quot;id&quot;:&quot;…&quot;}"
                 />
                 <UButton
-                  label="Load"
+                  :label="$t('scan.load')"
                   color="neutral"
                   variant="soft"
                   class="self-start"
@@ -139,7 +141,7 @@ onMounted(async () => {
     >
       <template #actions>
         <UButton
-          label="Scan another"
+          :label="$t('scan.scanAnother')"
           icon="i-lucide-scan-line"
           color="neutral"
           variant="ghost"

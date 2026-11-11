@@ -1,4 +1,9 @@
 <script setup lang="ts">
+const { t } = useI18n()
+// The build stamps the root package.json's version here, so the footer and the
+// release number cannot disagree.
+const { version } = useRuntimeConfig().public
+
 /**
  * The brand block takes the grid's first column, so the groups sit beside it
  * rather than wrapping underneath. The account group changes with the session
@@ -7,18 +12,18 @@
  */
 const columns = computed(() => [
   {
-    label: 'Product',
+    label: t('footer.groups.product'),
     children: [
-      { label: 'Create a payment', to: '/sell' },
-      { label: 'Scan and pay', to: '/scan' },
-      { label: 'Learn about crypto', to: '/learn' }
+      { label: t('footer.links.createPayment'), to: '/sell' },
+      { label: t('footer.links.scanAndPay'), to: '/scan' },
+      { label: t('footer.links.learn'), to: '/learn' }
     ]
   },
   {
-    label: 'Legal',
+    label: t('footer.groups.legal'),
     children: [
-      { label: 'Terms of use', to: '/terms' },
-      { label: 'Privacy policy', to: '/privacy' }
+      { label: t('footer.links.terms'), to: '/terms' },
+      { label: t('footer.links.privacy'), to: '/privacy' }
     ]
   }
 ])
@@ -37,7 +42,7 @@ const columns = computed(() => [
             <div class="max-w-sm">
               <NuxtLink
                 to="/"
-                aria-label="Payvand home"
+                :aria-label="$t('app.brandHome')"
                 class="focus-visible:outline-3 outline-primary/25 inline-flex items-center gap-2 rounded-md"
               >
                 <img
@@ -57,8 +62,7 @@ const columns = computed(() => [
               </NuxtLink>
 
               <p class="text-muted mt-4 text-sm leading-relaxed">
-                One QR code, scanned with a wallet. The money goes straight from the customer to
-                the seller — never through us.
+                {{ $t('footer.tagline') }}
               </p>
             </div>
           </template>
@@ -68,7 +72,7 @@ const columns = computed(() => [
 
     <template #left>
       <p class="text-muted text-sm">
-        © {{ new Date().getFullYear() }} Payvand · Built on Solana · v0.3.1
+        {{ $t('footer.copyright', { year: new Date().getFullYear(), version: `v${version}` }) }}
       </p>
     </template>
 
@@ -77,7 +81,7 @@ const columns = computed(() => [
         to="https://solana.com/docs"
         target="_blank"
         icon="i-lucide-book-open"
-        label="Solana docs"
+        :label="$t('footer.solanaDocs')"
         color="neutral"
         variant="ghost"
         size="sm"

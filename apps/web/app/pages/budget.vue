@@ -4,7 +4,9 @@ import type { SupportedCurrency } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster, mintForCurrency } from '~/composables/usePaymentProgram'
 
-useSeoMeta({ title: 'Budget — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('budget.metaTitle') })
 
 definePageMeta({ middleware: 'auth' })
 
@@ -24,14 +26,11 @@ const activeCurrency = ref<SupportedCurrency>('sol')
  */
 const DEFAULT_LIMITS: Record<SupportedCurrency, string> = { sol: '0.1', usdc: '1', eurc: '1' }
 const limitAmount = ref(DEFAULT_LIMITS.sol)
-const LOW_LIMIT_WARNING
-  = 'Any device holding your session key can pay up to this amount without asking your wallet, '
-    + 'so it is also the most a stolen phone or laptop could spend. Start low and raise it whenever you need more.'
 const tokenBudgets = ref<Partial<Record<SupportedCurrency, TokenBudgetState | null>>>({})
 
 const busy = ref(false)
 const failure = ref('')
-const failureTitle = ref('Something went wrong')
+const failureTitle = ref(t('budget.errors.genericTitle'))
 const success = ref('')
 const budget = ref<BudgetState | null>(null)
 const budgetPot = ref(0)
@@ -120,7 +119,7 @@ async function refresh() {
       tokenBudgets.value[currency] = await budgetApi.loadTokenBudget(publicKey.value, mint)
     }
   } catch (error) {
-    failure.value = error instanceof Error ? error.message : 'Could not read your budget.'
+    failure.value = error instanceof Error ? error.message : t('budget.errors.readFailure')
   }
 }
 
@@ -151,25 +150,24 @@ function solanaErrorCode(error: unknown): string | undefined {
 function describeFailure(error: unknown): string {
   switch (solanaErrorCode(error)) {
     case 'USER_REJECTED':
-      return 'You rejected the request in your wallet.'
+      return t('budget.errors.rejected')
     case 'RPC_FAILURE':
-      return 'Your wallet could not submit the transaction. If it warned that it could not simulate '
-        + 'the transaction, the wallet most likely lacks SOL for this limit — check its balance, then try again.'
+      return t('budget.errors.rpcFailure')
     case 'TRANSACTION_TIMEOUT':
-      return 'The network is taking longer than usual to confirm. Check your wallet activity before retrying.'
+      return t('budget.errors.timeout')
     default:
-      return error instanceof Error && error.message ? error.message : 'The wallet rejected the request.'
+      return error instanceof Error && error.message ? error.message : t('budget.errors.rejectedFallback')
   }
 }
 
 function recordFailure(error: unknown) {
-  failureTitle.value = solanaErrorCode(error) ?? 'Transaction not sent'
+  failureTitle.value = solanaErrorCode(error) ?? t('budget.errors.notSentTitle')
   failure.value = describeFailure(error)
 }
 
 function resetMessages() {
   failure.value = ''
-  failureTitle.value = 'Something went wrong'
+  failureTitle.value = t('budget.errors.genericTitle')
   success.value = ''
 }
 
@@ -177,7 +175,7 @@ async function saveLimit() {
   const units = Number(limitAmount.value)
   const limit = toBaseUnits(units)
   if (!Number.isFinite(limit) || limit <= 0) {
-    failure.value = `Enter a monthly limit greater than 0 ${unitLabel.value}.`
+    failure.value = t('budget.errors.badLimit', { currency: unitLabel.value })
     return
   }
   resetMessages()
@@ -197,10 +195,8 @@ async function rotateToThisDevice() {
   resetMessages()
   const funded = Math.min(current.limit, current.pot)
   if (funded <= 0) {
-    failureTitle.value = 'Nothing left to take over'
-    failure.value = `This month's ${unitLabel.value} pot is empty, so there is nothing for a `
-      + 'session key to spend yet. Set a limit with the button below — that same approval also '
-      + 'registers this device.'
+    failureTitle.value = t('budget.errors.nothingToTakeOver')
+    failure.value = t('budget.errors.emptyPot', { currency: unitLabel.value })
     return
   }
   await applyLimit(funded, 'rotate')
@@ -224,7 +220,7 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
   if (!buyer) return
 
   failure.value = ''
-  failureTitle.value = 'Something went wrong'
+  failureTitle.value = t('budget.errors.genericTitle')
   success.value = ''
 
   busy.value = true
@@ -242,12 +238,16 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
         (await client.rpc.getBalance(buyer, { commitment: 'confirmed' }).send()).value
       )
       if (balance < cost.total) {
-        failureTitle.value = 'Not enough SOL'
-        failure.value
-          = `This wallet holds ${lamportsToSol(balance)} SOL, but enabling a ${lamportsToSol(limit)} SOL budget needs about ${lamportsToSol(cost.total)} SOL in one signature `
-            + `(${lamportsToSol(cost.topUp)} into the pot, ${lamportsToSol(cost.feeFloat)} session-key fee float, `
-            + `${lamportsToSol(cost.rent)} account rent, ${lamportsToSol(cost.fee)} network fee). `
-            + 'Lower the limit or top up the wallet — on devnet, https://faucet.solana.com sends free test SOL.'
+        failureTitle.value = t('budget.errors.notEnoughSol')
+        failure.value = t('budget.errors.notEnoughSolBody', {
+          balance: lamportsToSol(balance),
+          limit: lamportsToSol(limit),
+          total: lamportsToSol(cost.total),
+          topUp: lamportsToSol(cost.topUp),
+          feeFloat: lamportsToSol(cost.feeFloat),
+          rent: lamportsToSol(cost.rent),
+          fee: lamportsToSol(cost.fee)
+        })
         return
       }
     } else {
@@ -258,9 +258,11 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
         (await client.rpc.getBalance(buyer, { commitment: 'confirmed' }).send()).value
       )
       if (balance < cost.total) {
-        failureTitle.value = 'Not enough SOL for fees'
-        failure.value = `This wallet needs about ${lamportsToSol(cost.total)} SOL for the account rent and `
-          + `network fee of a ${unitLabel.value} allowance. On devnet, https://faucet.solana.com sends free test SOL.`
+        failureTitle.value = t('budget.errors.notEnoughSolFees')
+        failure.value = t('budget.errors.feeBody', {
+          total: lamportsToSol(cost.total),
+          currency: unitLabel.value
+        })
         return
       }
 
@@ -275,10 +277,12 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
         .catch(() => 0)
       const needed = Math.max(0, limit - (view.value?.pot ?? 0))
       if (intent !== 'rotate' && held < needed) {
-        failureTitle.value = `Not enough ${unitLabel.value}`
-        failure.value = `This wallet holds ${amountLabel(held)}, but this moves ${amountLabel(needed)} `
-          + `into the pot to reach ${amountLabel(limit)}. Lower the limit, or get free test tokens `
-          + 'from https://faucet.circle.com and try again.'
+        failureTitle.value = t('budget.errors.notEnoughToken', { currency: unitLabel.value })
+        failure.value = t('budget.errors.tokenBody', {
+          held: amountLabel(held),
+          needed: amountLabel(needed),
+          limit: amountLabel(limit)
+        })
         return
       }
     }
@@ -331,19 +335,13 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
       confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
     })
     if (intent === 'rotate') {
-      success.value = 'This device now pays silently, and the key the other device held stopped '
-        + `working at once. Nothing moved: the limit is now ${amountLabel(limit)}, what the pot already `
-        + 'held, and the monthly counter restarts at zero. Top up from here whenever you want a bigger one.'
+      success.value = t('budget.success.rotated', { limit: amountLabel(limit) })
     } else if (intent === 'refill') {
-      success.value = `Refilled — the pot holds ${amountLabel(limit)} again and every payment inside `
-        + 'it is back to no popups. The monthly counter restarts with a refill, so the whole limit is '
-        + 'spendable from now.'
+      success.value = t('budget.success.refilled', { limit: amountLabel(limit) })
     } else if (existing) {
-      success.value = 'Budget updated — your limit and pot are in sync again.'
+      success.value = t('budget.success.updated')
     } else {
-      success.value = `${unitLabel.value} allowance enabled. The tokens sit in an account derived from your wallet `
-        + 'that only your private keys control — payments inside the limit need no approval, and '
-        + '"Close budget" returns everything left at any time.'
+      success.value = t('budget.success.enabled', { currency: unitLabel.value })
     }
     await refresh()
   } catch (error) {
@@ -359,10 +357,10 @@ async function closeBudget() {
   if (!buyer) return
 
   failure.value = ''
-  failureTitle.value = 'Something went wrong'
+  failureTitle.value = t('budget.errors.genericTitle')
   success.value = ''
   if (!view.value) {
-    failure.value = 'There is no budget to close yet.'
+    failure.value = t('budget.errors.noBudgetToClose')
     return
   }
   busy.value = true
@@ -405,7 +403,7 @@ async function closeBudget() {
     const anyLeft
       = Boolean(budget.value) || Object.values(tokenBudgets.value).some(entry => Boolean(entry))
     if (!anyLeft) forgetSessionSigner(buyer)
-    success.value = `${unitLabel.value} budget closed — everything left went back to your wallet.`
+    success.value = t('budget.success.closed', { currency: unitLabel.value })
   } catch (error) {
     recordFailure(error)
   } finally {
@@ -416,14 +414,14 @@ async function closeBudget() {
 
 <template>
   <UPageSection
-    title="Monthly spending budget"
-    description="Set a limit once and your wallet signs only for that: the amount leaves your wallet into a program account the chain derives from your wallet — not to Payvand, not to the seller. Only your wallet can take it back out, while this device's session key spends from it inside the limit with no approval popups."
+    :title="$t('budget.title')"
+    :description="$t('budget.description')"
   >
     <UCard>
       <template #header>
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-base font-semibold">
-            Your budget
+            {{ $t('budget.cardTitle') }}
           </h2>
           <WalletConnect />
         </div>
@@ -450,7 +448,7 @@ async function closeBudget() {
           <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p class="text-sm text-muted">
-                Monthly limit
+                {{ $t('budget.display.monthlyLimit') }}
               </p>
               <p class="text-lg font-semibold">
                 {{ amountLabel(view.limit) }}
@@ -458,7 +456,7 @@ async function closeBudget() {
             </div>
             <div>
               <p class="text-sm text-muted">
-                Left this month
+                {{ $t('budget.display.leftThisMonth') }}
               </p>
               <p class="text-lg font-semibold text-success">
                 {{ amountLabel(view.remaining) }}
@@ -466,7 +464,7 @@ async function closeBudget() {
             </div>
             <div>
               <p class="text-sm text-muted">
-                Pot (leftover included)
+                {{ $t('budget.display.pot') }}
               </p>
               <p class="text-lg font-semibold">
                 {{ amountLabel(view.pot) }}
@@ -474,7 +472,7 @@ async function closeBudget() {
             </div>
             <div>
               <p class="text-sm text-muted">
-                Session key
+                {{ $t('budget.display.sessionKey') }}
               </p>
               <p class="font-mono text-sm">
                 {{ shorten(view.sessionKey) }}
@@ -483,30 +481,24 @@ async function closeBudget() {
                 v-if="foreignDevice"
                 class="text-xs text-muted"
               >
-                another device
+                {{ $t('budget.display.anotherDevice') }}
               </p>
             </div>
           </div>
 
           <p class="text-sm text-muted">
-            <span class="font-medium text-highlighted">Where the money sits.</span>
-            The pot is a program account derived from your wallet: setting or refilling a limit
-            moves that amount out of your wallet and into it, and only your wallet can take it
-            back out. This device's session key can spend from it, but never more than the limit.
-            The limit resets on the 1st of each month, the pot keeps whatever you did not spend,
-            and closing the budget returns every unit to your wallet.
+            <span class="font-medium text-highlighted">{{ $t('budget.whereMoney.title') }}</span>
+            {{ $t('budget.whereMoney.body') }}
           </p>
 
           <p class="text-sm text-muted">
-            <span class="font-medium text-highlighted">Keep it small on purpose.</span>
-            A limit you could lose without changing your month is doing its job — that is why
-            payments from it never ask for an approval. Pair it with a wallet used only for
-            spending, apart from savings:
+            <span class="font-medium text-highlighted">{{ $t('budget.keepSmall.title') }}</span>
+            {{ $t('budget.keepSmall.body') }}
             <NuxtLink
               to="/learn/two-wallets"
               class="font-medium text-primary underline-offset-4 hover:underline"
             >
-              how to keep two wallets
+              {{ $t('budget.keepSmall.twoWallets') }}
             </NuxtLink>.
           </p>
 
@@ -515,14 +507,14 @@ async function closeBudget() {
             color="info"
             variant="subtle"
             icon="i-lucide-smartphone"
-            title="This allowance is registered to another device"
+            :title="$t('budget.foreign.title')"
             :description="deviceKeyAddress
-              ? `The key that pays silently here belongs to a different device (${shorten(deviceKeyAddress)}). Taking it over needs one approval, moves no funds, and stops the other device from spending.`
-              : 'The key that pays silently for this allowance lives on another device. Taking it over needs one approval, moves no funds, and stops the other device from spending.'"
+              ? $t('budget.foreign.withKey', { key: shorten(deviceKeyAddress) })
+              : $t('budget.foreign.description')"
           >
             <template #actions>
               <UButton
-                label="Use this device instead"
+                :label="$t('budget.foreign.action')"
                 size="sm"
                 :loading="busy || txLoading"
                 @click="rotateToThisDevice"
@@ -531,8 +523,8 @@ async function closeBudget() {
           </UAlert>
 
           <UFormField
-            :label="`Monthly limit (${unitLabel})`"
-            help="Applied on the next signature — top up, lower, or raise it any time."
+            :label="$t('budget.limitLabel', { currency: unitLabel })"
+            :help="$t('budget.limitHelp')"
           >
             <UInput
               v-model="limitAmount"
@@ -548,26 +540,26 @@ async function closeBudget() {
             color="warning"
             variant="subtle"
             icon="i-lucide-shield-alert"
-            title="Keep the limit low"
-            :description="LOW_LIMIT_WARNING"
+            :title="$t('budget.lowLimitTitle')"
+            :description="$t('budget.lowLimitWarning')"
           />
 
           <div class="flex flex-wrap gap-2">
             <UButton
               v-if="refillNeeded > 0"
-              :label="`Refill to ${amountLabel(view.limit)}`"
+              :label="$t('budget.refill', { amount: amountLabel(view.limit) })"
               icon="i-lucide-piggy-bank"
               :loading="busy || txLoading"
               @click="refill"
             />
             <UButton
-              label="Save limit / top up"
+              :label="$t('budget.saveLimit')"
               icon="i-lucide-refresh-cw"
               :loading="busy || txLoading"
               @click="saveLimit"
             />
             <UButton
-              :label="`Close ${unitLabel} budget & reclaim funds`"
+              :label="$t('budget.closeBudget', { currency: unitLabel })"
               color="error"
               variant="soft"
               icon="i-lucide-trash-2"
@@ -577,14 +569,13 @@ async function closeBudget() {
           </div>
 
           <p class="text-sm text-muted">
-            <span class="font-medium text-highlighted">Closing the budget is the kill switch.</span>
-            It revokes the session key on every device, returns everything left to your wallet, and
-            stops silent payments at once — then a new limit can be set whenever you are ready.
+            <span class="font-medium text-highlighted">{{ $t('budget.killSwitch.title') }}</span>
+            {{ $t('budget.killSwitch.body') }}
           </p>
         </template>
 
         <template v-else-if="connected">
-          <UFormField :label="`Monthly limit (${unitLabel})`">
+          <UFormField :label="$t('budget.limitLabel', { currency: unitLabel })">
             <UInput
               v-model="limitAmount"
               type="number"
@@ -599,33 +590,29 @@ async function closeBudget() {
             color="warning"
             variant="subtle"
             icon="i-lucide-shield-alert"
-            title="Keep the limit low"
-            :description="LOW_LIMIT_WARNING"
+            :title="$t('budget.lowLimitTitle')"
+            :description="$t('budget.lowLimitWarning')"
           />
 
           <UButton
-            label="Enable monthly budget"
+            :label="$t('budget.enable')"
             icon="i-lucide-wallet"
             :loading="busy || txLoading"
             @click="saveLimit"
           />
 
           <p class="text-sm text-muted">
-            <span class="font-medium text-highlighted">What this one approval does.</span>
-            It moves the limit out of your wallet into a program account the chain derives from
-            your wallet — not to Payvand, and not to the seller — and registers a session key that
-            stays on this device. Payments inside the limit then go through with no popups, and
-            only your wallet can withdraw the pot.
+            <span class="font-medium text-highlighted">{{ $t('budget.oneApproval.title') }}</span>
+            {{ $t('budget.oneApproval.body') }}
           </p>
 
           <p class="text-sm text-muted">
-            Start small: the most a lost phone can spend is this limit, which is why payments never
-            ask for an approval. Keep this wallet separate from your savings —
+            {{ $t('budget.startSmall') }}
             <NuxtLink
               to="/learn/two-wallets"
               class="font-medium text-primary underline-offset-4 hover:underline"
             >
-              how to keep two wallets
+              {{ $t('budget.keepSmall.twoWallets') }}
             </NuxtLink>.
           </p>
         </template>
@@ -634,7 +621,7 @@ async function closeBudget() {
           v-else
           class="text-sm text-muted"
         >
-          Connect your wallet to see your budget.
+          {{ $t('budget.connectPrompt') }}
         </p>
 
         <UAlert
@@ -650,7 +637,7 @@ async function closeBudget() {
           color="success"
           variant="subtle"
           icon="i-lucide-circle-check"
-          title="Done"
+          :title="$t('common.done')"
           :description="success"
         />
       </div>

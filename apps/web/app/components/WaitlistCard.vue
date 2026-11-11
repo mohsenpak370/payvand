@@ -3,6 +3,7 @@
 // the second is how to hear when it is not. This card is both: a plain
 // statement of what Payvand is today, and a waiting list for taking real
 // payments with it later.
+const { t } = useI18n()
 const config = useRuntimeConfig()
 
 const email = ref('')
@@ -28,7 +29,7 @@ async function join() {
   } catch (error) {
     failure.value = apiErrorMessage(
       error,
-      'Could not add you to the list. Try again in a moment.'
+      t('waitlist.joinFailure')
     )
   } finally {
     busy.value = false
@@ -50,16 +51,13 @@ async function join() {
 
       <div class="min-w-0 flex-1">
         <h2 class="text-base font-semibold">
-          This is a test build
+          {{ $t('waitlist.title') }}
         </h2>
         <p class="text-muted mt-1 text-sm leading-relaxed">
-          Payvand is a proof of concept. Codes, scanning and receipts all work,
-          but every payment runs on a Solana test network with free test SOL —
-          no real money moves.
+          {{ $t('waitlist.body') }}
         </p>
         <p class="text-muted mt-2 text-sm leading-relaxed">
-          Want to take real payments? Leave your email and we'll tell you when
-          Payvand is ready for a live wallet.
+          {{ $t('waitlist.invite') }}
         </p>
 
         <UAlert
@@ -67,7 +65,7 @@ async function join() {
           color="error"
           variant="subtle"
           icon="i-lucide-circle-alert"
-          title="Waiting list"
+          :title="$t('waitlist.alertTitle')"
           :description="failure"
           class="mt-4"
         />
@@ -82,7 +80,7 @@ async function join() {
             type="email"
             name="email"
             autocomplete="email"
-            placeholder="you@example.com"
+            :placeholder="$t('waitlist.placeholder')"
             class="w-full"
             :disabled="busy"
           />
@@ -91,7 +89,7 @@ async function join() {
             :loading="busy"
             :disabled="!canJoin"
             class="justify-center sm:shrink-0"
-            label="Join the waiting list"
+            :label="$t('waitlist.join')"
           />
         </form>
 
@@ -100,8 +98,8 @@ async function join() {
           color="success"
           variant="subtle"
           icon="i-lucide-circle-check"
-          title="You're on the list."
-          description="We'll email you when Payvand can take real payments."
+          :title="$t('waitlist.successTitle')"
+          :description="$t('waitlist.successBody')"
           class="mt-4"
         />
       </div>

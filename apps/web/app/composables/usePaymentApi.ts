@@ -221,7 +221,7 @@ export function unwrapQrText(raw: string): string {
       if (!token) throw new Error()
       text = decodePaymentToken(token)
     } catch {
-      throw new Error('That is a Solana payment code Payvand cannot read.')
+      throw new Error(appT('errors.unreadableSolanaCode'))
     }
   } else if (/^https?:\/\//i.test(text)) {
     // Unwrap a scanned link; a pasted raw JSON payload still works.
@@ -259,10 +259,10 @@ export function parseQrPayload(raw: string): PaymentQrPayload {
     parsed = JSON.parse(text) as PaymentQrPayload
   } catch {
     // JSON.parse's own message ("Unexpected token …") means nothing to buyers.
-    throw new Error('That does not look like a Payvand payment code.')
+    throw new Error(appT('errors.notPaymentCode'))
   }
   if (parsed?.v !== 1 || !parsed.id || !parsed.seller || !parsed.reference) {
-    throw new Error('That is not a Payvand payment code.')
+    throw new Error(appT('errors.notOurCode'))
   }
   return parsed
 }
@@ -314,18 +314,18 @@ export function solToLamports(sol: number): number {
 
 /** Plain-language label for a payment status badge. */
 export function statusLabel(status: PaymentStatus): string {
-  if (status === 'settled') return 'Paid'
+  if (status === 'settled') return appT('status.paid')
   // A fresh invoice has no on-chain account until the customer pays — to
   // everyone watching it reads exactly the same as an open invoice.
-  return 'Awaiting payment'
+  return appT('status.awaitingPayment')
 }
 
 /** Plain-language network name; devnet/mainnet are jargon to buyers. */
 export function networkLabel(cluster: string): string {
-  if (cluster === 'localnet') return 'Local test network'
-  if (cluster === 'devnet') return 'Test network (devnet)'
-  if (cluster === 'testnet') return 'Test network (testnet)'
-  if (cluster === 'mainnet' || cluster === 'mainnet-beta') return 'Main network (mainnet)'
+  if (cluster === 'localnet') return appT('network.localnet')
+  if (cluster === 'devnet') return appT('network.devnet')
+  if (cluster === 'testnet') return appT('network.testnet')
+  if (cluster === 'mainnet' || cluster === 'mainnet-beta') return appT('network.mainnet')
   return cluster
 }
 

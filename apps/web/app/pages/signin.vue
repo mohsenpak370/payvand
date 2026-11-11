@@ -1,5 +1,7 @@
 <script setup lang="ts">
-useSeoMeta({ title: 'Sign in — Payvand' })
+const { t } = useI18n()
+
+useSeoMeta({ title: t('signin.metaTitle') })
 
 definePageMeta({ layout: 'auth', header: false, footer: false })
 
@@ -42,11 +44,11 @@ function shorten(value: string) {
 async function submit() {
   failure.value = ''
   if (!email.value.trim()) {
-    failure.value = 'Enter your email address.'
+    failure.value = t('signin.enterEmail')
     return
   }
   if (!password.value) {
-    failure.value = 'Enter your password.'
+    failure.value = t('signin.enterPassword')
     return
   }
 
@@ -55,7 +57,7 @@ async function submit() {
     await signin(email.value, password.value)
     await router.replace(nextPath.value)
   } catch (error) {
-    failure.value = apiErrorMessage(error, 'Could not sign in. Check your email and password.')
+    failure.value = apiErrorMessage(error, t('signin.failure'))
   } finally {
     busy.value = false
   }
@@ -74,8 +76,7 @@ async function submitWallet() {
     if (!connected.value || !publicKey.value) {
       const wallet = selectedWallet.value ?? wallets.value[0]
       if (!wallet) {
-        walletFailure.value
-          = 'No wallet detected. Install an extension such as Phantom or Solflare, then reload the page.'
+        walletFailure.value = t('signin.noWalletFound')
         return
       }
       selectWallet(wallet)
@@ -86,7 +87,7 @@ async function submitWallet() {
 
     const address = publicKey.value
     if (!address) {
-      walletFailure.value = 'The wallet is not connected. Try again, or sign in with your email and password.'
+      walletFailure.value = t('signin.walletNotConnected')
       return
     }
 
@@ -98,8 +99,8 @@ async function submitWallet() {
     const code = (error as { code?: string } | null)?.code
     walletFailure.value
       = code === 'USER_REJECTED'
-        ? 'You cancelled the request in your wallet.'
-        : apiErrorMessage(error, 'The wallet declined to sign, or the request expired. Try again.')
+        ? t('signin.cancelled')
+        : apiErrorMessage(error, t('signin.declined'))
   } finally {
     walletBusy.value = false
   }
@@ -109,35 +110,35 @@ async function submitWallet() {
 <template>
   <div>
     <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
-      Sign in
+      {{ $t('signin.title') }}
     </h1>
     <p class="mt-2 text-sm leading-relaxed text-muted">
-      Welcome back. Sign in to create payment codes and track what you get paid.
+      {{ $t('signin.subtitle') }}
     </p>
 
     <form
       class="mt-8 flex flex-col gap-4"
       @submit.prevent="submit"
     >
-      <UFormField label="Email">
+      <UFormField :label="$t('signin.emailLabel')">
         <UInput
           v-model="email"
           type="email"
           name="email"
           autocomplete="email"
           class="w-full"
-          placeholder="you@example.com"
+          :placeholder="$t('signin.emailPlaceholder')"
         />
       </UFormField>
 
-      <UFormField label="Password">
+      <UFormField :label="$t('signin.passwordLabel')">
         <UInput
           v-model="password"
           type="password"
           name="password"
           autocomplete="current-password"
           class="w-full"
-          placeholder="Your password"
+          :placeholder="$t('signin.passwordPlaceholder')"
         />
       </UFormField>
 
@@ -146,7 +147,7 @@ async function submitWallet() {
           to="/forgot-password"
           class="text-primary font-medium"
         >
-          Forgot password?
+          {{ $t('signin.forgot') }}
         </NuxtLink>
       </p>
 
@@ -160,7 +161,7 @@ async function submitWallet() {
 
       <UButton
         type="submit"
-        label="Sign in"
+        :label="$t('signin.submit')"
         icon="i-lucide-arrow-right"
         size="lg"
         :loading="busy"
@@ -169,7 +170,7 @@ async function submitWallet() {
     </form>
 
     <USeparator
-      label="or"
+      :label="$t('signin.or')"
       class="my-6"
     />
 
@@ -190,12 +191,12 @@ async function submitWallet() {
           class="text-primary shrink-0 text-sm font-medium hover:underline"
           @click="disconnect()"
         >
-          Disconnect
+          {{ $t('signin.disconnect') }}
         </button>
       </div>
 
       <UButton
-        :label="connected && publicKey ? 'Sign in with wallet' : 'Continue with a wallet'"
+        :label="connected && publicKey ? $t('signin.withWallet') : $t('signin.continueWithWallet')"
         icon="i-lucide-wallet"
         color="neutral"
         variant="subtle"
@@ -218,34 +219,34 @@ async function submitWallet() {
         v-if="walletsReady && !wallets.length"
         class="text-muted text-xs leading-relaxed"
       >
-        No wallet detected.
+        {{ $t('signin.noWalletLine') }}
         <a
           href="https://phantom.app"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary font-medium"
-        >Install Phantom</a>
-        or
+        >{{ $t('signin.installPhantom') }}</a>
+        {{ $t('signin.or') }}
         <a
           href="https://solflare.io"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary font-medium"
-        >Solflare</a>, then reload the page.
+        >{{ $t('signin.installSolflare') }}</a>{{ $t('signin.afterInstall') }}
       </p>
 
       <p class="text-muted text-xs leading-relaxed">
-        Sign in with a wallet you have already linked to this account.
+        {{ $t('signin.walletHint') }}
       </p>
     </div>
 
     <p class="text-muted mt-8 text-center text-sm">
-      New to Payvand?
+      {{ $t('signin.newHere') }}
       <NuxtLink
         :to="{ path: '/signup', query: { next: nextPath } }"
         class="text-primary font-medium"
       >
-        Create an account
+        {{ $t('signin.createAccount') }}
       </NuxtLink>
     </p>
   </div>

@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 // The cluster the app targets is set in `.env` (`SOLANA_CLUSTER`), not here:
 // 'localnet' for a local `solana-test-validator`, 'devnet' for testing,
@@ -23,12 +23,18 @@ const solanaEndpoint
 // follow the card links on the index page, so the guides are listed here and
 // prerendered as static HTML — which also keeps the content database out of
 // the deployed server function's request path.
-const learnGuides = readdirSync(new URL('./content/learn', import.meta.url))
+// The release number is the workspace root's version, read at build time so the
+// footer cannot drift from it: bumping package.json is the whole of a release.
+const { version } = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+) as { version: string }
+
+const learnGuides = readdirSync(new URL('./content/en/learn', import.meta.url))
   .filter(file => file.endsWith('.md'))
   .map(file => `/learn/${file.replace(/\.md$/, '')}`)
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxt/content', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
+  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxt/content', '@nuxtjs/i18n', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
 
   devtools: {
     enabled: true
@@ -42,7 +48,8 @@ export default defineNuxtConfig({
       // server below; in production set NUXT_PUBLIC_API_BASE to the API's
       // origin (it is deployed as its own Vercel project).
       apiBase: '',
-      cluster: solanaCluster
+      cluster: solanaCluster,
+      version
     }
   },
 
@@ -171,6 +178,28 @@ export default defineNuxtConfig({
         commaDangle: 'never',
         braceStyle: '1tbs'
       }
+    }
+  },
+
+  // Every word the app shows lives in i18n/locales/<locale>.json; nothing is
+  // written into a template, so a second language is a second file and no
+  // component changes. `no_prefix` keeps the URLs exactly as they are: these
+  // are QR targets and wallet hand-offs, and an /en/ in front of an invoice
+  // link would break every code already printed or shown.
+  i18n: {
+    // URLs never carry the locale: payment links are permanent and printed QR
+    // codes point at them, so a shared link must read the same to everyone.
+    strategy: 'no_prefix',
+    defaultLocale: 'en',
+    locales: [
+      { code: 'en', language: 'en-US', name: 'English', file: 'en.json' },
+      { code: 'fa', language: 'fa-IR', name: 'فارسی', dir: 'rtl', file: 'fa.json' }
+    ],
+    // The choice made on the settings page is kept in a cookie so it survives
+    // a reload, and a first visit follows the browser's own language.
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'payvand.locale'
     }
   },
 

@@ -84,6 +84,6 @@ const qrWithLogo = computed(() => {
     v-else
     class="text-sm text-muted"
   >
-    Generating QR code…
+    {{ $t('qr.generating') }}
   </p>
 </template>
