@@ -9,7 +9,8 @@ useSeoMeta({
 // Each language is its own collection, because the words are the content, not
 // a translation layer over it. The key carries the locale so a reader who has
 // chosen Persian fetches the Persian set instead of hydrating the English one.
-const collection = computed(() => (locale.value === 'fa' ? 'learnFa' : 'learn'))
+const COLLECTIONS = { en: 'learn', fa: 'learnFa', fr: 'learnFr' } as const
+const collection = computed(() => COLLECTIONS[locale.value as keyof typeof COLLECTIONS] ?? 'learn')
 
 // Reading order is the `order` field, not the filenames, so guides can be
 // slotted in without renaming anything.

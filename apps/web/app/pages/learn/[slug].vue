@@ -4,7 +4,8 @@ const route = useRoute()
 
 // One collection per language; the locale is part of each key so switching to
 // Persian fetches the Persian guides instead of keeping the English payload.
-const collection = computed(() => (locale.value === 'fa' ? 'learnFa' : 'learn'))
+const COLLECTIONS = { en: 'learn', fa: 'learnFa', fr: 'learnFr' } as const
+const collection = computed(() => COLLECTIONS[locale.value as keyof typeof COLLECTIONS] ?? 'learn')
 
 const { data: guide } = await useAsyncData(
   () => `${collection.value}${route.path}`,

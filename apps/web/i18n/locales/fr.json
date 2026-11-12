@@ -1,0 +1,960 @@
+{
+  "common": {
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "copied": "Copié",
+    "done": "Terminé",
+    "testMode": "Mode test — les paiements utilisent des SOL de test gratuits",
+    "liveMode": "En direct — accepte de vrais SOL",
+    "clear": "Effacer",
+    "loading": "Chargement…"
+  },
+  "app": {
+    "brandHome": "Accueil Payvand",
+    "brandWord": {
+      "lead": "Pay",
+      "rest": "vand"
+    },
+    "meta": {
+      "title": "Payvand — paiements par QR sur Solana",
+      "description": "Payvand simplifie l'encaissement : le vendeur crée un QR code, le client le scanne et paie depuis son portefeuille — sans terminal de carte, sans compte à créer pour le client."
+    },
+    "update": {
+      "title": "Une nouvelle version est prête",
+      "description": "Cette page continue de fonctionner telle quelle. Rechargez-la quand vous aurez terminé ici pour récupérer la mise à jour.",
+      "action": "Recharger"
+    },
+    "nav": {
+      "primary": "Principal",
+      "account": "Compte",
+      "menu": "Menu",
+      "createPayment": "Créer un paiement",
+      "scanAndPay": "Scanner et payer",
+      "learn": "Apprendre",
+      "learnAboutCrypto": "Comprendre la crypto"
+    },
+    "account": {
+      "profile": "Profil",
+      "shops": "Boutiques",
+      "settings": "Paramètres",
+      "admin": "Admin",
+      "signOut": "Se déconnecter"
+    },
+    "auth": {
+      "signIn": "Se connecter",
+      "signUp": "S'inscrire"
+    }
+  },
+  "footer": {
+    "groups": {
+      "product": "Produit",
+      "legal": "Mentions légales"
+    },
+    "links": {
+      "createPayment": "Créer un paiement",
+      "scanAndPay": "Scanner et payer",
+      "learn": "Comprendre la crypto",
+      "terms": "Conditions d'utilisation",
+      "privacy": "Politique de confidentialité"
+    },
+    "tagline": "Un QR code, scanné avec un portefeuille. L'argent va directement du client au vendeur — jamais par nous.",
+    "copyright": "© {year} Payvand · Construit sur Solana · {version}",
+    "solanaDocs": "Docs Solana"
+  },
+  "home": {
+    "hero": {
+      "title": "Des paiements simples sur Solana",
+      "description": "Un vendeur crée un code de paiement en quelques secondes, le client le scanne avec son téléphone et valide le paiement — c'est tout.",
+      "createCta": "Créer un QR de paiement",
+      "scanCta": "Scanner et payer"
+    },
+    "how": {
+      "title": "Comment circule un paiement",
+      "description": "Trois étapes, aucun compte à créer pour votre client.",
+      "create": {
+        "title": "Créer un code de paiement",
+        "description": "Saisissez le montant à encaisser et affichez le QR code. Ni terminal, ni factures, ni abonnement."
+      },
+      "scan": {
+        "title": "Votre client scanne et paie",
+        "description": "Il scanne le code, vérifie le montant et valide le paiement depuis son propre portefeuille. Aucune application à installer."
+      },
+      "paid": {
+        "title": "Payé en quelques secondes",
+        "description": "L'argent arrive dans votre portefeuille et le code passe à « Payé » — vous le voyez tous les deux au même instant."
+      }
+    },
+    "cta": {
+      "description": "Ouvrez la page vendeur, saisissez un montant et montrez le code à votre client. Cela prend une minute.",
+      "startSelling": "Commencer à vendre"
+    }
+  },
+  "admin": {
+    "metaTitle": "Admin — Payvand",
+    "title": "Admin",
+    "description": "Supervision de la plateforme : comptes, sessions actives, codes de remise et liste d'attente.",
+    "forbiddenTitle": "Pas d'accès administrateur",
+    "forbiddenDescription": "Ce compte ne figure pas dans le réglage ADMIN_EMAILS de l'API, donc les routes d'administration répondent 403. Ajoutez l'adresse (puis redéployez) pour accorder l'accès.",
+    "stats": {
+      "accounts": "Comptes",
+      "sessions": "Sessions actives",
+      "discounts": "Codes de remise",
+      "resets": "Réinitialisations en attente"
+    },
+    "waitlist": {
+      "title": "Liste d'attente",
+      "count": "{count} adresse pour un cluster actif | {count} adresses pour un cluster actif",
+      "fallback": "Vendeurs qui veulent encaisser de vrais paiements",
+      "errorTitle": "Liste d'attente",
+      "loadFailure": "Impossible de lire la liste d'attente.",
+      "reading": "Lecture de la liste…",
+      "empty": "Personne ne s'est encore inscrit. La carte de la page d'accueil ajoute la première adresse.",
+      "joined": "Inscription le {date}",
+      "removeAria": "Retirer de la liste d'attente",
+      "removeConfirm": "Retirer {email} de la liste d'attente ?\n\nL'adresse est supprimée : personne ne pourra plus écrire à cette adresse depuis ici.",
+      "removeFailure": "Impossible de retirer cette adresse."
+    },
+    "feed": {
+      "title": "Paiements récents",
+      "count": "{count} facture sur {cluster} | {count} factures sur {cluster}",
+      "fallback": "Lu en direct depuis le cluster",
+      "errorTitle": "Cluster indisponible",
+      "loadFailure": "Impossible de lire les paiements récents depuis le cluster.",
+      "reading": "Lecture du cluster…",
+      "empty": "Aucun paiement sur la chaîne pour l'instant.",
+      "when": "Date",
+      "seller": "Vendeur",
+      "amount": "Montant",
+      "memo": "Mémo",
+      "status": "Statut",
+      "paidBy": "Payé par"
+    },
+    "users": {
+      "searchPlaceholder": "Rechercher par e-mail…",
+      "search": "Rechercher",
+      "errorTitle": "Une erreur est survenue",
+      "loadFailure": "Impossible de charger les données d'administration.",
+      "empty": "Aucun compte ne correspond.",
+      "account": "Compte",
+      "signedUp": "Inscription",
+      "sessions": "Sessions",
+      "codes": "Codes",
+      "actions": "Actions",
+      "delete": "Supprimer",
+      "deleteFailure": "Impossible de supprimer ce compte.",
+      "deleteConfirm": "Supprimer {email} ?\n\nCela supprime le compte, ses sessions, ses codes de remise et tout lien de réinitialisation en attente. Cette action est irréversible.",
+      "range": "{from}–{to} sur {total} comptes",
+      "previous": "Précédent",
+      "next": "Suivant"
+    }
+  },
+  "authLayout": {
+    "headline": "Faites-vous payer sur Solana avec un QR code.",
+    "subtitle": "Un vendeur crée un code de paiement en quelques secondes, le client le scanne avec son téléphone et valide le paiement — c'est tout.",
+    "points": {
+      "code": {
+        "title": "Un code de paiement en quelques secondes",
+        "description": "Saisissez un montant et affichez le QR code : tout l'encaissement tient là."
+      },
+      "scan": {
+        "title": "Votre client scanne et paie",
+        "description": "Il valide depuis son propre portefeuille. Ni terminal, ni application à installer."
+      },
+      "paid": {
+        "title": "Payé avant qu'il ne parte",
+        "description": "Le code passe à « Payé » et vous le voyez ensemble."
+      }
+    }
+  },
+  "signin": {
+    "metaTitle": "Se connecter — Payvand",
+    "title": "Se connecter",
+    "subtitle": "Content de vous revoir. Connectez-vous pour créer des codes de paiement et suivre vos encaissements.",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "vous{'@'}exemple.com",
+    "passwordLabel": "Mot de passe",
+    "passwordPlaceholder": "Votre mot de passe",
+    "forgot": "Mot de passe oublié ?",
+    "enterEmail": "Saisissez votre adresse e-mail.",
+    "enterPassword": "Saisissez votre mot de passe.",
+    "failure": "Connexion impossible. Vérifiez votre e-mail et votre mot de passe.",
+    "submit": "Se connecter",
+    "or": "ou",
+    "disconnect": "Déconnecter",
+    "withWallet": "Se connecter avec un portefeuille",
+    "continueWithWallet": "Continuer avec un portefeuille",
+    "noWalletFound": "Aucun portefeuille détecté. Installez une extension comme Phantom ou Solflare, puis rechargez la page.",
+    "walletNotConnected": "Le portefeuille n'est pas connecté. Réessayez, ou connectez-vous avec votre e-mail et votre mot de passe.",
+    "cancelled": "Vous avez annulé la demande dans votre portefeuille.",
+    "declined": "Le portefeuille a refusé de signer, ou la demande a expiré. Réessayez.",
+    "noWalletLine": "Aucun portefeuille détecté.",
+    "installPhantom": "Installer Phantom",
+    "installSolflare": "Solflare",
+    "afterInstall": ", puis rechargez la page.",
+    "walletHint": "Connectez-vous avec un portefeuille déjà associé à ce compte.",
+    "newHere": "Nouveau sur Payvand ?",
+    "createAccount": "Créer un compte"
+  },
+  "signup": {
+    "metaTitle": "Créer un compte — Payvand",
+    "title": "Créez votre compte",
+    "subtitle": "Une seule connexion pour vos codes et vos encaissements. Juste après l'inscription, nous vous emmenons sur votre profil pour associer un portefeuille Solana.",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "vous{'@'}exemple.com",
+    "passwordLabel": "Mot de passe",
+    "passwordHelp": "Au moins {length} caractères.",
+    "passwordPlaceholder": "Choisissez un mot de passe",
+    "confirmLabel": "Confirmer le mot de passe",
+    "confirmPlaceholder": "Saisissez à nouveau votre mot de passe",
+    "enterEmail": "Saisissez votre adresse e-mail.",
+    "passwordMin": "Le mot de passe doit contenir au moins {length} caractères.",
+    "mismatch": "Les deux mots de passe ne correspondent pas.",
+    "createFailure": "Impossible de créer le compte.",
+    "submit": "Créer un compte",
+    "haveAccount": "Vous avez déjà un compte ?",
+    "signIn": "Se connecter"
+  },
+  "forgotPassword": {
+    "metaTitle": "Mot de passe oublié — Payvand",
+    "title": "Réinitialisez votre mot de passe",
+    "subtitle": "Nous vous envoyons par e-mail un lien à usage unique pour choisir un nouveau mot de passe. Le lien est valable une heure.",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "vous{'@'}exemple.com",
+    "enterEmail": "Saisissez votre adresse e-mail.",
+    "sentTitle": "Vérifiez votre boîte de réception",
+    "failure": "Impossible d'envoyer la demande. Réessayez.",
+    "submit": "Envoyer le lien de réinitialisation",
+    "remembered": "Vous vous en souvenez ?",
+    "backToSignIn": "Retour à la connexion"
+  },
+  "resetPassword": {
+    "metaTitle": "Choisir un nouveau mot de passe — Payvand",
+    "changedTitle": "Mot de passe modifié",
+    "changedDescription": "Votre ancien mot de passe ne fonctionne plus et toutes les sessions ouvertes ont été fermées.",
+    "chooseTitle": "Choisissez un nouveau mot de passe",
+    "chooseDescription": "Choisissez un nouveau mot de passe pour votre compte. Par sécurité, ce lien ne peut servir qu'une fois.",
+    "invalidTitle": "Ce lien est invalide ou a expiré",
+    "invalidDescription": "Les liens de réinitialisation sont à usage unique et valables une heure. Demandez-en un nouveau et ouvrez-le tout de suite.",
+    "requestNew": "Demander un nouveau lien",
+    "successTitle": "Votre mot de passe a été modifié",
+    "successDescription": "Connectez-vous avec votre nouveau mot de passe pour continuer.",
+    "newPasswordLabel": "Nouveau mot de passe",
+    "newPasswordPlaceholder": "Au moins 8 caractères",
+    "confirmLabel": "Confirmer le mot de passe",
+    "confirmPlaceholder": "Répétez le nouveau mot de passe",
+    "failureTitle": "Impossible de réinitialiser le mot de passe",
+    "expired": "Ce lien de réinitialisation est invalide ou a expiré. Demandez-en un nouveau.",
+    "passwordMin": "Le mot de passe doit contenir au moins {length} caractères.",
+    "mismatch": "Les deux mots de passe ne correspondent pas.",
+    "submit": "Enregistrer le mot de passe"
+  },
+  "budget": {
+    "metaTitle": "Budget — Payvand",
+    "title": "Budget de dépenses mensuel",
+    "description": "Fixez une limite une fois, et votre portefeuille ne signera que pour elle : le montant quitte votre portefeuille vers un compte de programme que la chaîne dérive de votre portefeuille — ni vers Payvand, ni vers le vendeur. Seul votre portefeuille peut le retirer, tandis que la clé de session de cet appareil dépense dans la limite sans aucune fenêtre de validation.",
+    "cardTitle": "Votre budget",
+    "display": {
+      "monthlyLimit": "Limite mensuelle",
+      "leftThisMonth": "Restant ce mois-ci",
+      "pot": "Cagnotte (reste inclus)",
+      "sessionKey": "Clé de session",
+      "anotherDevice": "un autre appareil"
+    },
+    "whereMoney": {
+      "title": "Où se trouve l'argent.",
+      "body": "La cagnotte est un compte de programme dérivé de votre portefeuille : fixer ou recharger une limite déplace ce montant de votre portefeuille vers ce compte, et seul votre portefeuille peut le retirer. La clé de session de cet appareil peut y dépenser, mais jamais au-delà de la limite. La limite repart le 1er de chaque mois, la cagnotte garde ce que vous n'avez pas dépensé, et fermer le budget rend chaque unité à votre portefeuille."
+    },
+    "keepSmall": {
+      "title": "Gardez-la volontairement basse.",
+      "body": "Une limite que vous pourriez perdre sans que votre mois change fait son travail — c'est pour cela que les paiements qu'elle couvre ne demandent jamais de validation. Associez-la à un portefeuille réservé aux dépenses, séparé de votre épargne :",
+      "twoWallets": "comment garder deux portefeuilles"
+    },
+    "foreign": {
+      "title": "Cette autorisation est enregistrée sur un autre appareil",
+      "withKey": "La clé qui paie silencieusement ici appartient à un autre appareil ({key}). La reprendre demande une validation, ne déplace aucun fonds et empêche l'autre appareil de dépenser.",
+      "description": "La clé qui paie silencieusement pour cette autorisation se trouve sur un autre appareil. La reprendre demande une validation, ne déplace aucun fonds et empêche l'autre appareil de dépenser.",
+      "action": "Utiliser cet appareil à la place"
+    },
+    "limitLabel": "Limite mensuelle ({currency})",
+    "limitHelp": "Appliquée à la prochaine signature — rechargez, baissez ou augmentez à tout moment.",
+    "lowLimitTitle": "Gardez la limite basse",
+    "lowLimitWarning": "Tout appareil qui détient votre clé de session peut payer jusqu'à ce montant sans demander à votre portefeuille : c'est donc aussi le maximum qu'un téléphone ou un ordinateur volé pourrait dépenser. Commencez bas et augmentez quand vous en avez besoin.",
+    "refill": "Recharger à {amount}",
+    "saveLimit": "Enregistrer la limite / recharger",
+    "closeBudget": "Fermer le budget {currency} et récupérer les fonds",
+    "killSwitch": {
+      "title": "Fermer le budget, c'est le coupe-circuit.",
+      "body": "Cela révoque la clé de session sur tous les appareils, rend tout ce qui reste à votre portefeuille et arrête aussitôt les paiements silencieux — puis une nouvelle limite peut être fixée quand vous le souhaitez."
+    },
+    "enable": "Activer le budget mensuel",
+    "oneApproval": {
+      "title": "Ce que fait cette validation.",
+      "body": "Elle déplace la limite hors de votre portefeuille vers un compte de programme que la chaîne dérive de votre portefeuille — ni vers Payvand, ni vers le vendeur — et enregistre une clé de session qui reste sur cet appareil. Les paiements dans la limite passent ensuite sans aucune fenêtre, et seul votre portefeuille peut retirer la cagnotte."
+    },
+    "startSmall": "Commencez petit : le maximum qu'un téléphone perdu pourrait dépenser est cette limite, et c'est pour cela que les paiements ne demandent jamais de validation. Gardez ce portefeuille séparé de votre épargne —",
+    "connectPrompt": "Connectez votre portefeuille pour voir votre budget.",
+    "errors": {
+      "genericTitle": "Une erreur est survenue",
+      "notSentTitle": "Transaction non envoyée",
+      "rejected": "Vous avez refusé la demande dans votre portefeuille.",
+      "rpcFailure": "Votre portefeuille n'a pas pu soumettre la transaction. S'il a prévenu qu'il ne pouvait pas la simuler, il manque probablement des SOL pour cette limite — vérifiez son solde, puis réessayez.",
+      "timeout": "Le réseau met plus de temps que d'habitude à confirmer. Vérifiez l'activité de votre portefeuille avant de réessayer.",
+      "rejectedFallback": "Le portefeuille a refusé la demande.",
+      "badLimit": "Saisissez une limite mensuelle supérieure à 0 {currency}.",
+      "nothingToTakeOver": "Il n'y a rien à reprendre",
+      "emptyPot": "La cagnotte {currency} de ce mois est vide : une clé de session n'a donc rien à dépenser pour l'instant. Fixez une limite avec le bouton ci-dessous — la même validation enregistre aussi cet appareil.",
+      "notEnoughSol": "Pas assez de SOL",
+      "notEnoughSolBody": "Ce portefeuille contient {balance} SOL, mais activer un budget de {limit} SOL demande environ {total} SOL en une seule signature ({topUp} dans la cagnotte, {feeFloat} pour les frais de la clé de session, {rent} de loyer de compte, {fee} de frais de réseau). Baissez la limite ou rechargez le portefeuille — sur devnet, https://faucet.solana.com envoie des SOL de test gratuits.",
+      "notEnoughSolFees": "Pas assez de SOL pour les frais",
+      "feeBody": "Ce portefeuille a besoin d'environ {total} SOL pour le loyer de compte et les frais de réseau d'une autorisation en {currency}. Sur devnet, https://faucet.solana.com envoie des SOL de test gratuits.",
+      "notEnoughToken": "Pas assez de {currency}",
+      "tokenBody": "Ce portefeuille contient {held}, mais cette opération déplace {needed} dans la cagnotte pour atteindre {limit}. Baissez la limite, ou obtenez des jetons de test gratuits sur https://faucet.circle.com et réessayez.",
+      "readFailure": "Impossible de lire votre budget.",
+      "noBudgetToClose": "Il n'y a pas encore de budget à fermer."
+    },
+    "success": {
+      "rotated": "Cet appareil paie désormais silencieusement, et la clé détenue par l'autre appareil a cessé de fonctionner aussitôt. Rien n'a bougé : la limite est maintenant {limit}, ce que la cagnotte contenait déjà, et le compteur mensuel repart de zéro. Rechargez d'ici quand vous voulez une limite plus élevée.",
+      "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et chaque paiement dans cette limite se fait sans fenêtre. Le compteur mensuel repart à chaque recharge, donc toute la limite est dépensable dès maintenant.",
+      "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
+      "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
+      "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille."
+    }
+  },
+  "calculator": {
+    "title": "Calculatrice",
+    "deleteLastDigit": "Effacer le dernier chiffre",
+    "enterAmount": "Saisissez un montant",
+    "useAmount": "Utiliser ce montant"
+  },
+  "checkout": {
+    "fallbackHeading": "Paiement",
+    "metaTitle": "Paiement — Payvand",
+    "metaTitleWithName": "{name} — Payvand",
+    "loading": "Lecture du paiement…",
+    "invalidTitle": "Ce lien de paiement ne peut pas être ouvert",
+    "goHome": "Aller sur Payvand",
+    "total": "Total",
+    "referenceCode": "Code de référence",
+    "details": {
+      "seller": "Vendeur",
+      "network": "Réseau",
+      "status": "Statut"
+    },
+    "wallet": {
+      "openIn": "Ouvrir dans {wallet}",
+      "connect": "Connecter {wallet}"
+    },
+    "settled": {
+      "title": "Payé",
+      "description": "Cette facture est réglée — il ne reste rien à faire.",
+      "signature": "Signature {signature}",
+      "paidBy": "Payé par {wallet}"
+    },
+    "auto": {
+      "paying": "Paiement de {amount} depuis votre autorisation",
+      "sendingIn": "Aucune validation du portefeuille nécessaire. Envoi dans {seconds} s."
+    },
+    "pay": "Payer {amount}",
+    "payWith": "Payer avec {wallet}",
+    "yourWallet": "votre portefeuille",
+    "silentHint": "Payé depuis votre autorisation mensuelle — sans fenêtre de portefeuille.",
+    "walletHint": "Validez dans {wallet}. Rien n'est envoyé tant que vous ne le faites pas.",
+    "obstacleTitle": "Votre autorisation ne couvre pas ce montant",
+    "allowanceOffer": {
+      "title": "Payez en un seul geste la prochaine fois",
+      "description": "Une autorisation mensuelle permet aux paiements dans sa limite de passer sans aucune fenêtre de portefeuille.",
+      "action": "Définir une autorisation mensuelle"
+    },
+    "deviceSetup": {
+      "title": "Terminez la configuration de cet appareil",
+      "description": "Votre autorisation a besoin d'une validation sur cet appareil avant de pouvoir payer sans fenêtre de portefeuille. Ensuite, c'est un seul geste.",
+      "action": "Configurer cet appareil"
+    },
+    "pick": {
+      "title": "Choisissez un portefeuille pour payer",
+      "none": "Aucun portefeuille Solana trouvé dans ce navigateur. Installez-en un et rechargez, ou scannez le code de cette page avec votre téléphone.",
+      "openInWallet": "Ouvrir dans un portefeuille Solana"
+    },
+    "failureTitle": "Le paiement a échoué",
+    "discount": {
+      "off": "{percent} % de remise",
+      "badge": "{code} · {percent} % de remise",
+      "haveCode": "Vous avez un code de remise ?",
+      "apply": "Appliquer",
+      "remove": "Retirer",
+      "placeholder": "SAVE10"
+    },
+    "save": {
+      "savedTo": "Enregistré dans {shop}",
+      "savedToShop": "Enregistré dans votre boutique",
+      "shopAria": "Boutique dans laquelle enregistrer ce code",
+      "action": "Enregistrer dans ma boutique",
+      "asPdf": "Enregistrer en PDF",
+      "failure": "Impossible d'enregistrer ce paiement.",
+      "failureTitle": "Impossible d'enregistrer le paiement"
+    },
+    "result": {
+      "sent": "Paiement envoyé",
+      "sentLine": "{amount} à {seller}",
+      "readToSeller": "Lisez ceci au vendeur — il pourra retrouver ce paiement avec.",
+      "copyCode": "Copier le code",
+      "failed": "Le paiement n'a pas abouti"
+    },
+    "poweredBy": "Propulsé par"
+  },
+  "status": {
+    "paid": "Payé",
+    "awaitingPayment": "En attente de paiement"
+  },
+  "network": {
+    "localnet": "Réseau de test local",
+    "devnet": "Réseau de test (devnet)",
+    "testnet": "Réseau de test (testnet)",
+    "mainnet": "Réseau principal (mainnet)"
+  },
+  "fiat": {
+    "usd": "Dollars américains (USD)",
+    "eur": "Euros (EUR)"
+  },
+  "errors": {
+    "unreadableSolanaCode": "C'est un code de paiement Solana que Payvand ne sait pas lire.",
+    "notPaymentCode": "Cela ne ressemble pas à un code de paiement Payvand.",
+    "notOurCode": "Ce n'est pas un code de paiement Payvand.",
+    "noPrice": "Ce code de paiement n'a pas de prix.",
+    "detailsMismatch": "Ces informations ne correspondent pas au code. Demandez un nouveau lien au vendeur.",
+    "unreadableLink": "Impossible de lire ce lien de paiement.",
+    "notSent": "Le paiement n'a pas pu être envoyé.",
+    "discountFailed": "Ce code de remise n'a pas pu être appliqué.",
+    "notBudgetAccount": "Cette adresse n'est pas un compte de budget.",
+    "notTokenBudgetAccount": "Cette adresse n'est pas un compte de budget de jetons.",
+    "solForLimit": "Ce portefeuille ne contient pas assez de SOL pour cette limite. Baissez-la ou rechargez le portefeuille d'abord.",
+    "rejectedOnChain": "La transaction serait rejetée sur la chaîne, elle n'a donc pas été envoyée. Si vous n'avez pas encore de budget, la limite doit être supérieure à 0 ; sinon, rechargez la page et réessayez.",
+    "noSessionKey": "Cet appareil n'a pas de clé de session pour votre budget — ouvrez-le une fois sur cet appareil.",
+    "noSessionKeyHere": "Aucune clé de session sur cet appareil — ouvrez d'abord votre budget ici.",
+    "limitUsedUp": "La limite mensuelle est épuisée pour ce mois.",
+    "tokenLimitUsedUp": "La limite mensuelle de ce jeton est épuisée.",
+    "nearlyEmpty": "Le budget est presque vide — rechargez-le depuis la page budget.",
+    "tokenNearlyEmpty": "L'autorisation ne contient pas assez de ce jeton — rechargez-la depuis la page budget.",
+    "paymentRejected": "Le paiement a été rejeté sur la chaîne.",
+    "notConfirmed": "Le paiement a été envoyé mais n'a pas confirmé à temps — surveillez le statut de la facture.",
+    "indexedDbUnavailable": "IndexedDB n'est pas disponible.",
+    "keyStoreOpen": "Impossible d'ouvrir le magasin de clés.",
+    "keyStoreRequest": "La demande au magasin de clés a échoué.",
+    "keyStoreAborted": "La transaction du magasin de clés a été interrompue.",
+    "noSessionKeySupport": "Ce navigateur ne peut pas créer la clé qui paie sans portefeuille. Mettez à jour Chrome, Edge, Safari ou Firefox, puis réessayez."
+  },
+  "learn": {
+    "metaTitle": "Apprendre — Payvand",
+    "metaDescription": "La crypto expliquée à quelqu'un qui ne l'a jamais utilisée : comment fonctionne une blockchain, ce qu'est Solana, ce que fait un portefeuille et comment rester en sécurité. Aucune connaissance préalable.",
+    "hero": {
+      "headline": "Apprendre",
+      "title": "La crypto, expliquée simplement",
+      "description": "Des guides courts pour quelqu'un qui n'a jamais utilisé de portefeuille. Commencez par ce qu'est une blockchain, puis ce que fait Solana, puis comment cette app et son autorisation fonctionnent — et lisez les guides de sécurité avant d'utiliser de l'argent réel."
+    },
+    "groups": {
+      "basics": {
+        "title": "Commencez ici : les idées",
+        "description": "Ce qu'est vraiment l'argent sur une blockchain, dans l'ordre où cela a du sens. Aucune connaissance préalable."
+      },
+      "solana": {
+        "title": "Solana, en mots simples",
+        "description": "Le réseau sous Payvand : pourquoi il est rapide, ce que coûte un paiement, et quand il est vraiment terminé."
+      },
+      "payvand": {
+        "title": "Utiliser Payvand",
+        "description": "L'autorisation mensuelle, l'argent d'entraînement, et ce que fait chaque bouton à l'écran."
+      },
+      "safety": {
+        "title": "Rester en sécurité",
+        "description": "La poignée d'habitudes qui évite presque toutes les pertes de crypto."
+      },
+      "technical": {
+        "title": "Sous le capot (technique)",
+        "description": "La mécanique réelle — octets de transaction, PDA, shreds, certificats — chacun avec des liens vers la documentation officielle."
+      }
+    },
+    "technicalBadge": "Technique",
+    "technicalDiscussion": "Discussion technique",
+    "disclaimer": "Ces guides sont une éducation générale sur le fonctionnement de ces outils — pas un conseil financier, et pas une promesse sur le prix de quoi que ce soit.",
+    "guideMetaTitle": "{title} — Payvand",
+    "guideNotFound": "Guide introuvable",
+    "allGuides": "Tous les guides"
+  },
+  "privacy": {
+    "metaTitle": "Politique de confidentialité — Payvand",
+    "metaDescription": "Ce que Payvand stocke, pourquoi, et ce qui reste dans votre navigateur : un e-mail et un mot de passe haché, les boutiques et les codes que vous créez, sans suivi, sans publicité et sans clés de portefeuille.",
+    "updated": "8 novembre 2026",
+    "title": "Politique de confidentialité",
+    "description": "Ce que Payvand stocke, pourquoi, et ce qui ne quitte jamais votre navigateur.",
+    "short": {
+      "title": "La version courte",
+      "email": "Un compte, c'est une adresse e-mail et un mot de passe. Nous gardons l'e-mail et un hachage à sens unique du mot de passe — jamais le mot de passe lui-même.",
+      "keep": "Nous gardons ce que vous créez : boutiques, produits, codes de paiement et codes de remise.",
+      "noAds": "Pas de publicité, pas d'analytique, pas de pixels de suivi, et nous ne vendons ni ne partageons vos données à des fins marketing. Il n'y a rien de tout cela dans l'app qu'on pourrait désactiver.",
+      "keys": "Les clés de votre portefeuille ne nous parviennent jamais : nous ne pouvons pas déplacer votre argent ni lire votre solde sans interroger le réseau, comme n'importe qui.",
+      "chain": "Les paiements sont inscrits sur une blockchain publique : visibles par tous, de façon permanente, et non supprimables par nous ou par vous."
+    },
+    "store": {
+      "title": "Ce que nous stockons, et pourquoi",
+      "accountLead": "Votre compte.",
+      "accountBody": "L'adresse e-mail (pour vous connecter et vous joindre), un hachage de votre mot de passe réalisé avec Argon2, et l'adresse de portefeuille dès que vous en associez une (pour que l'app sache quelles boutiques, quels paiements et quels codes de remise sont les vôtres).",
+      "sessionsLead": "Sessions.",
+      "sessionsBody": "Un jeton aléatoire, conservé sous forme de hachage, avec son heure de création et son heure d'expiration. Une session dure 30 jours ; la déconnexion la supprime.",
+      "createdLead": "Ce que vous créez.",
+      "createdBody": "Noms et descriptions de boutiques, noms de produits, détails et prix, codes de paiement enregistrés, et codes de remise avec leur pourcentage.",
+      "resetsLead": "Réinitialisations de mot de passe.",
+      "resetsBody": "Un jeton haché qui fonctionne une fois et expire au bout d'une heure.",
+      "waitlistLead": "La liste d'attente.",
+      "waitlistBody": "L'adresse e-mail que vous soumettez, jusqu'à son utilisation ou sa suppression.",
+      "logsLead": "Journaux serveur.",
+      "logsBody": "Les erreurs sont journalisées pour que le service puisse être corrigé. Le journal ne contient pas de mots de passe, et les messages d'erreur affichés à l'app ne contiennent plus de détail de base de données."
+    },
+    "visible": {
+      "title": "Ce que les autres peuvent voir",
+      "codeLead": "Un code de paiement.",
+      "codeBody": "Il voyage dans une URL ou un QR code et contient l'adresse de portefeuille du vendeur, le montant, une référence, le nom de l'article et le mémo saisi par le vendeur. Quand le code a été créé en étant connecté, il porte aussi l'identifiant de compte du vendeur comme indice, pour que la page de paiement sache proposer les codes de remise de ce vendeur. Quiconque a le code voit tout cela.",
+      "shopLead": "Une boutique.",
+      "shopBody": "Les boutiques ont un lien public : le nom, la description, les produits et les prix y sont lisibles par quiconque a le lien.",
+      "chainLead": "La blockchain.",
+      "chainBody": "Un paiement inscrit les deux adresses de portefeuille, le montant et la date dans un registre public que tout le monde peut lire et que personne ne peut modifier.",
+      "email": "Votre adresse e-mail et le hachage de votre mot de passe ne sont publiés nulle part et n'apparaissent pas dans un code de paiement."
+    },
+    "keys": {
+      "title": "Les clés du portefeuille ne sont pas à nous",
+      "real": "Chaque paiement réel est validé dans votre propre portefeuille. Payvand n'en a jamais les clés et ne peut pas signer à sa place.",
+      "budget": "Le budget d'entraînement est signé avec une clé que votre navigateur génère et garde comme clé non extractible : elle peut signer pendant que vous utilisez l'app, mais elle ne peut pas être relue — ni par cette app, ni par un script de la page. Elle ne quitte jamais votre appareil, et nous n'en avons aucune copie.",
+      "never": "Nous ne demandons jamais de phrase de récupération et ne stockons jamais de clés privées. Il n'y a ici rien à voler, sinon une adresse e-mail et un hachage."
+    },
+    "browser": {
+      "title": "Ce qui est conservé dans votre navigateur",
+      "localLead": "Stockage local.",
+      "localBody": "Votre jeton de session et une copie de votre profil, pour que l'en-tête ne clignote pas pendant le chargement ; la devise choisie ; le portefeuille connecté en dernier ; et votre thème clair ou sombre.",
+      "indexedLead": "IndexedDB.",
+      "indexedBody": "La clé du budget d'entraînement, sous la forme décrite ci-dessus.",
+      "cacheLead": "Le cache de l'app installée.",
+      "cacheBody": "Il conserve les fichiers de l'app pour qu'elle s'ouvre hors ligne. Il ne met délibérément jamais en cache les pages de paiement ni le statut d'un paiement, pour qu'on ne vous montre jamais un montant périmé.",
+      "none": "Il n'y a aucun cookie publicitaire ou analytique. Effacer les données de ce site vous déconnecte sur cet appareil et oublie ces choix."
+    },
+    "others": {
+      "title": "Qui d'autre intervient",
+      "hosting": "Un hébergeur fait tourner le site et l'API.",
+      "db": "Une base SQL hébergée (libSQL) stocke les comptes, les boutiques et les codes.",
+      "solana": "Le réseau Solana, joint via un fournisseur RPC, est interrogé pour les soldes et le statut des paiements. Les paiements eux-mêmes sont envoyés par votre portefeuille, pas par nous.",
+      "email": "Un fournisseur d'e-mail livre les quelques messages que l'app envoie : avis de connexion, réinitialisations de mot de passe, et un mot si quelqu'un tente de s'inscrire avec votre adresse.",
+      "body": "Ces prestataires traitent les données uniquement pour faire tourner le service pour nous. Nous ne les vendons pas, nous ne les partageons pas à des fins publicitaires, et aucun réseau d'analytique ne surveille ces pages."
+    },
+    "retention": {
+      "title": "Combien de temps nous les gardons",
+      "account": "Votre compte et tout ce que vous créez : jusqu'à la suppression du compte.",
+      "sessions": "Sessions : 30 jours, puis expirées et effacées.",
+      "resets": "Liens de réinitialisation : une heure.",
+      "waitlist": "Entrées de la liste d'attente : jusqu'à utilisation de l'invitation ou retrait de l'adresse.",
+      "logs": "Journaux serveur : aussi longtemps que l'hébergeur les conserve, souvent de quelques jours à quelques semaines.",
+      "chain": "Tout ce qui est écrit sur la blockchain Solana : pour toujours. Personne ne peut le supprimer, nous compris."
+    },
+    "deletion": {
+      "title": "Supprimer vos données",
+      "body": "Demandez-le-nous et nous supprimerons le compte : son e-mail, son hachage de mot de passe, le portefeuille associé, ses boutiques, produits, codes de paiement enregistrés, codes de remise, sessions et tout lien de réinitialisation en attente. Supprimer le compte ne supprime pas, et ne peut pas supprimer, les paiements déjà inscrits sur la blockchain — cette histoire appartient au réseau, pas à nous. Il n'y a pas encore de bouton de suppression en libre-service : une personne s'en charge."
+    },
+    "children": {
+      "title": "Enfants",
+      "body": "Payvand n'est pas destiné aux moins de 13 ans, ni aux personnes n'ayant pas l'âge requis pour accepter les conditions là où elles vivent. Nous ne gardons pas sciemment de compte pour un enfant ; si vous pensez qu'un tel compte existe, dites-le-nous et nous le supprimerons."
+    },
+    "changes": {
+      "title": "Modifications et contact",
+      "body": "Si ce que l'app stocke change, cette page changera avec, et la date en bas évoluera.",
+      "contact": "Questions sur vos données, ou demande de suppression : répondez à n'importe quel e-mail que Payvand vous a envoyé. L'adresse d'origine joint la personne qui gère ce service."
+    },
+    "footer": "Dernière mise à jour le {date}. Cette page décrit ce que le logiciel fait réellement, en mots simples. Voir aussi les",
+    "termsLink": "conditions d'utilisation",
+    "footerAfter": "."
+  },
+  "profile": {
+    "metaTitle": "Profil — Payvand",
+    "title": "Profil",
+    "signedInAs": "Connecté en tant que {email}",
+    "settings": "Paramètres",
+    "walletTitle": "Portefeuille",
+    "walletDescription": "Associez votre portefeuille Solana pour payer sans saisir de mot de passe et voir vos transactions.",
+    "linked": "Associé",
+    "welcomeTitle": "Bienvenue sur Payvand — une dernière étape",
+    "welcomeDescription": "Connectez votre portefeuille Solana ci-dessous. Une signature, aucune transaction — elle vous permet de vous connecter avec votre portefeuille et garde vos paiements au même endroit.",
+    "linkedTitle": "Associé à votre compte",
+    "linkedSignsIn": "Ce portefeuille vous connecte :",
+    "connectTitle": "Associez-le à votre compte",
+    "connectDescription": "Une signature maintenant, pour pouvoir vous connecter avec ce portefeuille plus tard. Elle n'autorise aucune transaction.",
+    "differentWalletTitle": "Un autre portefeuille est connecté",
+    "differentWalletDescription": "Associé : {linked} · Connecté : {connected}. Changez si ce compte doit utiliser celui qui est connecté.",
+    "linkFailureTitle": "Impossible d'associer le portefeuille",
+    "linkFailure": "Le portefeuille a refusé de signer, ou la demande a expiré. Réessayez.",
+    "unlinkFailureTitle": "Impossible de dissocier le portefeuille",
+    "unlinkFailure": "Impossible de dissocier le portefeuille.",
+    "unlinkConfirm": "Dissocier ce portefeuille ?\n\nLa connexion par portefeuille s'arrête jusqu'à ce que vous l'associiez de nouveau, et ses transactions disparaissent de cette page. Votre e-mail et votre mot de passe continuent de fonctionner.",
+    "linkThisWallet": "Associer ce portefeuille",
+    "cannotSign": "Ce portefeuille ne peut pas signer de messages",
+    "switchWallet": "Utiliser ce portefeuille",
+    "unlinkHint": "La dissociation arrête la connexion par portefeuille ; votre e-mail et votre mot de passe continuent de fonctionner.",
+    "unlink": "Dissocier le portefeuille",
+    "allowanceTitle": "Autorisation mensuelle",
+    "allowanceDescription": "Fixez une limite une fois — les paiements dans cette limite ne demandent aucune validation du portefeuille.",
+    "connectForAllowance": "Connectez un portefeuille pour voir et définir son autorisation.",
+    "allowanceErrorTitle": "Impossible de lire votre autorisation",
+    "allowanceError": "Impossible de lire votre autorisation.",
+    "allowanceLoading": "Lecture de votre autorisation…",
+    "noAllowance": "Aucune autorisation définie",
+    "noAllowanceBody": "Choisissez un budget mensuel en une seule signature. Chaque paiement dans cette limite se fait ensuite d'un simple geste — sans fenêtre.",
+    "setAllowance": "Définir mon autorisation mensuelle",
+    "monthlyLimit": "Limite mensuelle (SOL)",
+    "spentThisMonth": "Dépensé ce mois-ci",
+    "remaining": "Restant",
+    "usedThisMonth": "Utilisé ce mois-ci",
+    "potAvailable": "Cagnotte disponible : {amount} SOL",
+    "manageAllowance": "Gérer l'autorisation",
+    "savedTitle": "Paiements enregistrés",
+    "savedDescription": "Les codes que vous avez enregistrés — ouvrez-en un pour le partager ou le payer à nouveau.",
+    "refresh": "Actualiser",
+    "savedErrorTitle": "Impossible de charger les paiements enregistrés",
+    "savedFailure": "Impossible de charger vos paiements enregistrés.",
+    "savedLoading": "Chargement des paiements enregistrés…",
+    "savedEmpty": "Rien d'enregistré pour l'instant — ouvrez un lien de paiement et appuyez sur « Enregistrer dans ma boutique ».",
+    "showSaved": "Afficher {count} code enregistré | Afficher {count} codes enregistrés",
+    "hide": "Masquer",
+    "openPayment": "Ouvrir le paiement",
+    "paymentFallback": "Paiement",
+    "txTitle": "Transactions",
+    "txDescription": "Tout ce que votre portefeuille a payé ou reçu.",
+    "txCount": "{count} paiement sur {cluster} | {count} paiements sur {cluster}",
+    "txCountFiltered": "{shown} sur {total} paiement sur {cluster} | {shown} sur {total} paiements sur {cluster}",
+    "txErrorTitle": "Impossible de charger les transactions",
+    "txFailure": "Impossible de charger vos transactions.",
+    "txLoading": "Chargement des transactions…",
+    "txEmpty": "Aucune transaction pour l'instant — votre premier paiement apparaîtra ici.",
+    "txNoMatch": "Aucun paiement ne correspond à ce code. Vérifiez la référence lue par le client, ou élargissez les dates.",
+    "referenceCodeLabel": "Code de référence",
+    "referencePlaceholder": "Le code lu par le client",
+    "from": "Du",
+    "to": "Au",
+    "linkToSeeTx": "Associez votre portefeuille pour voir les transactions",
+    "linkToSeeTxBody": "Votre historique suit le portefeuille : il apparaîtra ici une fois le portefeuille associé ci-dessus.",
+    "showPayments": "Afficher {count} paiement | Afficher {count} paiements",
+    "directionFrom": "de",
+    "directionTo": "vers",
+    "paymentReceived": "Paiement reçu",
+    "paymentSent": "Paiement envoyé"
+  },
+  "scan": {
+    "metaTitle": "Scanner et payer — Payvand",
+    "title": "Scanner et payer",
+    "description": "Dirigez votre caméra vers le code du vendeur, vérifiez le montant et validez le paiement dans votre portefeuille.",
+    "heading": "Scannez le code",
+    "readError": "Impossible de lire le code",
+    "couldNotRead": "Impossible de lire ce code.",
+    "pasteToggle": "Vous ne pouvez pas le scanner ? Collez le code",
+    "pasteLabel": "Collez le texte du code",
+    "load": "Charger",
+    "scanAnother": "Scanner un autre code"
+  },
+  "pay": {
+    "metaTitle": "Paiement — Payvand",
+    "opening": "Ouverture du paiement…",
+    "noPaymentTitle": "Aucun paiement dans ce lien",
+    "noPaymentBody": "Les pages de paiement s'ouvrent depuis le lien partagé par le vendeur. Demandez-le-lui, ou scannez son QR code avec votre téléphone."
+  },
+  "scanner": {
+    "insecure": "La caméra nécessite une connexion sécurisée — ouvrez cette page en https (ou en localhost).",
+    "notStarted": "La caméra n'a pas démarré. Autorisez l'accès à la caméra pour ce site, puis réessayez.",
+    "denied": "L'accès à la caméra a été refusé ou aucune caméra n'est disponible.",
+    "noDecoder": "Ce navigateur ne sait pas lire les codes de paiement. Ouvrez plutôt le lien avec l'appareil photo de votre téléphone — il mène à la même page.",
+    "noCode": "Aucun code pour l'instant — approchez-vous pour qu'il remplisse le cadre.",
+    "noCodeWithCamera": "Aucun code pour l'instant (caméra {camera}) — approchez-vous pour qu'il remplisse le cadre.",
+    "pointCamera": "Dirigez la caméra vers le code de paiement",
+    "waitingTap": "La caméra attend un appui pour démarrer.",
+    "starting": "Démarrage de la caméra…",
+    "tryAgain": "Réessayer",
+    "startCamera": "Démarrer la caméra"
+  },
+  "sell": {
+    "metaTitle": "Vendre — Payvand",
+    "pageTitle": "Créer un QR de paiement",
+    "pageDescription": "Saisissez ce que vous voulez encaisser, créez le code et montrez-le à votre client.",
+    "invoiceHeading": "1. Facture",
+    "showHeading": "2. Affichez le code",
+    "pricingLabel": "Tarification",
+    "priceModes": {
+      "amount": "Saisir un montant",
+      "products": "Depuis mes boutiques"
+    },
+    "priceLabel": "Prix",
+    "pricePlaceholderSol": "0.01",
+    "pricePlaceholderToken": "5.00",
+    "currencyAria": "Monnaie dans laquelle le client paie",
+    "calculatorAria": "Ouvrir la calculatrice",
+    "amountHelpCart": "Le total des produits ci-dessus — retirez-les pour saisir un prix à la place.",
+    "amountHelpProducts": "Ce que paie le client.",
+    "amountHelpTyped": "Ce que paie le client, en {currency}.",
+    "discountLabel": "Remise",
+    "discountHelpSelected": "Les acheteurs paient {price} — {percent} % de remise, appliquée pour eux.",
+    "discountHelp": "Facultatif — joignez un de vos codes à ce QR pour que les acheteurs en profitent sans le saisir.",
+    "discountNone": "Sans remise",
+    "discountOption": "{code} · {percent} % de remise",
+    "nameLabel": "Nom",
+    "nameHelp": "Le titre que votre client voit au-dessus du montant — comme « Deux cafés ».",
+    "namePlaceholder": "Quel est ce paiement ?",
+    "hideDetails": "Masquer la description et le mémo",
+    "addDetails": "Ajouter une description ou un mémo",
+    "descriptionLabel": "Description",
+    "descriptionHelp": "Détail facultatif sous le nom — ce qui est inclus, où, quand.",
+    "descriptionPlaceholder": "Deux cafés au coin de la rue",
+    "memoLabel": "Mémo",
+    "memoHelp": "Enregistré sur la chaîne avec le paiement, pour que les portefeuilles et les explorateurs l'affichent aussi.",
+    "memoPlaceholder": "Café",
+    "createFailureTitle": "Impossible de créer le paiement",
+    "createFailure": "Impossible de créer le paiement.",
+    "createCode": "Créer le code de paiement",
+    "connectFirst": "Connectez d'abord votre portefeuille vendeur.",
+    "enterPrice": "Saisissez un prix supérieur à 0.",
+    "memoTooLong": "Le mémo est trop long — merci de le raccourcir.",
+    "nameTooLong": "Le nom est trop long — merci de le raccourcir.",
+    "descriptionTooLong": "La description est trop longue — merci de la raccourcir.",
+    "newPayment": "Nouveau paiement",
+    "showToCustomer": "Montrer au client",
+    "scanHint": "N'importe quelle caméra de téléphone l'ouvre — et la page encaisse le paiement.",
+    "openPage": "Ouvrir la page de paiement",
+    "linkCopied": "Lien copié",
+    "copyLink": "Copier le lien",
+    "percentOff": "{percent} % de remise",
+    "savedBadge": "{code} · économisé {amount}",
+    "showCodeText": "Vous ne pouvez pas le scanner ? Affichez le texte du code",
+    "paymentId": "Identifiant du paiement",
+    "paidBy": "Payé par",
+    "paymentCode": "Code de paiement",
+    "copyCode": "Copier le code",
+    "pasteHint": "Si le QR code ne peut pas être scanné, votre client peut coller ceci sur la page de paiement.",
+    "hideDetailsButton": "Masquer les détails",
+    "emptyCode": "Votre QR code apparaîtra ici dès que le paiement sera créé.",
+    "discountsTitle": "Codes de remise",
+    "discountsSubtitle": "Facultatif — les acheteurs saisissent un code à l'encaissement pour payer moins.",
+    "hide": "Masquer",
+    "codesCount": "{count} code | {count} codes",
+    "addCode": "Ajouter un code",
+    "deleteAria": "Supprimer {code}",
+    "noCodes": "Aucun code pour l'instant — ajoutez-en un pour que les acheteurs profitent d'une remise.",
+    "codeLabel": "Code",
+    "codePlaceholder": "SAVE10",
+    "percentLabel": "Pourcentage de remise",
+    "percentPlaceholder": "10",
+    "codeErrorTitle": "Erreur de code de remise",
+    "addDiscountFailure": "Impossible d'ajouter le code de remise.",
+    "deleteDiscountFailure": "Impossible de supprimer le code de remise.",
+    "presentFallbackTitle": "Code de paiement",
+    "scanToPay": "Scannez ceci avec l'appareil photo d'un téléphone pour payer."
+  },
+  "productPicker": {
+    "fromYourShops": "Depuis vos boutiques",
+    "clear": "Effacer",
+    "decreaseAria": "Un {name} de moins",
+    "increaseAria": "Un {name} de plus",
+    "total": "Total",
+    "limit": "Un reçu accepte {max} produits différents — créez un second paiement pour en ajouter."
+  },
+  "shopPayment": {
+    "title": "Créer un paiement",
+    "newPayment": "Nouveau paiement",
+    "loadingMenu": "Chargement du menu de cette boutique…",
+    "emptyMenu": "Ajoutez un produit ci-dessus et cette page devient un menu à payer.",
+    "scanHint": "N'importe quelle caméra de téléphone l'ouvre — et la page encaisse le paiement.",
+    "openPage": "Ouvrir la page de paiement",
+    "copyLink": "Copier le lien",
+    "linkCopied": "Lien copié",
+    "connectFirst": "Connectez d'abord votre portefeuille vendeur.",
+    "pickSomething": "Choisissez d'abord un article dans la boutique.",
+    "createFailure": "Impossible de créer le paiement.",
+    "alertTitle": "Impossible de créer le paiement",
+    "createCode": "Créer le code de paiement",
+    "connectHint": "Connectez votre portefeuille vendeur pour créer le code."
+  },
+  "shopsList": {
+    "title": "Vos boutiques",
+    "subtitle": "Créez et enregistrez les produits que vous vendez, puis utilisez-les pour créer des paiements.",
+    "newShop": "Nouvelle boutique",
+    "errorTitle": "Erreur de boutique",
+    "loadFailure": "Impossible de charger vos boutiques.",
+    "createFailure": "Impossible de créer la boutique.",
+    "loading": "Lecture de vos boutiques…",
+    "products": "{count} produit | {count} produits",
+    "openShop": "Ouvrir la boutique",
+    "empty": "Aucune boutique pour l'instant — créez-en une pour enregistrer vos premiers produits.",
+    "modalDescription": "Une boutique contient les produits que vous vendez. Vous pourrez ajouter des produits une fois qu'elle existe.",
+    "nameLabel": "Nom de la boutique",
+    "namePlaceholder": "Épicerie du coin",
+    "descriptionLabel": "Description courte",
+    "descriptionHelp": "Facultatif — une ligne sur ce que vend la boutique.",
+    "descriptionPlaceholder": "Cafés et pain frais",
+    "createShop": "Créer la boutique"
+  },
+  "shopEditor": {
+    "loadFailureTitle": "Impossible d'ouvrir cette boutique",
+    "loadFailure": "Impossible d'ouvrir cette boutique.",
+    "loading": "Lecture de votre boutique…",
+    "detailsTitle": "Détails de la boutique",
+    "detailsSubtitle": "Comment s'appelle cette boutique, et ce qu'elle vend en une ligne.",
+    "products": "{count} produit | {count} produits",
+    "nameLabel": "Nom de la boutique",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Cafés et pain frais",
+    "saveFailureTitle": "Impossible d'enregistrer la boutique",
+    "saveFailure": "Impossible d'enregistrer la boutique.",
+    "saveShop": "Enregistrer la boutique",
+    "productsTitle": "Produits",
+    "productsSubtitle": "Ce que la page de paiement propose comme reçu.",
+    "pricesInSol": "Les prix sont facturés en SOL",
+    "editAria": "Modifier {name}",
+    "removeAria": "Retirer {name}",
+    "removeConfirm": "Retirer « {name} » ?\n\nLes factures déjà créées gardent leur reçu — cela le retire seulement du menu.",
+    "emptyProducts": "Aucun produit pour l'instant — ajoutez le premier ci-dessous.",
+    "productLabel": "Produit",
+    "productPlaceholder": "Café allongé",
+    "priceLabel": "Prix",
+    "pricePlaceholder": "0.05",
+    "priceUnitAria": "Unité du prix",
+    "detailsLabel": "Détails",
+    "detailsHelp": "Facultatif — taille, composition, tout ce que le client doit savoir.",
+    "detailsPlaceholder": "Grand, lait d'avoine",
+    "readingRate": "Lecture du taux du jour…",
+    "productFailureTitle": "Impossible d'enregistrer le produit",
+    "saveChanges": "Enregistrer les modifications",
+    "addProduct": "Ajouter le produit"
+  },
+  "shops": {
+    "metaTitle": "Boutiques — Payvand",
+    "title": "Boutiques",
+    "description": "Chaque boutique contient les produits que vous vendez. Ouvrez-en une pour modifier son catalogue ou tarifer un paiement.",
+    "backToProfile": "Retour à votre profil",
+    "shopMetaTitle": "Boutique — Payvand",
+    "shopTitle": "Boutique",
+    "shopDescription": "Vos produits, les prix facturés par la page de paiement, et les codes que vous avez enregistrés ici.",
+    "backToShops": "Retour à vos boutiques"
+  },
+  "settings": {
+    "metaTitle": "Paramètres — Payvand",
+    "title": "Paramètres",
+    "description": "Comment les prix sont affichés, et quelles parties de l'app vous voulez voir.",
+    "languageTitle": "Langue",
+    "languageDescription": "La langue des menus et des libellés de cette app. Le texte des guides et les mémos inscrits sur la chaîne ne sont pas traduits.",
+    "languageLabel": "Langue de l'app",
+    "currencyTitle": "Devise",
+    "currencyDescription": "Les paiements sont facturés en SOL. C'est la monnaie affichée à côté d'un prix.",
+    "currencyLabel": "Afficher les prix en",
+    "rateHint": "1 SOL ≈ {rate}",
+    "shopsTitle": "Boutiques",
+    "shopsDescription": "Une boutique garde les produits que vous vendez, pour qu'un paiement puisse être tarifé depuis une liste plutôt que saisi à chaque fois.",
+    "useShops": "Utiliser les boutiques",
+    "shopsOffHint": "Les désactiver ne fait que masquer le lien — toute page de boutique déjà partagée continue de fonctionner.",
+    "openShops": "Ouvrir les boutiques",
+    "shopChoices": {
+      "on": "Oui — ajouter un lien Boutiques à la navigation",
+      "off": "Non — je facture un article à la fois"
+    },
+    "soundsTitle": "Sons",
+    "soundsDescription": "Une courte montée quand un paiement passe, un bourdonnement grave quand il échoue.",
+    "soundsLabel": "Sons de paiement",
+    "soundsSwitch": "Jouer un son à la fin d'un paiement",
+    "browserNote": "Tout cela suit ce navigateur, pas votre compte — un téléphone sur lequel vous vous connectez garde ses propres réglages."
+  },
+  "terms": {
+    "metaTitle": "Conditions d'utilisation — Payvand",
+    "metaDescription": "Ce que fait Payvand, ce qu'il ne fait pas, et la poignée de règles qui vont avec son usage : les paiements vont de portefeuille à portefeuille, nous ne détenons jamais l'argent, et une transaction payée ne peut pas être annulée.",
+    "updated": "8 novembre 2026",
+    "title": "Conditions d'utilisation",
+    "description": "Ce que fait Payvand, ce qu'il ne fait pas, et la poignée de règles qui vont avec son usage.",
+    "what": {
+      "title": "Ce qu'est Payvand",
+      "body": "Payvand transforme un montant en code de paiement. Un vendeur saisit le prix, l'app construit un QR code, et un client le scanne avec un portefeuille Solana et valide une transaction. L'argent passe du portefeuille du client à celui du vendeur via le réseau Solana — sans compte au milieu et sans processeur de cartes.",
+      "accept": "Utiliser l'app vaut acceptation de ces conditions. Si vous ne les acceptez pas, merci de ne pas l'utiliser."
+    },
+    "money": {
+      "title": "Nous ne détenons jamais l'argent",
+      "hold": "Payvand ne détient, ne reçoit et ne transmet vos fonds à aucun moment, et n'a aucun moyen de les déplacer, de les geler ou de les prendre.",
+      "reverse": "Nous ne pouvons pas annuler, inverser ni rembourser un paiement. Seul le destinataire peut renvoyer de l'argent, depuis son propre portefeuille.",
+      "seed": "Nous ne demandons jamais de phrase de récupération ni de clé privée, et personne travaillant sur Payvand ne vous les demandera. Quiconque le fait n'est pas nous.",
+      "budgetBefore": "La seule chose que l'app peut signer sans votre portefeuille est le budget d'entraînement, avec une clé que votre navigateur crée et conserve (voir la",
+      "privacyLink": "politique de confidentialité",
+      "budgetAfter": ")."
+    },
+    "account": {
+      "title": "Votre compte",
+      "email": "Un compte, c'est une adresse e-mail et un mot de passe. Le mot de passe est stocké sous forme de hachage à sens unique, jamais en clair.",
+      "password": "Gardez le mot de passe pour vous. Ce qui se passe sous votre compte est de votre responsabilité : dites-nous si vous pensez que quelqu'un d'autre l'a.",
+      "wallet": "Associez une adresse de portefeuille que vous contrôlez réellement : c'est ainsi que l'app reconnaît vos boutiques, vos paiements et vos codes de remise.",
+      "close": "Vous pouvez fermer votre compte en nous le demandant (voir Contact). Supprimer un compte supprime aussi ses boutiques, produits, codes de paiement, codes de remise et sessions.",
+      "age": "Vous devez être en âge d'accepter ces conditions là où vous vivez, et avoir au moins 13 ans."
+    },
+    "selling": {
+      "title": "Si vous vendez",
+      "record": "Vous êtes le vendeur de référence. Prix, descriptions, taxes, reçus, remboursements et droit de la consommation relèvent de vous, pas de nous.",
+      "final": "Un paiement qui aboutit est définitif. Si vous voulez rendre de l'argent, renvoyez-le depuis votre portefeuille — nous ne pouvons pas le faire pour vous.",
+      "public": "Ce que vous publiez est public. Un code de paiement contient votre adresse de portefeuille, le montant, une référence, ainsi que le nom de l'article et le mémo que vous avez saisis. N'y mettez rien de privé.",
+      "law": "Ne vendez rien que vous n'êtes pas autorisé à vendre là où vous êtes, et n'utilisez pas Payvand pour la fraude, le blanchiment d'argent ou pour contourner des sanctions."
+    },
+    "paying": {
+      "title": "Si vous payez",
+      "read": "Lisez le montant et l'adresse que votre portefeuille affiche avant de valider. Le portefeuille est le dernier endroit où quelque chose peut être vérifié, et il vous dit la vérité.",
+      "undo": "Un paiement confirmé ne peut être annulé ni par nous, ni par l'app, ni par la seule bonne volonté du vendeur.",
+      "fiat": "Un prix affiché dans votre devise est une conversion indicative à un taux de marché, pas une offre de notre part, et le réseau règle en SOL.",
+      "trust": "Ne payez que des codes de vendeurs en qui vous avez confiance. Un QR code n'est que des données : n'importe qui peut l'imprimer, le modifier ou vous l'envoyer."
+    },
+    "fees": {
+      "title": "Frais",
+      "body": "Payvand ne facture rien pour créer ou scanner un code de paiement. Le réseau Solana prélève de petits frais pour la transaction, et un paiement crée un enregistrement sur la chaîne qui coûte un peu de loyer — les deux sont payés depuis le portefeuille du client, et le portefeuille affiche le total avant toute validation."
+    },
+    "testMoney": {
+      "title": "Argent de test",
+      "before": "Quand le badge dans le coin indique",
+      "after": ", l'app tourne sur le réseau de test de Solana et les SOL concernés n'ont aucune valeur. C'est là pour vous entraîner. Ce n'est pas une promesse que l'argent réel se comporte de la même façon, et rien sur devnet n'a de valeur."
+    },
+    "fairUse": {
+      "title": "Usage équitable",
+      "body": "N'attaquez pas le service et ne contournez pas ses limites : pas de recherche de failles sans nous demander d'abord, pas de devinette automatisée de mots de passe ou de codes de remise, pas d'aspiration de données, pas de martèlement de l'API. Nous pouvons suspendre ou supprimer un compte qui fait l'une de ces choses, et le signaler."
+    },
+    "availability": {
+      "title": "Disponibilité, et ce que nous ne promettons pas",
+      "asIs": "Payvand est fourni tel quel. Nous ne promettons pas qu'il sera disponible, qu'il ne perdra pas de données, ni qu'il continuera de fonctionner de la même façon — il peut changer ou être arrêté.",
+      "advice": "Rien ici n'est un conseil financier, d'investissement, fiscal ou juridique.",
+      "liability": "Dans la mesure permise par la loi, nous ne sommes pas responsables des pertes indirectes ou consécutives, d'un paiement que vous avez validé dans votre portefeuille, ni de ce qu'un vendeur fait ou vend. Notre responsabilité totale est limitée à ce que vous nous avez payé pour utiliser Payvand, c'est-à-dire rien.",
+      "limits": "Certains endroits n'autorisent pas ce genre de limites. Là où c'est le cas, elles ne s'appliquent que dans la mesure permise par la loi locale."
+    },
+    "changes": {
+      "title": "Modifications et contact",
+      "body": "Nous mettrons cette page à jour quand l'app changera, et changerons la date en bas. Utiliser Payvand après une modification vaut acceptation de la nouvelle version.",
+      "contact": "Questions sur ces conditions : répondez à n'importe quel e-mail que Payvand vous a envoyé. L'adresse d'origine joint la personne qui gère ce service."
+    },
+    "footer": "Dernière mise à jour le {date}. Cette page décrit ce que le logiciel fait réellement, en mots simples."
+  },
+  "wallet": {
+    "disconnect": "Déconnecter",
+    "none": "Aucun portefeuille détecté. Installez une extension de portefeuille Solana et rechargez."
+  },
+  "qr": {
+    "generating": "Génération du QR code…"
+  },
+  "waitlist": {
+    "title": "Ceci est une version de test",
+    "body": "Payvand est une preuve de concept. Les codes, le scan et les reçus fonctionnent, mais chaque paiement passe par un réseau de test Solana avec des SOL de test gratuits — aucun argent réel ne circule.",
+    "invite": "Vous voulez encaisser de vrais paiements ? Laissez votre e-mail et nous vous préviendrons quand Payvand sera prêt pour un portefeuille réel.",
+    "alertTitle": "Liste d'attente",
+    "joinFailure": "Impossible de vous ajouter à la liste. Réessayez dans un instant.",
+    "placeholder": "vous{'@'}exemple.com",
+    "join": "Rejoindre la liste d'attente",
+    "successTitle": "Vous êtes sur la liste.",
+    "successBody": "Nous vous écrirons quand Payvand pourra encaisser de vrais paiements."
+  },
+  "shopCodes": {
+    "title": "Codes de paiement",
+    "subtitle": "Les liens que vous avez enregistrés dans cette boutique.",
+    "loading": "Chargement des codes enregistrés…",
+    "loadError": "Impossible de charger ces codes",
+    "empty": "Rien de classé ici pour l'instant — ouvrez un lien de paiement et appuyez sur « Enregistrer dans ma boutique ».",
+    "fallbackLabel": "Code de paiement",
+    "open": "Ouvrir"
+  }
+}

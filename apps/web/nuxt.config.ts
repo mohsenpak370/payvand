@@ -197,7 +197,8 @@ export default defineNuxtConfig({
     defaultLocale: 'en',
     locales: [
       { code: 'en', language: 'en-US', name: 'English', file: 'en.json' },
-      { code: 'fa', language: 'fa-IR', name: 'فارسی', dir: 'rtl', file: 'fa.json' }
+      { code: 'fa', language: 'fa-IR', name: 'فارسی', dir: 'rtl', file: 'fa.json' },
+      { code: 'fr', language: 'fr-FR', name: 'Français', file: 'fr.json' }
     ],
     // The choice made on the settings page is kept in a cookie so it survives
     // a reload, and a first visit follows the browser's own language.
