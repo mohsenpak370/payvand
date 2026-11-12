@@ -35,7 +35,11 @@ const learnGuides = readdirSync(new URL('./content/en/learn', import.meta.url))
   .map(file => `/learn/${file.replace(/\.md$/, '')}`)
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/eslint', '@nuxt/ui', '@nuxt/content', '@nuxtjs/i18n', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
+  // `@nuxtjs/i18n` has to come before `@nuxt/ui` in this list: the UI module
+  // looks for it during setup to hand its components the locale messages
+  // ("Open menu", "Switch to dark mode", …), and a module registered later is
+  // not there yet, which leaves those labels in English.
+  modules: ['@nuxt/eslint', '@nuxtjs/i18n', '@nuxt/ui', '@nuxt/content', '@vite-pwa/nuxt', '@vue-solana/nuxt'],
 
   devtools: {
     enabled: true

@@ -23,6 +23,15 @@ const { data: guides } = await useAsyncData(
     .all()
 )
 
+// Each card's overlay link announces its title, and that label is written into
+// the prerendered (English) markup. Hydration keeps the attribute, so the grid
+// is drawn again once the client knows the reader's language and the cards can
+// announce the Persian titles they already show.
+const hydrated = ref(false)
+onMounted(() => {
+  hydrated.value = true
+})
+
 const groups = computed(() => [
   {
     key: 'basics',
@@ -83,7 +92,7 @@ const groups = computed(() => [
       :title="group.title"
       :description="group.description"
     >
-      <UPageGrid>
+      <UPageGrid :key="hydrated ? 'client' : 'prerendered'">
         <UPageCard
           v-for="guide in group.items"
           :key="guide.path"

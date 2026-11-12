@@ -8,6 +8,16 @@ const { isAdmin } = useAdminAccess()
 const { shopsEnabled } = useShopPreference()
 const showShops = computed(() => !!user.value && shopsEnabled.value)
 
+// The pages this layout wraps are prerendered in the default language, so a
+// Persian reader loads English markup. Vue repairs the text while hydrating but
+// leaves attributes alone, which is why the logo's "Payvand home" and the menu
+// button's "Open menu" stayed English. Re-creating the chrome once the client
+// knows which language the reader picked renders those attributes in it too.
+const hydrated = ref(false)
+onMounted(() => {
+  hydrated.value = true
+})
+
 async function onSignOut() {
   await signout()
   await navigateTo('/')
@@ -32,7 +42,7 @@ const accountMenu = computed(() => [
 
 <template>
   <div>
-    <UHeader>
+    <UHeader :key="hydrated ? 'client' : 'prerendered'">
       <template #left>
         <NuxtLink
           to="/"
@@ -251,6 +261,6 @@ const accountMenu = computed(() => [
     </UMain>
 
     <USeparator icon="i-lucide-scan-line" />
-    <AppFooter />
+    <AppFooter :key="hydrated ? 'client' : 'prerendered'" />
   </div>
 </template>
