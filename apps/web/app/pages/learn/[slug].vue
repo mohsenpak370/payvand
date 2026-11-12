@@ -1,9 +1,14 @@
 <script setup lang="ts">
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 
-const { data: guide } = await useAsyncData(route.path, () =>
-  queryCollection('learn').path(route.path).first()
+// One collection per language; the locale is part of each key so switching to
+// Persian fetches the Persian guides instead of keeping the English payload.
+const collection = computed(() => (locale.value === 'fa' ? 'learnFa' : 'learn'))
+
+const { data: guide } = await useAsyncData(
+  () => `${collection.value}${route.path}`,
+  () => queryCollection(collection.value).path(route.path).first()
 )
 
 if (!guide.value) {
@@ -12,8 +17,9 @@ if (!guide.value) {
 
 // Previous/next inside the collection, which is what makes the guides read as
 // a course rather than a pile of pages.
-const { data: surround } = await useAsyncData(`${route.path}-surround`, () =>
-  queryCollectionItemSurroundings('learn', route.path, { fields: ['description'] })
+const { data: surround } = await useAsyncData(
+  () => `${collection.value}${route.path}-surround`,
+  () => queryCollectionItemSurroundings(collection.value, route.path, { fields: ['description'] })
 )
 
 useSeoMeta({

@@ -903,7 +903,7 @@ useSeoMeta({
         to="/"
         class="font-medium text-primary underline-offset-4 hover:underline"
       >
-        Payvand
+        {{ $t('app.brandWord.lead') }}{{ $t('app.brandWord.rest') }}
       </NuxtLink>
     </footer>
   </div>

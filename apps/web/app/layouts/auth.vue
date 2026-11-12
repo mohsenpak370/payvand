@@ -83,7 +83,7 @@ const points = computed(() => [
               local, so padding, type and radius stay identical everywhere.
             -->
             <span class="relative text-[2.025rem] font-bold">
-              Payvand
+              <span class="text-blue-300">{{ $t('app.brandWord.lead') }}</span>{{ $t('app.brandWord.rest') }}
               <UBadge
                 color="success"
                 variant="subtle"
@@ -145,7 +145,7 @@ const points = computed(() => [
               class="size-[4.95rem]"
             >
             <span class="relative text-[1.8rem] font-bold">
-              Payvand
+              <span class="text-primary">{{ $t('app.brandWord.lead') }}</span>{{ $t('app.brandWord.rest') }}
               <UBadge
                 color="success"
                 variant="subtle"

@@ -1,15 +1,26 @@
 <script setup lang="ts">
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 useSeoMeta({
   title: t('learn.metaTitle'),
   description: t('learn.metaDescription')
 })
 
+// Each language is its own collection, because the words are the content, not
+// a translation layer over it. The key carries the locale so a reader who has
+// chosen Persian fetches the Persian set instead of hydrating the English one.
+const collection = computed(() => (locale.value === 'fa' ? 'learnFa' : 'learn'))
+
 // Reading order is the `order` field, not the filenames, so guides can be
 // slotted in without renaming anything.
-const { data: guides } = await useAsyncData('learn-guides', () =>
-  queryCollection('learn').order('order', 'ASC').all()
+const { data: guides } = await useAsyncData(
+  () => `learn-guides-${locale.value}`,
+  () => queryCollection(collection.value)
+    // The index only renders cards, so leave every guide's body out of the
+    // payload; the article page fetches its own one.
+    .select('path', 'title', 'description', 'category', 'order', 'level')
+    .order('order', 'ASC')
+    .all()
 )
 
 const groups = computed(() => [

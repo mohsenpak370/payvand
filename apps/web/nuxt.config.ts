@@ -19,10 +19,11 @@ const solanaEndpoint
   = process.env.NUXT_PUBLIC_SOLANA_ENDPOINT
     || (solanaCluster === 'localnet' ? 'http://127.0.0.1:8899' : undefined)
 
-// Every markdown file under content/learn is a route. Nitro's crawler does not
-// follow the card links on the index page, so the guides are listed here and
-// prerendered as static HTML — which also keeps the content database out of
-// the deployed server function's request path.
+// Every markdown file under content/<locale>/learn is a route. Both locales
+// use the same slugs, so the English set also lists the Persian guides. Nitro's
+// crawler does not follow the card links on the index page, so the guides are
+// listed here and prerendered as static HTML — which also keeps the content
+// database out of the deployed server function's request path.
 // The release number is the workspace root's version, read at build time so the
 // footer cannot drift from it: bumping package.json is the whole of a release.
 const { version } = JSON.parse(
