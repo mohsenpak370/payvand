@@ -86,7 +86,7 @@ const soundsChoice = computed({
           <USelect
             v-model="languageChoice"
             :items="languageItems"
-            class="w-56"
+            class="w-full sm:w-56"
           />
         </UFormField>
       </UCard>
@@ -108,7 +108,7 @@ const soundsChoice = computed({
             <USelect
               v-model="currencyChoice"
               :items="currencyItems"
-              class="w-56"
+              class="w-full sm:w-56"
             />
           </UFormField>
           <!-- Its own line: beside the select it hung halfway down the field. -->
