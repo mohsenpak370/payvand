@@ -44,6 +44,14 @@ export default defineContentConfig({
         prefix: '/learn'
       },
       schema: learnSchema
+    }),
+    learnDe: defineCollection({
+      type: 'page',
+      source: {
+        include: 'de/learn/*.md',
+        prefix: '/learn'
+      },
+      schema: learnSchema
     })
   }
 })
