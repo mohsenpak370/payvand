@@ -62,7 +62,6 @@ sequential filename. Templates live in `plans/templates/`.
 
 | ID | Plan | Status |
 | ---- | ---- | -------- |
-| 0001 | [Contract Security Hardening](0001-contract-security-hardening.md) | In Progress |
 | 0002 | [Fee Model, Treasury, and Budget Accounting](0002-fee-model-and-treasury.md) | Draft |
 
 The 2026-11-09 contract review originally lived in one plan. It was split on
@@ -77,4 +76,4 @@ easy to scan while preserving implementation history.
 
 | ID | Plan | Status |
 | ---- | ---- | -------- |
-| | | |
+| 0001 | [Contract Security Hardening](archive/0001-contract-security-hardening.md) | Completed |

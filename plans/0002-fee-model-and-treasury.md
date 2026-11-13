@@ -24,7 +24,7 @@ numbers:
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
-- `plans/0001-contract-security-hardening.md` — prerequisite: receipt-backed
+- `plans/archive/0001-contract-security-hardening.md` — prerequisite: receipt-backed
   settlement, auto-close, and the status model. This plan assumes `0001` is
   merged and deployed.
 - `README.md` — project overview.
@@ -58,6 +58,14 @@ This plan starts from the code `0001` leaves behind:
 - `pending` / `settled` / `missing` are defined against the receipt.
 - Budget settlements make the session key whole for `payment_rent +
   receipt_rent`, and the pot pays both rents on top of the invoice amount.
+- One `PaymentReceipt` type covers SOL and token invoices (301 bytes,
+  `["payment-receipt", invoice]`, with `Pubkey::default()` for a SOL mint), and
+  every settle path writes it before closing the invoice to the seller.
+- The minimum payable invoice is the payment rent (`InvoiceTooSmall`), which
+  this plan raises once the fee is added.
+- Deployed state: the program is upgraded on devnet under the original ID, the
+  API and web app are live against it, and the devnet invoices left over from
+  the old program are already settled and therefore inert.
 
 ## Objective
 

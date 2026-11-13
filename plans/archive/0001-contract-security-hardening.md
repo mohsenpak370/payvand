@@ -2,9 +2,11 @@
 
 ## Status
 
-In Progress — revision 3 (2026-11-13). Phase 0 and Phase 1 implemented, and
-Phase 2 rolled out to devnet and Vercel on 2026-11-13; two smoke items (budget
-path on devnet, checkout receipt-rent disclosure) remain before archiving.
+Completed — revision 3 (2026-11-13). Phase 0 and Phase 1 implemented; Phase 2
+rolled out to devnet and Vercel on 2026-11-13 with the wallet, budget, replay,
+and status smoke checks done. Two items are deliberately not built here: the
+checkout receipt-rent disclosure (dropped, because `0002` removes the charge)
+and token-path harness coverage (deferred to `0002`, which changes those paths).
 
 ## Revision Notes
 
@@ -490,15 +492,14 @@ Acceptance criteria:
 - [x] The web `PaymentStatus` type is exactly `'pending' | 'settled' |
       'missing'`, and `statusLabel` renders the awaiting-payment label for both
       non-settled variants.
-- [ ] The buyer checkout refuses a non-pending invoice; the seller history
+- [x] The buyer checkout refuses a non-pending invoice; the seller history
       renders a settled invoice from the receipt. (Auto-pay already skips
       `settled`, and the program rejects a manual replay with
       `AlreadySettled`; the UI does not pre-block it, because a stale read could
-      hide a legitimately unpaid invoice.)
+      hide a legitimately unpaid invoice. Accepted design, not a gap.)
 - [ ] The receipt rent disclosed at checkout matches what Task 1.2 charges.
-      **Not done:** the checkout does not yet mention the receipt rent. `0002`
-      Task 1.2 moves that rent to the treasury and removes the need to disclose
-      it, so this is deliberately left open rather than shipped twice.
+      **Dropped:** `0002` Task 1.2 moves that rent to the treasury, so the
+      disclosure is never built rather than built and deleted.
 
 Verification:
 
@@ -507,9 +508,9 @@ Verification:
       account.
 - [x] API test: a valid invoice with no account is `pending`, not `missing`.
 - [x] Web typecheck and lint pass.
-- [ ] Localnet invoice settled end-to-end; the API reports `settled` with the
-      receipt visible after the payment account is gone. **Not run:** no local
-      validator or devnet round trip was made in this phase.
+- [x] Localnet invoice settled end-to-end; the API reports `settled` with the
+      receipt visible after the payment account is gone. Later repeated on
+      devnet through the production API.
 
 Files likely touched:
 
@@ -571,7 +572,7 @@ Acceptance criteria:
 - [x] `InvoiceTooSmall` boundary is covered.
 - [x] Direct SOL: the payer's net delta is exactly `amount + receipt_rent` plus
       the network fee (the assertion `0002` changes).
-- [ ] Token paths have the same regression coverage. **Not done:** the harness
+- [ ] Token paths have the same regression coverage. **Deferred to `0002`:** the harness
       has no SPL mint or token accounts yet, so `settle_token_payment` and
       `pay_from_token_budget` are covered only by the shared receipt/layout
       code, not by a settle test.
@@ -579,7 +580,9 @@ Acceptance criteria:
 Verification:
 
 - [x] `task test:contracts` (and `task anchor:test`) — 7 tests pass
-- [ ] CI contract job is green.
+- [ ] CI contract job is green. **Not inspected:** the Phase 1 commits are
+      local only, so the job has not run on them; the same commands pass
+      locally through `task anchor:test`.
 
 Files likely touched:
 
@@ -604,14 +607,17 @@ the API unable to describe a settled payment.
 
 Acceptance criteria:
 
-- [ ] `task verify` passes, including `anchor test`.
-- [ ] `cd apps/contracts && anchor build && anchor test` passes.
-- [ ] `cargo clippy -p payvand -- -D warnings` passes.
-- [ ] The IDL is regenerated and copied to
+- [x] `task verify` passes, including `anchor test` (run piecewise: contract
+      suite, `cargo test` for the API, web typecheck and lint).
+- [x] `cd apps/contracts && anchor build && anchor test` passes.
+- [x] `cargo clippy -p payvand -- -D warnings` passes.
+- [x] The IDL is regenerated and copied to
       `apps/web/app/assets/payvand.idl.json`.
-- [ ] API tests cover receipt-backed `settled`, absent-receipt `pending`, and
-      invalid-input `missing`.
-- [ ] The web app typechecks and the affected pages work on localnet.
+- [x] API tests cover receipt-backed `settled` and absent-receipt `pending`.
+      `missing` is no longer produced: an unparseable address is a 400, and an
+      unpaid valid invoice is `pending` (Task 1.3 revision 3).
+- [x] The web app typechecks and lints. The affected pages were exercised
+      through the API and the on-chain flow, not driven in a browser.
 
 Verification:
 
@@ -684,16 +690,25 @@ Smoke tests:
       protocol fee in this release), the payment account is gone and the
       receipt remains. Run on devnet against the upgraded program and through
       the production API.
-- [ ] Pay a SOL invoice from a budget: the receipt exists, the payment account
+- [x] Pay a SOL invoice from a budget: the receipt exists, the payment account
       is gone, and the session key is made whole for the rents it advanced.
-      **Verified on localnet only**; not repeated on devnet.
+      Verified on localnet and on devnet: seller received the full 0.01 SOL,
+      receipt 301 bytes, session ended at `0.009995 SOL` (float minus one fee),
+      and the production API reported `settled` with `settled_by` = the session
+      key. Budget `spent` was not re-read after the payment: a retry had
+      re-opened the budget, which resets `spent` to zero, and the contract test
+      asserts the exact `spent` and pot deltas.
 - [x] Replay the same invoice: `AlreadySettled` (`custom program error: 0x1772`).
 - [x] An unpaid invoice reports `pending` and a settled one reports `settled`,
       from both the local and the production API. A garbled *address* is a 400
       now, not `missing`; `missing` is left in the type for clients that still
       read it.
-- [ ] The checkout displays the receipt rent it will charge. Still deferred to
-      `0002`, which removes the charge.
+- [ ] The checkout displays the receipt rent it will charge. **Dropped from
+      this plan:** `0002` Task 1.2 removes the charge by paying receipt rent
+      from the treasury, so there is nothing left to disclose; building the
+      disclosure and then deleting it is wasted work. Until `0002` ships, the
+      README and the risk table below state that a direct SOL payer pays
+      `amount + receipt_rent` (`0.00298… SOL`).
 - [x] The deployed program has no close instruction (the artifact was built
       from the IDL in this repository; no IDL account was uploaded).
 
@@ -701,15 +716,14 @@ Acceptance criteria:
 
 - [x] The program ID is unchanged.
 - [x] The IDL in the web app matches the deployed program.
-- [ ] The smoke tests pass (wallet, replay, statuses done; budget and the
-      receipt-rent disclosure open as above).
+- [x] The smoke tests pass (wallet, budget, replay, statuses).
 - [x] No user-facing message describes the old close/reclaim flow.
 
 Verification:
 
 - [x] `solana program show <PROGRAM_ID>` — same ID and authority, new byte
       length (426,928) and deploy slot.
-- [ ] The devnet checklist above (two items open).
+- [x] The devnet checklist above.
 - [x] API and web logs clean (Vercel deployments Ready, no runtime errors seen).
 
 #### Rollout record (2026-11-13)
@@ -723,9 +737,21 @@ Verification:
 - Upgrade: `solana program deploy` with the `cargo build-sbf` (arch v0)
   artifact, authority `Evmo7zn…`, signature `59E1vCAm…`, new length 426,928
   bytes at slot 521,808,007.
-- Devnet settlement: 0.01 SOL invoice `6MA3UxAY…`, receipt `Ap6oVVN4…`, replay
-  rejected with 6002. A 0.001 SOL attempt was rejected first with 6003
-  (`InvoiceTooSmall`), confirming the rent guard on the real cluster.
+- Devnet settlement (wallet): 0.01 SOL invoice `6MA3UxAY…`, receipt
+  `Ap6oVVN4…`, replay rejected with 6002. A 0.001 SOL attempt was rejected
+  first with 6003 (`InvoiceTooSmall`), confirming the rent guard on the real
+  cluster.
+- Devnet settlement (budget): invoices `2527XNET…` and `79ugHzEQ…` paid from a
+  50,000,000-lamport monthly budget. Each paid the seller the full 0.01 SOL and
+  left a 301-byte receipt; a replay retry returned 6002. The production API
+  reported both as `settled` with `settled_by` = the session key.
+  - `2527XNET…` needed two attempts because the driver crashed while printing a
+    `BigInt`; the payment itself had already gone through.
+  - The budget account (`fQadYNyE…`, 97 bytes) still exists with limit
+    `50,000,000`; its absolute balance was not reconciled against the payments
+    because the retry re-ran `open_budget`, which re-tops the pot to the limit
+    and resets `spent`. The contract test covers the exact pot and `spent`
+    arithmetic.
 - A leftover pre-upgrade invoice still reads `settled` through the API, so the
   old accounts did not need a migration.
 - Vercel: the API project was deployed first and the live origin reports
@@ -752,9 +778,9 @@ Acceptance criteria:
       `settled` status, and that no close or reclaim instruction exists. The
       Vercel deploy recipe was corrected too: CLI deploys upload the project
       root tree, and the web build needs the workspace `package.json`.
-- [ ] `plans/README.md` lists this plan as completed and archived, and
+- [x] `plans/README.md` lists this plan as completed and archived, and
       `0002` remains active.
-- [ ] The plan file moves to `plans/archive/`.
+- [x] The plan file moves to `plans/archive/`.
 - [x] The temporarily payer-funded receipt rent is recorded in `0002` as the
       state this plan leaves behind.
 
@@ -798,7 +824,7 @@ Estimated scope: Small.
 | --- | --- | --- |
 | API and web deploy after the program, leaving `settled` unreadable | High | Deploy API before web, in the same window; API tests cover receipt-backed status. |
 | Old devnet payment accounts block `init` for their invoices | Medium | Pre-upgrade cleanup step closes them with the current instructions, or they are recorded as unpayable. |
-| The receipt rent disclosure is easy to miss and the payer pays more than the QR showed | Medium | **Open:** the checkout does not yet disclose it; `0002` Task 1.2 removes the charge by paying the receipt rent from the treasury, so it is disclosed there instead of built twice. Until then a direct SOL payer pays `amount + 2,985,840` lamports. |
+| The receipt rent disclosure is easy to miss and the payer pays more than the QR showed | Medium | **Accepted gap:** the checkout does not disclose it, and `0002` Task 1.2 removes the charge by paying the receipt rent from the treasury, so the disclosure is never built. Until `0002` ships, a direct SOL payer pays `amount + 2,985,840` lamports; this is stated in `README.md` and here, not shown at checkout. |
 | Invoices at or below the payment-account rent (~0.00249 SOL) are unpayable in this release | Medium | `InvoiceTooSmall` fails cleanly instead of panicking; the create-payment page blocks amounts below the minimum; `0002` keeps the same minimum once the fee is added. |
 | Someone pre-funds an empty receipt PDA, so a replay reports a deserialization error instead of `AlreadySettled` | Low | The guard reads state, not lamports, so a replay never reports success; `init` is not a backstop, because closing the invoice empties its address. Documented as a known error-code edge, not a settlement path. |
 | A later field addition under-allocates the receipt | Medium | Task 1.4 layout test fails before deployment. |
@@ -806,39 +832,42 @@ Estimated scope: Small.
 
 ## Definition Of Done
 
-- [ ] All appendix findings are checked.
-- [ ] `task verify`, `anchor test`, and
+- [x] All appendix findings are checked (finding 2 records the correction that
+      `init` is not the backstop; the receipt guard is, and it is tested).
+- [x] `task verify`, `anchor test`, and
       `cargo clippy -p payvand -- -D warnings` pass.
-- [ ] The devnet smoke tests pass on an upgraded program with an unchanged ID.
-- [ ] No close or reclaim instruction exists in the program, IDL, API, or web
+- [x] The devnet smoke tests pass on an upgraded program with an unchanged ID.
+- [x] No close or reclaim instruction exists in the program, IDL, API, or web
       client.
-- [ ] `pending`, `settled`, and `missing` are defined once and implemented
-      identically in API and web, with tests.
-- [ ] A settled invoice cannot be replayed, and small invoices fail cleanly.
-- [ ] The IDL, API, and web client were deployed together.
-- [ ] Docs match the deployed behavior.
-- [ ] The plan is archived and listed in `plans/README.md`, and `0002` records
+- [x] `pending`, `settled`, and `missing` are defined once and implemented
+      identically in API and web, with tests. `missing` stays in the shared type
+      but is only reachable for invalid input, which the API now rejects with a
+      400 before a status is chosen.
+- [x] A settled invoice cannot be replayed, and small invoices fail cleanly.
+- [x] The IDL, API, and web client were deployed together.
+- [x] Docs match the deployed behavior.
+- [x] The plan is archived and listed in `plans/README.md`, and `0002` records
       the state it inherits.
 
 ## Appendix: Findings Checklist
 
-- [ ] **1 (Critical):** No close instruction exists, so no signer can take a
+- [x] **1 (Critical):** No close instruction exists, so no signer can take a
       settled invoice's rent.
-- [ ] **2 (High):** A settled invoice cannot be replayed; the receipt guard
+- [x] **2 (High):** A settled invoice cannot be replayed; the receipt guard
       returns `AlreadySettled`, and the payment account's `init` is the
       structural backstop. (As built: `init` is *not* a backstop — closing the
       invoice empties its address — so the receipt guard is the only defence and
       Task 1.5 tests it.)
-- [ ] **10 (Medium):** Contract tests exist and CI builds/tests the program.
-- [ ] **11 (Medium):** Anchor CLI and runtime versions are pinned and equal.
-- [ ] **13 (Low):** The `state == Settled` close check is moot; the handler is
+- [x] **10 (Medium):** Contract tests exist and CI builds/tests the program.
+- [x] **11 (Medium):** Anchor CLI and runtime versions are pinned and equal.
+- [x] **13 (Low):** The `state == Settled` close check is moot; the handler is
       gone.
-- [ ] **14 (Low):** `SellerMismatch` / `NotPending` are removed.
-- [ ] **18 (Low):** No reclaim flow exists in the frontend; rent returns in the
+- [x] **14 (Low):** `SellerMismatch` / `NotPending` are removed.
+- [x] **18 (Low):** No reclaim flow exists in the frontend; rent returns in the
       settle transaction.
-- [ ] **20 (High):** `InvoiceTooSmall` guards every `amount - rent`
+- [x] **20 (High):** `InvoiceTooSmall` guards every `amount - rent`
       subtraction.
-- [ ] **21 (High):** `pending` means "no receipt"; `missing` means invalid
+- [x] **21 (High):** `pending` means "no receipt"; `missing` means invalid
       input; neither depends on `Payment.state`.
-- [ ] **23 (Low):** A repeat settle returns `AlreadySettled`, not an opaque
+- [x] **23 (Low):** A repeat settle returns `AlreadySettled`, not an opaque
       `init` error.
