@@ -613,9 +613,28 @@ Acceptance criteria:
 
 Verification:
 
-- [ ] `task verify`
-- [ ] `cd apps/contracts && anchor test`
-- [ ] Localnet smoke test (Task 2.2).
+- [x] `task verify` — exit 0 (lint, typecheck, 65 API tests, 7 contract tests).
+- [x] `task anchor:test` — replaces `cd apps/contracts && anchor test`, which
+      would target the devnet cluster in `Anchor.toml` and, after `anchor
+      build`, run the eBPF artifact this runtime cannot execute.
+- [x] Localnet smoke test (2026-11-13), on `solana-test-validator` 3.1.10 with
+      the v0 artifact and the API on `127.0.0.1:8787`:
+      - `solana program deploy` of `cargo build-sbf` output installed the
+        program under the unchanged ID `4grKZpw6…` and the upgradeable loader.
+      - Unpaid invoice → API `pending` (previously would have been `missing`).
+      - Wallet `settle_payment` → seller received exactly the 0.01 SOL amount,
+        the invoice account was gone, and the receipt was 301 bytes.
+      - Budget `open_budget` + `pay_from_budget` → same seller payout and
+        receipt, `settled_by` naming the session key, and the session key made
+        whole for both rents (balance 0.009995 SOL, only its fee short of the
+        float).
+      - Replay → `custom program error: 0x1772` (`AlreadySettled`).
+      - The API flips to `settled` about 9s after confirmation, because
+        `RpcClient` reads at `finalized`; the checkout polls every 5s, so this
+        shows as a short "awaiting payment" window and is not an error.
+      - What this does *not* cover: the web UI itself (no browser flow was
+        driven), token invoices, and the checkout receipt-rent disclosure,
+        which is still open below.
 
 Files likely touched:
 
@@ -643,8 +662,14 @@ Rollout order:
    above.
 2. Confirm the upgrade authority and back up
    `apps/contracts/target/deploy/payvand-keypair.json`.
-3. `anchor build`, then `anchor upgrade` (not `anchor deploy`) with the program
-   ID and program keypair.
+3. Build the artifact the loader can run, then upgrade (not `anchor deploy`)
+   with the program ID and program keypair. **Build with `cargo build-sbf`**:
+   Anchor 1.2.1's own `anchor build` produces the eBPF target
+   (`e_machine 0x00f7`), while the deployed program lives under the legacy
+   upgradeable loader and the localnet check of the v0 artifact
+   (`0x0107`) deployed cleanly. `anchor build` is still needed for the IDL, so
+   run it first and let `cargo build-sbf` overwrite `target/deploy/payvand.so`
+   before upgrading.
 4. Copy the new IDL to `apps/web/app/assets/payvand.idl.json`.
 5. Deploy the API before the web client; it must understand receipt-backed
    `settled` and absent-receipt `pending`.
