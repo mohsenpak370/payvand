@@ -2,7 +2,9 @@
 
 ## Status
 
-In Progress — revision 3 (2026-11-13); Phase 0 and Phase 1 implemented 2026-11-13.
+In Progress — revision 3 (2026-11-13). Phase 0 and Phase 1 implemented, and
+Phase 2 rolled out to devnet and Vercel on 2026-11-13; two smoke items (budget
+path on devnet, checkout receipt-rent disclosure) remain before archiving.
 
 ## Revision Notes
 
@@ -678,30 +680,59 @@ Rollout order:
 
 Smoke tests:
 
-- [ ] Pay a SOL invoice from a wallet: the seller received the price minus the
-      payment-account rent (this release has no protocol fee), the payment
-      account is gone, the receipt remains, and the payer paid the disclosed
-      receipt rent.
+- [x] Pay a SOL invoice from a wallet: the seller received the full price (no
+      protocol fee in this release), the payment account is gone and the
+      receipt remains. Run on devnet against the upgraded program and through
+      the production API.
 - [ ] Pay a SOL invoice from a budget: the receipt exists, the payment account
       is gone, and the session key is made whole for the rents it advanced.
-- [ ] Replay the same invoice: `AlreadySettled`.
-- [ ] An unpaid invoice reports `pending`; a settled one reports `settled`;
-      a garbled reference reports `missing`.
-- [ ] The checkout displays the receipt rent it will charge.
-- [ ] The deployed IDL has no close instruction.
+      **Verified on localnet only**; not repeated on devnet.
+- [x] Replay the same invoice: `AlreadySettled` (`custom program error: 0x1772`).
+- [x] An unpaid invoice reports `pending` and a settled one reports `settled`,
+      from both the local and the production API. A garbled *address* is a 400
+      now, not `missing`; `missing` is left in the type for clients that still
+      read it.
+- [ ] The checkout displays the receipt rent it will charge. Still deferred to
+      `0002`, which removes the charge.
+- [x] The deployed program has no close instruction (the artifact was built
+      from the IDL in this repository; no IDL account was uploaded).
 
 Acceptance criteria:
 
-- [ ] The program ID is unchanged.
-- [ ] The IDL in the web app matches the deployed program.
-- [ ] The smoke tests pass.
-- [ ] No user-facing message describes the old close/reclaim flow.
+- [x] The program ID is unchanged.
+- [x] The IDL in the web app matches the deployed program.
+- [ ] The smoke tests pass (wallet, replay, statuses done; budget and the
+      receipt-rent disclosure open as above).
+- [x] No user-facing message describes the old close/reclaim flow.
 
 Verification:
 
-- [ ] `solana program show <PROGRAM_ID>`
-- [ ] The devnet checklist above.
-- [ ] API and web logs are clean.
+- [x] `solana program show <PROGRAM_ID>` — same ID and authority, new byte
+      length (426,928) and deploy slot.
+- [ ] The devnet checklist above (two items open).
+- [x] API and web logs clean (Vercel deployments Ready, no runtime errors seen).
+
+#### Rollout record (2026-11-13)
+
+- Pre-upgrade state: 4 SOL invoices, 3 token invoices, 3 budgets, 4 token
+  budgets, no receipts. All seven invoices were already settled by the old
+  program, so they stayed in place; only their exact invoice tuples become
+  unpayable, and their rent needed a seller signature we do not hold.
+- Backups before upgrading: the program keypair and the deployed program dump
+  (`solana program dump`) were copied to `/tmp` (outside the repository).
+- Upgrade: `solana program deploy` with the `cargo build-sbf` (arch v0)
+  artifact, authority `Evmo7zn…`, signature `59E1vCAm…`, new length 426,928
+  bytes at slot 521,808,007.
+- Devnet settlement: 0.01 SOL invoice `6MA3UxAY…`, receipt `Ap6oVVN4…`, replay
+  rejected with 6002. A 0.001 SOL attempt was rejected first with 6003
+  (`InvoiceTooSmall`), confirming the rent guard on the real cluster.
+- A leftover pre-upgrade invoice still reads `settled` through the API, so the
+  old accounts did not need a migration.
+- Vercel: the API project was deployed first and the live origin reports
+  `settled` from a receipt and `pending` for an unpaid address; the web project
+  was then deployed and its live bundle contains the receipt derivation. The
+  site loads and points at `payvand-api.vercel.app`. The deployed pay screen was
+  not driven through a payment (no wallet in the browser).
 
 Files likely touched:
 
@@ -717,13 +748,19 @@ Estimated scope: Medium.
 
 Acceptance criteria:
 
-- [ ] `README.md` states the aligned Anchor version, the receipt-backed
-      `settled` status, and that no close or reclaim instruction exists.
+- [x] `README.md` states the aligned Anchor version, the receipt-backed
+      `settled` status, and that no close or reclaim instruction exists. The
+      Vercel deploy recipe was corrected too: CLI deploys upload the project
+      root tree, and the web build needs the workspace `package.json`.
 - [ ] `plans/README.md` lists this plan as completed and archived, and
       `0002` remains active.
 - [ ] The plan file moves to `plans/archive/`.
-- [ ] The temporarily payer-funded receipt rent is recorded in `0002` as the
+- [x] The temporarily payer-funded receipt rent is recorded in `0002` as the
       state this plan leaves behind.
+
+**Not archived yet:** the devnet budget smoke test and the checkout rent
+  disclosure are still open above, so this plan stays `In Progress` until they
+  are closed or explicitly dropped.
 
 Verification:
 

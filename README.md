@@ -256,15 +256,22 @@ Vercel projects** pointing at the same repo. Both work on the Hobby plan.
 
 - Import the repo in Vercel with **Root Directory = `apps/web`**.
   Vercel detects Nuxt automatically (`apps/web/vercel.json` pins the
-  framework). CLI deploys (`vercel deploy --prod`) are run from inside
-  `apps/web` so the upload tree is the app itself.
+  framework).
 - Set `NUXT_PUBLIC_API_BASE` to the origin of the API project below.
+- A CLI deploy uploads the **project root tree**, not the app folder: with
+  Root Directory set to `apps/web`, run `vercel deploy --prod` from a tree that
+  contains `apps/web`. Uploading only the app folder builds fine until
+  `nuxt.config.ts` reads the workspace `package.json` for the footer version
+  (`../../package.json`), so include that file too. The repository root itself
+  can exceed Vercel's 10 MB upload limit; a two-file tree
+  (`package.json` + `apps/web/`) deploys the same app.
 
 ### 2. API
 
 - Create a second Vercel project from the same repo with
-  **Root Directory = `apps/api`** and Framework Preset = **Other**. CLI
-  deploys are run from inside `apps/api`.
+  **Root Directory = `apps/api`** and Framework Preset = **Other**. CLI deploys
+  follow the same rule: the upload tree must contain `apps/api`, so a tree with
+  just `apps/api/` (no `target/`, `.vercel` or `.env*`) deploys it.
 - `apps/api/vercel.json` rewrites every path to the Rust binary
   (`src/main.rs`, the `@vercel/rust` zero-config entrypoint), which mounts the
   same Axum router through `vercel_runtime`'s `VercelLayer`. The local dev
