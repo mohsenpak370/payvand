@@ -29,7 +29,7 @@
       "sh -c 'cargo clippy --manifest-path apps/api/Cargo.toml --quiet -- -D warnings'"
     ],
     "apps/contracts/**/*.rs": [
-      "sh -c 'anchor fmt'",
+      "sh -c 'cargo fmt --manifest-path apps/contracts/Cargo.toml'",
       "sh -c 'cargo clippy --manifest-path apps/contracts/Cargo.toml --quiet -- -D warnings'"
     ]
   }

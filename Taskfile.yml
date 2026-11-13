@@ -57,8 +57,9 @@ tasks:
       - cargo test --manifest-path apps/api/Cargo.toml
 
   test:contracts:
-    desc: Rust tests for the Anchor program
+    desc: Build the SBF program and run the contract suite
     cmds:
+      - cargo build-sbf --manifest-path apps/contracts/programs/payvand/Cargo.toml
       - cargo test --manifest-path apps/contracts/Cargo.toml
 
   verify:
@@ -68,6 +69,12 @@ tasks:
       - task: typecheck
       - task: test:api
       - task: test:contracts
+
+  anchor:test:
+    desc: Anchor build plus the SBF-backed contract test suite
+    cmds:
+      - cd apps/contracts && anchor build
+      - cargo test --manifest-path apps/contracts/Cargo.toml
 
   anchor:build:
     desc: Build the program and sync the IDL into the web app

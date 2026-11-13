@@ -211,10 +211,7 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
     memo: String,
 ) -> Result<()> {
     require!(amount > 0, PaymentError::InvalidAmount);
-    require!(
-        memo.as_bytes().len() <= PAYMENT_MAX_MEMO,
-        PaymentError::MemoTooLong
-    );
+    require!(memo.len() <= PAYMENT_MAX_MEMO, PaymentError::MemoTooLong);
     require_keys_neq!(
         ctx.accounts.seller.key(),
         Pubkey::default(),
@@ -344,10 +341,7 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     memo: String,
 ) -> Result<()> {
     require!(amount > 0, PaymentError::InvalidAmount);
-    require!(
-        memo.as_bytes().len() <= PAYMENT_MAX_MEMO,
-        PaymentError::MemoTooLong
-    );
+    require!(memo.len() <= PAYMENT_MAX_MEMO, PaymentError::MemoTooLong);
     require_keys_neq!(
         ctx.accounts.seller.key(),
         Pubkey::default(),

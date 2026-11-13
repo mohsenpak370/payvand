@@ -62,7 +62,13 @@ sequential filename. Templates live in `plans/templates/`.
 
 | ID | Plan | Status |
 | ---- | ---- | -------- |
-| 0001 | [Contract Security Hardening](0001-contract-security-hardening.md) | Draft |
+| 0001 | [Contract Security Hardening](0001-contract-security-hardening.md) | In Progress |
+| 0002 | [Fee Model, Treasury, and Budget Accounting](0002-fee-model-and-treasury.md) | Draft |
+
+The 2026-11-09 contract review originally lived in one plan. It was split on
+2026-11-12: `0001` ships the theft, replay, and status fixes, and `0002` builds
+the fee model on top of it. Implement `0001` first; `0002` assumes it is
+deployed.
 
 ## Archived Plans
 

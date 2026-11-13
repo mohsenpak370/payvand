@@ -14,17 +14,37 @@ default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 anchor-debug = []
 custom-heap = []
 custom-panic = []
 
 [dependencies]
+# Exact pins: a caret range let `Cargo.lock` drift to `anchor-lang` 1.2.1 while
+# `Anchor.toml` still asked for CLI 1.1.2, so `anchor build` and the compiled
+# program could disagree about the framework version.
 # `init-if-needed` lets the buyer's settle transaction create the invoice
 # account itself, so opening a payment code never requires a seller signature.
-anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
+anchor-lang = { version = "=1.2.1", features = ["init-if-needed"] }
 # Token payments: the SPL transfer CPIs and the mint/token-account checks.
-anchor-spl = { version = "1.1.2", features = ["token", "idl-build"] }
+# `anchor-spl/idl-build` belongs in the `idl-build` feature list above, not in
+# the default feature set (Anchor 1.2 warns about the latter).
+anchor-spl = { version = "=1.2.1", features = ["token"] }
+
+[dev-dependencies]
+# In-process test validator. The suite in `tests/` runs the program natively
+# through `solana-program-test`, so `cargo test` needs no deployed cluster and
+# no local validator process.
+solana-program-test = "=3.1.10"
+solana-account = "3"
+solana-instruction = "3"
+solana-keypair = "3"
+solana-pubkey = "3"
+solana-sdk-ids = "3"
+solana-signer = "3"
+solana-transaction = "3"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

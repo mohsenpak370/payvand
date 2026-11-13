@@ -22,7 +22,7 @@ account can later also sign in with a Solana wallet.
 | Frontend  | Nuxt 4, Nuxt UI v4, Tailwind CSS 4, [@vue-solana/nuxt][vs] |
 | QR        | `qrcode` (generate), `jsqr` (camera scan)                  |
 | Backend   | Rust, Axum 0.8, `solana-rpc-client`, libSQL (`users`, `sessions`) |
-| Solana    | Anchor 1.1.2 program (`apps/contracts/programs/payvand`)   |
+| Solana    | Anchor 1.2.1 program (`apps/contracts/programs/payvand`)   |
 | Hosting   | Vercel (web project + API project)                         |
 
 [vs]: https://vue-solana-docs.vercel.app/packages/nuxt
@@ -52,7 +52,7 @@ the repo-root `package.json` only forwards the documented commands into it.
 
 - Node 20+ and pnpm
 - Rust (stable) and Cargo
-- [Solana CLI][solana] and [Anchor CLI 1.1.2][anchor]
+- [Solana CLI][solana] and [Anchor CLI 1.2.1][anchor]
 - A browser wallet (Phantom, Solflare, Backpack, …)
 
 [solana]: https://docs.solanalabs.com/cli/install

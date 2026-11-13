@@ -145,10 +145,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
     memo: String,
 ) -> Result<()> {
     require!(amount > 0, PaymentError::InvalidAmount);
-    require!(
-        memo.as_bytes().len() <= PAYMENT_MAX_MEMO,
-        PaymentError::MemoTooLong
-    );
+    require!(memo.len() <= PAYMENT_MAX_MEMO, PaymentError::MemoTooLong);
     // `Pubkey::default()` doubles as "not initialised yet"; it must never
     // be a real seller or the invoice could be re-opened after settling.
     require_keys_neq!(
@@ -280,10 +277,7 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     memo: String,
 ) -> Result<()> {
     require!(amount > 0, PaymentError::InvalidAmount);
-    require!(
-        memo.as_bytes().len() <= PAYMENT_MAX_MEMO,
-        PaymentError::MemoTooLong
-    );
+    require!(memo.len() <= PAYMENT_MAX_MEMO, PaymentError::MemoTooLong);
     require_keys_neq!(
         ctx.accounts.seller.key(),
         Pubkey::default(),
