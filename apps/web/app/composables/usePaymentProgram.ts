@@ -17,6 +17,8 @@ import {
 import idl from '~/assets/payvand.idl.json'
 
 const PAYMENT_SEED = new TextEncoder().encode('payment')
+/** A settled invoice's permanent record, keyed by the invoice address. */
+const PAYMENT_RECEIPT_SEED = new TextEncoder().encode('payment-receipt')
 /** Token invoices live under their own prefix, with the mint as a seed. */
 const TOKEN_PAYMENT_SEED = new TextEncoder().encode('token-payment')
 
@@ -193,6 +195,22 @@ export async function derivePaymentPda(
   const [pda] = await getProgramDerivedAddress({
     programAddress: PAYVAND_PROGRAM_ID,
     seeds: [PAYMENT_SEED, encoder.encode(seller), encoder.encode(reference), amountBytes]
+  })
+  return pda
+}
+
+/**
+ * `seeds = [b"payment-receipt", invoice]`, mirroring the Anchor program.
+ *
+ * One receipt type covers SOL and token invoices, keyed by the invoice address:
+ * once settlement closes the invoice account, the receipt is the only record
+ * left, and this derivation works from the address in the QR code alone.
+ */
+export async function derivePaymentReceiptPda(invoice: Address): Promise<Address> {
+  const encoder = getAddressEncoder()
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PAYVAND_PROGRAM_ID,
+    seeds: [PAYMENT_RECEIPT_SEED, encoder.encode(invoice)]
   })
   return pda
 }

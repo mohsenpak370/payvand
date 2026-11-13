@@ -49,13 +49,6 @@ pub mod payvand {
         instructions::sol::settle_payment_handler(ctx, amount, memo)
     }
 
-    /// Seller reclaims the rent lamports locked in a settled invoice. This is
-    /// optional housekeeping — it is the one signature a seller may ever make,
-    /// and only when they want the rent back.
-    pub fn close_payment(ctx: Context<ClosePayment>, amount: u64) -> Result<()> {
-        instructions::sol::close_payment_handler(ctx, amount)
-    }
-
     /// Buyer funds this month's spending budget and registers a session key.
     /// This is the ONE wallet signature the whole feature needs: afterwards
     /// the session key — an app-generated keypair stored on the device — can
@@ -96,12 +89,6 @@ pub mod payvand {
         memo: String,
     ) -> Result<()> {
         instructions::token::settle_token_payment_handler(ctx, amount, memo)
-    }
-
-    /// Seller reclaims the rent of a settled token invoice. Mirrors
-    /// `close_payment`, and is the only signature a seller ever makes.
-    pub fn close_token_payment(ctx: Context<CloseTokenPayment>, amount: u64) -> Result<()> {
-        instructions::token::close_token_payment_handler(ctx, amount)
     }
 
     /// Buyer opens (or tops up) this month's budget for one token and

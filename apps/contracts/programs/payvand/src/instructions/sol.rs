@@ -1,22 +1,30 @@
 //! SOL invoices and the SOL monthly allowance.
+//!
+//! Settlement is single-use and leaves a permanent record: the invoice account
+//! is created, settled and closed inside the settle transaction, and a receipt
+//! keyed by the invoice address survives it. The receipt's `settled_at` is the
+//! replay guard, which is why the invoice account can be `init` rather than
+//! `init_if_needed`.
 
 use anchor_lang::prelude::*;
-use anchor_lang::Lamports;
+use anchor_lang::{AccountsClose, Lamports};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::helpers::current_month_index;
-use crate::state::{Budget, Payment, PaymentState};
+use crate::state::{Budget, Payment, PaymentReceipt, PaymentState};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct SettlePayment<'info> {
-    /// Pays for the invoice account (rent) and the transfer itself.
+    /// Pays for the invoice account, the receipt, and the transfer itself.
     #[account(mut)]
     pub payer: Signer<'info>,
 
+    /// Short-lived: created, settled and closed in this one transaction. Its
+    /// rent goes back to the seller, who fronts no signature for it.
     #[account(
-        init_if_needed,
+        init,
         payer = payer,
         space = PAYMENT_SPACE,
         seeds = [
@@ -33,6 +41,17 @@ pub struct SettlePayment<'info> {
     /// account allowed to receive the lamports.
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
+
+    /// The permanent record. `settled_at != 0` means this invoice is done, so
+    /// the same invoice can never be settled twice.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = PAYMENT_RECEIPT_SPACE,
+        seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
+        bump
+    )]
+    pub receipt: Account<'info, PaymentReceipt>,
 
     /// CHECK: Arbitrary 32-byte value chosen when the QR was made. It is only
     /// used as a PDA seed and as an address that watchers can look up.
@@ -67,8 +86,8 @@ pub struct OpenBudget<'info> {
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct PayFromBudget<'info> {
-    /// Session key: fee payer and invoice-rent payer (refunded from the
-    /// budget in this same transaction). Never the buyer's wallet.
+    /// Session key: fee payer and rent payer (made whole by the pot in this
+    /// same transaction). Never the buyer's wallet.
     #[account(mut)]
     pub session_key: Signer<'info>,
 
@@ -80,7 +99,7 @@ pub struct PayFromBudget<'info> {
     pub budget: Account<'info, Budget>,
 
     #[account(
-        init_if_needed,
+        init,
         payer = session_key,
         space = PAYMENT_SPACE,
         seeds = [
@@ -97,6 +116,15 @@ pub struct PayFromBudget<'info> {
     /// allowed to receive the lamports.
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = session_key,
+        space = PAYMENT_RECEIPT_SPACE,
+        seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
+        bump
+    )]
+    pub receipt: Account<'info, PaymentReceipt>,
 
     /// CHECK: Arbitrary 32-byte value chosen when the QR was made; a PDA
     /// seed and an address watchers can look up.
@@ -119,26 +147,6 @@ pub struct CloseBudget<'info> {
     pub buyer: Signer<'info>,
 }
 
-#[derive(Accounts)]
-#[instruction(amount: u64)]
-pub struct ClosePayment<'info> {
-    #[account(
-        mut,
-        seeds = [
-            PAYMENT_SEED,
-            payment.seller.as_ref(),
-            payment.reference.as_ref(),
-            amount.to_le_bytes().as_ref()
-        ],
-        bump = payment.bump,
-        close = seller
-    )]
-    pub payment: Account<'info, Payment>,
-
-    #[account(mut)]
-    pub seller: Signer<'info>,
-}
-
 pub fn settle_payment_handler<'info, 'ctx>(
     ctx: Context<'ctx, SettlePayment<'info>>,
     amount: u64,
@@ -146,36 +154,27 @@ pub fn settle_payment_handler<'info, 'ctx>(
 ) -> Result<()> {
     require!(amount > 0, PaymentError::InvalidAmount);
     require!(memo.len() <= PAYMENT_MAX_MEMO, PaymentError::MemoTooLong);
-    // `Pubkey::default()` doubles as "not initialised yet"; it must never
-    // be a real seller or the invoice could be re-opened after settling.
+    // `Pubkey::default()` is not a real seller, and a payment to it would burn
+    // the invoice.
     require_keys_neq!(
         ctx.accounts.seller.key(),
         Pubkey::default(),
         PaymentError::InvalidSeller
     );
 
-    let payment = &mut ctx.accounts.payment;
+    // A receipt with a settlement timestamp means this invoice is done. The
+    // account is only ever created below, and `settled_at` is written in the
+    // same instruction that creates it, so "exists" always means "settled".
+    require!(
+        ctx.accounts.receipt.settled_at == 0,
+        PaymentError::AlreadySettled
+    );
 
-    if payment.seller == Pubkey::default() {
-        // First touch: open the invoice and settle it in one go.
-        payment.seller = ctx.accounts.seller.key();
-        payment.reference = ctx.accounts.reference.key();
-        payment.amount = amount;
-        payment.memo = memo;
-        payment.state = PaymentState::Pending;
-        payment.payer = Pubkey::default();
-        payment.created_at = Clock::get()?.unix_timestamp;
-        payment.settled_at = 0;
-        payment.bump = ctx.bumps.payment;
-    } else {
-        // The invoice already exists; the seeds above guarantee the seller,
-        // reference and amount all match this exact invoice, so the only
-        // thing left to check is that nobody paid twice.
-        require!(
-            payment.state == PaymentState::Pending,
-            PaymentError::AlreadySettled
-        );
-    }
+    // The seller receives `amount - rent` now and the rent itself when the
+    // invoice account closes at the end of the instruction, so the subtraction
+    // below must not underflow.
+    let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
+    require!(amount > payment_rent, PaymentError::InvoiceTooSmall);
 
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -185,27 +184,51 @@ pub fn settle_payment_handler<'info, 'ctx>(
                 to: ctx.accounts.seller.to_account_info(),
             },
         ),
-        amount,
+        amount - payment_rent,
     )?;
 
-    let payment = &mut ctx.accounts.payment;
-    payment.state = PaymentState::Settled;
-    payment.payer = ctx.accounts.payer.key();
-    payment.settled_at = Clock::get()?.unix_timestamp;
+    let now = Clock::get()?.unix_timestamp;
+    let payer = ctx.accounts.payer.key();
+    let seller = ctx.accounts.seller.key();
+    let reference = ctx.accounts.reference.key();
+    let invoice = ctx.accounts.payment.key();
 
-    msg!(
-        "payment settled: {} lamports from {}",
-        amount,
-        payment.payer
-    );
-    Ok(())
-}
+    {
+        let payment = &mut ctx.accounts.payment;
+        payment.seller = seller;
+        payment.reference = reference;
+        payment.amount = amount;
+        payment.memo = memo.clone();
+        payment.state = PaymentState::Settled;
+        payment.payer = payer;
+        payment.created_at = now;
+        payment.settled_at = now;
+        payment.bump = ctx.bumps.payment;
+    }
 
-pub fn close_payment_handler<'info, 'ctx>(
-    _ctx: Context<'ctx, ClosePayment<'info>>,
-    amount: u64,
-) -> Result<()> {
-    msg!("payment closed: {} lamports invoice", amount);
+    {
+        let receipt = &mut ctx.accounts.receipt;
+        receipt.invoice = invoice;
+        receipt.seller = seller;
+        receipt.reference = reference;
+        receipt.mint = Pubkey::default();
+        receipt.amount = amount;
+        receipt.memo = memo;
+        receipt.payer = payer;
+        receipt.created_at = now;
+        receipt.settled_at = now;
+        receipt.closed_at = now;
+        receipt.bump = ctx.bumps.receipt;
+    }
+
+    // Auto-close. The record now lives in the receipt, so the invoice account
+    // and its rent go to the seller inside the settle transaction — there is
+    // no separate seller close step left for anyone to race or misuse.
+    ctx.accounts
+        .payment
+        .close(ctx.accounts.seller.to_account_info())?;
+
+    msg!("payment settled: {} lamports from {}", amount, payer);
     Ok(())
 }
 
@@ -293,6 +316,12 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::InvalidSessionKey
     );
 
+    // Same replay rule as the wallet path.
+    require!(
+        ctx.accounts.receipt.settled_at == 0,
+        PaymentError::AlreadySettled
+    );
+
     // Monthly cap, lazily reset on the calendar-month boundary.
     let now = current_month_index()?;
     let (monthly_limit, mut spent, month_index) = {
@@ -307,64 +336,85 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::BudgetExhausted
     );
 
-    // The pot must cover the price plus the invoice rent that
-    // `init_if_needed` just advanced from the session key's float.
-    let invoice_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
+    // The session key advances both rents; the pot reimburses both, pays the
+    // seller the price less the invoice rent, and the invoice account's close
+    // returns that rent to the seller.
+    let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);
+    require!(amount > payment_rent, PaymentError::InvoiceTooSmall);
+
     let pot = ctx
         .accounts
         .budget
         .to_account_info()
         .lamports()
         .saturating_sub(budget_rent);
+    let to_seller = amount - payment_rent;
+    let to_session = payment_rent.saturating_add(receipt_rent);
     require!(
-        pot >= amount.saturating_add(invoice_rent),
+        pot >= to_seller.saturating_add(to_session),
         PaymentError::InsufficientBudget
     );
 
-    // An invoice that already exists at this address is bound to this
-    // seller, reference and amount by its seeds — the only question left
-    // is whether someone already paid it.
-    if ctx.accounts.payment.seller != Pubkey::default() {
-        require!(
-            ctx.accounts.payment.state == PaymentState::Pending,
-            PaymentError::AlreadySettled
-        );
-    }
-
-    // Move the money: pot → seller (the price) and pot → session key
-    // (refund of the invoice rent it advanced).
-    let total = amount.saturating_add(invoice_rent);
-    ctx.accounts.budget.to_account_info().sub_lamports(total)?;
-    ctx.accounts.seller.to_account_info().add_lamports(amount)?;
+    ctx.accounts
+        .budget
+        .to_account_info()
+        .sub_lamports(to_seller.saturating_add(to_session))?;
+    ctx.accounts
+        .seller
+        .to_account_info()
+        .add_lamports(to_seller)?;
     ctx.accounts
         .session_key
         .to_account_info()
-        .add_lamports(invoice_rent)?;
+        .add_lamports(to_session)?;
 
-    // Record the invoice (first touch) and mark it settled.
+    let now_ts = Clock::get()?.unix_timestamp;
+    let payer = ctx.accounts.session_key.key();
+    let seller = ctx.accounts.seller.key();
+    let reference = ctx.accounts.reference.key();
+    let invoice = ctx.accounts.payment.key();
+
     {
         let payment = &mut ctx.accounts.payment;
-        if payment.seller == Pubkey::default() {
-            payment.seller = ctx.accounts.seller.key();
-            payment.reference = ctx.accounts.reference.key();
-            payment.amount = amount;
-            payment.memo = memo;
-            payment.state = PaymentState::Pending;
-            payment.payer = Pubkey::default();
-            payment.created_at = Clock::get()?.unix_timestamp;
-            payment.settled_at = 0;
-            payment.bump = ctx.bumps.payment;
-        }
+        payment.seller = seller;
+        payment.reference = reference;
+        payment.amount = amount;
+        payment.memo = memo.clone();
         payment.state = PaymentState::Settled;
-        payment.payer = ctx.accounts.session_key.key();
-        payment.settled_at = Clock::get()?.unix_timestamp;
+        payment.payer = payer;
+        payment.created_at = now_ts;
+        payment.settled_at = now_ts;
+        payment.bump = ctx.bumps.payment;
     }
+
+    {
+        let receipt = &mut ctx.accounts.receipt;
+        receipt.invoice = invoice;
+        receipt.seller = seller;
+        receipt.reference = reference;
+        receipt.mint = Pubkey::default();
+        receipt.amount = amount;
+        receipt.memo = memo;
+        receipt.payer = payer;
+        receipt.created_at = now_ts;
+        receipt.settled_at = now_ts;
+        receipt.closed_at = now_ts;
+        receipt.bump = ctx.bumps.receipt;
+    }
+
     {
         let budget = &mut ctx.accounts.budget;
         budget.spent = spent.saturating_add(amount);
         budget.month_index = now;
     }
+
+    // Same auto-close as the wallet path: the rent the pot fronted comes back
+    // to the seller, and the receipt is the only surviving record.
+    ctx.accounts
+        .payment
+        .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
         "payment settled from budget: {} lamports, session {}",

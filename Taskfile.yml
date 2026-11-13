@@ -71,9 +71,13 @@ tasks:
       - task: test:contracts
 
   anchor:test:
-    desc: Anchor build plus the SBF-backed contract test suite
+    desc: Anchor build (IDL) plus the SBF-backed contract test suite
     cmds:
       - cd apps/contracts && anchor build
+      # Anchor 1.2.1 builds the eBPF target (arch v1), which solana-program-test
+      # 3.1.10 cannot execute. Rebuild with cargo-build-sbf's default arch (v0)
+      # so the suite runs the artifact the harness and CI use.
+      - cargo build-sbf --manifest-path apps/contracts/programs/payvand/Cargo.toml
       - cargo test --manifest-path apps/contracts/Cargo.toml
 
   anchor:build:

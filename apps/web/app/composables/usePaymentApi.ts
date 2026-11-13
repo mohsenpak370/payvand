@@ -312,8 +312,9 @@ export function solToLamports(sol: number): number {
 
 export function statusLabel(status: PaymentStatus): string {
   if (status === 'settled') return appT('status.paid')
-  // A fresh invoice has no on-chain account until the customer pays — to
-  // everyone watching it reads exactly the same as an open invoice.
+  // Unpaid invoices have no account at all: settlement creates the invoice
+  // account and its receipt together, so `pending` and the old `missing` both
+  // mean "nobody has paid this yet".
   return appT('status.awaitingPayment')
 }
 

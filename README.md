@@ -292,8 +292,11 @@ serverless cold start.
   way any phone camera opens the printable payment page.
 - Cluster defaults in the API are the public `api.*.solana.com` endpoints. For
   anything beyond testing, set `SOLANA_RPC_URL` to a dedicated provider.
-- `settle_payment` creates the invoice account (funded by the buyer) and moves
-  lamports straight from the payer to the seller in one transaction. The amount
-  is part of the PDA seeds, so a code can only ever be settled for exactly the
-  amount it was shown with. `close_payment` lets the seller reclaim the rent
-  once it has been settled.
+- `settle_payment` creates the invoice account (funded by the buyer), moves
+  lamports straight from the payer to the seller, writes a permanent receipt at
+  `["payment-receipt", invoice]` and closes the invoice account in the same
+  transaction, so its rent returns to the seller without a second signature.
+  The amount is part of the PDA seeds, so a code can only ever be settled for
+  exactly the amount it was shown with, and the receipt's `settled_at` makes a
+  second settlement fail with `AlreadySettled`. There is no close or reclaim
+  instruction left to call.

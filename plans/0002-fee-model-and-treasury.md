@@ -2,7 +2,24 @@
 
 ## Status
 
-Draft — new (2026-11-12), split from the 2026-11-09 contract security draft.
+Draft — new (2026-11-12), split from the 2026-11-09 contract security draft;
+revision 2 (2026-11-13) notes the receipt consolidation that landed in `0001`.
+
+## Revision Notes
+
+Revision 2 records one `0001` implementation change that moves this plan's
+numbers:
+
+- `0001` shipped a single `PaymentReceipt` (301 bytes, 2,985,840 lamports rent)
+  keyed by the invoice address, instead of separate SOL and token receipts
+  (237 and 269 bytes). `0001`'s revision notes explain why.
+- Every `R_r` (receipt rent) figure in this plan therefore moves to 2,985,840:
+  the treasury's per-invoice outlay, the break-even invoice (now
+  2,985,840 / `fee_bps`), and the treasury delta tables.
+- The tables below still show the revision-1 arithmetic (2,540,400 / 2,763,120).
+  They are illustrative only: recompute them from 2,985,840 when Task 1.2 is
+  implemented, and keep the rent read over RPC as the single source of truth.
+  No decision in this plan changes because of the consolidation.
 
 ## Linked Docs
 
@@ -146,8 +163,7 @@ these planning figures.
 | `TokenBudget` | 129 | 1,788,720 | 0.0017887 |
 | `Payment` | 230 | 2,491,680 | 0.0024917 |
 | `TokenPayment` | 262 | 2,714,400 | 0.0027144 |
-| `PaymentReceipt` | 237 | 2,540,400 | 0.0025404 |
-| `TokenPaymentReceipt` | 269 | 2,763,120 | 0.0027631 |
+| `PaymentReceipt` (one type, both currencies) | 301 | 2,985,840 | 0.0029858 |
 | Token account (ATA) | 165 | 2,039,280 | 0.0020393 |
 | Treasury (0 data) | 0 | 890,880 | 0.0008909 |
 

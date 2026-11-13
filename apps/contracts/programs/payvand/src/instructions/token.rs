@@ -1,26 +1,30 @@
 //! Token invoices and the per-mint monthly allowance.
+//!
+//! Settlement mirrors the SOL paths: the invoice account is created, settled
+//! and closed in the settle transaction, a receipt keyed by the invoice address
+//! keeps the record, and the receipt's `settled_at` is the replay guard.
 
 use anchor_lang::prelude::*;
-use anchor_lang::Lamports;
+use anchor_lang::{AccountsClose, Lamports};
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer as TokenTransfer};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
-use crate::helpers::{current_month_index, open_token_invoice, settle_token_invoice};
-use crate::state::{TokenBudget, TokenPayment};
+use crate::helpers::current_month_index;
+use crate::state::{PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct SettleTokenPayment<'info> {
-    /// Pays the invoice rent, the seller's token account rent if it does not
-    /// exist yet, and the fee. The tokens themselves come out of
+    /// Pays the invoice rent, the receipt rent, and the seller's token account
+    /// rent if it does not exist yet. The tokens themselves come out of
     /// `payer_token_account`.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     #[account(
-        init_if_needed,
+        init,
         payer = payer,
         space = TOKEN_PAYMENT_SPACE,
         seeds = [
@@ -35,7 +39,9 @@ pub struct SettleTokenPayment<'info> {
     pub payment: Account<'info, TokenPayment>,
 
     /// CHECK: The address the QR code names as the payee. It receives only
-    /// through its own associated token account, checked below.
+    /// through its own associated token account, checked below, and it is the
+    /// destination of the invoice account's close at the end.
+    #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
     /// Created on the fly when the seller has never held this token, so a
@@ -53,6 +59,15 @@ pub struct SettleTokenPayment<'info> {
 
     pub mint: Account<'info, Mint>,
 
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = PAYMENT_RECEIPT_SPACE,
+        seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
+        bump
+    )]
+    pub receipt: Account<'info, PaymentReceipt>,
+
     /// CHECK: Arbitrary 32-byte value chosen when the QR was made; a PDA seed
     /// and an address watchers can look up.
     pub reference: UncheckedAccount<'info>,
@@ -60,27 +75,6 @@ pub struct SettleTokenPayment<'info> {
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(amount: u64)]
-pub struct CloseTokenPayment<'info> {
-    #[account(
-        mut,
-        seeds = [
-            TOKEN_PAYMENT_SEED,
-            payment.seller.as_ref(),
-            payment.reference.as_ref(),
-            payment.mint.as_ref(),
-            amount.to_le_bytes().as_ref()
-        ],
-        bump = payment.bump,
-        close = seller
-    )]
-    pub payment: Account<'info, TokenPayment>,
-
-    #[account(mut)]
-    pub seller: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -126,8 +120,8 @@ pub struct OpenTokenBudget<'info> {
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct PayFromTokenBudget<'info> {
-    /// Session key: fee payer and invoice-rent payer (refunded from the
-    /// budget's float in this same transaction). Never the buyer's wallet.
+    /// Session key: fee payer and rent payer (refunded from the budget's float
+    /// in this same transaction). Never the buyer's wallet.
     #[account(mut)]
     pub session_key: Signer<'info>,
 
@@ -147,7 +141,9 @@ pub struct PayFromTokenBudget<'info> {
 
     pub mint: Account<'info, Mint>,
 
-    /// CHECK: The address the QR code names as the payee.
+    /// CHECK: The address the QR code names as the payee; also the destination
+    /// of the invoice account's close.
+    #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
     #[account(
@@ -159,7 +155,7 @@ pub struct PayFromTokenBudget<'info> {
     pub seller_token_account: Account<'info, TokenAccount>,
 
     #[account(
-        init_if_needed,
+        init,
         payer = session_key,
         space = TOKEN_PAYMENT_SPACE,
         seeds = [
@@ -172,6 +168,15 @@ pub struct PayFromTokenBudget<'info> {
         bump
     )]
     pub payment: Account<'info, TokenPayment>,
+
+    #[account(
+        init_if_needed,
+        payer = session_key,
+        space = PAYMENT_RECEIPT_SPACE,
+        seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
+        bump
+    )]
+    pub receipt: Account<'info, PaymentReceipt>,
 
     /// CHECK: Arbitrary 32-byte value chosen when the QR was made.
     pub reference: UncheckedAccount<'info>,
@@ -217,16 +222,10 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         Pubkey::default(),
         PaymentError::InvalidSeller
     );
-
-    open_token_invoice(
-        &mut ctx.accounts.payment,
-        ctx.accounts.seller.key(),
-        ctx.accounts.reference.key(),
-        ctx.accounts.mint.key(),
-        amount,
-        memo,
-        ctx.bumps.payment,
-    )?;
+    require!(
+        ctx.accounts.receipt.settled_at == 0,
+        PaymentError::AlreadySettled
+    );
 
     token::transfer(
         CpiContext::new(
@@ -240,22 +239,54 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         amount,
     )?;
 
-    settle_token_invoice(&mut ctx.accounts.payment, ctx.accounts.payer.key())?;
+    let now = Clock::get()?.unix_timestamp;
+    let payer = ctx.accounts.payer.key();
+    let seller = ctx.accounts.seller.key();
+    let reference = ctx.accounts.reference.key();
+    let mint = ctx.accounts.mint.key();
+    let invoice = ctx.accounts.payment.key();
+
+    {
+        let payment = &mut ctx.accounts.payment;
+        payment.seller = seller;
+        payment.reference = reference;
+        payment.mint = mint;
+        payment.amount = amount;
+        payment.memo = memo.clone();
+        payment.state = PaymentState::Settled;
+        payment.payer = payer;
+        payment.created_at = now;
+        payment.settled_at = now;
+        payment.bump = ctx.bumps.payment;
+    }
+
+    {
+        let receipt = &mut ctx.accounts.receipt;
+        receipt.invoice = invoice;
+        receipt.seller = seller;
+        receipt.reference = reference;
+        receipt.mint = mint;
+        receipt.amount = amount;
+        receipt.memo = memo;
+        receipt.payer = payer;
+        receipt.created_at = now;
+        receipt.settled_at = now;
+        receipt.closed_at = now;
+        receipt.bump = ctx.bumps.receipt;
+    }
+
+    // Auto-close, as in the SOL path: the receipt is the surviving record and
+    // the invoice rent goes back to the seller in this same transaction.
+    ctx.accounts
+        .payment
+        .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
         "token payment settled: {} of {} from {}",
         amount,
-        ctx.accounts.mint.key(),
-        ctx.accounts.payer.key()
+        mint,
+        payer
     );
-    Ok(())
-}
-
-pub fn close_token_payment_handler<'info, 'ctx>(
-    _ctx: Context<'ctx, CloseTokenPayment<'info>>,
-    amount: u64,
-) -> Result<()> {
-    msg!("token payment closed: {} base units invoice", amount);
     Ok(())
 }
 
@@ -357,6 +388,10 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         ctx.accounts.budget.mint,
         PaymentError::MintMismatch
     );
+    require!(
+        ctx.accounts.receipt.settled_at == 0,
+        PaymentError::AlreadySettled
+    );
 
     let now = current_month_index()?;
     let (monthly_limit, mut spent, month_index) = {
@@ -374,16 +409,6 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         ctx.accounts.vault.amount >= amount,
         PaymentError::InsufficientBudget
     );
-
-    open_token_invoice(
-        &mut ctx.accounts.payment,
-        ctx.accounts.seller.key(),
-        ctx.accounts.reference.key(),
-        ctx.accounts.mint.key(),
-        amount,
-        memo,
-        ctx.bumps.payment,
-    )?;
 
     // Vault → seller, signed by the budget PDA.
     let buyer = ctx.accounts.budget.buyer;
@@ -403,11 +428,45 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         amount,
     )?;
 
-    settle_token_invoice(&mut ctx.accounts.payment, ctx.accounts.session_key.key())?;
+    let now_ts = Clock::get()?.unix_timestamp;
+    let payer = ctx.accounts.session_key.key();
+    let seller = ctx.accounts.seller.key();
+    let reference = ctx.accounts.reference.key();
+    let invoice = ctx.accounts.payment.key();
 
-    // Refund the invoice rent the session key just advanced, out of the
-    // float the budget keeps for exactly this.
+    {
+        let payment = &mut ctx.accounts.payment;
+        payment.seller = seller;
+        payment.reference = reference;
+        payment.mint = mint;
+        payment.amount = amount;
+        payment.memo = memo.clone();
+        payment.state = PaymentState::Settled;
+        payment.payer = payer;
+        payment.created_at = now_ts;
+        payment.settled_at = now_ts;
+        payment.bump = ctx.bumps.payment;
+    }
+
+    {
+        let receipt = &mut ctx.accounts.receipt;
+        receipt.invoice = invoice;
+        receipt.seller = seller;
+        receipt.reference = reference;
+        receipt.mint = mint;
+        receipt.amount = amount;
+        receipt.memo = memo;
+        receipt.payer = payer;
+        receipt.created_at = now_ts;
+        receipt.settled_at = now_ts;
+        receipt.closed_at = now_ts;
+        receipt.bump = ctx.bumps.receipt;
+    }
+
+    // Refund the invoice and receipt rent the session key just advanced, out
+    // of the float the budget keeps for exactly this.
     let invoice_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let budget_rent = Rent::get()?.minimum_balance(TOKEN_BUDGET_SPACE);
     let spare = ctx
         .accounts
@@ -415,7 +474,7 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         .to_account_info()
         .lamports()
         .saturating_sub(budget_rent);
-    let refund = invoice_rent.min(spare);
+    let refund = invoice_rent.saturating_add(receipt_rent).min(spare);
     if refund > 0 {
         ctx.accounts.budget.to_account_info().sub_lamports(refund)?;
         ctx.accounts
@@ -427,6 +486,12 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     let budget = &mut ctx.accounts.budget;
     budget.spent = spent.saturating_add(amount);
     budget.month_index = now;
+
+    // Auto-close: the invoice rent is already reimbursed above, and the
+    // account's own rent now follows it to the seller.
+    ctx.accounts
+        .payment
+        .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
         "token payment settled from budget: {} of {}, session {}",

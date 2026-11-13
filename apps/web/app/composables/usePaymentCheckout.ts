@@ -11,6 +11,7 @@ import { discountedLamports, paymentOptions } from './usePaymentApi'
 import {
   deriveAssociatedTokenAddress,
   derivePaymentPda,
+  derivePaymentReceiptPda,
   deriveTokenPaymentPda,
   mintForCurrency
 } from './usePaymentProgram'
@@ -410,7 +411,13 @@ export function usePaymentCheckout() {
           const instruction = buildInstruction(
             'settle_payment',
             { amount, memo },
-            { payer, payment, seller, reference }
+            {
+              payer,
+              payment,
+              seller,
+              receipt: await derivePaymentReceiptPda(payment),
+              reference
+            }
           )
           const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })
           sent = await execute(wire, {
@@ -440,6 +447,7 @@ export function usePaymentCheckout() {
               seller_token_account: await deriveAssociatedTokenAddress(seller, mint),
               payer_token_account: await deriveAssociatedTokenAddress(payer, mint),
               mint,
+              receipt: await derivePaymentReceiptPda(payment),
               reference
             }
           )

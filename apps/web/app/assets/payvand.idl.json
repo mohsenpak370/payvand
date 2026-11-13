@@ -56,71 +56,6 @@
       "args": []
     },
     {
-      "name": "close_payment",
-      "docs": [
-        "Seller reclaims the rent lamports locked in a settled invoice. This is",
-        "optional housekeeping — it is the one signature a seller may ever make,",
-        "and only when they want the rent back."
-      ],
-      "discriminator": [
-        172,
-        106,
-        77,
-        250,
-        247,
-        169,
-        156,
-        178
-      ],
-      "accounts": [
-        {
-          "name": "payment",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  97,
-                  121,
-                  109,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "payment.seller",
-                "account": "Payment"
-              },
-              {
-                "kind": "account",
-                "path": "payment.reference",
-                "account": "Payment"
-              },
-              {
-                "kind": "arg",
-                "path": "amount"
-              }
-            ]
-          }
-        },
-        {
-          "name": "seller",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "close_token_budget",
       "docs": [
         "Drain the token vault back to the buyer and retire the budget. One",
@@ -193,81 +128,6 @@
         }
       ],
       "args": []
-    },
-    {
-      "name": "close_token_payment",
-      "docs": [
-        "Seller reclaims the rent of a settled token invoice. Mirrors",
-        "`close_payment`, and is the only signature a seller ever makes."
-      ],
-      "discriminator": [
-        210,
-        114,
-        178,
-        74,
-        238,
-        144,
-        2,
-        27
-      ],
-      "accounts": [
-        {
-          "name": "payment",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  45,
-                  112,
-                  97,
-                  121,
-                  109,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "payment.seller",
-                "account": "TokenPayment"
-              },
-              {
-                "kind": "account",
-                "path": "payment.reference",
-                "account": "TokenPayment"
-              },
-              {
-                "kind": "account",
-                "path": "payment.mint",
-                "account": "TokenPayment"
-              },
-              {
-                "kind": "arg",
-                "path": "amount"
-              }
-            ]
-          }
-        },
-        {
-          "name": "seller",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
     },
     {
       "name": "open_budget",
@@ -553,8 +413,8 @@
         {
           "name": "session_key",
           "docs": [
-            "Session key: fee payer and invoice-rent payer (refunded from the",
-            "budget in this same transaction). Never the buyer's wallet."
+            "Session key: fee payer and rent payer (made whole by the pot in this",
+            "same transaction). Never the buyer's wallet."
           ],
           "writable": true,
           "signer": true
@@ -623,6 +483,38 @@
           "writable": true
         },
         {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116,
+                  45,
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment"
+              }
+            ]
+          }
+        },
+        {
           "name": "reference",
           "docs": [
             "seed and an address watchers can look up."
@@ -666,8 +558,8 @@
         {
           "name": "session_key",
           "docs": [
-            "Session key: fee payer and invoice-rent payer (refunded from the",
-            "budget's float in this same transaction). Never the buyer's wallet."
+            "Session key: fee payer and rent payer (refunded from the budget's float",
+            "in this same transaction). Never the buyer's wallet."
           ],
           "writable": true,
           "signer": true
@@ -715,7 +607,11 @@
           "name": "mint"
         },
         {
-          "name": "seller"
+          "name": "seller",
+          "docs": [
+            "of the invoice account's close."
+          ],
+          "writable": true
         },
         {
           "name": "seller_token_account",
@@ -850,6 +746,38 @@
           }
         },
         {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116,
+                  45,
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment"
+              }
+            ]
+          }
+        },
+        {
           "name": "reference"
         },
         {
@@ -903,13 +831,17 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for the invoice account (rent) and the transfer itself."
+            "Pays for the invoice account, the receipt, and the transfer itself."
           ],
           "writable": true,
           "signer": true
         },
         {
           "name": "payment",
+          "docs": [
+            "Short-lived: created, settled and closed in this one transaction. Its",
+            "rent goes back to the seller, who fronts no signature for it."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -946,6 +878,42 @@
             "account allowed to receive the lamports."
           ],
           "writable": true
+        },
+        {
+          "name": "receipt",
+          "docs": [
+            "The permanent record. `settled_at != 0` means this invoice is done, so",
+            "the same invoice can never be settled twice."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116,
+                  45,
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment"
+              }
+            ]
+          }
         },
         {
           "name": "reference",
@@ -994,8 +962,8 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the invoice rent, the seller's token account rent if it does not",
-            "exist yet, and the fee. The tokens themselves come out of",
+            "Pays the invoice rent, the receipt rent, and the seller's token account",
+            "rent if it does not exist yet. The tokens themselves come out of",
             "`payer_token_account`."
           ],
           "writable": true,
@@ -1046,8 +1014,10 @@
         {
           "name": "seller",
           "docs": [
-            "through its own associated token account, checked below."
-          ]
+            "through its own associated token account, checked below, and it is the",
+            "destination of the invoice account's close at the end."
+          ],
+          "writable": true
         },
         {
           "name": "seller_token_account",
@@ -1151,6 +1121,38 @@
           "name": "mint"
         },
         {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116,
+                  45,
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payment"
+              }
+            ]
+          }
+        },
+        {
           "name": "reference",
           "docs": [
             "and an address watchers can look up."
@@ -1209,6 +1211,19 @@
       ]
     },
     {
+      "name": "PaymentReceipt",
+      "discriminator": [
+        168,
+        198,
+        209,
+        4,
+        60,
+        235,
+        126,
+        109
+      ]
+    },
+    {
       "name": "TokenBudget",
       "discriminator": [
         123,
@@ -1253,36 +1268,31 @@
     },
     {
       "code": 6003,
-      "name": "SellerMismatch",
-      "msg": "The seller account does not match the payment record"
+      "name": "InvoiceTooSmall",
+      "msg": "This amount cannot cover the invoice account's rent"
     },
     {
       "code": 6004,
-      "name": "NotPending",
-      "msg": "The payment is not in the expected state"
-    },
-    {
-      "code": 6005,
       "name": "InvalidSeller",
       "msg": "The seller address is not valid"
     },
     {
-      "code": 6006,
+      "code": 6005,
       "name": "BudgetExhausted",
       "msg": "The monthly spending limit has been reached"
     },
     {
-      "code": 6007,
+      "code": 6006,
       "name": "InsufficientBudget",
       "msg": "The budget does not hold enough SOL for this payment"
     },
     {
-      "code": 6008,
+      "code": 6007,
       "name": "InvalidSessionKey",
       "msg": "The session key is not the one registered for this budget"
     },
     {
-      "code": 6009,
+      "code": 6008,
       "name": "MintMismatch",
       "msg": "The token does not match this budget"
     }
@@ -1348,9 +1358,6 @@
         "fields": [
           {
             "name": "seller",
-            "docs": [
-              "Who is being paid."
-            ],
             "type": "pubkey"
           },
           {
@@ -1395,6 +1402,86 @@
           },
           {
             "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentReceipt",
+      "docs": [
+        "The permanent record of a settled invoice — SOL or token.",
+        "",
+        "The temporary `Payment`/`TokenPayment` account is created, settled and",
+        "closed inside one transaction; this receipt is what survives. Its address is",
+        "derived from the invoice address (`[\"payment-receipt\", invoice]`), and",
+        "`settled_at` doubles as the replay guard: a second settlement of the same",
+        "invoice finds a receipt with `settled_at != 0`.",
+        "",
+        "One type for both currencies, with the mint carrying the difference",
+        "(`Pubkey::default()` for SOL): a watcher holding only an invoice address can",
+        "then find its receipt with one derivation instead of guessing whether the",
+        "invoice was priced in SOL or a token."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "invoice",
+            "docs": [
+              "The invoice PDA this receipt belongs to, so a program-wide scan can name",
+              "the invoice without re-deriving it."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "reference",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "`Pubkey::default()` for a SOL invoice."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "memo",
+            "type": "string"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Wallet or session key that signed the settlement."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "closed_at",
+            "docs": [
+              "Equal to `settled_at`: the invoice account closes in the settle",
+              "transaction, so the record is complete the moment it is written."
+            ],
             "type": "i64"
           },
           {
@@ -1488,9 +1575,6 @@
         "fields": [
           {
             "name": "seller",
-            "docs": [
-              "Who is being paid."
-            ],
             "type": "pubkey"
           },
           {

@@ -2,7 +2,7 @@
 
 ## Status
 
-In Progress — revision 2 (2026-11-12); Phase 0 implemented 2026-11-13.
+In Progress — revision 3 (2026-11-13); Phase 0 and Phase 1 implemented 2026-11-13.
 
 ## Revision Notes
 
@@ -25,6 +25,15 @@ Changes from revision 1:
 | Regression tests land with the fix that makes them pass | Rev 1 asked for red tests in Phase 0 and added the CI job in Phase 0, leaving `main` red |
 | Receipt layout test added | Prevents an under-allocated receipt from being discovered in production |
 | Deploy order adds a pre-upgrade cleanup of old payment accounts | Old settled accounts would collide with the new `init` and make their invoices unpayable |
+
+Changes from revision 2, made while implementing Phase 1:
+
+| Change | Reason |
+| --- | --- |
+| One `PaymentReceipt` for SOL and token invoices, seeded `[PAYMENT_RECEIPT_SEED, invoice]`, space 301, storing `invoice` and `mint` | Rev 2 seeded receipts from `seller`/`reference`/`amount` (and mint), but the API and any watcher only ever hold the invoice address and cannot recover those seeds. Keying by the invoice keeps every lookup one derivation; one type keeps it one decoder. `invoice` lets a program-wide scan name the invoice, `mint` keeps the record self-describing (`Pubkey::default()` for SOL) |
+| The invoice account closes via `AccountsClose::close` in the handler, not `close = seller` | Anchor 1.2 rejects `mut` alongside `init` and requires `mut` for `close`, so `init` + `close` cannot be expressed as a constraint on the same account |
+| `pay_from_token_budget` refunds the receipt rent with the invoice rent | Otherwise every silent token payment drains the session key's float until it can no longer pay network fees |
+| An address with no receipt and no invoice account reads as `pending`; a cluster failure is an error | The receipt is the record, so an unpaid invoice (which has no account) is pending, not missing. A hiccup must not be reported as a status the seller might act on |
 
 ## Linked Docs
 
@@ -294,18 +303,19 @@ attack surface instead of adding a check to dead code.
 
 Acceptance criteria:
 
-- [ ] Neither instruction exists in `lib.rs`, `sol.rs`, or `token.rs`.
-- [ ] Both account contexts and their constraints are deleted.
-- [ ] `SellerMismatch` / `NotPending` are removed if nothing else uses them.
-- [ ] No client, API, or IDL code references either instruction.
-- [ ] The program builds and the existing tests pass.
+- [x] Neither instruction exists in `lib.rs`, `sol.rs`, or `token.rs`.
+- [x] Both account contexts and their constraints are deleted.
+- [x] `SellerMismatch` / `NotPending` are removed if nothing else uses them.
+- [x] No client, API, or IDL code references either instruction.
+- [x] The program builds and the existing tests pass.
 
 Verification:
 
-- [ ] `cargo check -p payvand`
-- [ ] `grep -R "close_payment\|close_token_payment" apps/contracts apps/api apps/web`
+- [x] `cargo check -p payvand`
+- [x] `grep -R "close_payment\|close_token_payment" apps/contracts apps/api apps/web`
       returns no matches.
-- [ ] Anchor test: the IDL has no close instruction.
+- [x] Regenerated IDL (`apps/contracts/target/idl/payvand.json`) has no close
+      instruction, and the copy in `apps/web/app/assets/` matches it.
 
 Files likely touched:
 
@@ -336,41 +346,47 @@ runs at all, because `init` fails first with a system error. A named
 `init_if_needed` and the handler inspects its state, so that is what this task
 specifies — for the receipt only, never for the payment account.
 
-New accounts (`state.rs`):
+New account (`state.rs`):
 
-- `PaymentReceipt { seller, reference, amount, memo, payer, created_at,
-  settled_at, closed_at, bump }`.
-- `TokenPaymentReceipt { seller, reference, mint, amount, memo, payer,
-  created_at, settled_at, closed_at, bump }`.
+- `PaymentReceipt { invoice, seller, reference, mint, amount, memo, payer,
+  created_at, settled_at, closed_at, bump }`, one type for both currencies.
+  `mint` is `Pubkey::default()` for a SOL invoice; `invoice` is the invoice
+  PDA, so a scan can name the invoice without re-deriving it.
 
-New seeds and spaces (`constants.rs`):
+New seed and space (`constants.rs`):
 
 - `PAYMENT_RECEIPT_SEED = b"payment-receipt"`, PDA
-  `[PAYMENT_RECEIPT_SEED, seller, reference, amount]`.
-- `TOKEN_PAYMENT_RECEIPT_SEED = b"token-payment-receipt"`, PDA
-  `[TOKEN_PAYMENT_RECEIPT_SEED, seller, reference, mint, amount]`.
-- `PAYMENT_RECEIPT_SPACE = 237`, `TOKEN_PAYMENT_RECEIPT_SPACE = 269`
-  (`8 + 32 + 32 + 8 + 4 + 96 + 32 + 8 + 8 + 8 + 1`, plus `32` for the mint).
+  `[PAYMENT_RECEIPT_SEED, invoice]`.
+- `PAYMENT_RECEIPT_SPACE = 301`
+  (`8 + 32 (invoice) + 32 (seller) + 32 (reference) + 32 (mint) + 8 (amount) +
+  4 + 96 (memo) + 32 (payer) + 8 + 8 + 8 (timestamps) + 1 (bump)`), about
+  2,985,840 lamports of rent at the current rate.
 
 Settlement changes, for all four paths (`settle_payment`,
 `pay_from_budget`, `settle_token_payment`, `pay_from_token_budget`):
 
-1. Create the payment account with `init` (never `init_if_needed`): it exists
-   only inside the settle transaction, so a repeat settle cannot recreate it.
+1. Create the payment account with `init` (never `init_if_needed`). `init`
+   still succeeds after a close, because the address is empty again — it fails
+   only when a leftover account occupies it (an old-program invoice before the
+   pre-upgrade cleanup) — so the receipt, not this `init`, is the replay guard.
 2. Load the receipt with `init_if_needed`, `payer = payer`, the receipt seeds,
    and the receipt space. `init_if_needed` is required only to make the named
    error reachable (see above); it is safe because the receipt is a
    program-owned PDA that nothing but settle can create, and because
    `settled_at` is written in the same instruction that creates it — so
    "receipt exists" always means "receipt settled".
-3. Add `close = seller` to the payment account so its rent returns in the same
-   transaction. Anchor closes it last.
+3. Close the payment account to the seller at the end of the handler with
+   `AccountsClose::close` (Anchor 1.2 forbids `init` together with `mut`, and
+   `close` requires `mut`, so the constraint form is unavailable). Its rent
+   returns in the same transaction, and Anchor skips re-serialising a closed
+   account.
 4. As the first handler statement, `require!(receipt.settled_at == 0,
    PaymentError::AlreadySettled)` (finding 23), then set `settled_at`. On a
    first settle the field is zero because `init_if_needed` wrote the default;
    on a replay it is non-zero and the instruction fails with the named error.
-   Keep the payment account's `init` as the structural backstop: even if the
-   receipt check were removed, the payment `init` still prevents a replay.
+   The payment account's `init` is not a backstop: closing empties the address,
+   so a replay can recreate it. The receipt's `settled_at` is the only replay
+   guard, and Task 1.5 tests it.
    Document the one gap: if a third party pre-funds an empty receipt PDA with
    lamports, `init_if_needed` fails deserialization instead of returning
    `AlreadySettled`; the invoice remains unpaid and the error is not
@@ -390,35 +406,39 @@ Settlement changes, for all four paths (`settle_payment`,
 
 Acceptance criteria:
 
-- [ ] Both receipt types exist with the fields above.
-- [ ] Receipt seeds are shared by the program and the client.
-- [ ] Only the receipt uses `init_if_needed`; the payment account uses `init`.
-- [ ] `AlreadySettled` is the first check in each settle handler and reads
-      `receipt.settled_at`, not lamports.
-- [ ] A first settle creates exactly one receipt and closes the payment
+- [x] The receipt type exists with the fields above.
+- [x] Receipt seeds are shared by the program, the API (`receipt_pda`) and the
+      client (`derivePaymentReceiptPda`).
+- [x] Only the receipt uses `init_if_needed`; the payment account uses `init`.
+- [x] Each settle handler checks `receipt.settled_at == 0` before writing any
+      state or moving any lamports, and reports `AlreadySettled` by name (it
+      runs after the cheap argument checks, before the first transfer).
+- [x] A first settle creates exactly one receipt and closes the payment
       account in the same transaction.
-- [ ] The seller receives the payment account's rent in that transaction, with
+- [x] The seller receives the payment account's rent in that transaction, with
       no separate seller transaction.
-- [ ] A second settle fails with `AlreadySettled`.
-- [ ] An invoice whose amount is at or below the payment rent fails with
+- [x] A second settle fails with `AlreadySettled`.
+- [x] An invoice whose amount is at or below the payment rent fails with
       `InvoiceTooSmall` instead of panicking.
-- [ ] The receipt is readable afterwards and preserves memo, `created_at`, and
+- [x] The receipt is readable afterwards and preserves memo, `created_at`, and
       `settled_at`.
-- [ ] No close or reclaim instruction exists anywhere.
+- [x] No close or reclaim instruction exists anywhere.
 
 Verification:
 
-- [ ] Anchor test: direct SOL settle → payment account gone, receipt exists,
-      seller balance increased by the payment-account rent.
-- [ ] Anchor test: budget SOL settle → same, and the pot paid exactly the
-      invoice amount plus the rents it advanced.
-- [ ] Anchor test: settle twice → the second call fails with
-      `AlreadySettled` (assert the error code, not a raw system error).
-- [ ] Anchor test: the receipt created by a first settle has `settled_at > 0`
+- [x] Contract test: direct SOL settle → payment account gone, receipt exists,
+      seller received the full amount (transfer plus the invoice rent).
+- [x] Contract test: budget SOL settle → same, and the pot paid exactly the
+      invoice amount plus the receipt rent while the invoice rent came back
+      through the close.
+- [x] Contract test: settle twice → the second call fails with
+      `AlreadySettled` (`Custom(6002)`, asserted by code).
+- [x] Contract test: the receipt created by a first settle has `settled_at > 0`
       and `closed_at == settled_at`.
-- [ ] Anchor test: `amount == payment_rent` and `amount == payment_rent + 1` →
+- [x] Contract test: `amount == payment_rent` and `amount == payment_rent + 1` →
       `InvoiceTooSmall` and success respectively.
-- [ ] `anchor test` and `cargo check -p payvand` pass.
+- [x] `task test:contracts` and `task anchor:test` pass (7 tests), and
+      `cargo check -p payvand` is clean.
 
 Files likely touched:
 
@@ -456,28 +476,38 @@ Semantics:
 
 Acceptance criteria:
 
-- [ ] The IDL includes both receipt types and the settle instructions list the
+- [x] The IDL includes the receipt type and the settle instructions list the
       receipt accounts.
-- [ ] The API returns `pending` for a valid, unpaid invoice and `settled` when
+- [x] The API returns `pending` for a valid, unpaid invoice and `settled` when
       a receipt exists, even though the payment account is gone.
-- [ ] `missing` is returned only for invalid parameters, and the API has a test
-      that proves an unpaid valid invoice is not `missing`.
-- [ ] The API serializes statuses as lowercase snake_case and has no `Closed`
+- [x] The API never invents `missing`: invalid input is a rejected request, and
+      a cluster that does not answer is an error. A test proves an unpaid valid
+      invoice is `pending`.
+- [x] The API serializes statuses as lowercase snake_case and has no `Closed`
       variant and no close decoder.
-- [ ] The web `PaymentStatus` type is exactly `'pending' | 'settled' |
-      'missing'`, and the status label handles each one.
+- [x] The web `PaymentStatus` type is exactly `'pending' | 'settled' |
+      'missing'`, and `statusLabel` renders the awaiting-payment label for both
+      non-settled variants.
 - [ ] The buyer checkout refuses a non-pending invoice; the seller history
-      renders a settled invoice from the receipt.
+      renders a settled invoice from the receipt. (Auto-pay already skips
+      `settled`, and the program rejects a manual replay with
+      `AlreadySettled`; the UI does not pre-block it, because a stale read could
+      hide a legitimately unpaid invoice.)
 - [ ] The receipt rent disclosed at checkout matches what Task 1.2 charges.
+      **Not done:** the checkout does not yet mention the receipt rent. `0002`
+      Task 1.2 moves that rent to the treasury and removes the need to disclose
+      it, so this is deliberately left open rather than shipped twice.
 
 Verification:
 
-- [ ] API unit tests: pending (absent receipt), settled (present receipt),
-      missing (invalid params) for both account types.
-- [ ] API test: a valid invoice with no account is `pending`, not `missing`.
-- [ ] Web typecheck passes.
+- [x] API unit tests: pending (absent receipt), settled (present receipt, SOL
+      and token), and a receipt taking precedence over a leftover invoice
+      account.
+- [x] API test: a valid invoice with no account is `pending`, not `missing`.
+- [x] Web typecheck and lint pass.
 - [ ] Localnet invoice settled end-to-end; the API reports `settled` with the
-      receipt visible after the payment account is gone.
+      receipt visible after the payment account is gone. **Not run:** no local
+      validator or devnet round trip was made in this phase.
 
 Files likely touched:
 
@@ -501,15 +531,16 @@ hand-written constants here; `0002` converts `Config` and the budgets to
 
 Acceptance criteria:
 
-- [ ] A `cargo test` asserts `Payment`, `TokenPayment`, `PaymentReceipt`,
-      `TokenPaymentReceipt` serialized sizes match their space constants.
-- [ ] Adding a field without updating the constant makes the test fail.
-- [ ] Account creation still succeeds on chain.
+- [x] A `cargo test` asserts `Payment`, `TokenPayment`, `PaymentReceipt` (and
+      `Budget`) serialized sizes match their space constants.
+- [x] Adding a field without updating the constant makes the test fail.
+- [x] Account creation still succeeds on chain (the settle tests create both
+      account kinds).
 
 Verification:
 
-- [ ] `cargo test -p payvand`
-- [ ] `anchor test`
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml`
+- [x] `task anchor:test`
 
 Files likely touched:
 
@@ -527,21 +558,25 @@ program.
 
 Acceptance criteria:
 
-- [ ] Direct SOL settle creates the receipt, closes the payment account, and
+- [x] Direct SOL settle creates the receipt, closes the payment account, and
       returns its rent to the seller in one transaction.
-- [ ] Budget SOL settle does the same, and the pot paid exactly the invoice
-      amount plus the rents it advanced.
-- [ ] A second settle fails with `AlreadySettled`.
-- [ ] The removed close instructions are absent from the IDL.
-- [ ] The receipt preserves memo, `created_at`, and `settled_at` after the
+- [x] Budget SOL settle does the same, and the pot paid exactly the invoice
+      amount plus the receipt rent it advanced.
+- [x] A second settle fails with `AlreadySettled`.
+- [x] The removed close instructions are absent from the IDL.
+- [x] The receipt preserves memo, `created_at`, and `settled_at` after the
       payment account is gone.
-- [ ] `InvoiceTooSmall` boundary is covered.
-- [ ] Direct SOL: the payer's net delta is exactly `amount + receipt_rent` plus
+- [x] `InvoiceTooSmall` boundary is covered.
+- [x] Direct SOL: the payer's net delta is exactly `amount + receipt_rent` plus
       the network fee (the assertion `0002` changes).
+- [ ] Token paths have the same regression coverage. **Not done:** the harness
+      has no SPL mint or token accounts yet, so `settle_token_payment` and
+      `pay_from_token_budget` are covered only by the shared receipt/layout
+      code, not by a settle test.
 
 Verification:
 
-- [ ] `cd apps/contracts && anchor test`
+- [x] `task test:contracts` (and `task anchor:test`) — 7 tests pass
 - [ ] CI contract job is green.
 
 Files likely touched:
@@ -686,10 +721,11 @@ Estimated scope: Small.
 
 - [ ] **Checkpoint 0:** `anchor test` runs and is green, the CI job exists,
       Anchor versions are pinned and agree.
-- [ ] **Checkpoint 1:** Close instructions are gone; a settle creates a receipt
+- [x] **Checkpoint 1:** Close instructions are gone; a settle creates a receipt
       and closes the payment account atomically; a replay fails with
       `AlreadySettled`; small amounts fail with `InvoiceTooSmall`; layouts are
-      asserted; API and web report `pending`/`settled`/`missing` correctly.
+      asserted; API and web report `pending`/`settled` correctly (localnet
+      end-to-end and the checkout rent disclosure remain open).
 - [ ] **Checkpoint 2:** `task verify`, `anchor test`, and the devnet smoke tests
       pass on an upgraded program with an unchanged ID; the plan is archived and
       `0002` records its starting state.
@@ -700,9 +736,9 @@ Estimated scope: Small.
 | --- | --- | --- |
 | API and web deploy after the program, leaving `settled` unreadable | High | Deploy API before web, in the same window; API tests cover receipt-backed status. |
 | Old devnet payment accounts block `init` for their invoices | Medium | Pre-upgrade cleanup step closes them with the current instructions, or they are recorded as unpayable. |
-| The receipt rent disclosure is easy to miss and the payer pays more than the QR showed | Medium | Show it at checkout, in the settle event payload, and in the seller-facing note; `0002` removes the charge entirely. |
+| The receipt rent disclosure is easy to miss and the payer pays more than the QR showed | Medium | **Open:** the checkout does not yet disclose it; `0002` Task 1.2 removes the charge by paying the receipt rent from the treasury, so it is disclosed there instead of built twice. Until then a direct SOL payer pays `amount + 2,985,840` lamports. |
 | Invoices at or below the payment-account rent (~0.00249 SOL) are unpayable in this release | Medium | `InvoiceTooSmall` fails cleanly instead of panicking; the create-payment page blocks amounts below the minimum; `0002` keeps the same minimum once the fee is added. |
-| Someone pre-funds an empty receipt PDA, so a replay reports a deserialization error instead of `AlreadySettled` | Low | The guard reads state, not lamports, so a replay never reports success; the payment account's `init` remains the structural backstop. Documented as a known error-code edge, not a settlement path. |
+| Someone pre-funds an empty receipt PDA, so a replay reports a deserialization error instead of `AlreadySettled` | Low | The guard reads state, not lamports, so a replay never reports success; `init` is not a backstop, because closing the invoice empties its address. Documented as a known error-code edge, not a settlement path. |
 | A later field addition under-allocates the receipt | Medium | Task 1.4 layout test fails before deployment. |
 | Someone reinstates a "reclaim" instruction to recover receipt rent | Medium | The plan and README state the model; receipts are permanent by design, and `0002` pays their rent from the treasury. |
 
@@ -728,7 +764,9 @@ Estimated scope: Small.
       settled invoice's rent.
 - [ ] **2 (High):** A settled invoice cannot be replayed; the receipt guard
       returns `AlreadySettled`, and the payment account's `init` is the
-      structural backstop.
+      structural backstop. (As built: `init` is *not* a backstop — closing the
+      invoice empties its address — so the receipt guard is the only defence and
+      Task 1.5 tests it.)
 - [ ] **10 (Medium):** Contract tests exist and CI builds/tests the program.
 - [ ] **11 (Medium):** Anchor CLI and runtime versions are pinned and equal.
 - [ ] **13 (Low):** The `state == Settled` close check is moot; the handler is

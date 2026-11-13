@@ -10,10 +10,8 @@ pub enum PaymentError {
     MemoTooLong,
     #[msg("This payment has already been settled")]
     AlreadySettled,
-    #[msg("The seller account does not match the payment record")]
-    SellerMismatch,
-    #[msg("The payment is not in the expected state")]
-    NotPending,
+    #[msg("This amount cannot cover the invoice account's rent")]
+    InvoiceTooSmall,
     #[msg("The seller address is not valid")]
     InvalidSeller,
     #[msg("The monthly spending limit has been reached")]

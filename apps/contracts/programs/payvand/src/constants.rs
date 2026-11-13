@@ -5,6 +5,21 @@ pub const PAYMENT_SEED: &[u8] = b"payment";
 /// Maximum number of bytes stored in `Payment::memo`.
 pub const PAYMENT_MAX_MEMO: usize = 96;
 
+/// Seed prefix for the permanent receipt of a settled invoice.
+///
+/// The receipt is keyed by the invoice address itself, not by
+/// `seller`/`reference`/`amount` or the mint: the API, a watcher and an
+/// explorer all hold the invoice address from the QR code, and none of them can
+/// recover the seeds from it. One receipt type for SOL and token invoices alike
+/// keeps that lookup a single derivation, and the receipt stores the mint
+/// (`Pubkey::default()` for SOL) so the record stays self-describing.
+pub const PAYMENT_RECEIPT_SEED: &[u8] = b"payment-receipt";
+/// `8` (discriminator) + `32 (invoice) + 32 (seller) + 32 (reference) + 32
+/// (mint) + 8 (amount) + 4 + 96 (memo) + 32 (payer) + 8 (created_at) + 8
+/// (settled_at) + 8 (closed_at) + 1 (bump)`.
+pub const PAYMENT_RECEIPT_SPACE: usize =
+    8 + 32 + 32 + 32 + 32 + 8 + 4 + PAYMENT_MAX_MEMO + 32 + 8 + 8 + 8 + 1;
+
 /// Seed prefix for the buyer's monthly budget PDA.
 pub const BUDGET_SEED: &[u8] = b"budget";
 /// `8` (discriminator) + `32 + 32 + 8 + 8 + 8 + 1` (buyer, session key,

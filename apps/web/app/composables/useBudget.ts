@@ -16,6 +16,7 @@ import {
   PAYVAND_PROGRAM_ID,
   buildInstruction,
   deriveAssociatedTokenAddress,
+  derivePaymentReceiptPda,
   describeProgramErrorCode
 } from './usePaymentProgram'
 import type { compileWireTransaction } from './usePaymentProgram'
@@ -29,6 +30,12 @@ const TOKEN_BUDGET_SEED = new TextEncoder().encode('token-budget')
 const BUDGET_SPACE = 97
 /** Mirrors `PAYMENT_SPACE` in the program: 8 + 32 + 32 + 8 + 4 + 96 + 1 + 32 + 8 + 8 + 1. */
 const PAYMENT_SPACE = 230
+/**
+ * Mirrors `PAYMENT_RECEIPT_SPACE`: 8 + 32 (invoice) + 32 (seller) + 32
+ * (reference) + 32 (mint) + 8 (amount) + 4 + 96 (memo) + 32 (payer) + 8 + 8 +
+ * 8 (timestamps) + 1 (bump).
+ */
+const PAYMENT_RECEIPT_SPACE = 301
 /**
  * Mirrors `SESSION_FEE_FLOAT` in the program — lamports parked on the
  * session key so its silent transactions can pay their own fees.
@@ -260,7 +267,9 @@ export function useBudget() {
     if (amount > remainingThisMonth(budget)) {
       return appT('errors.limitUsedUp')
     }
-    const needed = amount + (await rentMinimum(PAYMENT_SPACE))
+    // The pot advances the invoice rent and the receipt rent, both of which it
+    // takes back in the settle transaction.
+    const needed = amount + (await rentMinimum(PAYMENT_SPACE)) + (await rentMinimum(PAYMENT_RECEIPT_SPACE))
     if ((await availablePot(budget)) < needed) {
       return appT('errors.nearlyEmpty')
     }
@@ -294,6 +303,7 @@ export function useBudget() {
         budget: await deriveBudgetPda(buyer),
         payment: params.payment,
         seller: params.seller,
+        receipt: await derivePaymentReceiptPda(params.payment),
         reference: params.reference
       }
     )
@@ -435,6 +445,7 @@ export function useBudget() {
         seller: params.seller,
         seller_token_account: await deriveAssociatedTokenAddress(params.seller, params.mint),
         payment: params.payment,
+        receipt: await derivePaymentReceiptPda(params.payment),
         reference: params.reference
       }
     )

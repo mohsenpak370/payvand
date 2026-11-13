@@ -36,6 +36,15 @@ pub const PAYMENT_SEED: &[u8] = b"payment";
 /// Seed prefix for token invoices. A different prefix, and the mint is one of
 /// its seeds, so a USDC invoice and a SOL invoice never share an address.
 pub const TOKEN_PAYMENT_SEED: &[u8] = b"token-payment";
+/// Seed prefix for a settled invoice's permanent receipt. Keyed by the invoice
+/// address, so the record is reachable from the address in the QR code alone —
+/// which is all a watcher ever holds once the invoice account is closed.
+pub const PAYMENT_RECEIPT_SEED: &[u8] = b"payment-receipt";
+
+/// `["payment-receipt", invoice]`, mirroring the Anchor program.
+pub fn receipt_pda(program: &Pubkey, invoice: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[PAYMENT_RECEIPT_SEED, invoice.as_ref()], program).0
+}
 
 /// SOL has nine decimals; the stablecoins the app takes have six.
 pub const SOL_DECIMALS: u8 = 9;
@@ -384,7 +393,8 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
 
     Ok(PaymentRecord {
         id: id.clone(),
-        status: PaymentStatus::Missing,
+        // Nothing is on chain yet: a freshly created invoice is unpaid.
+        status: PaymentStatus::Pending,
         payment_pda: id,
         seller: request.seller,
         seller_user: None,
@@ -575,22 +585,63 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
     let cluster = query.cluster.clone().unwrap_or_else(default_cluster);
     let endpoint = resolve_endpoint(query.endpoint.as_deref(), &cluster)?;
 
+    let program = program_id()?;
+    let receipt_address = receipt_pda(&program, &pubkey);
+
+    // The invoice and its receipt are two different addresses, and only one of
+    // them exists at a time, so ask for both in one round trip.
     let rpc = RpcClient::new(endpoint.clone());
-    let account = match rpc.get_account(&pubkey).await {
-        Ok(account) => account,
+    let accounts = match rpc.get_multiple_accounts(&[pubkey, receipt_address]).await {
+        Ok(accounts) => accounts,
         Err(error) => {
             tracing::info!(%payment_pda, %error, "payment account not readable");
-            return Ok(empty_record(pubkey, cluster, endpoint));
+            // A cluster hiccup is not "unpaid": say so instead of inventing a
+            // status, so the caller can retry and keep its last known state.
+            return Err(ApiError::Internal(
+                "The cluster did not answer. Try again.".into(),
+            ));
         }
     };
+    let invoice_data = accounts
+        .first()
+        .and_then(|account| account.as_ref())
+        .map(|account| account.data.as_slice());
+    let receipt_data = accounts
+        .get(1)
+        .and_then(|account| account.as_ref())
+        .map(|account| account.data.as_slice());
 
-    let Some(record) = record_for(pubkey, &account.data, cluster, endpoint) else {
-        return Err(bad(format!(
-            "{payment_pda} is not a payvand payment account"
-        )));
-    };
+    if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
+        return Ok(receipt_record(receipt, cluster, endpoint));
+    }
 
-    Ok(record)
+    match invoice_data.and_then(|data| record_for(pubkey, data, cluster.clone(), endpoint.clone()))
+    {
+        Some(record) => Ok(record),
+        // No receipt and no invoice account: the QR is simply unpaid. That is
+        // the normal state of an invoice nobody has scanned yet.
+        None => Ok(pending_record(pubkey, cluster, endpoint)),
+    }
+}
+
+/// The best record for one invoice address: its receipt if it was settled, the
+/// invoice account itself if it still exists, and otherwise the placeholder a
+/// watcher reads as "not paid yet".
+fn record_for_invoice(
+    invoice: Pubkey,
+    invoice_data: Option<&[u8]>,
+    receipt_data: Option<&[u8]>,
+    cluster: String,
+    endpoint: String,
+) -> PaymentRecord {
+    if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
+        return receipt_record(receipt, cluster, endpoint);
+    }
+    match invoice_data.and_then(|data| record_for(invoice, data, cluster.clone(), endpoint.clone()))
+    {
+        Some(record) => record,
+        None => pending_record(invoice, cluster, endpoint),
+    }
 }
 
 /// The record for whatever kind of invoice lives at an address — SOL or token.
@@ -608,12 +659,16 @@ fn record_for(
         .map(|payment| token_record_from_chain(pubkey, payment, cluster, endpoint))
 }
 
-/// Placeholder returned while no payment account is readable for an address —
+/// Placeholder returned for an address with no receipt and no invoice account —
 /// to every watcher it is an invoice that has not been paid yet.
-fn empty_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRecord {
+///
+/// `Missing` is deliberately not used here: an address that derives an invoice
+/// is a real invoice, whether or not anyone has paid it. Invalid input is a
+/// rejected request, not a status.
+fn pending_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentRecord {
     PaymentRecord {
         id: pubkey.to_string(),
-        status: PaymentStatus::Missing,
+        status: PaymentStatus::Pending,
         payment_pda: pubkey.to_string(),
         seller: String::new(),
         seller_user: None,
@@ -685,11 +740,16 @@ pub struct WatchRequest {
 /// ever watches the invoice plus one address per discount code.
 pub const MAX_WATCH_PDAS: usize = 64;
 
+/// Accounts one `getMultipleAccounts` request may name, a JSON-RPC limit. Each
+/// watched invoice consumes two keys (invoice and receipt), so the watch read
+/// batches at half of this.
+const MAX_ACCOUNTS_PER_RPC: usize = 100;
+
 /// Reads many payment accounts in a single RPC round trip so the seller's
 /// screen can watch the invoice address and every discounted variant at once.
-/// Addresses that are absent or unreadable come back as `Missing`, matching
-/// `fetch_payment`'s tolerance: a cluster hiccup must not blank the seller's
-/// screen.
+/// Addresses with no receipt and no invoice account come back as `Pending`,
+/// the normal state of a QR nobody has paid yet. A cluster that does not answer
+/// is an error, not a status, so the seller's screen keeps its last known one.
 pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> {
     if request.pdas.is_empty() {
         return Ok(Vec::new());
@@ -708,30 +768,49 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
         .map(|pda| parse_pubkey(pda, "pdas"))
         .collect::<ApiResult<Vec<_>>>()?;
 
+    let program = program_id()?;
     let rpc = RpcClient::new(endpoint.clone());
-    let accounts = match rpc.get_multiple_accounts(&pubkeys).await {
-        Ok(accounts) => accounts,
-        Err(error) => {
-            tracing::info!(%error, "payment accounts not readable");
-            return Ok(pubkeys
-                .iter()
-                .map(|pubkey| empty_record(*pubkey, cluster.clone(), endpoint.clone()))
-                .collect());
-        }
-    };
+    let mut records = Vec::with_capacity(pubkeys.len());
 
-    Ok(pubkeys
-        .iter()
-        .zip(accounts)
-        .map(|(pubkey, account)| {
-            match account.and_then(|account| {
-                record_for(*pubkey, &account.data, cluster.clone(), endpoint.clone())
-            }) {
-                Some(record) => record,
-                None => empty_record(*pubkey, cluster.clone(), endpoint.clone()),
+    // Two accounts per invoice (the invoice and its receipt), and JSON-RPC caps
+    // one `getMultipleAccounts` call at 100 keys, so batch the addresses.
+    for batch in pubkeys.chunks(MAX_WATCH_PDAS.min(MAX_ACCOUNTS_PER_RPC / 2)) {
+        let mut keys = Vec::with_capacity(batch.len() * 2);
+        for invoice in batch {
+            keys.push(*invoice);
+            keys.push(receipt_pda(&program, invoice));
+        }
+
+        let accounts = match rpc.get_multiple_accounts(&keys).await {
+            Ok(accounts) => accounts,
+            Err(error) => {
+                tracing::info!(%error, "payment accounts not readable");
+                return Err(ApiError::Internal(
+                    "The cluster did not answer. Try again.".into(),
+                ));
             }
-        })
-        .collect())
+        };
+
+        for (index, invoice) in batch.iter().enumerate() {
+            let invoice_data = accounts
+                .get(index * 2)
+                .and_then(|account| account.as_ref())
+                .map(|account| account.data.as_slice());
+            let receipt_data = accounts
+                .get(index * 2 + 1)
+                .and_then(|account| account.as_ref())
+                .map(|account| account.data.as_slice());
+            records.push(record_for_invoice(
+                *invoice,
+                invoice_data,
+                receipt_data,
+                cluster.clone(),
+                endpoint.clone(),
+            ));
+        }
+    }
+
+    Ok(records)
 }
 
 /// `declare_id!` of the program in `apps/contracts/programs/payvand` —
@@ -788,6 +867,10 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     for (pubkey, account) in accounts {
         if let Some(record) = record_for(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
             payments.push(record);
+        } else if let Some(receipt) = decode_payment_receipt(&account.data) {
+            // A settled invoice only exists as its receipt; `receipt.invoice`
+            // is what the seller's screens and the admin feed address it by.
+            payments.push(receipt_record(receipt, cluster.clone(), endpoint.clone()));
         } else if let Some(budget) = decode_budget(&account.data) {
             budgets.push(budget);
         }
@@ -948,6 +1031,92 @@ fn decode_token_payment(data: &[u8]) -> Option<OnchainTokenPayment> {
         created_at: reader.i64()?,
         settled_at: reader.i64()?,
     })
+}
+
+struct OnchainReceipt {
+    invoice: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    /// `Pubkey::default()` for a SOL invoice.
+    mint: Pubkey,
+    amount: u64,
+    memo: String,
+    payer: Pubkey,
+    created_at: i64,
+    settled_at: i64,
+}
+
+/// Borsh layout of the `PaymentReceipt` account: discriminator, then invoice,
+/// seller, reference, mint, amount, memo, payer and the timestamps. `closed_at`
+/// and `bump` are on chain but not needed for a status record.
+fn decode_payment_receipt(data: &[u8]) -> Option<OnchainReceipt> {
+    let mut reader = Reader::new(data);
+
+    if reader.take(8)? != discriminator_for("PaymentReceipt") {
+        return None;
+    }
+
+    Some(OnchainReceipt {
+        invoice: reader.pubkey()?,
+        seller: reader.pubkey()?,
+        reference: reader.pubkey()?,
+        mint: reader.pubkey()?,
+        amount: reader.u64()?,
+        memo: reader.string()?,
+        payer: reader.pubkey()?,
+        created_at: reader.i64()?,
+        settled_at: reader.i64()?,
+    })
+}
+
+/// The record for a settled invoice, built from its receipt. The receipt
+/// outlives the invoice account, so this is what a watcher sees after payment.
+fn receipt_record(receipt: OnchainReceipt, cluster: String, endpoint: String) -> PaymentRecord {
+    let invoice = receipt.invoice.to_string();
+    let (currency, mint, decimals, amount_lamports) = if receipt.mint == Pubkey::default() {
+        (
+            SOL_CURRENCY.to_string(),
+            String::new(),
+            SOL_DECIMALS,
+            receipt.amount,
+        )
+    } else {
+        (
+            currency_for_mint(&receipt.mint, &cluster)
+                .unwrap_or("token")
+                .to_string(),
+            receipt.mint.to_string(),
+            STABLE_DECIMALS,
+            0,
+        )
+    };
+
+    PaymentRecord {
+        id: invoice.clone(),
+        status: PaymentStatus::Settled,
+        payment_pda: invoice.clone(),
+        seller: receipt.seller.to_string(),
+        seller_user: None,
+        reference: receipt.reference.to_string(),
+        amount_lamports,
+        options: vec![PaymentOption {
+            currency,
+            mint,
+            decimals,
+            amount: receipt.amount,
+            payment_pda: invoice,
+        }],
+        memo: receipt.memo,
+        name: String::new(),
+        description: String::new(),
+        items: Vec::new(),
+        discount: None,
+        cluster,
+        endpoint,
+        settled_by: (receipt.payer != Pubkey::default()).then(|| receipt.payer.to_string()),
+        created_at_unix: receipt.created_at,
+        settled_at_unix: receipt.settled_at,
+    }
 }
 
 fn token_record_from_chain(
@@ -1144,7 +1313,7 @@ mod tests {
     #[test]
     fn accepts_a_valid_request() {
         let record = create_payment(sample_request()).expect("valid request");
-        assert_eq!(record.status, PaymentStatus::Missing);
+        assert_eq!(record.status, PaymentStatus::Pending);
         assert_eq!(record.endpoint, "https://api.devnet.solana.com");
     }
 
@@ -1457,5 +1626,115 @@ mod tests {
 
         // A SOL invoice must not decode as a token invoice and vice versa.
         assert!(decode_payment(&data).is_none());
+    }
+
+    /// A receipt is the only record a settled invoice leaves behind, so the
+    /// status read has to decode it exactly as the program writes it.
+    fn receipt_data(invoice: Pubkey, mint: Pubkey, amount: u64, memo: &str) -> Vec<u8> {
+        let mut data = discriminator_for("PaymentReceipt").to_vec();
+        data.extend_from_slice(invoice.as_ref());
+        data.extend_from_slice(&[7u8; 32]); // seller
+        data.extend_from_slice(&[9u8; 32]); // reference
+        data.extend_from_slice(mint.as_ref());
+        data.extend_from_slice(&amount.to_le_bytes());
+        data.extend_from_slice(&(memo.len() as u32).to_le_bytes());
+        data.extend_from_slice(memo.as_bytes());
+        data.extend_from_slice(&[5u8; 32]); // payer
+        data.extend_from_slice(&100i64.to_le_bytes()); // created_at
+        data.extend_from_slice(&200i64.to_le_bytes()); // settled_at
+        data.extend_from_slice(&200i64.to_le_bytes()); // closed_at
+        data.push(255); // bump
+        data
+    }
+
+    #[test]
+    fn a_sol_receipt_reads_back_as_a_settled_invoice() {
+        let invoice = Pubkey::from([4u8; 32]);
+        let data = receipt_data(invoice, Pubkey::default(), 42, "tip");
+
+        let receipt = decode_payment_receipt(&data).expect("decodes");
+        assert_eq!(receipt.invoice, invoice);
+        assert_eq!(receipt.amount, 42);
+        assert_eq!(receipt.memo, "tip");
+        assert_eq!(receipt.settled_at, 200);
+
+        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
+        assert_eq!(record.status, PaymentStatus::Settled);
+        // The invoice address is the identity, not the receipt's own address.
+        assert_eq!(record.id, invoice.to_string());
+        assert_eq!(record.amount_lamports, 42);
+        assert_eq!(record.options[0].currency, "sol");
+        assert!(record.options[0].mint.is_empty());
+        assert_eq!(record.options[0].amount, 42);
+        assert_eq!(record.settled_at_unix, 200);
+        assert_eq!(record.settled_by, Some(Pubkey::from([5u8; 32]).to_string()));
+    }
+
+    #[test]
+    fn a_token_receipt_reads_back_in_its_mint() {
+        let invoice = Pubkey::from([4u8; 32]);
+        let usdc = mint_for("usdc", "devnet").expect("usdc on devnet");
+        let data = receipt_data(invoice, usdc, 5_000_000, "flat white");
+
+        let receipt = decode_payment_receipt(&data).expect("decodes");
+        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
+        assert_eq!(record.status, PaymentStatus::Settled);
+        assert_eq!(record.amount_lamports, 0);
+        assert_eq!(record.options[0].currency, "usdc");
+        assert_eq!(record.options[0].amount, 5_000_000);
+        assert_eq!(record.options[0].decimals, STABLE_DECIMALS);
+        assert_eq!(record.options[0].mint, usdc.to_string());
+    }
+
+    #[test]
+    fn an_unpaid_invoice_is_pending_not_missing() {
+        let invoice = Pubkey::from([4u8; 32]);
+        let record = record_for_invoice(
+            invoice,
+            None,
+            None,
+            "devnet".into(),
+            "https://example".into(),
+        );
+        assert_eq!(record.status, PaymentStatus::Pending);
+        assert_eq!(record.payment_pda, invoice.to_string());
+        assert_eq!(record.amount_lamports, 0);
+        assert!(record.settled_by.is_none());
+    }
+
+    #[test]
+    fn a_receipt_wins_over_a_leftover_invoice_account() {
+        let invoice = Pubkey::from([4u8; 32]);
+
+        // An old-program invoice account still sitting on chain, settled.
+        let mut stale = account_discriminator().to_vec();
+        stale.extend_from_slice(&[7u8; 32]); // seller
+        stale.extend_from_slice(&[9u8; 32]); // reference
+        stale.extend_from_slice(&42u64.to_le_bytes());
+        stale.extend_from_slice(&3u32.to_le_bytes());
+        stale.extend_from_slice(b"tip");
+        stale.push(0); // pending
+        stale.extend_from_slice(&[0u8; 32]); // payer
+        stale.extend_from_slice(&100i64.to_le_bytes());
+        stale.extend_from_slice(&0i64.to_le_bytes());
+
+        let record = record_for_invoice(
+            invoice,
+            Some(&stale),
+            Some(&receipt_data(invoice, Pubkey::default(), 42, "tip")),
+            "devnet".into(),
+            "https://example".into(),
+        );
+        assert_eq!(record.status, PaymentStatus::Settled);
+        assert_eq!(record.settled_at_unix, 200);
+    }
+
+    #[test]
+    fn refuses_to_read_a_receipt_out_of_a_foreign_account() {
+        assert!(decode_payment_receipt(&[0u8; 301]).is_none());
+        // An invoice account is not a receipt either.
+        let mut invoice = account_discriminator().to_vec();
+        invoice.extend_from_slice(&[0u8; 301]);
+        assert!(decode_payment_receipt(&invoice).is_none());
     }
 }
