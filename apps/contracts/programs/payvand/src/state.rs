@@ -121,3 +121,37 @@ pub enum PaymentState {
     Pending,
     Settled,
 }
+
+/// The program's singleton fee policy and treasury pointers.
+///
+/// Created once per deployment by the program's upgrade authority, which
+/// becomes `admin`. Settlements read it and never write it; only the admin can
+/// change the policy, and the fee destination is derived from a seed here
+/// rather than named by a caller, so no settlement can redirect it.
+#[account]
+#[derive(Debug)]
+pub struct Config {
+    /// The upgrade authority that initialized the config. It may change the
+    /// policy and withdraw treasury surplus, nothing else.
+    pub admin: Pubkey,
+    /// Seller-side fee in basis points (200 = 2%).
+    pub fee_bps: u16,
+    /// Flat lamport fee added on top of the proportional one.
+    pub fixed_fee_lamports: u64,
+    /// Who pays the fee.
+    pub fee_mode: FeeMode,
+    /// Lamports parked on a session key so its silent transactions can pay
+    /// their own network fees. Replaces the old hardcoded float.
+    pub session_fee_float: u64,
+    pub bump: u8,
+    pub treasury_bump: u8,
+    pub version: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeeMode {
+    /// The seller receives `amount - fee`; the payer pays the price only.
+    SellerPays,
+    /// The payer pays `amount + fee` and the seller receives `amount`.
+    BuyerPays,
+}

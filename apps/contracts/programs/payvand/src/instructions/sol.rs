@@ -11,8 +11,8 @@ use anchor_lang::{AccountsClose, Lamports};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
-use crate::helpers::current_month_index;
-use crate::state::{Budget, Payment, PaymentReceipt, PaymentState};
+use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
+use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -57,6 +57,15 @@ pub struct SettlePayment<'info> {
     /// used as a PDA seed and as an address that watchers can look up.
     pub reference: UncheckedAccount<'info>,
 
+    /// The fee policy. Read-only here: only the admin writes it.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    /// The fee destination, pinned by seed so the payer cannot name another
+    /// account. It also refunds the receipt rent the payer just advanced.
+    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -79,6 +88,10 @@ pub struct OpenBudget<'info> {
     /// the only key allowed to spend from the budget afterwards.
     #[account(mut)]
     pub session_key: UncheckedAccount<'info>,
+
+    /// Supplies the session float, so a policy change reaches every new budget.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
 
     pub system_program: Program<'info, System>,
 }
@@ -130,6 +143,14 @@ pub struct PayFromBudget<'info> {
     /// seed and an address watchers can look up.
     pub reference: UncheckedAccount<'info>,
 
+    /// The fee policy. Read-only here.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    /// The fee destination and the refund source, pinned by seed.
+    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -170,11 +191,27 @@ pub fn settle_payment_handler<'info, 'ctx>(
         PaymentError::AlreadySettled
     );
 
-    // The seller receives `amount - rent` now and the rent itself when the
-    // invoice account closes at the end of the instruction, so the subtraction
-    // below must not underflow.
+    // Seller-pays is the only mode this release settles: the payer pays the
+    // price, the seller absorbs the fee, and the treasury hands the receipt
+    // rent back so the payer is charged exactly what the QR showed.
+    let config = &ctx.accounts.config;
+    require!(
+        config.fee_mode == FeeMode::SellerPays,
+        PaymentError::FeeModeUnsupported
+    );
+
+    let fee = fee_for(config, amount)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
-    require!(amount > payment_rent, PaymentError::InvoiceTooSmall);
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    // The seller receives `amount - rent - fee` now, plus the rent when the
+    // invoice account closes, so this subtraction must not underflow.
+    require!(
+        amount > payment_rent.saturating_add(fee),
+        PaymentError::InvoiceTooSmall
+    );
+    // Checked before any transfer: a settlement must not start moving lamports
+    // it cannot finish refunding.
+    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), receipt_rent)?;
 
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -184,8 +221,21 @@ pub fn settle_payment_handler<'info, 'ctx>(
                 to: ctx.accounts.seller.to_account_info(),
             },
         ),
-        amount - payment_rent,
+        amount - payment_rent - fee,
     )?;
+
+    if fee > 0 {
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                anchor_lang::system_program::ID,
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to: ctx.accounts.treasury.to_account_info(),
+                },
+            ),
+            fee,
+        )?;
+    }
 
     let now = Clock::get()?.unix_timestamp;
     let payer = ctx.accounts.payer.key();
@@ -228,7 +278,22 @@ pub fn settle_payment_handler<'info, 'ctx>(
         .payment
         .close(ctx.accounts.seller.to_account_info())?;
 
-    msg!("payment settled: {} lamports from {}", amount, payer);
+    // The receipt is permanent, so the payer does not keep its rent: the
+    // treasury funds the record and pays the payer back in the same
+    // transaction.
+    pay_from_treasury(
+        &ctx.accounts.treasury.to_account_info(),
+        &ctx.accounts.payer.to_account_info(),
+        receipt_rent,
+        ctx.accounts.config.treasury_bump,
+    )?;
+
+    msg!(
+        "payment settled: {} lamports from {}, fee {} to treasury",
+        amount,
+        payer,
+        fee
+    );
     Ok(())
 }
 
@@ -245,7 +310,11 @@ pub fn open_budget_handler<'info, 'ctx>(
     );
     require_keys_neq!(session, Pubkey::default(), PaymentError::InvalidSessionKey);
 
-    let float_gap = SESSION_FEE_FLOAT.saturating_sub(ctx.accounts.session_key.lamports());
+    let float_gap = ctx
+        .accounts
+        .config
+        .session_fee_float
+        .saturating_sub(ctx.accounts.session_key.lamports());
     if float_gap > 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
@@ -337,12 +406,25 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     );
 
     // The session key advances both rents; the pot reimburses both, pays the
-    // seller the price less the invoice rent, and the invoice account's close
-    // returns that rent to the seller.
+    // seller the price less the invoice rent and the fee, sends the fee to the
+    // treasury, and the invoice account's close returns that rent to the seller.
+    // The treasury then refunds the receipt rent to the pot, so the pot pays
+    // exactly the invoice amount.
+    let config = &ctx.accounts.config;
+    require!(
+        config.fee_mode == FeeMode::SellerPays,
+        PaymentError::FeeModeUnsupported
+    );
+
+    let fee = fee_for(config, amount)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);
-    require!(amount > payment_rent, PaymentError::InvoiceTooSmall);
+    require!(
+        amount > payment_rent.saturating_add(fee),
+        PaymentError::InvoiceTooSmall
+    );
+    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), receipt_rent)?;
 
     let pot = ctx
         .accounts
@@ -350,21 +432,33 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .to_account_info()
         .lamports()
         .saturating_sub(budget_rent);
-    let to_seller = amount - payment_rent;
+    let to_seller = amount - payment_rent - fee;
     let to_session = payment_rent.saturating_add(receipt_rent);
-    require!(
-        pot >= to_seller.saturating_add(to_session),
-        PaymentError::InsufficientBudget
-    );
+    let outflow = to_seller.saturating_add(fee).saturating_add(to_session);
+    require!(pot >= outflow, PaymentError::InsufficientBudget);
+
+    // The treasury funds the permanent receipt, refunding the pot so it pays
+    // exactly the invoice amount. This is a CPI and must run before the direct
+    // lamport moves below: the runtime refuses to start a CPI while the current
+    // instruction frame has an outstanding lamport delta.
+    pay_from_treasury(
+        &ctx.accounts.treasury.to_account_info(),
+        &ctx.accounts.budget.to_account_info(),
+        receipt_rent,
+        ctx.accounts.config.treasury_bump,
+    )?;
 
     ctx.accounts
         .budget
         .to_account_info()
-        .sub_lamports(to_seller.saturating_add(to_session))?;
+        .sub_lamports(outflow)?;
     ctx.accounts
         .seller
         .to_account_info()
         .add_lamports(to_seller)?;
+    if fee > 0 {
+        ctx.accounts.treasury.to_account_info().add_lamports(fee)?;
+    }
     ctx.accounts
         .session_key
         .to_account_info()
@@ -417,8 +511,9 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
-        "payment settled from budget: {} lamports, session {}",
+        "payment settled from budget: {} lamports, fee {} to treasury, session {}",
         amount,
+        fee,
         ctx.accounts.session_key.key()
     );
     Ok(())

@@ -2,8 +2,11 @@
 
 ## Status
 
-Draft — new (2026-11-12), split from the 2026-11-09 contract security draft;
-revision 2 (2026-11-13) notes the receipt consolidation that landed in `0001`.
+In Progress — new (2026-11-12), split from the 2026-11-09 contract security
+draft; revision 2 (2026-11-13) notes the receipt consolidation that landed in
+`0001`; revision 3 (2026-11-13) records Phase 1 Tasks 1.1 and 1.2 as built and
+tested on the program, with the client half (Tasks 1.3–1.5) and any deployment
+still to come.
 
 ## Revision Notes
 
@@ -20,6 +23,20 @@ numbers:
   They are illustrative only: recompute them from 2,985,840 when Task 1.2 is
   implemented, and keep the rent read over RPC as the single source of truth.
   No decision in this plan changes because of the consolidation.
+
+Revision 3 also records what building Task 1.2 taught:
+
+- The program cannot start a CPI while its current instruction frame has an
+  outstanding lamport delta (`UnbalancedInstruction`). The treasury refund is a
+  system transfer signed by the treasury seeds, so in the budget path it now
+  runs **before** the direct lamport moves; the direct path refunds after the
+  receipt write and the auto-close, which nets to zero.
+- `Custom(102)` (`InstructionDidNotDeserialize`) is the error for an unknown
+  `FeeMode` byte: Borsh rejects the instruction data before the handler runs,
+  which is the named rejection the acceptance criteria asked for.
+- The upgradeable loader's state variants are ordered `Uninitialized`, `Buffer`,
+  `Program`, `ProgramData`, so the `ProgramData` bincode tag is `3`; the harness
+  pins that against `bincode::serialize` instead of trusting a guess.
 
 ## Linked Docs
 
@@ -304,6 +321,13 @@ Findings 1, 2, 10, 11, 13, 14, 18, 20, 21, and 23 are closed by `0001`.
 
 ### Phase 1: Config, treasury, and the SOL fee split
 
+**Built so far (2026-11-13):** Tasks 1.1 and 1.2 are implemented on the program
+and covered by the Rust harness (20 tests green, `cargo clippy --all-targets --
+-D warnings` clean). The deployed devnet program is still the `0001` build, and
+the web client and the copied IDL still target the `0001` account lists — they
+gain the `config` and `treasury` accounts in Task 1.4, so nothing is deployable
+until then.
+
 Goal: replace the interim payer-funded receipt rent from `0001` with a
 treasury-funded model, add the fee policy, and make the fee destination
 impossible to redirect.
@@ -372,36 +396,40 @@ is the fee-recipient constraint: the payer cannot name a different account, and
 
 Acceptance criteria:
 
-- [ ] `Config` exists with the fields above and `CONFIG_SPACE = 62`.
-- [ ] `initialize_config` succeeds only when signed by the upgrade authority,
+- [x] `Config` exists with the fields above and `CONFIG_SPACE = 62`.
+- [x] `initialize_config` succeeds only when signed by the upgrade authority,
       and records that signer as `admin`.
-- [ ] A funded non-authority signer fails with `InvalidConfigAdmin`.
-- [ ] An account that is not this program's `ProgramData` PDA fails the seeds
+- [x] A funded non-authority signer fails with `InvalidConfigAdmin`.
+- [x] An account that is not this program's `ProgramData` PDA fails the seeds
       and owner constraint.
-- [ ] A finalized program (`upgrade_authority_address == None`) fails with
+- [x] A finalized program (`upgrade_authority_address == None`) fails with
       `ProgramNotUpgradeable`.
-- [ ] `initialize_config` can run once; a second call fails because the config
+- [x] `initialize_config` can run once; a second call fails because the config
       PDA already exists.
-- [ ] `update_config` rejects `fee_bps > 10_000`, an invalid mode, and a zero
-      float, with named errors; a test covers each.
-- [ ] `withdraw_treasury` is admin-only and cannot drain the treasury below its
+- [x] `update_config` rejects `fee_bps > 10_000` (`InvalidFeeBps`), an
+      invalid mode (`InstructionDidNotDeserialize`, because Borsh rejects the
+      unknown enum byte), and a zero float (`InvalidSessionFloat`); a test
+      covers each.
+- [x] `withdraw_treasury` is admin-only and cannot drain the treasury below its
       rent-exempt minimum.
 - [ ] The treasury address is derived from seeds in the program and in the
-      client, never passed as a plain account.
-- [ ] Token-2022 and other programs are unaffected by `Config` creation.
+      client, never passed as a plain account. **Program half done**
+      (`["treasury"]`, referenced only through `config.treasury_bump`); the
+      client derivation lands with Task 1.4.
+- [x] Token-2022 and other programs are unaffected by `Config` creation.
 
 Verification:
 
-- [ ] Anchor test: initialize with the harness wallet (the program's upgrade
-      authority) succeeds, and `config.admin` equals that wallet.
-- [ ] Anchor test: initialize from a second, funded keypair fails with
+- [x] Anchor test: initialize signed by the program's upgrade authority
+      succeeds, and `config.admin` equals that signer.
+- [x] Anchor test: initialize from a second, funded keypair fails with
       `InvalidConfigAdmin`.
-- [ ] Anchor test: initialize with another program's `ProgramData` fails the
+- [x] Anchor test: initialize with another program's `ProgramData` fails the
       seeds/owner constraint.
-- [ ] Anchor test: initialize once, second initialize fails.
-- [ ] Anchor test: non-admin `update_config` and `withdraw_treasury` fail; admin
+- [x] Anchor test: initialize once, second initialize fails.
+- [x] Anchor test: non-admin `update_config` and `withdraw_treasury` fail; admin
       update succeeds and `Config` reads back with the new policy.
-- [ ] Anchor test: `withdraw_treasury` leaves the rent-exempt minimum.
+- [x] Anchor test: `withdraw_treasury` leaves the rent-exempt minimum.
 
 Files likely touched:
 
@@ -410,7 +438,8 @@ Files likely touched:
 - `apps/contracts/programs/payvand/src/errors.rs`
 - `apps/contracts/programs/payvand/src/instructions/config.rs` (new)
 - `apps/contracts/programs/payvand/src/lib.rs`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs` (the Rust harness that
+  replaced the old Anchor TS suite)
 
 Dependencies: `0001` deployed.
 
@@ -449,35 +478,37 @@ only here.
 
 Acceptance criteria:
 
-- [ ] Direct SOL: payer balance delta is exactly `amount` plus the network fee;
+- [x] Direct SOL: payer balance delta is exactly `amount` plus the network fee;
       seller delta is `amount - fee`; treasury delta is `fee - R_r`.
-- [ ] Budget SOL: pot delta is exactly `amount`; `spent += amount`; session key
+- [x] Budget SOL: pot delta is exactly `amount`; `spent += amount`; session key
       delta is zero; seller delta is `amount - fee`.
-- [ ] `fee = 0` is accepted (fee-less pilot) but only via `Config`.
-- [ ] `amount == payment_rent + fee` fails with `InvoiceTooSmall`; one lamport
+- [x] `fee = 0` is accepted (fee-less pilot) but only via `Config`.
+- [x] `amount == payment_rent + fee` fails with `InvoiceTooSmall`; one lamport
       more succeeds.
-- [ ] An empty treasury fails with `TreasuryUnderfunded` before any transfer.
-- [ ] A `Config` with `fee_mode == BuyerPays` fails with `FeeModeUnsupported`
+- [x] An empty treasury fails with `TreasuryUnderfunded` before any transfer.
+- [x] A `Config` with `fee_mode == BuyerPays` fails with `FeeModeUnsupported`
       on both paths (until Task 1.3).
-- [ ] No path sends lamports to a caller-supplied fee account.
-- [ ] No `emit!` call is added in this task.
+- [x] No path sends lamports to a caller-supplied fee account.
+- [x] No `emit!` call is added in this task.
 
 Verification:
 
-- [ ] Anchor test: each balance delta above, with `fee_bps = 200` and a
-      non-zero `fixed_fee_lamports`.
-- [ ] Anchor test: `InvoiceTooSmall` boundary; `TreasuryUnderfunded` with an
+- [x] Anchor test: each balance delta above at `fee_bps = 200`, plus a seller
+      delta with a 1,000,000 fixed fee (the fixed fee is not repeated in every
+      delta assertion).
+- [x] Anchor test: `InvoiceTooSmall` boundary; `TreasuryUnderfunded` with an
       empty treasury.
-- [ ] Anchor test: passing an arbitrary wallet where the treasury belongs fails
+- [x] Anchor test: passing an arbitrary wallet where the treasury belongs fails
       the seeds constraint.
-- [ ] Anchor test: `BuyerPays` config is rejected with `FeeModeUnsupported`.
+- [x] Anchor test: `BuyerPays` config is rejected with `FeeModeUnsupported`.
 
 Files likely touched:
 
 - `apps/contracts/programs/payvand/src/instructions/sol.rs`
 - `apps/contracts/programs/payvand/src/state.rs`
 - `apps/contracts/programs/payvand/src/errors.rs`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs` (the Rust harness that
+  replaced the old Anchor TS suite)
 
 Dependencies: Task 1.1.
 

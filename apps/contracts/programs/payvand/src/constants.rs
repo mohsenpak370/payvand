@@ -25,10 +25,26 @@ pub const BUDGET_SEED: &[u8] = b"budget";
 /// `8` (discriminator) + `32 + 32 + 8 + 8 + 8 + 1` (buyer, session key,
 /// monthly limit, spent, month index, bump).
 pub const BUDGET_SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 1;
-/// Lamports parked on the session key so its silent transactions can pay
-/// their own network fees (~2000 fees at 5000 lamports each). Funded by
-/// `open_budget` and topped back up to this level on every later open.
+/// Default lamports parked on a session key so its silent transactions can pay
+/// their own network fees. `Config::session_fee_float` carries the live value;
+/// `open_budget` reads it from there, and `initialize_config` starts from this.
 pub const SESSION_FEE_FLOAT: u64 = 10_000_000;
+/// Lower bound `update_config` accepts for `session_fee_float`: enough to front
+/// the invoice and receipt rents of one SOL payment (`R_p + R_r`).
+pub const MIN_SESSION_FEE_FLOAT: u64 = 5_032_080;
+
+/// Seed of the singleton fee policy account.
+pub const CONFIG_SEED: &[u8] = b"config";
+/// `8` (discriminator) + `32 (admin) + 2 (fee_bps) + 8 (fixed_fee_lamports) + 1
+/// (fee_mode) + 8 (session_fee_float) + 1 (bump) + 1 (treasury_bump) + 1
+/// (version)`.
+pub const CONFIG_SPACE: usize = 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1;
+
+/// Seed of the treasury: a system-owned PDA with no data, the only account a
+/// fee may be sent to. Deriving it from a seed is what makes the recipient
+/// unredirectable — no settlement names a fee account, and the program moves
+/// lamports out of it only by signing with these seeds.
+pub const TREASURY_SEED: &[u8] = b"treasury";
 
 /// `8` (discriminator) + `32 + 32 + 8 + 4 + 96 + 1 + 32 + 8 + 8 + 1`.
 pub const PAYMENT_SPACE: usize = 8 + 32 + 32 + 8 + 4 + PAYMENT_MAX_MEMO + 1 + 32 + 8 + 8 + 1;

@@ -27,6 +27,7 @@ pub use state::*;
 // The account contexts and the `__client_accounts_*` modules Anchor generates
 // beside them have to be reachable from the crate root, where `#[program]`
 // looks them up.
+pub use instructions::config::*;
 pub use instructions::sol::*;
 pub use instructions::token::*;
 
@@ -35,6 +36,48 @@ declare_id!("4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J");
 #[program]
 pub mod payvand {
     use super::*;
+
+    /// Creates the singleton fee policy. Callable once, by the program's
+    /// upgrade authority, which becomes the admin — so no caller can install
+    /// an admin of its choosing.
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+        fee_bps: u16,
+        fixed_fee_lamports: u64,
+        fee_mode: FeeMode,
+        session_fee_float: u64,
+    ) -> Result<()> {
+        instructions::config::initialize_config_handler(
+            ctx,
+            fee_bps,
+            fixed_fee_lamports,
+            fee_mode,
+            session_fee_float,
+        )
+    }
+
+    /// Changes the fee policy. Admin only; it never rewrites `admin` itself.
+    pub fn update_config(
+        ctx: Context<UpdateConfig>,
+        fee_bps: u16,
+        fixed_fee_lamports: u64,
+        fee_mode: FeeMode,
+        session_fee_float: u64,
+    ) -> Result<()> {
+        instructions::config::update_config_handler(
+            ctx,
+            fee_bps,
+            fixed_fee_lamports,
+            fee_mode,
+            session_fee_float,
+        )
+    }
+
+    /// Moves treasury surplus to the admin, leaving its rent-exempt minimum.
+    /// No payment path can touch the treasury this way.
+    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
+        instructions::config::withdraw_treasury_handler(ctx, amount)
+    }
 
     /// Buyer pays an invoice. The invoice account is created (and funded by
     /// the buyer) inside this same transaction, so the seller never has to

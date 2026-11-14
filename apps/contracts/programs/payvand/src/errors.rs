@@ -22,4 +22,20 @@ pub enum PaymentError {
     InvalidSessionKey,
     #[msg("The token does not match this budget")]
     MintMismatch,
+    #[msg("This deployment has no fee config yet")]
+    ConfigMissing,
+    #[msg("Only the program's upgrade authority may initialize the config")]
+    InvalidConfigAdmin,
+    #[msg("This program is not upgradeable, so it cannot bootstrap a config")]
+    ProgramNotUpgradeable,
+    #[msg("The fee rate cannot exceed 100%")]
+    InvalidFeeBps,
+    #[msg("The session float must cover one payment's rents")]
+    InvalidSessionFloat,
+    #[msg("The treasury cannot cover the refund it owes")]
+    TreasuryUnderfunded,
+    #[msg("This fee mode is not supported yet")]
+    FeeModeUnsupported,
+    #[msg("The fee calculation overflowed")]
+    FeeOverflow,
 }
