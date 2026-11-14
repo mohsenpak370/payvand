@@ -426,6 +426,7 @@
     "notSent": "Le paiement n'a pas pu être envoyé.",
     "discountFailed": "Ce code de remise n'a pas pu être appliqué.",
     "notBudgetAccount": "Cette adresse n'est pas un compte de budget.",
+    "feeConfigUnavailable": "Les réglages de frais ne sont pas disponibles pour le moment. Réessaie dans un instant.",
     "notTokenBudgetAccount": "Cette adresse n'est pas un compte de budget de jetons.",
     "solForLimit": "Ce portefeuille ne contient pas assez de SOL pour cette limite. Baissez-la ou rechargez le portefeuille d'abord.",
     "rejectedOnChain": "La transaction serait rejetée sur la chaîne, elle n'a donc pas été envoyée. Si vous n'avez pas encore de budget, la limite doit être supérieure à 0 ; sinon, rechargez la page et réessayez.",

@@ -16,6 +16,7 @@ import {
   PAYVAND_PROGRAM_ID,
   buildInstruction,
   deriveAssociatedTokenAddress,
+  accountDiscriminator,
   deriveConfigPda,
   derivePaymentReceiptPda,
   deriveTreasuryPda,
@@ -39,10 +40,11 @@ const PAYMENT_SPACE = 230
  */
 const PAYMENT_RECEIPT_SPACE = 301
 /**
- * Mirrors `SESSION_FEE_FLOAT` in the program — lamports parked on the
- * session key so its silent transactions can pay their own fees.
+ * Mirrors the program's `SESSION_FEE_FLOAT`. `open_budget` reads the live value
+ * from `Config` instead, so this only covers the token flows, which the program
+ * still funds from its constant (Phase 3 moves them to `Config` too).
  */
-const SESSION_FEE_FLOAT = 10_000_000
+const TOKEN_SESSION_FEE_FLOAT = 10_000_000
 /** Mirrors `TOKEN_BUDGET_SPACE`: 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1. */
 const TOKEN_BUDGET_SPACE = 129
 /** Lamports a token budget keeps to refund the invoice rent it advances. */
@@ -120,18 +122,12 @@ export async function deriveTokenBudgetPda(buyer: Address, mint: Address): Promi
   return pda
 }
 
-/** First 8 bytes of `sha256("account:<Name>")`, Anchor's account tag. */
-async function accountDiscriminator(name: string): Promise<Uint8Array> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`account:${name}`)
-  )
-  return new Uint8Array(digest.slice(0, 8))
-}
-
 /** Reads and interprets a buyer's budget straight from the cluster. */
 export function useBudget() {
   const { client } = useSolanaClient()
+  // `open_budget` tops the session key up to `Config::session_fee_float`, so
+  // the quote reads the same account the program will.
+  const feeConfig = useFeeConfig()
 
   const rentCache = new Map<number, number>()
   async function rentMinimum(space: number): Promise<number> {
@@ -183,10 +179,11 @@ export function useBudget() {
 
   /**
    * What one `open_budget` signature must move out of the buyer's wallet:
-   * the pot top-up, the session key's fee float, the budget account's rent
-   * (only when it does not exist yet) and the transaction fee. Mirrors the
-   * transfers the program performs, so the UI can warn *before* the wallet
-   * is asked to sign something that would fail pre-flight.
+   * the pot top-up, the session key's fee float (read from `Config`, the same
+   * account the program reads), the budget account's rent (only when it does
+   * not exist yet) and the transaction fee. Mirrors the transfers the program
+   * performs, so the UI can warn *before* the wallet is asked to sign
+   * something that would fail pre-flight.
    */
   async function openBudgetCost(
     buyer: Address,
@@ -200,7 +197,8 @@ export function useBudget() {
     const sessionLamports = Number(
       (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
     )
-    const feeFloat = Math.max(0, SESSION_FEE_FLOAT - sessionLamports)
+    const { sessionFeeFloat } = await feeConfig.load()
+    const feeFloat = Math.max(0, sessionFeeFloat - sessionLamports)
     const fee = TRANSACTION_FEE_LAMPORTS
     return { topUp, feeFloat, rent, fee, total: topUp + feeFloat + rent + fee }
   }
@@ -473,7 +471,7 @@ export function useBudget() {
     const sessionLamports = Number(
       (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
     )
-    const feeFloat = Math.max(0, SESSION_FEE_FLOAT - sessionLamports)
+    const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - sessionLamports)
     const fee = TRANSACTION_FEE_LAMPORTS
     return { rent, feeFloat, refundFloat, fee, total: rent + refundFloat + feeFloat + fee }
   }

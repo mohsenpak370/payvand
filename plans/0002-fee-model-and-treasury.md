@@ -577,13 +577,17 @@ seller proceeds, payer total, temporary rent, receipt rent, treasury refund, and
 network-fee estimate. Every page and preflight check reads this helper, so the
 displayed numbers and the transaction math have one source.
 
-**Built so far (2026-11-14):** the account wiring half is done. `usePaymentProgram`
-derives `["config"]` and `["treasury"]`, `settle_payment`, `pay_from_budget` and
-`open_budget` pass them, and the copied IDL is regenerated from the program (it
-now also carries `Config`, `initialize_config`, `update_config` and
-`withdraw_treasury`). `pnpm typecheck` and `pnpm lint` pass. Still open: the
-`Config` read/cache and `estimateInvoiceCosts`, so nothing on screen shows a fee
-yet, and `useBudget.ts` still mirrors the session float in a constant.
+**Built so far (2026-11-14):** the account wiring and the `Config` read are
+done. `usePaymentProgram` derives `["config"]` and `["treasury"]`,
+`settle_payment`, `pay_from_budget` and `open_budget` pass them, and the copied
+IDL is regenerated from the program (it now also carries `Config`,
+`initialize_config`, `update_config` and `withdraw_treasury`).
+`useFeeConfig.ts` reads and decodes `Config` (60 s cache, refuses to quote if
+the account is missing or mistagged), and the SOL budget quote takes its session
+float from there, so `useBudget.ts` no longer keeps a copy of that number. The
+token flows still read the program's fixed float until Phase 3 moves them to
+`Config`. Still open: `estimateInvoiceCosts` and the visible fee/rent split, so
+no screen shows a fee yet.
 
 **Deploy ordering is now load-bearing:** the client sends the new account lists,
 so deploying the web app before the program is upgraded (and `initialize_config`
@@ -661,17 +665,27 @@ Estimated scope: Medium.
 
 #### Task 1.6: Fee and treasury tests
 
+**Built so far:** the balance-delta, treasury and fee-mode cases landed with
+Tasks 1.1 and 1.2, and the float floor is now pinned as a boundary test
+(`MIN_SESSION_FEE_FLOAT` accepted, one lamport less rejected, and the constant
+asserted equal to `invoice_rent + receipt_rent`). The API's program scan is
+covered too: a 62-byte `Config` account is classified as "nothing to keep"
+instead of taking the payment list down, while receipts and budgets still
+classify.
+
 Acceptance criteria:
 
-- [ ] Direct SOL: payer delta `amount`, seller delta `amount - fee`, treasury
+- [x] Direct SOL: payer delta `amount`, seller delta `amount - fee`, treasury
       delta `fee - R_r`, receipt holds `R_r`.
-- [ ] Budget SOL: pot delta `amount`, `spent += amount`, session key unchanged.
+- [x] Budget SOL: pot delta `amount`, `spent += amount`, session key unchanged.
 - [ ] Fee rounding floors: `amount = 99` at 2% gives `fee = 1`, seller gets 98.
-- [ ] `fee_bps = 0` and `fee_bps = 10_000` both behave as documented
-      (`amount - 1` cap).
+- [ ] `fee_bps = 10_000` behaves as documented (`amount - 1` cap; `fee_bps = 0`
+      is covered).
 - [ ] `withdraw_treasury` cannot empty the treasury; a settle after a withdrawal
       that drops it below `R_r + 890,880` fails with `TreasuryUnderfunded`.
-- [ ] Passing a wallet instead of the treasury PDA is rejected.
+      (The withdrawal cap is tested; the withdrawal-then-settle sequence is
+      not.)
+- [x] Passing a wallet instead of the treasury PDA is rejected.
 
 Verification:
 

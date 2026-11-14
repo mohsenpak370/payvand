@@ -31,8 +31,8 @@
 use anchor_lang::prelude::Rent;
 use anchor_lang::{system_program::ID as SYSTEM_PROGRAM_ID, AccountDeserialize};
 use payvand::constants::{
-    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, PAYMENT_MAX_MEMO, PAYMENT_RECEIPT_SEED,
-    PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
+    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
+    PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
 };
 use payvand::state::{
     Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenPayment,
@@ -1117,6 +1117,70 @@ async fn update_config_requires_the_admin_and_a_valid_policy() {
     assert!(
         error.contains("Custom(102)"),
         "expected an undecodable instruction, got {error}"
+    );
+}
+
+/// The float floor is exactly `R_p + R_r`: a config that can front one payment
+/// passes, one lamport less does not. Pinned as a boundary so a receipt or
+/// invoice size change cannot quietly leave the floor too low.
+#[tokio::test]
+async fn session_float_floor_accepts_the_exact_rent_sum_and_rejects_one_lamport_less() {
+    let (mut context, admin_keypair) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let admin = admin_keypair.pubkey();
+
+    // The floor itself is a valid policy.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            admin,
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            MIN_SESSION_FEE_FLOAT,
+        )],
+        &[&admin_keypair],
+    )
+    .await
+    .expect("the exact floor must be accepted");
+    assert_eq!(
+        config(&context, config_pda()).await.session_fee_float,
+        MIN_SESSION_FEE_FLOAT
+    );
+
+    // The floor is also the invoice plus receipt rent, read from the program's
+    // own account sizes rather than a copied constant.
+    assert_eq!(MIN_SESSION_FEE_FLOAT, invoice_rent() + receipt_rent());
+
+    // One lamport less cannot front the payment it exists for.
+    let under = send(
+        &mut context,
+        &[update_config_instruction(
+            admin,
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            MIN_SESSION_FEE_FLOAT - 1,
+        )],
+        &[&admin_keypair],
+    )
+    .await;
+    let error = under.expect_err("one lamport below the floor must be refused");
+    assert!(
+        error.contains("Custom(6013)"),
+        "expected InvalidSessionFloat, got {error}"
+    );
+    // The refused update changed nothing.
+    assert_eq!(
+        config(&context, config_pda()).await.session_fee_float,
+        MIN_SESSION_FEE_FLOAT
     );
 }
 

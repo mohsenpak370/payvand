@@ -426,6 +426,7 @@
     "notSent": "No se pudo enviar el pago.",
     "discountFailed": "No se pudo aplicar ese código de descuento.",
     "notBudgetAccount": "Esa dirección no es una cuenta de presupuesto.",
+    "feeConfigUnavailable": "La configuración de comisiones no está disponible ahora. Inténtalo de nuevo en un momento.",
     "notTokenBudgetAccount": "Esa dirección no es una cuenta de presupuesto de token.",
     "solForLimit": "Esta cartera no tiene SOL suficiente para ese límite. Bájalo o recarga la cartera primero.",
     "rejectedOnChain": "La transacción se rechazaría en la cadena, así que no se ha enviado. Si todavía no tienes presupuesto, el límite debe ser mayor que 0; si no, recarga la página e inténtalo otra vez.",

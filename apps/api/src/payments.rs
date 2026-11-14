@@ -865,14 +865,10 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     let mut payments = Vec::new();
     let mut budgets = Vec::new();
     for (pubkey, account) in accounts {
-        if let Some(record) = record_for(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
-            payments.push(record);
-        } else if let Some(receipt) = decode_payment_receipt(&account.data) {
-            // A settled invoice only exists as its receipt; `receipt.invoice`
-            // is what the seller's screens and the admin feed address it by.
-            payments.push(receipt_record(receipt, cluster.clone(), endpoint.clone()));
-        } else if let Some(budget) = decode_budget(&account.data) {
-            budgets.push(budget);
+        match classify_program_account(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
+            Some(ScannedAccount::Payment(record)) => payments.push(*record),
+            Some(ScannedAccount::Budget(budget)) => budgets.push(budget),
+            None => {}
         }
     }
 
@@ -882,6 +878,39 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
         cluster,
         endpoint,
     })
+}
+
+/// What one program-owned account turned out to be. The payment variant is
+/// boxed because `PaymentRecord` carries every option, item and discount of an
+/// invoice, and the scan builds one enum value per account.
+enum ScannedAccount {
+    Payment(Box<PaymentRecord>),
+    Budget(BudgetAccount),
+}
+
+/// Sorts one account from `get_program_accounts` into what the scan keeps.
+///
+/// `None` is the normal answer for accounts this API has no use for — the fee
+/// `Config` and each buyer's `TokenBudget` live under the same program id — so
+/// an unknown or unreadable account is skipped rather than failing the whole
+/// scan. A future account type gets the same treatment for free.
+fn classify_program_account(
+    pubkey: Pubkey,
+    data: &[u8],
+    cluster: String,
+    endpoint: String,
+) -> Option<ScannedAccount> {
+    if let Some(record) = record_for(pubkey, data, cluster.clone(), endpoint.clone()) {
+        return Some(ScannedAccount::Payment(Box::new(record)));
+    }
+    if let Some(receipt) = decode_payment_receipt(data) {
+        // A settled invoice only exists as its receipt; `receipt.invoice` is
+        // what the seller's screens and the admin feed address it by.
+        return Some(ScannedAccount::Payment(Box::new(receipt_record(
+            receipt, cluster, endpoint,
+        ))));
+    }
+    decode_budget(data).map(ScannedAccount::Budget)
 }
 
 /// The payment half of a program scan (the admin feed needs nothing else).
@@ -1603,6 +1632,77 @@ mod tests {
             ..sample_request()
         };
         assert!(create_payment(request).is_err());
+    }
+
+    /// The fee policy is a program-owned account shaped nothing like a
+    /// payment. `get_program_accounts` returns it alongside invoices, so the
+    /// scan has to skip it — an error here would take the whole payment list
+    /// down the moment `Config` is initialized.
+    fn config_data(session_fee_float: u64) -> Vec<u8> {
+        let mut data = discriminator_for("Config").to_vec();
+        data.extend_from_slice(&[6u8; 32]); // admin
+        data.extend_from_slice(&200u16.to_le_bytes()); // fee_bps
+        data.extend_from_slice(&0u64.to_le_bytes()); // fixed_fee_lamports
+        data.push(0); // fee_mode: SellerPays
+        data.extend_from_slice(&session_fee_float.to_le_bytes());
+        data.push(251); // bump
+        data.push(250); // treasury_bump
+        data.push(1); // version
+        data
+    }
+
+    #[test]
+    fn the_program_scan_skips_the_config_account() {
+        let data = config_data(30_000_000);
+        // 62 bytes, the shape the program allocates.
+        assert_eq!(data.len(), 62);
+
+        // No decoder mistakes it for something the scan keeps.
+        assert!(decode_payment(&data).is_none());
+        assert!(decode_token_payment(&data).is_none());
+        assert!(decode_payment_receipt(&data).is_none());
+        assert!(decode_budget(&data).is_none());
+
+        // And classification returns “nothing to keep” rather than panicking.
+        let classified = classify_program_account(
+            Pubkey::from([8u8; 32]),
+            &data,
+            "devnet".into(),
+            "https://api.devnet.solana.com".into(),
+        );
+        assert!(
+            classified.is_none(),
+            "Config must not become a payment or budget"
+        );
+    }
+
+    /// The skip is not a blanket “ignore everything”: receipts and budgets in
+    /// the same scan still classify.
+    #[test]
+    fn the_program_scan_still_classifies_receipts_and_budgets() {
+        let invoice = Pubkey::from([4u8; 32]);
+        let receipt = classify_program_account(
+            receipt_pda(&Pubkey::from_str(PAYVAND_PROGRAM_ID).unwrap(), &invoice),
+            &receipt_data(invoice, Pubkey::default(), 42, "tip"),
+            "devnet".into(),
+            "https://example".into(),
+        );
+        assert!(matches!(receipt, Some(ScannedAccount::Payment(_))));
+
+        let mut budget = discriminator_for("Budget").to_vec();
+        budget.extend_from_slice(&[1u8; 32]); // buyer
+        budget.extend_from_slice(&[2u8; 32]); // session key
+        budget.extend_from_slice(&10u64.to_le_bytes());
+        budget.extend_from_slice(&0u64.to_le_bytes());
+        budget.extend_from_slice(&1u64.to_le_bytes());
+        budget.push(255);
+        let classified = classify_program_account(
+            Pubkey::from([3u8; 32]),
+            &budget,
+            "devnet".into(),
+            "https://example".into(),
+        );
+        assert!(matches!(classified, Some(ScannedAccount::Budget(_))));
     }
 
     #[test]

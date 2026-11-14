@@ -108,6 +108,15 @@ const programIdl = idl as unknown as ProgramIdl
 /** Address of the deployed `payvand` program, taken from the IDL. */
 export const PAYVAND_PROGRAM_ID = address(programIdl.address)
 
+/** First 8 bytes of `sha256("account:<Name>")`, Anchor's account tag. */
+export async function accountDiscriminator(name: string): Promise<Uint8Array> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`account:${name}`)
+  )
+  return new Uint8Array(digest.slice(0, 8))
+}
+
 function findInstruction(name: string): IdlInstruction {
   const instruction = programIdl.instructions.find(ix => ix.name === name)
   if (!instruction) {
