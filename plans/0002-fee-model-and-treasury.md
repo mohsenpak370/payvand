@@ -1229,11 +1229,40 @@ Rollout order:
 5. Deploy the web app.
 6. Smoke-test.
 
+**Built so far (2026-11-14):** steps 1–3 ran against devnet, in three commands
+rather than one script, so the upgrade→`initialize_config` window was a few
+minutes instead of the planned one; no payment traffic was possible in it, and
+nothing was paying at the time.
+
+- Program `4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J` upgraded in place to
+  the 0002 build (491,000 bytes, same ID, same authority `Evmo7zn…`, ProgramData
+  `8GQRqbdm…`, slot 522160416). Upgrade signature `2GVaAF15…`.
+- `Config 8FdnWvwzEKaWHgB3nY7AZwmiKtwKDkHabDKg8x617Msy` created by the upgrade
+  authority (`4PJrZ2VN…`) and then set to the rollout policy
+  `(200, 0, SellerPays, 30_000_000)` (`2avp93Dj…`); it reads back exactly that.
+- `Treasury 9tyu74VybRdMEZ2zXszcsqS2mhsdr1iExaxoVkXVvQc4` funded with
+  50,000,000 lamports. It held 67,820,680 after the settle below, so the
+  threshold to keep is one receipt rent: top up below ~0.01 SOL, which is
+  2,179,320 lamports of devnet rent plus margin.
+- Settle smoke (1 SOL, throwaway buyer, memo `devnet smoke`, signature
+  `5gHeXsFE…`): seller +980,000,000 (`amount - fee`), treasury +17,820,680
+  (`fee - receipt_rent`; devnet's receipt rent is 2,179,320, not the mainnet
+  2,540,400 this table assumed), buyer −1,000,005,000 (`amount` + the 5,000
+  lamport network fee, receipt rent refunded). The 301-byte receipt exists and
+  the invoice account is closed.
+- The app's own helper, reading that `Config` and devnet rent, quoted
+  `fee 20,000,000`, `sellerReceives 980,000,000`, `minPayable 1,855,756` — the
+  same numbers the settle produced. A shop page then rendered "You receive
+  0.01176 SOL after the 2% fee" and the 0.00181864 SOL rent for a 0.012 SOL
+  cart.
+
 Smoke tests:
 
 - [ ] SOL invoice at 0.01 SOL: payer pays 0.01 exactly; seller receives 0.0098;
       treasury loses 2,340,400 lamports; receipt holds 2,540,400.
-- [ ] SOL invoice at 1 SOL: seller receives 0.98; treasury gains 17,459,600.
+- [x] SOL invoice at 1 SOL: seller receives 0.98; treasury gains the fee less the
+      receipt rent (17,820,680 on devnet rent, not the 17,459,600 the mainnet
+      table predicted).
 - [ ] Budget payment: pot decreases by exactly the price; `spent` matches;
       session-key balance unchanged.
 - [ ] Token invoice from a fresh seller with no SOL: seller receives
@@ -1246,12 +1275,12 @@ Smoke tests:
 
 Acceptance criteria:
 
-- [ ] The program ID is unchanged.
-- [ ] `Config` exists with the launch policy and is readable by the client.
-- [ ] The IDL in the web app matches the deployed program.
+- [x] The program ID is unchanged.
+- [x] `Config` exists with the launch policy and is readable by the client.
+- [x] The IDL in the web app matches the deployed program.
 - [ ] Smoke tests pass.
-- [ ] The treasury balance is recorded after rollout, with a documented top-up
-      threshold.
+- [x] The treasury balance is recorded after rollout, with a documented top-up
+      threshold (67,820,680 lamports; top up below ~0.01 SOL).
 
 Verification:
 
