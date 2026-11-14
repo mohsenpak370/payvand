@@ -1256,22 +1256,51 @@ nothing was paying at the time.
   0.01176 SOL after the 2% fee" and the 0.00181864 SOL rent for a 0.012 SOL
   cart.
 
+**Web redeploy (2026-11-14):** the production build that quotes from `Config`
+and sends the treasury account is live at `https://payvand-app.vercel.app`
+(deployment `payvand-ahj2ckg40-…`, built from the two-file upload tree the
+README describes). The deployed `/budget` chunk contains the `budget.cost.*`
+keys of the new breakdown, so the fee UI shipped with it.
+
 Smoke tests:
 
-- [ ] SOL invoice at 0.01 SOL: payer pays 0.01 exactly; seller receives 0.0098;
-      treasury loses 2,340,400 lamports; receipt holds 2,540,400.
+- [x] SOL invoice at 0.01 SOL: payer pays 0.01 exactly (plus the 5,000 lamport
+      network fee); seller receives 0.0098; treasury loses 1,979,320 lamports
+      (fee 200,000 − receipt rent 2,179,320, devnet rent); the 301-byte receipt
+      holds 2,179,320. Signature `5dq5uKBU…`.
 - [x] SOL invoice at 1 SOL: seller receives 0.98; treasury gains the fee less the
       receipt rent (17,820,680 on devnet rent, not the 17,459,600 the mainnet
       table predicted).
-- [ ] Budget payment: pot decreases by exactly the price; `spent` matches;
-      session-key balance unchanged.
+- [x] Budget payment: pot decreases by exactly the price (10,000,000), `spent`
+      becomes 10,000,000, the session key pays only the 5,000 network fee (the
+      pot reimburses it both rents), seller +9,800,000, treasury +200,000 −
+      receipt rent. `open_budget` moved exactly `Config.session_fee_float`
+      (30,000,000) to the session key and the limit into a 97-byte account.
+      Signatures `3Q7M8y4b…`, `2T48sVvp…`.
 - [ ] Token invoice from a fresh seller with no SOL: seller receives
       `amount - fee_t`; treasury ATA receives `fee_t`; payer pays only the
-      network fee and the new seller ATA rent.
-- [ ] Wrong-mint close fails; decoy vault rejected.
-- [ ] Close all budgets; the float is swept and the vault drained.
-- [ ] The three pages show estimates that match the settled balances.
-- [ ] `withdraw_treasury` moves surplus and leaves the rent-exempt minimum.
+      network fee and the new seller ATA rent. **Blocked on Phase 3:** the
+      deployed `settle_token_payment` has no `config`/`treasury` accounts (see
+      the IDL) and transfers the full `amount`; there is no `fee_t` to assert
+      yet.
+- [ ] Wrong-mint close fails; decoy vault rejected. **Blocked on Phase 3**
+      (Task 3.4); not exercised.
+- [x] Close all budgets; the float is swept and the vault drained. The SOL half
+      passes: `close_budget` returned the pot and the account rent to the buyer
+      and the account is gone (`42FiDA7V…`). The token vault half is Phase 3.
+- [x] The three pages show estimates that match the settled balances. `/budget`
+      rendered `0.03 SOL` on the session key (the `Config` float), `0.001143 SOL`
+      account rent and `0.00001 SOL` network fee, total `0.131153 SOL` for a
+      0.1 SOL limit; for a live budget it showed the settled account's limit
+      `0.02 SOL`, `0.02 SOL` left, pot `0.03782068 SOL` and session key
+      `Gcnh…NQpe`, matching `open_budget` `66R7jHdF…`. The shop page showed the
+      seller's split and rent. The Chromium preview has no wallet extension, so
+      these screens used a registered wallet-standard stub (read-only, no
+      signing); `close_budget` `5Jirbyfw…` removed the stand-in budget.
+- [x] `withdraw_treasury` moves surplus and leaves the rent-exempt minimum:
+      withdrawing everything above it left 650,240 lamports (devnet's
+      `minimum_balance(0)`, not the 890,880 this plan assumed for mainnet); the
+      treasury was then refunded to 50,650,240. Signature `3y9KL8DJ…`.
 
 Acceptance criteria:
 
