@@ -347,6 +347,9 @@
     "total": "Gesamt",
     "sellerTokenAccount": "Miete für das Token-Konto des Verkäufers",
     "networkFee": "Solana-Netzwerkgebühr",
+    "invoiceRent": "Miete für den Rechnungsdatensatz",
+    "receiptRent": "Miete für den Zahlungsdatensatz",
+    "totalExtra": "Summe zusätzlich zum Preis",
     "protocolFee": "Protokollgebühr",
     "referenceCode": "Referenzcode",
     "details": {

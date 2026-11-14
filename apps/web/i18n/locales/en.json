@@ -347,6 +347,9 @@
     "total": "Total",
     "sellerTokenAccount": "Seller's token account rent",
     "networkFee": "Solana network fee",
+    "invoiceRent": "Invoice record rent",
+    "receiptRent": "Payment record rent",
+    "totalExtra": "Total beyond the price",
     "protocolFee": "Protocol fee",
     "referenceCode": "Reference code",
     "details": {

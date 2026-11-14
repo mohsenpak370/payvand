@@ -446,9 +446,11 @@ useSeoMeta({
               <!--
                 What the price does not include: the buyer's own Solana costs.
                 A SOL invoice carries no fee for the buyer — the seller pays it,
-                and the treasury funds the permanent record — so only the
-                network fee (and, on a fresh seller, the token account a token
-                payment has to create) is shown here.
+                and the treasury funds both records — so only the network fee
+                is shown. A token invoice has no treasury behind it yet, so its
+                payer also creates the invoice account and the receipt; those
+                rents are listed, and the total says what the payment will
+                actually cost beyond the price.
               -->
               <dl
                 v-if="costs"
@@ -474,6 +476,27 @@ useSeoMeta({
                 >
                   <dt>{{ $t('checkout.sellerTokenAccount') }}</dt>
                   <dd>≈ {{ lamportsToSol(costs.sellerTokenAccountRent) }} SOL</dd>
+                </div>
+                <div
+                  v-if="costs.buyerRentShare > 0"
+                  class="flex items-baseline justify-between gap-4"
+                >
+                  <dt>{{ $t('checkout.invoiceRent') }}</dt>
+                  <dd>≈ {{ lamportsToSol(costs.invoiceRent) }} SOL</dd>
+                </div>
+                <div
+                  v-if="costs.buyerRentShare > 0"
+                  class="flex items-baseline justify-between gap-4"
+                >
+                  <dt>{{ $t('checkout.receiptRent') }}</dt>
+                  <dd>≈ {{ lamportsToSol(costs.receiptRent) }} SOL</dd>
+                </div>
+                <div
+                  v-if="costs.buyerExtraCost > costs.networkFee"
+                  class="mt-0.5 flex items-baseline justify-between gap-4 border-t border-default pt-0.5 text-default"
+                >
+                  <dt>{{ $t('checkout.totalExtra') }}</dt>
+                  <dd>≈ {{ lamportsToSol(costs.buyerExtraCost) }} SOL</dd>
                 </div>
               </dl>
               <p

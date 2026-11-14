@@ -1305,21 +1305,22 @@ Smoke tests:
       (read-only, no signing); `close_budget` `5Jirbyfw…` removed the stand-in
       budget.
 - [x] Checkout page cost lines match a settled payment. Token invoice
-      `BiWp7wEm…` (2.5 units, fresh seller with no SOL): the page showed
-      "≈ 0.00148844 SOL" for the seller's token account and no protocol fee, and
-      the settle `2dEeMCkd…` created that account for exactly 1,488,440
-      lamports and took no fee — the seller received all 2,500,000. Its
-      network-fee line reads `0.00001 SOL` where the settle cost 5,000 lamports,
-      so that line is an upper bound rather than a shortfall. A SOL invoice
-      (`HBGn1Hoi…`) showed only the network-fee line, matching the 0.01 SOL
-      settle `5dq5uKBU…` where the payer paid the price plus 5,000.
-- [ ] Checkout page on a token invoice shows the whole buyer cost. It does not:
-      the same settle also pulled 1,981,200 lamports of invoice rent (the closed
-      invoice hands that to the seller) and 2,179,320 of receipt rent from the
-      payer, so the buyer spent 5,653,960 lamports against the ≈1,498,440 the
-      page implied. The SOL path refunds both through the treasury (its 0.01
-      SOL payer lost only the price and the network fee); the token path has no
-      treasury account until Phase 3.
+      `BiWp7wEm…` (2.5 units, fresh seller with no SOL) first showed only the
+      network fee and the token account rent: that rent matched its settle
+      `2dEeMCkd…` to the lamport (1,488,440) and no protocol fee was charged
+      (the seller received all 2,500,000), but the page left out the 1,981,200
+      lamports of invoice rent and 2,179,320 of receipt rent the token settle
+      also takes from the payer.
+- [x] The checkout now lists those rents and totals the buyer's cost. Invoice
+      `5uvSZUzy…` (1.75 units, fresh seller) rendered `1,488,440` token account
+      rent, `1,981,200` invoice record rent, `2,179,320` payment record rent and
+      "Total beyond the price ≈ 0.00565896 SOL"; its settle `3fh5eV9g…` cost the
+      buyer 5,653,960 lamports — the three rows add up to 5,648,960 and the
+      last 5,000 is the network-fee line quoting its 10,000 upper bound against
+      the 5,000 a one-signature transaction actually pays. A SOL invoice
+      (`HBGn1Hoi…`) still shows only the network-fee line, because
+      `settle_payment` refunds both records through the treasury; its settle
+      `5dq5uKBU…` left the payer down just the price plus 5,000.
 - [x] `withdraw_treasury` moves surplus and leaves the rent-exempt minimum:
       withdrawing everything above it left 650,240 lamports (devnet's
       `minimum_balance(0)`, not the 890,880 this plan assumed for mainnet); the

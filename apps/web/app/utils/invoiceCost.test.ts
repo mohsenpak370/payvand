@@ -180,6 +180,36 @@ describe('invoiceCosts', () => {
     expect(invoiceCosts(token).sellerTokenAccountRent).toBe(0)
   })
 
+  it('adds no record rent to a SOL payer, whose treasury refunds it', () => {
+    // `settle_payment`: the payer advances SOL_RENT and RECEIPT_RENT, the
+    // invoice closes to the seller and the treasury pays RECEIPT_RENT back, so
+    // the price plus the network fee is the whole loss.
+    const costs = invoiceCosts({ ...base, amount: 1_000_000_000 })
+
+    expect(costs.buyerRentShare).toBe(0)
+    expect(costs.buyerExtraCost).toBe(NETWORK_FEE_LAMPORTS)
+  })
+
+  it('charges a token payer both records, which the token settle has no treasury for', () => {
+    // `settle_token_payment` creates the invoice and the receipt with the
+    // payer's lamports and has no treasury account to refund the receipt.
+    const costs = invoiceCosts({
+      ...base,
+      currency: 'usdc',
+      amount: 2_500_000,
+      invoiceRent: TOKEN_RENT,
+      sellerTokenAccountRent: TOKEN_ACCOUNT_RENT
+    })
+
+    expect(costs.buyerRentShare).toBe(TOKEN_RENT + RECEIPT_RENT)
+    expect(costs.buyerExtraCost).toBe(
+      NETWORK_FEE_LAMPORTS + TOKEN_ACCOUNT_RENT + TOKEN_RENT + RECEIPT_RENT
+    )
+    // The records are the payer's; only the fee comes out of the seller's side.
+    expect(costs.payerPays).toBe(2_500_000)
+    expect(costs.sellerReceives).toBe(2_450_000)
+  })
+
   it('agrees with the settle the contract suite asserts', () => {
     // `fixed_fee_is_charged_on_top_of_the_rate`: 0.1 SOL less a 3,000,000 fee
     // reaches the seller, and 97,000,000 is exactly what settle.rs checks.

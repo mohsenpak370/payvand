@@ -347,6 +347,9 @@
     "total": "مجموع",
     "sellerTokenAccount": "اجاره حساب توکن فروشنده",
     "networkFee": "کارمزد شبکه سولانا",
+    "invoiceRent": "اجاره رکورد فاکتور",
+    "receiptRent": "اجاره رکورد پرداخت",
+    "totalExtra": "مجموع علاوه بر قیمت",
     "protocolFee": "کارمزد پروتکل",
     "referenceCode": "کد مرجع",
     "details": {

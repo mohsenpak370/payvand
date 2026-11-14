@@ -347,6 +347,9 @@
     "total": "Total",
     "sellerTokenAccount": "Alquiler de la cuenta de token del vendedor",
     "networkFee": "Comisión de red de Solana",
+    "invoiceRent": "Alquiler del registro de la factura",
+    "receiptRent": "Alquiler del registro del pago",
+    "totalExtra": "Total además del precio",
     "protocolFee": "Comisión del protocolo",
     "referenceCode": "Código de referencia",
     "details": {

@@ -347,6 +347,9 @@
     "total": "Total",
     "sellerTokenAccount": "Loyer du compte de jetons du vendeur",
     "networkFee": "Frais de réseau Solana",
+    "invoiceRent": "Loyer de l'enregistrement de la facture",
+    "receiptRent": "Loyer de l'enregistrement du paiement",
+    "totalExtra": "Total en plus du prix",
     "protocolFee": "Frais du protocole",
     "referenceCode": "Code de référence",
     "details": {
