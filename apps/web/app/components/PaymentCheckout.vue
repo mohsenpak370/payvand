@@ -444,13 +444,10 @@ useSeoMeta({
               </p>
 
               <!--
-                What the price does not include: the buyer's own Solana costs.
-                A SOL invoice carries no fee for the buyer — the seller pays it,
-                and the treasury funds both records — so only the network fee
-                is shown. A token invoice has no treasury behind it yet, so its
-                payer also creates the invoice account and the receipt; those
-                rents are listed, and the total says what the payment will
-                actually cost beyond the price.
+                What the price does not include: the buyer's own Solana cost.
+                Both settles take the fee out of the seller's side and refund
+                the record rents from the treasury, so the one line left is the
+                network fee the buyer pays to send the transaction.
               -->
               <dl
                 v-if="costs"
@@ -470,35 +467,18 @@ useSeoMeta({
                   <dt>{{ $t('checkout.networkFee') }}</dt>
                   <dd>≈ {{ lamportsToSol(costs.networkFee) }} SOL</dd>
                 </div>
-                <div
-                  v-if="costs.sellerTokenAccountRent > 0"
-                  class="flex items-baseline justify-between gap-4"
-                >
-                  <dt>{{ $t('checkout.sellerTokenAccount') }}</dt>
-                  <dd>≈ {{ lamportsToSol(costs.sellerTokenAccountRent) }} SOL</dd>
-                </div>
-                <div
-                  v-if="costs.buyerRentShare > 0"
-                  class="flex items-baseline justify-between gap-4"
-                >
-                  <dt>{{ $t('checkout.invoiceRent') }}</dt>
-                  <dd>≈ {{ lamportsToSol(costs.invoiceRent) }} SOL</dd>
-                </div>
-                <div
-                  v-if="costs.buyerRentShare > 0"
-                  class="flex items-baseline justify-between gap-4"
-                >
-                  <dt>{{ $t('checkout.receiptRent') }}</dt>
-                  <dd>≈ {{ lamportsToSol(costs.receiptRent) }} SOL</dd>
-                </div>
-                <div
-                  v-if="costs.buyerExtraCost > costs.networkFee"
-                  class="mt-0.5 flex items-baseline justify-between gap-4 border-t border-default pt-0.5 text-default"
-                >
-                  <dt>{{ $t('checkout.totalExtra') }}</dt>
-                  <dd>≈ {{ lamportsToSol(costs.buyerExtraCost) }} SOL</dd>
-                </div>
               </dl>
+              <!--
+                A token invoice can only pay into an account the seller already
+                opened: creating one inside someone else's settlement would hand
+                them rent, so the page says so instead of quoting a fee for it.
+              -->
+              <p
+                v-if="costs && costs.sellerTokenAccountRent > 0"
+                class="mt-1 max-w-xs text-xs text-warning"
+              >
+                {{ $t('checkout.sellerTokenAccountMissing') }}
+              </p>
               <p
                 v-else-if="costsError"
                 class="mt-2 max-w-xs text-xs text-warning"

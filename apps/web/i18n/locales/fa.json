@@ -345,11 +345,8 @@
     "invalidTitle": "این لینک پرداخت باز نمی‌شود",
     "goHome": "رفتن به پیوند",
     "total": "مجموع",
-    "sellerTokenAccount": "اجاره حساب توکن فروشنده",
     "networkFee": "کارمزد شبکه سولانا",
-    "invoiceRent": "اجاره رکورد فاکتور",
-    "receiptRent": "اجاره رکورد پرداخت",
-    "totalExtra": "مجموع علاوه بر قیمت",
+    "sellerTokenAccountMissing": "این فروشنده هنوز حساب توکن خود را باز نکرده است؛ تا آن زمان این فاکتور قابل پرداخت نیست.",
     "protocolFee": "کارمزد پروتکل",
     "referenceCode": "کد مرجع",
     "details": {

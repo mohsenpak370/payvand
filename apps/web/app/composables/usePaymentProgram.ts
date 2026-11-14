@@ -239,6 +239,16 @@ export async function deriveTreasuryPda(): Promise<Address> {
 }
 
 /**
+ * The treasury's own token account for a mint: where a token invoice's fee
+ * lands, so the buyer can hand over the price without carrying the protocol's
+ * costs. It is opened once per mint by whoever runs the treasury, not per
+ * payment.
+ */
+export async function deriveTreasuryTokenAccount(mint: Address): Promise<Address> {
+  return deriveAssociatedTokenAddress(await deriveTreasuryPda(), mint)
+}
+
+/**
  * `seeds = [b"payment-receipt", invoice]`, mirroring the Anchor program.
  *
  * One receipt type covers SOL and token invoices, keyed by the invoice address:

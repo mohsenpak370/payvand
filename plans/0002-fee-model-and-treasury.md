@@ -1277,12 +1277,21 @@ Smoke tests:
       receipt rent. `open_budget` moved exactly `Config.session_fee_float`
       (30,000,000) to the session key and the limit into a 97-byte account.
       Signatures `3Q7M8y4b…`, `2T48sVvp…`.
-- [ ] Token invoice from a fresh seller with no SOL: seller receives
-      `amount - fee_t`; treasury ATA receives `fee_t`; payer pays only the
-      network fee and the new seller ATA rent. **Blocked on Phase 3:** the
-      deployed `settle_token_payment` has no `config`/`treasury` accounts (see
-      the IDL) and transfers the full `amount`; there is no `fee_t` to assert
-      yet.
+- [x] Token invoice pays the SOL way: seller receives `amount - fee_t`, the
+      treasury's token account receives `fee_t`, and the payer spends only the
+      network fee. The program was upgraded in place to slot 522185487
+      (501,240 bytes, same ID and authority) and mint `29owUqEY…` got a treasury
+      token account (`3zhVS5bm…`). Settle `2VDZzs4j…`, 0.70 tokens to a seller
+      who had opened their own account: buyer −700,000 tokens and −5,000
+      lamports (network only), seller +686,000 (`fee_t` 14,000), treasury +14,000
+      tokens and −2,179,320 lamports (the permanent receipt). The pool comes out
+      ahead in tokens and down one receipt rent, which is what the fee has to
+      cover; the treasury token balance is the pool the plan converts later.
+- [ ] A seller whose token account is missing now blocks the payment instead of
+      being charged to the buyer (creating it inside a settlement would hand
+      rent to whoever is named). Not yet exercised on chain: the page shows the
+      notice (`/p/…` invoice to a seller with no account), and the program
+      refuses the CPI with `AccountNotInitialized`.
 - [ ] Wrong-mint close fails; decoy vault rejected. **Blocked on Phase 3**
       (Task 3.4); not exercised.
 - [x] `close_budget` returns the pot and the account rent to the buyer and the
@@ -1304,23 +1313,13 @@ Smoke tests:
       no wallet extension, so this screen used a registered wallet-standard stub
       (read-only, no signing); `close_budget` `5Jirbyfw…` removed the stand-in
       budget.
-- [x] Checkout page cost lines match a settled payment. Token invoice
-      `BiWp7wEm…` (2.5 units, fresh seller with no SOL) first showed only the
-      network fee and the token account rent: that rent matched its settle
-      `2dEeMCkd…` to the lamport (1,488,440) and no protocol fee was charged
-      (the seller received all 2,500,000), but the page left out the 1,981,200
-      lamports of invoice rent and 2,179,320 of receipt rent the token settle
-      also takes from the payer.
-- [x] The checkout now lists those rents and totals the buyer's cost. Invoice
-      `5uvSZUzy…` (1.75 units, fresh seller) rendered `1,488,440` token account
-      rent, `1,981,200` invoice record rent, `2,179,320` payment record rent and
-      "Total beyond the price ≈ 0.00565896 SOL"; its settle `3fh5eV9g…` cost the
-      buyer 5,653,960 lamports — the three rows add up to 5,648,960 and the
-      last 5,000 is the network-fee line quoting its 10,000 upper bound against
-      the 5,000 a one-signature transaction actually pays. A SOL invoice
-      (`HBGn1Hoi…`) still shows only the network-fee line, because
-      `settle_payment` refunds both records through the treasury; its settle
-      `5dq5uKBU…` left the payer down just the price plus 5,000.
+- [x] Checkout page shows the same money on both currencies: the price, and
+      the network fee as the only extra line. A token invoice whose seller has
+      opened their account renders "Solana network fee ≈ 0.00001 SOL" and
+      nothing else, matching settle `2VDZzs4j…` where the buyer lost exactly the
+      5,000 lamport fee; a SOL invoice (`HBGn1Hoi…`) matches its settle
+      `5dq5uKBU…` the same way. A token invoice to a seller with no account
+      shows the setup notice instead of a rent the buyer would never owe.
 - [x] `withdraw_treasury` moves surplus and leaves the rent-exempt minimum:
       withdrawing everything above it left 650,240 lamports (devnet's
       `minimum_balance(0)`, not the 890,880 this plan assumed for mainnet); the

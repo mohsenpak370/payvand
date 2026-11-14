@@ -345,11 +345,8 @@
     "invalidTitle": "This payment link cannot be opened",
     "goHome": "Go to Payvand",
     "total": "Total",
-    "sellerTokenAccount": "Seller's token account rent",
     "networkFee": "Solana network fee",
-    "invoiceRent": "Invoice record rent",
-    "receiptRent": "Payment record rent",
-    "totalExtra": "Total beyond the price",
+    "sellerTokenAccountMissing": "This seller has not opened their token account yet, so this invoice cannot be paid until they do.",
     "protocolFee": "Protocol fee",
     "referenceCode": "Reference code",
     "details": {

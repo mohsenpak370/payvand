@@ -15,6 +15,7 @@ import {
   derivePaymentReceiptPda,
   deriveTokenPaymentPda,
   deriveTreasuryPda,
+  deriveTreasuryTokenAccount,
   mintForCurrency
 } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
@@ -474,6 +475,9 @@ export function usePaymentCheckout() {
             memo
           })
         } else {
+          // The fee leaves the buyer's account for the treasury's own token
+          // account and the pool refunds the record rents, so the price is all
+          // the buyer spends. The seller's account is theirs to have opened.
           const instruction = buildInstruction(
             'settle_token_payment',
             { amount, memo },
@@ -485,7 +489,10 @@ export function usePaymentCheckout() {
               payer_token_account: await deriveAssociatedTokenAddress(payer, mint),
               mint,
               receipt: await derivePaymentReceiptPda(payment),
-              reference
+              reference,
+              config: await deriveConfigPda(),
+              treasury: await deriveTreasuryPda(),
+              treasury_token_account: await deriveTreasuryTokenAccount(mint)
             }
           )
           const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })

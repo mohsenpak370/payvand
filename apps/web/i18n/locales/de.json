@@ -345,11 +345,8 @@
     "invalidTitle": "Dieser Zahlungslink lässt sich nicht öffnen",
     "goHome": "Zu Payvand",
     "total": "Gesamt",
-    "sellerTokenAccount": "Miete für das Token-Konto des Verkäufers",
     "networkFee": "Solana-Netzwerkgebühr",
-    "invoiceRent": "Miete für den Rechnungsdatensatz",
-    "receiptRent": "Miete für den Zahlungsdatensatz",
-    "totalExtra": "Summe zusätzlich zum Preis",
+    "sellerTokenAccountMissing": "Dieser Verkäufer hat sein Token-Konto noch nicht eröffnet; die Rechnung ist erst danach zahlbar.",
     "protocolFee": "Protokollgebühr",
     "referenceCode": "Referenzcode",
     "details": {

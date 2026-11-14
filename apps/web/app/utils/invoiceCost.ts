@@ -54,18 +54,6 @@ export interface InvoiceCosts {
   networkFee: number
   /** Lamports: the seller's token account rent, only when it has to be made. */
   sellerTokenAccountRent: number
-  /**
-   * Lamports of record rent the buyer fronts on a token invoice: the invoice
-   * account (which the seller receives when it closes) and the permanent
-   * receipt. Zero on a SOL invoice, where the treasury refunds the receipt and
-   * the seller's share already accounts for the invoice rent.
-   */
-  buyerRentShare: number
-  /**
-   * Lamports the buyer pays on top of the price: every cost row above, added.
-   * The settle should cost exactly this more than `payerPays`.
-   */
-  buyerExtraCost: number
   /** The smallest amount the program accepts, in base units. */
   minPayable: number
 }
@@ -132,15 +120,12 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   const amount = Number.isFinite(input.amount) ? Math.trunc(input.amount) : 0
   const fee = feeOn(policy, amount)
   const sellerPays = policy.feeMode === 'seller'
-  // `settle_payment` reimburses the receipt rent from the treasury and pays the
-  // seller `amount - rent - fee` before the invoice's rent reaches them, so a
-  // SOL buyer loses neither record. `settle_token_payment` has no treasury
-  // account in this build, so its payer funds both records themselves; when
-  // Phase 3 gives the token path a treasury, this share drops to zero.
-  const buyerRentShare = input.currency === 'sol'
-    ? 0
-    : Math.trunc(input.invoiceRent) + Math.trunc(input.receiptRent)
-  const sellerTokenAccountRent = Math.trunc(input.sellerTokenAccountRent ?? 0)
+  // Both settles hand the payer back every lamport of record rent they advance:
+  // `settle_payment` reimburses the receipt and pays the seller
+  // `amount - rent - fee`, `settle_token_payment` refunds both from the treasury
+  // and closes the invoice to it. So a buyer's cost beyond the price is the
+  // network fee, and the one extra line a token invoice can have is an account
+  // the seller has not opened yet.
 
   return {
     currency: input.currency,
@@ -152,9 +137,7 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     invoiceRent: input.invoiceRent,
     receiptRent: input.receiptRent,
     networkFee: NETWORK_FEE_LAMPORTS,
-    sellerTokenAccountRent,
-    buyerRentShare,
-    buyerExtraCost: NETWORK_FEE_LAMPORTS + sellerTokenAccountRent + buyerRentShare,
+    sellerTokenAccountRent: Math.trunc(input.sellerTokenAccountRent ?? 0),
     minPayable: minimumPayable(policy, input.invoiceRent)
   }
 }

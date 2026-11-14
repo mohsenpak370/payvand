@@ -11,15 +11,15 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer as TokenTransf
 
 use crate::constants::*;
 use crate::errors::PaymentError;
-use crate::helpers::current_month_index;
-use crate::state::{PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
+use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
+use crate::state::{Config, FeeMode, PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct SettleTokenPayment<'info> {
-    /// Pays the invoice rent, the receipt rent, and the seller's token account
-    /// rent if it does not exist yet. The tokens themselves come out of
-    /// `payer_token_account`.
+    /// Advances the invoice and receipt rents and the network fee; the treasury
+    /// refunds both rents in this same instruction, so the buyer's lamports
+    /// loss is the network fee alone and the price is all they pay.
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -39,25 +39,21 @@ pub struct SettleTokenPayment<'info> {
     pub payment: Account<'info, TokenPayment>,
 
     /// CHECK: The address the QR code names as the payee. It receives only
-    /// through its own associated token account, checked below, and it is the
-    /// destination of the invoice account's close at the end.
+    /// through its own associated token account, checked below.
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
-    /// Created on the fly when the seller has never held this token, so a
-    /// buyer is never blocked by the recipient's account setup.
-    #[account(
-        init_if_needed,
-        payer = payer,
-        associated_token::mint = mint,
-        associated_token::authority = seller
-    )]
-    pub seller_token_account: Account<'info, TokenAccount>,
+    /// The seller's own token account, which must already exist. Creating one
+    /// here would mint rent to whoever named the seller, so opening it is the
+    /// seller's setup step — like having a wallet at all — and never a line on
+    /// the buyer's bill.
+    #[account(mut, token::mint = mint, token::authority = seller)]
+    pub seller_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(mut, token::mint = mint, token::authority = payer)]
-    pub payer_token_account: Account<'info, TokenAccount>,
+    pub payer_token_account: Box<Account<'info, TokenAccount>>,
 
-    pub mint: Account<'info, Mint>,
+    pub mint: Box<Account<'info, Mint>>,
 
     #[account(
         init_if_needed,
@@ -72,8 +68,22 @@ pub struct SettleTokenPayment<'info> {
     /// and an address watchers can look up.
     pub reference: UncheckedAccount<'info>,
 
+    /// The fee policy, read-only here. Same rules as the SOL path.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    /// The SOL pool: it refunds the rents the payer advanced and receives the
+    /// invoice rent back when the invoice closes.
+    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
+    /// The fee's destination in this mint, opened once per mint by whoever runs
+    /// the treasury; the contract cannot create it without paying rent to a
+    /// seller's account, which is the faucet this avoids.
+    #[account(mut, token::mint = mint, token::authority = treasury)]
+    pub treasury_token_account: Box<Account<'info, TokenAccount>>,
+
     pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
@@ -227,6 +237,27 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         PaymentError::AlreadySettled
     );
 
+    // Same policy as the SOL path: the buyer pays the price, the seller carries
+    // the fee, and the protocol's own records come out of the pool.
+    let config = &ctx.accounts.config;
+    require!(
+        config.fee_mode == FeeMode::SellerPays,
+        PaymentError::FeeModeUnsupported
+    );
+
+    let fee = fee_for(config, amount)?;
+    // The seller must still receive something, as in `settle_payment`.
+    require!(amount > fee, PaymentError::InvoiceTooSmall);
+
+    let payment_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    // The payer advanced both rents above; the refund is checked before any
+    // transfer so a settlement cannot start what the treasury cannot finish.
+    let refund = payment_rent.saturating_add(receipt_rent);
+    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
+
+    // Exactly `amount` leaves the buyer: the fee goes to the treasury's account
+    // for this mint and the rest to the seller, who is the one carrying it.
     token::transfer(
         CpiContext::new(
             ctx.accounts.token_program.key(),
@@ -236,7 +267,30 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
                 authority: ctx.accounts.payer.to_account_info(),
             },
         ),
-        amount,
+        amount - fee,
+    )?;
+    if fee > 0 {
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                TokenTransfer {
+                    from: ctx.accounts.payer_token_account.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: ctx.accounts.payer.to_account_info(),
+                },
+            ),
+            fee,
+        )?;
+    }
+
+    // Hand back the two rents the payer advanced. A CPI, so it runs while no
+    // lamport delta is outstanding; the invoice's close below does the direct
+    // move.
+    pay_from_treasury(
+        &ctx.accounts.treasury.to_account_info(),
+        &ctx.accounts.payer.to_account_info(),
+        refund,
+        ctx.accounts.config.treasury_bump,
     )?;
 
     let now = Clock::get()?.unix_timestamp;
@@ -275,17 +329,17 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         receipt.bump = ctx.bumps.receipt;
     }
 
-    // Auto-close, as in the SOL path: the receipt is the surviving record and
-    // the invoice rent goes back to the seller in this same transaction.
+    // The invoice's rent returns to the pool that advanced it, leaving the
+    // permanent receipt as the only lasting cost — as in `settle_payment`.
     ctx.accounts
         .payment
-        .close(ctx.accounts.seller.to_account_info())?;
+        .close(ctx.accounts.treasury.to_account_info())?;
 
     msg!(
-        "token payment settled: {} of {} from {}",
+        "token payment settled: {} of {}, fee {} to the treasury",
         amount,
         mint,
-        payer
+        fee
     );
     Ok(())
 }

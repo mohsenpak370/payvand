@@ -1258,9 +1258,9 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the invoice rent, the receipt rent, and the seller's token account",
-            "rent if it does not exist yet. The tokens themselves come out of",
-            "`payer_token_account`."
+            "Advances the invoice and receipt rents and the network fee; the treasury",
+            "refunds both rents in this same instruction, so the buyer's lamports",
+            "loss is the network fee alone and the price is all they pay."
           ],
           "writable": true,
           "signer": true
@@ -1310,104 +1310,19 @@
         {
           "name": "seller",
           "docs": [
-            "through its own associated token account, checked below, and it is the",
-            "destination of the invoice account's close at the end."
+            "through its own associated token account, checked below."
           ],
           "writable": true
         },
         {
           "name": "seller_token_account",
           "docs": [
-            "Created on the fly when the seller has never held this token, so a",
-            "buyer is never blocked by the recipient's account setup."
+            "The seller's own token account, which must already exist. Creating one",
+            "here would mint rent to whoever named the seller, so opening it is the",
+            "seller's setup step — like having a wallet at all — and never a line on",
+            "the buyer's bill."
           ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "seller"
-              },
-              {
-                "kind": "const",
-                "value": [
-                  6,
-                  221,
-                  246,
-                  225,
-                  215,
-                  101,
-                  161,
-                  147,
-                  217,
-                  203,
-                  225,
-                  70,
-                  206,
-                  235,
-                  121,
-                  172,
-                  28,
-                  180,
-                  133,
-                  237,
-                  95,
-                  91,
-                  55,
-                  145,
-                  58,
-                  140,
-                  245,
-                  133,
-                  126,
-                  255,
-                  0,
-                  169
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
+          "writable": true
         },
         {
           "name": "payer_token_account",
@@ -1455,12 +1370,63 @@
           ]
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "config",
+          "docs": [
+            "The fee policy, read-only here. Same rules as the SOL path."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+          "name": "treasury",
+          "docs": [
+            "The SOL pool: it refunds the rents the payer advanced and receives the",
+            "invoice rent back when the invoice closes."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_token_account",
+          "docs": [
+            "The fee's destination in this mint, opened once per mint by whoever runs",
+            "the treasury; the contract cannot create it without paying rent to a",
+            "seller's account, which is the faucet this avoids."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
