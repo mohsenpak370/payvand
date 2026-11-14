@@ -309,7 +309,12 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
       : buildInstruction(
           'open_budget',
           { monthly_limit: limit },
-          { buyer, budget: await deriveBudgetPda(buyer), session_key: session.address }
+          {
+            buyer,
+            budget: await deriveBudgetPda(buyer),
+            session_key: session.address,
+            config: await deriveConfigPda()
+          }
         )
     let memoText = `Payvand: keep ${amountLabel(limit)} as your monthly budget `
       + '(still your funds, withdrawable anytime)'

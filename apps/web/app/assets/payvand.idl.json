@@ -130,6 +130,190 @@
       "args": []
     },
     {
+      "name": "initialize_config",
+      "docs": [
+        "Creates the singleton fee policy. Callable once, by the program's",
+        "upgrade authority, which becomes the admin — so no caller can install",
+        "an admin of its choosing."
+      ],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The upgrade authority: pays for `Config` and becomes its admin."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "upgradeable loader's PDA for this program id and the owner check pins it",
+            "to that loader, so a decoy account cannot stand in for it. The handler",
+            "reads the upgrade authority out of it."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  54,
+                  200,
+                  122,
+                  143,
+                  112,
+                  114,
+                  170,
+                  229,
+                  159,
+                  32,
+                  206,
+                  106,
+                  114,
+                  212,
+                  9,
+                  146,
+                  118,
+                  160,
+                  166,
+                  98,
+                  116,
+                  129,
+                  118,
+                  252,
+                  90,
+                  45,
+                  179,
+                  227,
+                  86,
+                  184,
+                  158,
+                  117
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The fee destination. Created outside this instruction (it needs no data",
+            "and no signature), and pinned here by its seed."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "fixed_fee_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "fee_mode",
+          "type": {
+            "defined": {
+              "name": "FeeMode"
+            }
+          }
+        },
+        {
+          "name": "session_fee_float",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "open_budget",
       "docs": [
         "Buyer funds this month's spending budget and registers a session key.",
@@ -185,6 +369,27 @@
             "the only key allowed to spend from the budget afterwards."
           ],
           "writable": true
+        },
+        {
+          "name": "config",
+          "docs": [
+            "Supplies the session float, so a policy change reaches every new budget."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -519,6 +724,51 @@
           "docs": [
             "seed and an address watchers can look up."
           ]
+        },
+        {
+          "name": "config",
+          "docs": [
+            "The fee policy. Read-only here."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The fee destination and the refund source, pinned by seed."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -922,6 +1172,52 @@
           ]
         },
         {
+          "name": "config",
+          "docs": [
+            "The fee policy. Read-only here: only the admin writes it."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The fee destination, pinned by seed so the payer cannot name another",
+            "account. It also refunds the receipt rent the payer just advanced."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -1181,6 +1477,148 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Changes the fee policy. Admin only; it never rewrites `admin` itself."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "fixed_fee_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "fee_mode",
+          "type": {
+            "defined": {
+              "name": "FeeMode"
+            }
+          }
+        },
+        {
+          "name": "session_fee_float",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_treasury",
+      "docs": [
+        "Moves treasury surplus to the admin, leaving its rent-exempt minimum.",
+        "No payment path can touch the treasury this way."
+      ],
+      "discriminator": [
+        40,
+        63,
+        122,
+        158,
+        144,
+        216,
+        83,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1195,6 +1633,19 @@
         148,
         119,
         218
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
       ]
     },
     {
@@ -1295,6 +1746,46 @@
       "code": 6008,
       "name": "MintMismatch",
       "msg": "The token does not match this budget"
+    },
+    {
+      "code": 6009,
+      "name": "ConfigMissing",
+      "msg": "This deployment has no fee config yet"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidConfigAdmin",
+      "msg": "Only the program's upgrade authority may initialize the config"
+    },
+    {
+      "code": 6011,
+      "name": "ProgramNotUpgradeable",
+      "msg": "This program is not upgradeable, so it cannot bootstrap a config"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidFeeBps",
+      "msg": "The fee rate cannot exceed 100%"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidSessionFloat",
+      "msg": "The session float must cover one payment's rents"
+    },
+    {
+      "code": 6014,
+      "name": "TreasuryUnderfunded",
+      "msg": "The treasury cannot cover the refund it owes"
+    },
+    {
+      "code": 6015,
+      "name": "FeeModeUnsupported",
+      "msg": "This fee mode is not supported yet"
+    },
+    {
+      "code": 6016,
+      "name": "FeeOverflow",
+      "msg": "The fee calculation overflowed"
     }
   ],
   "types": [
@@ -1347,6 +1838,89 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "The program's singleton fee policy and treasury pointers.",
+        "",
+        "Created once per deployment by the program's upgrade authority, which",
+        "becomes `admin`. Settlements read it and never write it; only the admin can",
+        "change the policy, and the fee destination is derived from a seed here",
+        "rather than named by a caller, so no settlement can redirect it."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "The upgrade authority that initialized the config. It may change the",
+              "policy and withdraw treasury surplus, nothing else."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps",
+            "docs": [
+              "Seller-side fee in basis points (200 = 2%)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "fixed_fee_lamports",
+            "docs": [
+              "Flat lamport fee added on top of the proportional one."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fee_mode",
+            "docs": [
+              "Who pays the fee."
+            ],
+            "type": {
+              "defined": {
+                "name": "FeeMode"
+              }
+            }
+          },
+          {
+            "name": "session_fee_float",
+            "docs": [
+              "Lamports parked on a session key so its silent transactions can pay",
+              "their own network fees. Replaces the old hardcoded float."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "treasury_bump",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeMode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "SellerPays"
+          },
+          {
+            "name": "BuyerPays"
           }
         ]
       }

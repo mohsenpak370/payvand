@@ -6,7 +6,8 @@ In Progress — new (2026-11-12), split from the 2026-11-09 contract security
 draft; revision 2 (2026-11-13) notes the receipt consolidation that landed in
 `0001`; revision 3 (2026-11-13) records Phase 1 Tasks 1.1 and 1.2 as built and
 tested on the program, with the client half (Tasks 1.3–1.5) and any deployment
-still to come.
+still to come; revision 4 (2026-11-14) recomputes every fee and rent figure for
+the 301-byte receipt and starts Task 1.4 in the web client.
 
 ## Revision Notes
 
@@ -19,10 +20,11 @@ numbers:
 - Every `R_r` (receipt rent) figure in this plan therefore moves to 2,985,840:
   the treasury's per-invoice outlay, the break-even invoice (now
   2,985,840 / `fee_bps`), and the treasury delta tables.
-- The tables below still show the revision-1 arithmetic (2,540,400 / 2,763,120).
-  They are illustrative only: recompute them from 2,985,840 when Task 1.2 is
-  implemented, and keep the rent read over RPC as the single source of truth.
-  No decision in this plan changes because of the consolidation.
+- The money tables were recomputed from 2,985,840 in revision 4 (2026-11-14):
+  break-even at 2% is 0.149292 SOL, the treasury floor before any settle is
+  3,876,720 lamports, and `MIN_SESSION_FEE_FLOAT` in the program is 5,477,520.
+  Keep the rent read over RPC as the single source of truth. No decision in this
+  plan changes because of the consolidation.
 
 Revision 3 also records what building Task 1.2 taught:
 
@@ -199,37 +201,40 @@ these planning figures.
 
 Payer pays `amount` in total (the receipt rent is advanced at `init` and
 refunded by the treasury in the same transaction). Seller receives
-`amount - fee`. Treasury delta is `fee - R_r`.
+`amount - fee`. Treasury delta is `fee - R_r`, where `R_r = 2,985,840` is the
+301-byte receipt.
 
 | Invoice (SOL) | Lamports | Fee | Seller receives | Treasury delta |
 | --- | ---: | ---: | ---: | ---: |
-| 0.005 | 5,000,000 | 100,000 | 4,900,000 | −2,440,400 |
-| 0.01 | 10,000,000 | 200,000 | 9,800,000 | −2,340,400 |
-| 0.05 | 50,000,000 | 1,000,000 | 49,000,000 | −1,540,400 |
-| 0.12702 | 127,020,000 | 2,540,400 | 124,479,600 | 0 |
-| 0.5 | 500,000,000 | 10,000,000 | 490,000,000 | +7,459,600 |
-| 1 | 1,000,000,000 | 20,000,000 | 980,000,000 | +17,459,600 |
-| 10 | 10,000,000,000 | 200,000,000 | 9,800,000,000 | +197,459,600 |
+| 0.005 | 5,000,000 | 100,000 | 4,900,000 | −2,885,840 |
+| 0.01 | 10,000,000 | 200,000 | 9,800,000 | −2,785,840 |
+| 0.05 | 50,000,000 | 1,000,000 | 49,000,000 | −1,985,840 |
+| 0.149292 | 149,292,000 | 2,985,840 | 146,306,160 | 0 |
+| 0.5 | 500,000,000 | 10,000,000 | 490,000,000 | +7,014,160 |
+| 1 | 1,000,000,000 | 20,000,000 | 980,000,000 | +17,014,160 |
+| 10 | 10,000,000,000 | 200,000,000 | 9,800,000,000 | +197,014,160 |
 
 Break-even invoice (fee = receipt rent), where the treasury stops subsidising:
 
 | `fee_bps` | Break-even | In SOL |
 | ---: | ---: | ---: |
-| 100 (1%) | 254,040,000 | 0.25404 |
-| 150 (1.5%) | 169,360,000 | 0.16936 |
-| 200 (2%) | 127,020,000 | 0.12702 |
+| 100 (1%) | 298,584,000 | 0.298584 |
+| 150 (1.5%) | 199,056,000 | 0.199056 |
+| 200 (2%) | 149,292,000 | 0.149292 |
 
 Consequences to state in the docs and the admin view:
 
-- Invoices below ~0.127 SOL at 2% are subsidised by the treasury at roughly
-  `0.00254 − 0.02 × amount` SOL each. That is the price of accepting small
+- Invoices below 0.149292 SOL at 2% are subsidised by the treasury at
+  `2,985,840 − floor(amount × 0.02)` lamports each, roughly
+  `0.00299 − 0.02 × amount` SOL. That is the price of accepting small
   invoices; the alternative (rejecting them) is what revision 1 did.
-- Raising `fixed_fee_lamports` to ≈ 2.6M would make every invoice self-funding,
-  but a flat 0.0026 SOL fee is 26% of a 0.01 SOL payment. Keep the default at 0
-  and let `fee_bps` carry the revenue.
-- The treasury must hold at least `R_r + 890,880` = **3,431,280 lamports
-  (0.0034 SOL)** before a SOL settle, and `R_tr + 890,880` = **3,654,000
-  lamports (0.0037 SOL)** before a token settle.
+- Raising `fixed_fee_lamports` to ≈3.0M (2,985,840) would make every invoice
+  self-funding, but a flat 0.003 SOL fee is 30% of a 0.01 SOL payment. Keep the
+  default at 0 and let `fee_bps` carry the revenue.
+- The treasury must hold at least `R_r + 890,880` = **3,876,720 lamports
+  (0.0039 SOL)** before a settle. One receipt type serves both currencies, so the
+  SOL and token settlements have the same floor (revision 1 needed 3,431,280 for
+  SOL and 3,654,000 for tokens).
 
 ### Minimum payable invoice (underflow guard)
 
@@ -240,7 +245,7 @@ Consequences to state in the docs and the admin view:
   rejects it (`fee` 50,850 plus rent 2,491,680 equals the amount).
 
 Revision 1's `fee >= receipt_rent` rule implied a ≈0.254 SOL floor at 1% and a
-≈0.127 SOL floor at 2%. With treasury funding the hard floor drops to 0.00277
+≈0.127 SOL floor at 2%. With treasury funding the hard floor drops to 0.00254
 SOL, and everything between that and break-even is payable but subsidised.
 
 ### Per-flow ledger (1 SOL invoice at 2%)
@@ -251,8 +256,8 @@ Direct payment:
 | --- | ---: | --- |
 | Payer | −1,000,000,000 | net after the treasury refunds `R_r` |
 | Seller | +980,000,000 | `amount − fee` |
-| Treasury | +17,459,600 | `fee − R_r` |
-| `PaymentReceipt` | 2,540,400 locked | permanent record |
+| Treasury | +17,014,160 | `fee − R_r` |
+| `PaymentReceipt` | 2,985,840 locked | permanent record |
 
 Budget payment (session key advanced `R_p + R_r`, pot reimburses both):
 
@@ -260,9 +265,9 @@ Budget payment (session key advanced `R_p + R_r`, pot reimburses both):
 | --- | ---: | --- |
 | Pot | −1,000,000,000 | exactly `amount`; `spent += amount` |
 | Seller | +980,000,000 | includes the `R_p` returned by close |
-| Treasury | +17,459,600 | `fee − R_r` |
+| Treasury | +17,014,160 | `fee − R_r` |
 | Session key | 0 | rents advanced are reimbursed |
-| `PaymentReceipt` | 2,540,400 locked | permanent record |
+| `PaymentReceipt` | 2,985,840 locked | permanent record |
 
 `BuyerPays` variant (Task 1.3, direct settle only — the budget path rejects it):
 
@@ -270,8 +275,8 @@ Budget payment (session key advanced `R_p + R_r`, pot reimburses both):
 | --- | ---: | --- |
 | Payer | −1,020,000,000 | `amount + fee`, after the treasury refunds `R_r` and close returns `R_p` |
 | Seller | +1,000,000,000 | exactly `amount` |
-| Treasury | +17,459,600 | `fee − R_r` |
-| `PaymentReceipt` | 2,540,400 locked | permanent record |
+| Treasury | +17,014,160 | `fee − R_r` |
+| `PaymentReceipt` | 2,985,840 locked | permanent record |
 
 ### Token invoice (1,000,000,000 base units at 2%)
 
@@ -280,7 +285,7 @@ Budget payment (session key advanced `R_p + R_r`, pot reimburses both):
 | Payer | −1,000,000,000 | network fee only, plus new seller ATA rent if it had none |
 | Seller | +980,000,000 | `amount − fee_t` |
 | Treasury ATA | +20,000,000 | `fee_t` |
-| Treasury (SOL) | — | −2,763,120 refunding the token receipt rent |
+| Treasury (SOL) | — | −2,985,840 refunding the receipt rent |
 
 The seller needs no SOL. The payer's SOL exposure is the network fee and, on a
 fresh seller, the seller's ATA rent (2,039,280) — both disclosed at checkout.
@@ -289,11 +294,13 @@ fresh seller, the seller's ATA rent (2,039,280) — both disclosed at checkout.
 
 Per worst-case token payment to a fresh seller:
 
-`R_p + R_tr + seller ATA = 2,491,680 + 2,763,120 + 2,039,280 = 7,294,080`
-lamports (0.00729 SOL), of which only the ATA rent (and the network fee) is
-consumed. `session_fee_float = 30,000,000` (0.03 SOL) covers three such
-payments (21,882,240 peak) with headroom. For SOL budget payments the peak is
-`R_p + R_r = 5,032,080` and is fully reimbursed, so the same float is ample.
+`R_p + R_r + seller ATA = 2,491,680 + 2,985,840 + 2,039,280 = 7,516,800`
+lamports (0.0075168 SOL), of which only the ATA rent (and the network fee) is
+consumed. `session_fee_float = 30,000,000` (0.03 SOL) covers three such payments
+(22,550,400 peak) with headroom. For SOL budget payments the peak is
+`R_p + R_r = 5,477,520` and is fully reimbursed, so the same float is ample. The
+program's `MIN_SESSION_FEE_FLOAT` is that same 5,477,520, so a config can never
+be given a float that cannot front one payment.
 
 ## Issues Addressed
 
@@ -569,6 +576,21 @@ Description: Add a client module that loads `Config` (cached with a TTL, e.g.
 seller proceeds, payer total, temporary rent, receipt rent, treasury refund, and
 network-fee estimate. Every page and preflight check reads this helper, so the
 displayed numbers and the transaction math have one source.
+
+**Built so far (2026-11-14):** the account wiring half is done. `usePaymentProgram`
+derives `["config"]` and `["treasury"]`, `settle_payment`, `pay_from_budget` and
+`open_budget` pass them, and the copied IDL is regenerated from the program (it
+now also carries `Config`, `initialize_config`, `update_config` and
+`withdraw_treasury`). `pnpm typecheck` and `pnpm lint` pass. Still open: the
+`Config` read/cache and `estimateInvoiceCosts`, so nothing on screen shows a fee
+yet, and `useBudget.ts` still mirrors the session float in a constant.
+
+**Deploy ordering is now load-bearing:** the client sends the new account lists,
+so deploying the web app before the program is upgraded (and `initialize_config`
+has run) makes every SOL settlement fail with a missing-account error. Task 5.1
+must upgrade the program, initialize `Config`, and fund the treasury first; the
+program also tolerates the reverse window (new program, old client) only after
+the client deploy, so do the program first.
 
 Acceptance criteria:
 

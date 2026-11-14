@@ -21,6 +21,10 @@ const PAYMENT_SEED = new TextEncoder().encode('payment')
 const PAYMENT_RECEIPT_SEED = new TextEncoder().encode('payment-receipt')
 /** Token invoices live under their own prefix, with the mint as a seed. */
 const TOKEN_PAYMENT_SEED = new TextEncoder().encode('token-payment')
+/** The singleton fee policy every settlement reads. */
+const CONFIG_SEED = new TextEncoder().encode('config')
+/** The only account a fee may be sent to, and the receipt-rent refund source. */
+const TREASURY_SEED = new TextEncoder().encode('treasury')
 
 /** Legacy SPL token program — Circle's stablecoins use it. */
 export const TOKEN_PROGRAM_ID = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
@@ -195,6 +199,32 @@ export async function derivePaymentPda(
   const [pda] = await getProgramDerivedAddress({
     programAddress: PAYVAND_PROGRAM_ID,
     seeds: [PAYMENT_SEED, encoder.encode(seller), encoder.encode(reference), amountBytes]
+  })
+  return pda
+}
+
+/**
+ * `seeds = [b"config"]` — the fee policy account. Settlements pass it so the
+ * program can read the fee rate, the mode, and the treasury bump; the client
+ * names it rather than hardcoding a fee, so a policy change needs no release.
+ */
+export async function deriveConfigPda(): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PAYVAND_PROGRAM_ID,
+    seeds: [CONFIG_SEED]
+  })
+  return pda
+}
+
+/**
+ * `seeds = [b"treasury"]` — where the fee goes. The program derives it too and
+ * refuses any other account, so passing this one is what makes the fee
+ * destination unredirectable.
+ */
+export async function deriveTreasuryPda(): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PAYVAND_PROGRAM_ID,
+    seeds: [TREASURY_SEED]
   })
   return pda
 }

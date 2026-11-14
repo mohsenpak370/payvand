@@ -10,9 +10,11 @@ import type {
 import { discountedLamports, paymentOptions } from './usePaymentApi'
 import {
   deriveAssociatedTokenAddress,
+  deriveConfigPda,
   derivePaymentPda,
   derivePaymentReceiptPda,
   deriveTokenPaymentPda,
+  deriveTreasuryPda,
   mintForCurrency
 } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
@@ -416,7 +418,9 @@ export function usePaymentCheckout() {
               payment,
               seller,
               receipt: await derivePaymentReceiptPda(payment),
-              reference
+              reference,
+              config: await deriveConfigPda(),
+              treasury: await deriveTreasuryPda()
             }
           )
           const wire = await compileWireTransaction({ instruction, payer, rpc: client.rpc })

@@ -16,7 +16,9 @@ import {
   PAYVAND_PROGRAM_ID,
   buildInstruction,
   deriveAssociatedTokenAddress,
+  deriveConfigPda,
   derivePaymentReceiptPda,
+  deriveTreasuryPda,
   describeProgramErrorCode
 } from './usePaymentProgram'
 import type { compileWireTransaction } from './usePaymentProgram'
@@ -304,7 +306,9 @@ export function useBudget() {
         payment: params.payment,
         seller: params.seller,
         receipt: await derivePaymentReceiptPda(params.payment),
-        reference: params.reference
+        reference: params.reference,
+        config: await deriveConfigPda(),
+        treasury: await deriveTreasuryPda()
       }
     )
 

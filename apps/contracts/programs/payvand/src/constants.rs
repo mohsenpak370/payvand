@@ -30,8 +30,9 @@ pub const BUDGET_SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 1;
 /// `open_budget` reads it from there, and `initialize_config` starts from this.
 pub const SESSION_FEE_FLOAT: u64 = 10_000_000;
 /// Lower bound `update_config` accepts for `session_fee_float`: enough to front
-/// the invoice and receipt rents of one SOL payment (`R_p + R_r`).
-pub const MIN_SESSION_FEE_FLOAT: u64 = 5_032_080;
+/// the invoice and receipt rents of one SOL payment (`R_p + R_r`), which is
+/// 2,491,680 + 2,985,840 with the 301-byte receipt.
+pub const MIN_SESSION_FEE_FLOAT: u64 = 5_477_520;
 
 /// Seed of the singleton fee policy account.
 pub const CONFIG_SEED: &[u8] = b"config";
