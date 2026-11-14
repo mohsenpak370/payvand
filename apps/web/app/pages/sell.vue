@@ -8,7 +8,7 @@ import type {
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster } from '~/composables/usePaymentProgram'
-import type { InvoiceCosts } from '~/composables/useFeeConfig'
+import type { InvoiceCosts } from '~/utils/invoiceCost'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 

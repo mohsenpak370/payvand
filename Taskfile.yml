@@ -51,6 +51,11 @@ tasks:
     cmds:
       - pnpm typecheck
 
+  test:web:
+    desc: Unit tests for the web app
+    cmds:
+      - pnpm -C apps/web test
+
   test:api:
     desc: Rust tests for the API
     cmds:
@@ -63,10 +68,11 @@ tasks:
       - cargo test --manifest-path apps/contracts/Cargo.toml
 
   verify:
-    desc: Full local check — lint, typecheck, both Rust test suites
+    desc: Full local check — lint, typecheck, and all three test suites
     cmds:
       - task: lint
       - task: typecheck
+      - task: test:web
       - task: test:api
       - task: test:contracts
 

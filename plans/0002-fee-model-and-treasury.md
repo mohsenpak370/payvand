@@ -605,8 +605,17 @@ no longer advances either rent.
 "protocol fee" line appears only when the policy is that mode — but no UI path
 selects it yet.
 
-Still open: the unit test (this repo has no web test runner; adding one is its
-own decision), and `shops/[id].vue` and `budget.vue` from Task 1.5.
+The arithmetic itself lives in `app/utils/invoiceCost.ts`, away from the chain
+and the Nuxt context: `feeOn`, `minimumPayable` and `invoiceCosts`, each a pure
+function of a policy and rents. That is what `invoiceCost.test.ts` holds against
+the program — the fee table including the fixed-fee case the contract suite
+settles, the `InvoiceTooSmall` floor for 0%, 2%, 10% and 99.99% policies on both
+mainnet and devnet rent, the 10,000 bps policy that admits nothing, and a large
+invoice. The fee now multiplies in BigInt, like the program's `u128`, so a large
+amount cannot lose a lamport to a float product. The suite runs with
+`pnpm test:web` (vitest, added for this) and is part of `task verify`.
+
+Still open: `shops/[id].vue` and `budget.vue` from Task 1.5.
 
 **Deploy ordering is now load-bearing:** the client sends the new account lists,
 so deploying the web app before the program is upgraded (and `initialize_config`
@@ -623,13 +632,13 @@ Acceptance criteria:
       of assuming zero fee.
 - [x] The helper reports the minimum payable invoice amount and blocks
       submission below it.
-- [ ] A unit test compares the helper's output with the program's math for
+- [x] A unit test compares the helper's output with the program's math for
       several amounts, including the minimum and a large invoice.
 
 Verification:
 
-- [ ] `pnpm typecheck`
-- [ ] Unit test for the helper's thresholds and rounding.
+- [x] `pnpm typecheck`
+- [x] Unit test for the helper's thresholds and rounding (`pnpm test:web`).
 - [ ] Manual localnet: change `Config` and watch estimates refresh after the
       TTL.
 

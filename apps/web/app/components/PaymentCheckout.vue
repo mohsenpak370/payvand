@@ -451,7 +451,7 @@ useSeoMeta({
                 payment has to create) is shown here.
               -->
               <dl
-                v-if="costs && costs.payerExtras > 0"
+                v-if="costs"
                 class="mt-2 flex w-full max-w-xs flex-col gap-0.5 text-xs text-muted tabular-nums"
               >
                 <div

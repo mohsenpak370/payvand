@@ -1,4 +1,12 @@
-import { getAddressDecoder, type Address } from '@vue-solana/nuxt/kit'
+import { address, getAddressDecoder, type Address } from '@vue-solana/nuxt/kit'
+import {
+  PAYMENT_RECEIPT_SPACE,
+  PAYMENT_SPACE,
+  TOKEN_ACCOUNT_SPACE,
+  TOKEN_PAYMENT_SPACE,
+  invoiceCosts,
+  type InvoiceCosts
+} from '~/utils/invoiceCost'
 import type { SupportedCurrency } from './usePaymentApi'
 import {
   accountDiscriminator,
@@ -87,51 +95,10 @@ export function useFeeConfig() {
   return { load }
 }
 
-/** `PAYMENT_SPACE`: the temporary account an invoice is created in. */
-const PAYMENT_SPACE = 230
-/** `TOKEN_PAYMENT_SPACE`: its token counterpart. */
-const TOKEN_PAYMENT_SPACE = 262
-/** `PAYMENT_RECEIPT_SPACE`: the permanent record of a settled invoice. */
-const PAYMENT_RECEIPT_SPACE = 301
-/** An SPL token account (`getMinimumBalanceForRentExemption(165)`). */
-const TOKEN_ACCOUNT_SPACE = 165
-
-/**
- * One signature plus a margin: what the wallet charges to send either way. The
- * cluster fee is 5,000 lamports per signature; the rest covers a priority fee.
- */
-const NETWORK_FEE_LAMPORTS = 10_000
-
-/** What one invoice costs the seller, the payer and the protocol. */
-export interface InvoiceCosts {
-  currency: SupportedCurrency
-  /** The price itself, in the currency's base units. */
-  amount: number
-  /** Protocol fee, in the same base units. */
-  fee: number
-  feeBps: number
-  /** What the seller keeps, after a seller-paid fee. */
-  sellerReceives: number
-  /** What the buyer is charged on chain: the price, plus the fee only in BuyerPays. */
-  payerPays: number
-  /** Lamports: the invoice account's rent, returned to the seller when it closes. */
-  invoiceRent: number
-  /** Lamports: the permanent receipt, funded and refunded by the treasury. */
-  receiptRent: number
-  /** Lamports the payer adds on top of the price (network fee, token account). */
-  payerExtras: number
-  /** Lamports: the network fee estimate. */
-  networkFee: number
-  /** Lamports: the seller's token account rent, only when it has to be made. */
-  sellerTokenAccountRent: number
-  /** The smallest amount the program accepts under this policy, in base units. */
-  minPayable: number
-}
-
 /**
  * Quotes one invoice from the on-chain policy and the cluster's rent, so every
- * number a screen shows comes from the same place the program reads. Nothing
- * here is a copied constant except the network fee estimate.
+ * number a screen shows comes from the same place the program reads. The
+ * arithmetic is `invoiceCosts` in `app/utils/invoiceCost.ts`.
  */
 export function useInvoiceCosts() {
   const { client } = useSolanaClient()
@@ -148,36 +115,6 @@ export function useInvoiceCosts() {
     return lamports
   }
 
-  /** The program's fee: proportional + fixed, capped at `amount - 1`. */
-  function feeOn(config: FeeConfig, amount: number): number {
-    if (amount <= 0) return 0
-    const proportional = Math.floor((amount * config.feeBps) / 10_000)
-    return Math.min(proportional + config.fixedFeeLamports, amount - 1)
-  }
-
-  /**
-   * The smallest amount where `amount > rent + fee`: the program's
-   * `InvoiceTooSmall` guard, solved rather than guessed. The closed form gets
-   * within a lamport or two (floor and the cap move it), so it is corrected
-   * locally; comparing against `rent + feeOn` keeps the fixed fee counted once,
-   * which is what keeps that correction to a step or two.
-   */
-  function minimumPayable(config: FeeConfig, rent: number): number {
-    if (config.feeBps >= 10_000) return Number.POSITIVE_INFINITY
-    const base = rent + config.fixedFeeLamports
-    let candidate = Math.max(
-      1,
-      Math.ceil(((base - 1) * 10_000) / (10_000 - config.feeBps))
-    )
-    while (candidate > 1 && candidate - 1 > rent + feeOn(config, candidate - 1)) {
-      candidate--
-    }
-    while (candidate <= rent + feeOn(config, candidate)) {
-      candidate++
-    }
-    return candidate
-  }
-
   /**
    * Costs for paying `amount` in `currency`. `mint` and `seller` are optional
    * and only used to tell whether a token payment would have to create the
@@ -188,7 +125,7 @@ export function useInvoiceCosts() {
     currency: SupportedCurrency = 'sol',
     options: { mint?: string, seller?: Address } = {}
   ): Promise<InvoiceCosts> {
-    const config = await feeConfig.load()
+    const policy = await feeConfig.load()
     const isToken = currency !== 'sol'
 
     const invoiceRent = await rentFor(isToken ? TOKEN_PAYMENT_SPACE : PAYMENT_SPACE)
@@ -198,30 +135,21 @@ export function useInvoiceCosts() {
     // it with the payer's lamports, so that rent is the payer's cost.
     let sellerTokenAccountRent = 0
     if (isToken && options.mint && options.seller) {
-      const account = await deriveAssociatedTokenAddress(options.seller, options.mint as Address)
+      const account = await deriveAssociatedTokenAddress(options.seller, address(options.mint))
       const info = await client.rpc
         .getAccountInfo(account, { commitment: 'confirmed', encoding: 'base64' })
         .send()
       if (!info.value) sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE)
     }
 
-    const fee = feeOn(config, amount)
-    const sellerPays = config.feeMode === 'seller'
-
-    return {
-      currency,
+    return invoiceCosts({
+      policy,
       amount,
-      fee,
-      feeBps: config.feeBps,
-      sellerReceives: sellerPays ? amount - fee : amount,
-      payerPays: sellerPays ? amount : amount + fee,
+      currency,
       invoiceRent,
       receiptRent,
-      networkFee: NETWORK_FEE_LAMPORTS,
-      sellerTokenAccountRent,
-      payerExtras: NETWORK_FEE_LAMPORTS + sellerTokenAccountRent,
-      minPayable: minimumPayable(config, invoiceRent)
-    }
+      sellerTokenAccountRent
+    })
   }
 
   return { estimateInvoiceCosts }

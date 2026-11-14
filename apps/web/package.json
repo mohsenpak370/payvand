@@ -5,9 +5,10 @@
     "build": "nuxt build",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
+    "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
+    "postinstall": "nuxt prepare",
     "prepare": "husky"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "lint-staged": "^17.6.0",
     "prettier": "^3.9.10",
     "typescript": "^6.0.3",
+    "vitest": "^5.1.0",
     "vue-tsc": "^3.3.13"
   },
   "packageManager": "pnpm@12.18.0",

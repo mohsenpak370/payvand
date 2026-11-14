@@ -41,12 +41,6 @@ const TOKEN_SESSION_FEE_FLOAT = 10_000_000
 const TOKEN_BUDGET_SPACE = 129
 /** Lamports a token budget keeps to refund the invoice rent it advances. */
 const TOKEN_BUDGET_FEE_FLOAT = 10_000_000
-/**
- * Network fee for one signature (5000 lamports), plus a small margin for
- * price movement — what `open_budget` costs above the lamports it moves.
- */
-const TRANSACTION_FEE_LAMPORTS = 10_000
-
 /** A buyer's monthly pot for one token, and what its vault holds. */
 export interface TokenBudgetState {
   pda: Address
@@ -191,7 +185,7 @@ export function useBudget() {
     )
     const { sessionFeeFloat } = await feeConfig.load()
     const feeFloat = Math.max(0, sessionFeeFloat - sessionLamports)
-    const fee = TRANSACTION_FEE_LAMPORTS
+    const fee = NETWORK_FEE_LAMPORTS
     return { topUp, feeFloat, rent, fee, total: topUp + feeFloat + rent + fee }
   }
 
@@ -465,7 +459,7 @@ export function useBudget() {
       (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
     )
     const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - sessionLamports)
-    const fee = TRANSACTION_FEE_LAMPORTS
+    const fee = NETWORK_FEE_LAMPORTS
     return { rent, feeFloat, refundFloat, fee, total: rent + refundFloat + feeFloat + fee }
   }
 

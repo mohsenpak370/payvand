@@ -19,7 +19,7 @@ import {
 } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
 import type { BudgetState, TokenBudgetState } from './useBudget'
-import type { InvoiceCosts } from './useFeeConfig'
+import type { InvoiceCosts } from '~/utils/invoiceCost'
 
 /**
  * Paying from the allowance is the only path that needs no wallet at all, so
@@ -163,7 +163,6 @@ export function usePaymentCheckout() {
 
   async function refreshCosts(): Promise<InvoiceCosts | null> {
     const option = selected.value
-    if (!option || !option.currency) return null
     try {
       const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
         mint: option.mint || undefined,
