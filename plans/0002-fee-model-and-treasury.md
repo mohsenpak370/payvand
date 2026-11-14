@@ -1260,7 +1260,10 @@ nothing was paying at the time.
 and sends the treasury account is live at `https://payvand-app.vercel.app`
 (deployment `payvand-ahj2ckg40-…`, built from the two-file upload tree the
 README describes). The deployed `/budget` chunk contains the `budget.cost.*`
-keys of the new breakdown, so the fee UI shipped with it.
+keys of the new breakdown, so the fee UI shipped with it. **That deployment
+predates the token settle change (`353b153`)**: the live checkout still sends
+only the seven old accounts, so a token payment from production fails against
+the upgraded program until the web is redeployed. SOL payments are unaffected.
 
 Smoke tests:
 
