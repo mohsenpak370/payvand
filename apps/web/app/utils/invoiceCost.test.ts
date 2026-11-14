@@ -82,6 +82,18 @@ describe('feeOn', () => {
     expect(feeOn(policy, 1_000_000_000_000)).toBe(20_000_000_000)
   })
 
+  it('truncates a fractional amount instead of throwing', () => {
+    // A typed price reaches the quote as `Number(input) * 10^decimals`, which
+    // can carry a fraction; the chain only holds whole base units.
+    expect(feeOn(policy, 1_000.9)).toBe(feeOn(policy, 1_000))
+    expect(feeOn(policy, 100.999)).toBe(2)
+    expect(feeOn(policy, 0.99)).toBe(0)
+    // Not numbers a payment can be made in, and `BigInt` would throw on both.
+    expect(feeOn(policy, Number.NaN)).toBe(0)
+    expect(feeOn(policy, Number.POSITIVE_INFINITY)).toBe(0)
+    expect(feeOn(policy, -1.5)).toBe(0)
+  })
+
   it('multiplies exactly where a float would lose a lamport', () => {
     // The product here is far past 2^53, so `amount * bps` in a float rounds to
     // an odd number; the program's u128 division floors to this value instead.
@@ -137,6 +149,15 @@ describe('invoiceCosts', () => {
     expect(costs.networkFee).toBe(NETWORK_FEE_LAMPORTS)
     expect(costs.sellerTokenAccountRent).toBe(0)
     expect(costs.minPayable).toBe(2_542_531)
+  })
+
+  it('reports the whole base units the wire carries, not the fraction', () => {
+    const costs = invoiceCosts({ ...base, amount: 1_000.75 })
+
+    expect(costs.amount).toBe(1_000)
+    expect(costs.fee).toBe(20)
+    expect(costs.sellerReceives).toBe(980)
+    expect(Number.isInteger(costs.sellerReceives)).toBe(true)
   })
 
   it('charges the fee on top when the policy is buyer-paid', () => {

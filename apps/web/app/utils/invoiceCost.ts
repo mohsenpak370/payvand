@@ -65,10 +65,16 @@ export interface InvoiceCosts {
  * JavaScript number can hold.
  */
 export function feeOn(policy: FeePolicy, amount: number): number {
-  if (amount <= 0) return 0
-  const proportional = (BigInt(amount) * BigInt(policy.feeBps)) / 10_000n
+  // The chain holds whole base units, and a price can reach here with a
+  // fraction on it (a typed amount times decimals, a percentage). Truncating
+  // keeps the quote on the low side of the wire, and it keeps `BigInt` — which
+  // throws on a fraction — out of a crash a buyer would see as a failed
+  // payment. `NaN` and `Infinity` are not payments either.
+  const units = Math.trunc(amount)
+  if (!Number.isFinite(units) || units <= 0) return 0
+  const proportional = (BigInt(units) * BigInt(policy.feeBps)) / 10_000n
   const fee = proportional + BigInt(policy.fixedFeeLamports)
-  const cap = BigInt(amount - 1)
+  const cap = BigInt(units - 1)
   return Number(fee < cap ? fee : cap)
 }
 
@@ -109,7 +115,9 @@ export interface InvoiceQuoteInput {
 
 /** The whole quote, from a policy and rents the caller already read. */
 export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
-  const { policy, amount } = input
+  const { policy } = input
+  // Same rule as `feeOn`: the quote reports the amount the wire will carry.
+  const amount = Number.isFinite(input.amount) ? Math.trunc(input.amount) : 0
   const fee = feeOn(policy, amount)
   const sellerPays = policy.feeMode === 'seller'
 

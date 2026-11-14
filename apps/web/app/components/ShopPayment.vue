@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { InvoiceCosts } from '~/utils/invoiceCost'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 
@@ -23,6 +24,33 @@ const copiedLink = ref(false)
 
 const total = computed(() => cartTotalLamports(cart.value))
 const canCreate = computed(() => connected.value && !busy.value && total.value > 0)
+
+// What the cart pays the seller: the same quote the sell page shows, over the
+// total this shop's menu adds up to. A cart is priced in SOL only.
+const { estimateInvoiceCosts } = useInvoiceCosts()
+const split = ref<InvoiceCosts | null>(null)
+const splitLoading = ref(false)
+
+async function refreshSplit() {
+  if (total.value <= 0) {
+    split.value = null
+    splitLoading.value = false
+    return
+  }
+  splitLoading.value = true
+  try {
+    split.value = await estimateInvoiceCosts(total.value, 'sol')
+  } catch {
+    // No policy, no promise: the code can still be made, it just is not priced.
+    split.value = null
+  } finally {
+    splitLoading.value = false
+  }
+}
+
+watch(total, () => {
+  void refreshSplit()
+})
 const shareLink = computed(() => (qrPayload.value ? paymentLinkPath(qrPayload.value) : ''))
 
 async function load() {
@@ -170,6 +198,15 @@ onMounted(load)
         v-model="cart"
         :shops="[shop]"
       />
+
+      <InvoiceSplitNote :costs="split" />
+
+      <p
+        v-if="total > 0 && !split && !splitLoading"
+        class="text-xs text-muted"
+      >
+        {{ $t('shopPayment.costUnavailable') }}
+      </p>
 
       <UAlert
         v-if="failure"

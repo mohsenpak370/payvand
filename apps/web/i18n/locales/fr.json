@@ -318,6 +318,17 @@
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
       "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille."
+    },
+    "cost": {
+      "title": "Cette signature coûte",
+      "topUp": "Vers la réserve du budget",
+      "feeFloat": "Sur la clé de session (marge de frais)",
+      "rent": "Loyer du compte",
+      "refundFloat": "Marge pour le loyer des factures",
+      "fee": "Frais de réseau",
+      "total": "Total",
+      "note": "La marge est ce que le programme dépose sur la clé de session pour payer sans approbation.",
+      "unavailable": "Les coûts n'ont pas pu être lus depuis le cluster."
     }
   },
   "calculator": {
@@ -697,8 +708,6 @@
     "amountHelpCart": "Le total des produits ci-dessus — retirez-les pour saisir un prix à la place.",
     "amountHelpProducts": "Ce que paie le client.",
     "amountHelpTyped": "Ce que paie le client, en {currency}.",
-    "netReceive": "Tu reçois {net} après les frais de {percent} %",
-    "rentNote": "Le loyer du code ({rent} SOL) te revient une fois payé ; le protocole paie l’enregistrement du paiement.",
     "discountLabel": "Remise",
     "discountHelpSelected": "Les acheteurs paient {price} — {percent} % de remise, appliquée pour eux.",
     "discountHelp": "Facultatif — joignez un de vos codes à ce QR pour que les acheteurs en profitent sans le saisir.",
@@ -778,7 +787,8 @@
     "createFailure": "Impossible de créer le paiement.",
     "alertTitle": "Impossible de créer le paiement",
     "createCode": "Créer le code de paiement",
-    "connectHint": "Connectez votre portefeuille vendeur pour créer le code."
+    "connectHint": "Connectez votre portefeuille vendeur pour créer le code.",
+    "costUnavailable": "Les frais n'ont pas pu être lus depuis le cluster."
   },
   "shopsList": {
     "title": "Vos boutiques",
@@ -963,5 +973,9 @@
     "empty": "Rien de classé ici pour l'instant — ouvrez un lien de paiement et appuyez sur « Enregistrer dans ma boutique ».",
     "fallbackLabel": "Code de paiement",
     "open": "Ouvrir"
+  },
+  "invoiceSplit": {
+    "netReceive": "Tu reçois {net} après les frais de {percent} %",
+    "rentNote": "Le loyer du code ({rent} SOL) te revient une fois payé ; le protocole paie l'enregistrement du paiement."
   }
 }

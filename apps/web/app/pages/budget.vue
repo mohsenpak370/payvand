@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { address } from '@vue-solana/nuxt/kit'
 import type { BudgetState, TokenBudgetState } from '~/composables/useBudget'
 import type { SupportedCurrency } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
@@ -78,6 +79,92 @@ const foreignDevice = computed(
 const refillNeeded = computed(() => {
   const current = view.value
   return current ? Math.max(0, current.limit - current.pot) : 0
+})
+
+/**
+ * The SOL cost of the signature that would apply this limit, row by row. The
+ * session-key float comes from `session_fee_float` on chain (the token flows
+ * still read the program's constant), so a policy change moves this too.
+ */
+const openCost = ref<{ rows: { key: string, lamports: number }[], total: number } | null>(null)
+const openCostLoading = ref(false)
+
+/** The limit being priced, in base units; 0 while the field holds no amount. */
+const limitBaseUnits = computed(() => {
+  const units = toBaseUnits(Number(limitAmount.value))
+  return Number.isFinite(units) && units > 0 ? units : 0
+})
+
+/** A real limit the chain could not price — as opposed to one still on its way. */
+const openCostMissing = computed(
+  () => limitBaseUnits.value > 0 && !openCostLoading.value && !openCost.value
+)
+
+async function refreshOpenCost() {
+  const buyer = publicKey.value
+  const limit = limitBaseUnits.value
+  if (!buyer || limit <= 0) {
+    openCost.value = null
+    openCostLoading.value = false
+    return
+  }
+  openCostLoading.value = true
+  try {
+    const sessionAddress = deviceKeyAddress.value ? address(deviceKeyAddress.value) : undefined
+    const mint = activeMint.value
+    if (mint) {
+      const cost = await budgetApi.openTokenBudgetCost(buyer, mint, sessionAddress)
+      openCost.value = {
+        rows: [
+          { key: 'feeFloat', lamports: cost.feeFloat },
+          { key: 'rent', lamports: cost.rent },
+          { key: 'refundFloat', lamports: cost.refundFloat },
+          { key: 'fee', lamports: cost.fee }
+        ],
+        total: cost.total
+      }
+    } else {
+      const cost = await budgetApi.openBudgetCost(buyer, limit, sessionAddress)
+      openCost.value = {
+        rows: [
+          { key: 'topUp', lamports: cost.topUp },
+          { key: 'feeFloat', lamports: cost.feeFloat },
+          { key: 'rent', lamports: cost.rent },
+          { key: 'fee', lamports: cost.fee }
+        ],
+        total: cost.total
+      }
+    }
+  } catch {
+    // A quote that needs the chain and cannot reach it says so, rather than
+    // promising a number.
+    openCost.value = null
+  } finally {
+    openCostLoading.value = false
+  }
+}
+
+// Every keystroke in the limit field would be a handful of RPC reads, so the
+// quote waits for the typing to pause.
+let costTimer: ReturnType<typeof setTimeout> | undefined
+
+function scheduleOpenCost() {
+  clearTimeout(costTimer)
+  costTimer = setTimeout(() => {
+    void refreshOpenCost()
+  }, 300)
+}
+
+watch([publicKey, activeMint], () => {
+  void refreshOpenCost()
+})
+// Set by `refresh()` once it knows which key this device holds.
+watch(deviceKeyAddress, () => {
+  void refreshOpenCost()
+})
+watch(limitAmount, scheduleOpenCost)
+onBeforeUnmount(() => {
+  clearTimeout(costTimer)
 })
 
 const decimals = computed(() => (activeCurrency.value === 'sol' ? 9 : 6))
@@ -541,6 +628,14 @@ async function closeBudget() {
             />
           </UFormField>
 
+          <BudgetOpenCost :cost="openCost" />
+          <p
+            v-if="openCostMissing"
+            class="text-xs text-muted"
+          >
+            {{ $t('budget.cost.unavailable') }}
+          </p>
+
           <UAlert
             color="warning"
             variant="subtle"
@@ -590,6 +685,14 @@ async function closeBudget() {
               :placeholder="DEFAULT_LIMITS[activeCurrency]"
             />
           </UFormField>
+
+          <BudgetOpenCost :cost="openCost" />
+          <p
+            v-if="openCostMissing"
+            class="text-xs text-muted"
+          >
+            {{ $t('budget.cost.unavailable') }}
+          </p>
 
           <UAlert
             color="warning"

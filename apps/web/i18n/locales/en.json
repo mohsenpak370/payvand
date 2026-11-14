@@ -318,6 +318,17 @@
       "updated": "Budget updated — your limit and pot are in sync again.",
       "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
       "closed": "{currency} budget closed — everything left went back to your wallet."
+    },
+    "cost": {
+      "title": "This signature costs",
+      "topUp": "Into the budget pot",
+      "feeFloat": "On the session key (fee float)",
+      "rent": "Account rent",
+      "refundFloat": "Invoice-rent float",
+      "fee": "Network fee",
+      "total": "Total",
+      "note": "The float is what the program parks on the session key so payments need no approval.",
+      "unavailable": "Costs could not be read from the cluster right now."
     }
   },
   "calculator": {
@@ -697,8 +708,6 @@
     "amountHelpCart": "The total of the products above — clear them to type a price instead.",
     "amountHelpProducts": "What the customer pays.",
     "amountHelpTyped": "What the customer pays, in {currency}.",
-    "netReceive": "You receive {net} after the {percent}% fee",
-    "rentNote": "The code's rent ({rent} SOL) comes back to you when it is paid; the protocol pays for the payment record.",
     "discountLabel": "Discount",
     "discountHelpSelected": "Buyers pay {price} — {percent}% off, applied for them.",
     "discountHelp": "Optional — ride one of your codes along with this QR so buyers get it without typing it.",
@@ -778,7 +787,8 @@
     "createFailure": "Could not create the payment.",
     "alertTitle": "Could not create the payment",
     "createCode": "Create payment code",
-    "connectHint": "Connect your seller wallet to create the code."
+    "connectHint": "Connect your seller wallet to create the code.",
+    "costUnavailable": "The fee could not be read from the cluster right now."
   },
   "shopsList": {
     "title": "Your shops",
@@ -963,5 +973,9 @@
     "empty": "Nothing filed here yet — open a payment link and press “Save to my shop”.",
     "fallbackLabel": "Payment code",
     "open": "Open"
+  },
+  "invoiceSplit": {
+    "netReceive": "You receive {net} after the {percent}% fee",
+    "rentNote": "The code's rent ({rent} SOL) comes back to you when it is paid; the protocol pays for the payment record."
   }
 }

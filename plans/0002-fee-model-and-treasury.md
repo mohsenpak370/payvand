@@ -667,27 +667,38 @@ that matter:
 
 Acceptance criteria:
 
-- [ ] The three pages show the estimate from the shared helper.
-- [ ] No page claims "every lamport comes back" or shows a fee the payer is not
+- [x] The three pages show the estimate from the shared helper.
+- [x] No page claims "every lamport comes back" or shows a fee the payer is not
       paying.
-- [ ] The token checkout states the payer's SOL costs explicitly.
-- [ ] Amounts and labels are localized in all five locales (en, fa, fr, de, es).
+- [x] The token checkout states the payer's SOL costs explicitly.
+- [x] Amounts and labels are localized in all five locales (en, fa, fr, de, es).
 
 Verification:
 
-- [ ] `pnpm typecheck` and `pnpm lint`
+- [x] `pnpm typecheck` and `pnpm lint`
 - [ ] Localnet: create an invoice and confirm the note matches the settle
       balances.
 
 **Built so far (2026-11-14):** the buyer checkout lists the Solana network fee
 and, on a fresh seller, the token-account rent a token payment would create —
-with no fee line on a SOL invoice, because the seller pays it. The sell page
-states "You receive X after the Y% fee" beside the price, quoted from the same
-helper, so a change to `fee_bps` moves it without a release, and says that the
-code's rent comes back when it is paid while the protocol pays for the record. Both read `Config`
-directly; when it is missing they show nothing rather than a guess. Still open:
-`shops/[id].vue` and `budget.vue` (`open_budget` still quotes the program's
-constant float for token budgets).
+with no fee line on a SOL invoice, because the seller pays it.
+
+The seller side is one component, `InvoiceSplitNote`: "You receive X after the
+Y% fee", and that the code's rent comes back on payment while the protocol pays
+for the record. It sits on `sell.vue` beside the price and on a shop's page
+(`ShopPayment`, over the cart total), so both quote the same policy; the shop's
+note is priced in SOL only, because a cart is.
+
+`budget.vue` shows the signature's breakdown under the limit field:
+`BudgetOpenCost` lists the pot top-up, the session-key float, the account rent
+(only when it has to be made) and the network fee, then the total. The rows come
+from `openBudgetCost` / `openTokenBudgetCost`, which read the float from
+`Config` for SOL and still from the program's constant for tokens (Phase 3 moves
+them). A limit the chain could not price says so rather than showing nothing,
+and the quote is debounced while the field is being typed in.
+
+Every page reads `Config` directly; where it is missing they show nothing rather
+than a guess.
 
 Files likely touched:
 

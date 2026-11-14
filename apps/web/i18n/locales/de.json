@@ -318,6 +318,17 @@
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
       "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet."
+    },
+    "cost": {
+      "title": "Diese Signatur kostet",
+      "topUp": "In den Budgettopf",
+      "feeFloat": "Auf dem Sitzungsschlüssel (Gebührenpuffer)",
+      "rent": "Kontomiete",
+      "refundFloat": "Puffer für Rechnungsmiete",
+      "fee": "Netzwerkgebühr",
+      "total": "Gesamt",
+      "note": "Der Puffer ist, was das Programm auf dem Sitzungsschlüssel hinterlegt, damit Zahlungen ohne Freigabe laufen.",
+      "unavailable": "Die Kosten konnten gerade nicht vom Cluster gelesen werden."
     }
   },
   "calculator": {
@@ -697,8 +708,6 @@
     "amountHelpCart": "Die Summe der Produkte oben — entferne sie, um stattdessen einen Preis einzugeben.",
     "amountHelpProducts": "Was der Kunde zahlt.",
     "amountHelpTyped": "Was der Kunde zahlt, in {currency}.",
-    "netReceive": "Du erhältst {net} nach der Gebühr von {percent} %",
-    "rentNote": "Die Miete des Codes ({rent} SOL) kommt beim Bezahlen zu dir zurück; den Zahlungsbeleg zahlt das Protokoll.",
     "discountLabel": "Rabatt",
     "discountHelpSelected": "Käufer zahlen {price} — {percent} % Rabatt, für sie angewendet.",
     "discountHelp": "Optional — nimm einen deiner Codes mit in diesen QR-Code, damit Käufer ihn ohne Eingabe bekommen.",
@@ -778,7 +787,8 @@
     "createFailure": "Die Zahlung konnte nicht erstellt werden.",
     "alertTitle": "Zahlung konnte nicht erstellt werden",
     "createCode": "Zahlungscode erstellen",
-    "connectHint": "Verbinde dein Verkäufer-Wallet, um den Code zu erstellen."
+    "connectHint": "Verbinde dein Verkäufer-Wallet, um den Code zu erstellen.",
+    "costUnavailable": "Die Gebühr konnte gerade nicht vom Cluster gelesen werden."
   },
   "shopsList": {
     "title": "Deine Shops",
@@ -963,5 +973,9 @@
     "empty": "Hier ist noch nichts abgelegt — öffne einen Zahlungslink und drücke „In meinem Shop speichern“.",
     "fallbackLabel": "Zahlungscode",
     "open": "Öffnen"
+  },
+  "invoiceSplit": {
+    "netReceive": "Du erhältst {net} nach der Gebühr von {percent} %",
+    "rentNote": "Die Miete des Codes ({rent} SOL) kommt beim Bezahlen zu dir zurück; den Zahlungsbeleg zahlt das Protokoll."
   }
 }

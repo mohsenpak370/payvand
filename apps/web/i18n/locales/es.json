@@ -318,6 +318,17 @@
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
       "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera."
+    },
+    "cost": {
+      "title": "Esta firma cuesta",
+      "topUp": "Al bote del presupuesto",
+      "feeFloat": "En la clave de sesión (flotante de comisiones)",
+      "rent": "Alquiler de la cuenta",
+      "refundFloat": "Flotante para el alquiler de facturas",
+      "fee": "Comisión de red",
+      "total": "Total",
+      "note": "El flotante es lo que el programa deja en la clave de sesión para pagar sin aprobación.",
+      "unavailable": "No se pudieron leer los costes del clúster ahora mismo."
     }
   },
   "calculator": {
@@ -697,8 +708,6 @@
     "amountHelpCart": "El total de los productos de arriba — quítalos para escribir un precio en su lugar.",
     "amountHelpProducts": "Lo que paga el cliente.",
     "amountHelpTyped": "Lo que paga el cliente, en {currency}.",
-    "netReceive": "Recibes {net} después de la comisión del {percent}%",
-    "rentNote": "El alquiler del código ({rent} SOL) te vuelve cuando se paga; el protocolo paga el registro del pago.",
     "discountLabel": "Descuento",
     "discountHelpSelected": "Los compradores pagan {price} — {percent} % de descuento, aplicado por ti.",
     "discountHelp": "Opcional — lleva uno de tus códigos con este QR para que los compradores lo tengan sin escribirlo.",
@@ -778,7 +787,8 @@
     "createFailure": "No se pudo crear el pago.",
     "alertTitle": "No se pudo crear el pago",
     "createCode": "Crear código de pago",
-    "connectHint": "Conecta tu cartera de vendedor para crear el código."
+    "connectHint": "Conecta tu cartera de vendedor para crear el código.",
+    "costUnavailable": "No se pudo leer la comisión del clúster ahora mismo."
   },
   "shopsList": {
     "title": "Tus comercios",
@@ -963,5 +973,9 @@
     "empty": "Aquí todavía no hay nada archivado — abre un enlace de pago y pulsa «Guardar en mi comercio».",
     "fallbackLabel": "Código de pago",
     "open": "Abrir"
+  },
+  "invoiceSplit": {
+    "netReceive": "Recibes {net} después de la comisión del {percent}%",
+    "rentNote": "El alquiler del código ({rent} SOL) te vuelve cuando se paga; el protocolo paga el registro del pago."
   }
 }

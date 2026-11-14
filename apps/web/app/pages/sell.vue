@@ -176,18 +176,6 @@ async function refreshNetReceive() {
   }
 }
 
-/** The price minus the fee, and the fee itself, for the note under the field. */
-const netReceive = computed(() =>
-  netQuote.value
-    ? priceLabel({ currency: netQuote.value.currency, amount: netQuote.value.sellerReceives })
-    : ''
-)
-const feePercent = computed(() => (netQuote.value ? String(netQuote.value.feeBps / 100) : '0'))
-/** The rent the seller put up when the code was made, and gets back on payment. */
-const invoiceRent = computed(() =>
-  netQuote.value ? lamportsToSol(netQuote.value.invoiceRent) : ''
-)
-
 // Quoting reads the chain, so the first one waits for the browser: the server
 // render has no policy to read.
 onMounted(() => {
@@ -599,18 +587,10 @@ onBeforeUnmount(() => {
 
           <!-- The split, before the code exists: the price minus the fee is
                what the seller keeps, and the buyer pays exactly the price. -->
-          <p
-            v-if="netReceive"
-            class="-mt-2 text-xs text-muted"
-          >
-            {{ $t('sell.netReceive', { net: netReceive, percent: feePercent }) }}
-          </p>
-          <p
-            v-if="netReceive"
-            class="-mt-4 text-xs text-muted"
-          >
-            {{ $t('sell.rentNote', { rent: invoiceRent }) }}
-          </p>
+          <InvoiceSplitNote
+            :costs="netQuote"
+            class="-mt-2"
+          />
 
           <UFormField
             v-if="discounts.length"

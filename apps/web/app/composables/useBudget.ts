@@ -174,15 +174,21 @@ export function useBudget() {
   async function openBudgetCost(
     buyer: Address,
     monthlyLimit: number,
-    sessionAddress: Address
+    /** The key that will sign; without one the float starts from nothing. */
+    sessionAddress?: Address
   ): Promise<{ topUp: number, feeFloat: number, rent: number, fee: number, total: number }> {
     const existing = await loadBudget(buyer)
     const rent = existing ? 0 : await rentMinimum(BUDGET_SPACE)
     const pot = existing ? await availablePot(existing) : 0
     const topUp = Math.max(0, monthlyLimit - pot)
-    const sessionLamports = Number(
-      (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
-    )
+    // A key this device has not made yet holds nothing, so `open_budget` funds
+    // the whole float; quoting a brand-new key at the buyer's balance would
+    // understate what the signature moves.
+    const sessionLamports = sessionAddress
+      ? Number(
+          (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
+        )
+      : 0
     const { sessionFeeFloat } = await feeConfig.load()
     const feeFloat = Math.max(0, sessionFeeFloat - sessionLamports)
     const fee = NETWORK_FEE_LAMPORTS
@@ -450,14 +456,16 @@ export function useBudget() {
   async function openTokenBudgetCost(
     buyer: Address,
     mint: Address,
-    sessionAddress: Address
+    sessionAddress?: Address
   ): Promise<{ rent: number, feeFloat: number, refundFloat: number, fee: number, total: number }> {
     const existing = await loadTokenBudget(buyer, mint)
     const rent = existing ? 0 : await rentMinimum(TOKEN_BUDGET_SPACE)
     const refundFloat = existing ? 0 : TOKEN_BUDGET_FEE_FLOAT
-    const sessionLamports = Number(
-      (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
-    )
+    const sessionLamports = sessionAddress
+      ? Number(
+          (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
+        )
+      : 0
     const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - sessionLamports)
     const fee = NETWORK_FEE_LAMPORTS
     return { rent, feeFloat, refundFloat, fee, total: rent + refundFloat + feeFloat + fee }
