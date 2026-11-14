@@ -586,8 +586,27 @@ IDL is regenerated from the program (it now also carries `Config`,
 the account is missing or mistagged), and the SOL budget quote takes its session
 float from there, so `useBudget.ts` no longer keeps a copy of that number. The
 token flows still read the program's fixed float until Phase 3 moves them to
-`Config`. Still open: `estimateInvoiceCosts` and the visible fee/rent split, so
-no screen shows a fee yet.
+`Config`.
+
+`estimateInvoiceCosts` now lives beside that cache, in `useInvoiceCosts()`. It
+reads `Config` and the cluster's rent (never a constant, so it follows the
+program's `Rent::get()` — devnet's rent is about 73% of the mainnet table above,
+and both sides agree because both ask the cluster), and reports the fee, the
+seller's proceeds, the payer's total, both rents, the network-fee estimate and
+the minimum payable amount. The minimum is solved from `amount > rent + fee`
+rather than probed, and matches the program's floor exactly: 2,542,531 lamports
+at 2% on mainnet rent, 2,769,796 for a token invoice. `usePaymentCheckout`
+quotes it on load, on a currency switch and after a discount, shows the payer's
+extras under the price, and refuses to submit below the floor or when `Config`
+cannot be read. The budget obstacle now asks for exactly `amount`, since the pot
+no longer advances either rent.
+
+`BuyerPays` is quoted for completeness — the payer's total carries the fee and a
+"protocol fee" line appears only when the policy is that mode — but no UI path
+selects it yet.
+
+Still open: the unit test (this repo has no web test runner; adding one is its
+own decision), and `shops/[id].vue` and `budget.vue` from Task 1.5.
 
 **Deploy ordering is now load-bearing:** the client sends the new account lists,
 so deploying the web app before the program is upgraded (and `initialize_config`
@@ -598,11 +617,11 @@ the client deploy, so do the program first.
 
 Acceptance criteria:
 
-- [ ] The helper reads rent over RPC (no hardcoded rent) and `Config` from
+- [x] The helper reads rent over RPC (no hardcoded rent) and `Config` from
       chain, and matches the program's floor rounding.
-- [ ] If `Config` cannot be read, the checkout refuses to quote a total instead
+- [x] If `Config` cannot be read, the checkout refuses to quote a total instead
       of assuming zero fee.
-- [ ] The helper reports the minimum payable invoice amount and blocks
+- [x] The helper reports the minimum payable invoice amount and blocks
       submission below it.
 - [ ] A unit test compares the helper's output with the program's math for
       several amounts, including the minimum and a large invoice.
@@ -650,6 +669,16 @@ Verification:
 - [ ] `pnpm typecheck` and `pnpm lint`
 - [ ] Localnet: create an invoice and confirm the note matches the settle
       balances.
+
+**Built so far (2026-11-14):** the buyer checkout lists the Solana network fee
+and, on a fresh seller, the token-account rent a token payment would create —
+with no fee line on a SOL invoice, because the seller pays it. The sell page
+states "You receive X after the Y% fee" beside the price, quoted from the same
+helper, so a change to `fee_bps` moves it without a release, and says that the
+code's rent comes back when it is paid while the protocol pays for the record. Both read `Config`
+directly; when it is missing they show nothing rather than a guess. Still open:
+`shops/[id].vue` and `budget.vue` (`open_budget` still quotes the program's
+constant float for token budgets).
 
 Files likely touched:
 

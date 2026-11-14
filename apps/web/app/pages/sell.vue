@@ -8,6 +8,7 @@ import type {
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster } from '~/composables/usePaymentProgram'
+import type { InvoiceCosts } from '~/composables/useFeeConfig'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
 
@@ -154,6 +155,47 @@ function priceLabel(option: { currency: SupportedCurrency, amount: number }): st
 
 /** The price shown next to the form, and the same price after a carried code. */
 const priceSummary = computed(() => priceLabel(invoiceOptions.value[0]!))
+
+// What the seller actually receives, quoted from the fee policy on chain: a
+// change to `fee_bps` shows up here without a release, and a buyer-paid fee
+// leaves the net at the full price.
+const { estimateInvoiceCosts } = useInvoiceCosts()
+const netQuote = ref<InvoiceCosts | null>(null)
+async function refreshNetReceive() {
+  const amount = priceUnits.value
+  const currency = priceCurrency.value
+  if (amount <= 0) {
+    netQuote.value = null
+    return
+  }
+  try {
+    netQuote.value = await estimateInvoiceCosts(amount, currency)
+  } catch {
+    // No policy, no promise: a stale number here would be a lie.
+    netQuote.value = null
+  }
+}
+
+/** The price minus the fee, and the fee itself, for the note under the field. */
+const netReceive = computed(() =>
+  netQuote.value
+    ? priceLabel({ currency: netQuote.value.currency, amount: netQuote.value.sellerReceives })
+    : ''
+)
+const feePercent = computed(() => (netQuote.value ? String(netQuote.value.feeBps / 100) : '0'))
+/** The rent the seller put up when the code was made, and gets back on payment. */
+const invoiceRent = computed(() =>
+  netQuote.value ? lamportsToSol(netQuote.value.invoiceRent) : ''
+)
+
+// Quoting reads the chain, so the first one waits for the browser: the server
+// render has no policy to read.
+onMounted(() => {
+  void refreshNetReceive()
+})
+watch([priceUnits, priceCurrency], () => {
+  void refreshNetReceive()
+})
 
 /** What a carried discount code took off, in the currency this code charges. */
 const savedLabel = computed(() => {
@@ -554,6 +596,21 @@ onBeforeUnmount(() => {
               />
             </div>
           </UFormField>
+
+          <!-- The split, before the code exists: the price minus the fee is
+               what the seller keeps, and the buyer pays exactly the price. -->
+          <p
+            v-if="netReceive"
+            class="-mt-2 text-xs text-muted"
+          >
+            {{ $t('sell.netReceive', { net: netReceive, percent: feePercent }) }}
+          </p>
+          <p
+            v-if="netReceive"
+            class="-mt-4 text-xs text-muted"
+          >
+            {{ $t('sell.rentNote', { rent: invoiceRent }) }}
+          </p>
 
           <UFormField
             v-if="discounts.length"

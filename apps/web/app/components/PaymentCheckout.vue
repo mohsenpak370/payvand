@@ -47,6 +47,8 @@ const {
   payableLamports,
   payableAmount,
   priceAmount,
+  costs,
+  costsError,
   options,
   selected,
   selectCurrency,
@@ -439,6 +441,46 @@ useSeoMeta({
                 class="text-sm text-muted tabular-nums"
               >
                 <span class="line-through">{{ priceLabel }}</span>
+              </p>
+
+              <!--
+                What the price does not include: the buyer's own Solana costs.
+                A SOL invoice carries no fee for the buyer — the seller pays it,
+                and the treasury funds the permanent record — so only the
+                network fee (and, on a fresh seller, the token account a token
+                payment has to create) is shown here.
+              -->
+              <dl
+                v-if="costs && costs.payerExtras > 0"
+                class="mt-2 flex w-full max-w-xs flex-col gap-0.5 text-xs text-muted tabular-nums"
+              >
+                <div
+                  v-if="costs.payerPays > costs.amount"
+                  class="flex items-baseline justify-between gap-4"
+                >
+                  <dt>{{ $t('checkout.protocolFee') }}</dt>
+                  <dd>
+                    ≈ {{ formatTokenAmount(costs.payerPays - costs.amount, selected.decimals) }}
+                    {{ currencySymbol(selected.currency) }}
+                  </dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-4">
+                  <dt>{{ $t('checkout.networkFee') }}</dt>
+                  <dd>≈ {{ lamportsToSol(costs.networkFee) }} SOL</dd>
+                </div>
+                <div
+                  v-if="costs.sellerTokenAccountRent > 0"
+                  class="flex items-baseline justify-between gap-4"
+                >
+                  <dt>{{ $t('checkout.sellerTokenAccount') }}</dt>
+                  <dd>≈ {{ lamportsToSol(costs.sellerTokenAccountRent) }} SOL</dd>
+                </div>
+              </dl>
+              <p
+                v-else-if="costsError"
+                class="mt-2 max-w-xs text-xs text-warning"
+              >
+                {{ costsError }}
               </p>
             </div>
 

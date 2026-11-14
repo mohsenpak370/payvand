@@ -31,14 +31,6 @@ const TOKEN_BUDGET_SEED = new TextEncoder().encode('token-budget')
 
 /** Mirrors `BUDGET_SPACE` in the program: 8 + 32 + 32 + 8 + 8 + 8 + 1. */
 const BUDGET_SPACE = 97
-/** Mirrors `PAYMENT_SPACE` in the program: 8 + 32 + 32 + 8 + 4 + 96 + 1 + 32 + 8 + 8 + 1. */
-const PAYMENT_SPACE = 230
-/**
- * Mirrors `PAYMENT_RECEIPT_SPACE`: 8 + 32 (invoice) + 32 (seller) + 32
- * (reference) + 32 (mint) + 8 (amount) + 4 + 96 (memo) + 32 (payer) + 8 + 8 +
- * 8 (timestamps) + 1 (bump).
- */
-const PAYMENT_RECEIPT_SPACE = 301
 /**
  * Mirrors the program's `SESSION_FEE_FLOAT`. `open_budget` reads the live value
  * from `Config` instead, so this only covers the token flows, which the program
@@ -267,9 +259,10 @@ export function useBudget() {
     if (amount > remainingThisMonth(budget)) {
       return appT('errors.limitUsedUp')
     }
-    // The pot advances the invoice rent and the receipt rent, both of which it
-    // takes back in the settle transaction.
-    const needed = amount + (await rentMinimum(PAYMENT_SPACE)) + (await rentMinimum(PAYMENT_RECEIPT_SPACE))
+    // The pot pays exactly the invoice amount: the session key advances both
+    // rents and is reimbursed from the pot, the invoice rent comes back through
+    // the close, and the treasury refunds the receipt rent to the pot.
+    const needed = amount
     if ((await availablePot(budget)) < needed) {
       return appT('errors.nearlyEmpty')
     }

@@ -19,6 +19,7 @@ import {
 } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
 import type { BudgetState, TokenBudgetState } from './useBudget'
+import type { InvoiceCosts } from './useFeeConfig'
 
 /**
  * Paying from the allowance is the only path that needs no wallet at all, so
@@ -152,6 +153,31 @@ export function usePaymentCheckout() {
   // Kept for the SOL wording elsewhere on the page: an invoice priced in SOL.
   const payableLamports = computed(() => (selected.value.currency === 'sol' ? payableAmount.value : 0))
   const priceLamports = computed(() => (selected.value.currency === 'sol' ? priceAmount.value : 0))
+
+  // What this payment costs, from the on-chain policy and the cluster's rent.
+  // `null` until the first read, and again if `Config` cannot be read: the
+  // checkout shows no total rather than one that assumes a zero fee.
+  const { estimateInvoiceCosts } = useInvoiceCosts()
+  const costs = ref<InvoiceCosts | null>(null)
+  const costsError = ref('')
+
+  async function refreshCosts(): Promise<InvoiceCosts | null> {
+    const option = selected.value
+    if (!option || !option.currency) return null
+    try {
+      const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
+        mint: option.mint || undefined,
+        seller: payload.value?.seller ? address(payload.value.seller) : undefined
+      })
+      costs.value = quote
+      costsError.value = ''
+      return quote
+    } catch (cause) {
+      costs.value = null
+      costsError.value = cause instanceof Error ? cause.message : appT('errors.feeConfigUnavailable')
+      return null
+    }
+  }
   const settled = computed(() => record.value?.status === 'settled')
 
   // Name and description ride in the code itself: the chain stores only the
@@ -265,7 +291,7 @@ export function usePaymentCheckout() {
     if (option) {
       activePda.value = (await addressFor(option, payableAmount.value)).toString()
     }
-    await refreshBudget()
+    await Promise.all([refreshCosts(), refreshBudget()])
   }
 
   async function refreshRecord() {
@@ -366,7 +392,7 @@ export function usePaymentCheckout() {
       // A code the invoice carries applies itself, so the first price the
       // buyer sees is the one they pay.
       if (parsed.discount) await applyDiscount(parsed.discount.code)
-      await refreshBudget()
+      await Promise.all([refreshCosts(), refreshBudget()])
 
       poll = setInterval(() => {
         void refreshRecord()
@@ -397,6 +423,14 @@ export function usePaymentCheckout() {
       const option = selected.value
       const amount = payableAmount.value
       const memo = current.memo || ''
+
+      // Preflight against the same numbers the program will use: an amount
+      // below the rent-plus-fee floor is rejected on chain, and a policy the
+      // client could not read is not a reason to guess.
+      const quote = costs.value ?? await refreshCosts()
+      if (!quote) throw new Error(costsError.value || appT('errors.feeConfigUnavailable'))
+      if (amount < quote.minPayable) throw new Error(appT('errors.invoiceTooSmall'))
+
       const payment = await addressFor(option, amount)
 
       let sent: string
@@ -494,6 +528,9 @@ export function usePaymentCheckout() {
         price_lamports: priceAmount.value
       })
       discount.value = preview
+      // The buyer is now looking at a different price, so the fee and rent
+      // split moves with it.
+      void refreshCosts()
       discountInput.value = ''
       // The discounted amount derives its own address — watch and pay that.
       activePda.value = (await addressFor(selected.value, payableAmount.value)).toString()
@@ -510,7 +547,7 @@ export function usePaymentCheckout() {
     discountInput.value = ''
     discountError.value = ''
     activePda.value = selected.value.payment_pda || null
-    void refreshBudget()
+    void Promise.all([refreshCosts(), refreshBudget()])
   }
 
   /**
@@ -556,6 +593,8 @@ export function usePaymentCheckout() {
     autoSeconds,
     payableLamports,
     priceLamports,
+    costs,
+    costsError,
     settled,
     paymentName,
     paymentDescription,
