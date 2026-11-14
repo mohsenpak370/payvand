@@ -1285,18 +1285,28 @@ Smoke tests:
       yet.
 - [ ] Wrong-mint close fails; decoy vault rejected. **Blocked on Phase 3**
       (Task 3.4); not exercised.
-- [x] Close all budgets; the float is swept and the vault drained. The SOL half
-      passes: `close_budget` returned the pot and the account rent to the buyer
-      and the account is gone (`42FiDA7V…`). The token vault half is Phase 3.
-- [x] The three pages show estimates that match the settled balances. `/budget`
-      rendered `0.03 SOL` on the session key (the `Config` float), `0.001143 SOL`
-      account rent and `0.00001 SOL` network fee, total `0.131153 SOL` for a
-      0.1 SOL limit; for a live budget it showed the settled account's limit
+- [x] `close_budget` returns the pot and the account rent to the buyer and the
+      account is gone (`42FiDA7V…`; the stand-in budget `5Jirbyfw…` likewise
+      closed a 38,963,680 lamport account back to the wallet).
+- [ ] Close all budgets: the float is swept and the vault drained. Not run, and
+      the SOL build does not sweep the float: `close_budget` closes only the
+      budget account, so the session key keeps its 30,000,000 float less
+      network fees. Reading the key's balance after a close is also unchecked,
+      and `close_token_budget`'s vault drain needs a token budget (Phase 3).
+- [x] Shop page estimates match the settled balances: the 0.012 SOL cart showed
+      "You receive 0.01176 SOL after the 2% fee" and `0.00181864 SOL` rent.
+- [x] Budget page estimates match the settled balances: `/budget` rendered
+      `0.03 SOL` on the session key (the `Config` float), `0.001143 SOL` account
+      rent and `0.00001 SOL` network fee, total `0.131153 SOL` for a 0.1 SOL
+      limit; for a live budget it showed the settled account's limit
       `0.02 SOL`, `0.02 SOL` left, pot `0.03782068 SOL` and session key
-      `Gcnh…NQpe`, matching `open_budget` `66R7jHdF…`. The shop page showed the
-      seller's split and rent. The Chromium preview has no wallet extension, so
-      these screens used a registered wallet-standard stub (read-only, no
-      signing); `close_budget` `5Jirbyfw…` removed the stand-in budget.
+      `Gcnh…NQpe`, matching `open_budget` `66R7jHdF…`. The Chromium preview has
+      no wallet extension, so this screen used a registered wallet-standard stub
+      (read-only, no signing); `close_budget` `5Jirbyfw…` removed the stand-in
+      budget.
+- [ ] Checkout page estimates match the settled balances. Not run: the checkout
+      screen was never opened, so its fee and seller-token-account lines have
+      not been compared with a settled payment.
 - [x] `withdraw_treasury` moves surplus and leaves the rent-exempt minimum:
       withdrawing everything above it left 650,240 lamports (devnet's
       `minimum_balance(0)`, not the 890,880 this plan assumed for mainnet); the
