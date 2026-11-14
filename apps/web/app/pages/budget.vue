@@ -162,6 +162,11 @@ watch([publicKey, activeMint], () => {
 watch(deviceKeyAddress, () => {
   void refreshOpenCost()
 })
+// The top-up is `limit - pot`, so a refill, a save or a close moves it: the
+// quote follows the allowance state rather than only the field.
+watch(view, () => {
+  void refreshOpenCost()
+})
 watch(limitAmount, scheduleOpenCost)
 onBeforeUnmount(() => {
   clearTimeout(costTimer)
