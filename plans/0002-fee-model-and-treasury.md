@@ -1260,10 +1260,16 @@ nothing was paying at the time.
 and sends the treasury account is live at `https://payvand-app.vercel.app`
 (deployment `payvand-ahj2ckg40-…`, built from the two-file upload tree the
 README describes). The deployed `/budget` chunk contains the `budget.cost.*`
-keys of the new breakdown, so the fee UI shipped with it. **That deployment
-predates the token settle change (`353b153`)**: the live checkout still sends
-only the seven old accounts, so a token payment from production fails against
-the upgraded program until the web is redeployed. SOL payments are unaffected.
+keys of the new breakdown, so the fee UI shipped with it.
+
+**Web redeploy after the token change (2026-11-14):** deployment
+`payvand-63lqaqp9x-…` is aliased to `https://payvand-app.vercel.app` and its
+checkout chunk carries `treasury_token_account`, so production now sends the
+program the same account list the `2VDZzs4j…` settle used. The live
+`/p/…` token invoice renders the price, "≈ 0.00001 SOL" for the network fee,
+and nothing else — no protocol fee and no rent row. It was checked in the
+browser, not paid from it: the preview Chromium has no signing wallet, so the
+settle itself is the script one above.
 
 Smoke tests:
 
