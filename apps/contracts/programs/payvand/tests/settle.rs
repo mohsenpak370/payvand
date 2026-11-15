@@ -39,6 +39,7 @@ use payvand::state::{
 };
 use sha2::{Digest, Sha256};
 use solana_account::Account;
+use solana_clock::Clock;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_program_test::{ProgramTest, ProgramTestContext};
@@ -374,6 +375,50 @@ fn settle_instruction_with_treasury(
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
         ],
         data: instruction_data("settle_payment", &amount_and_memo(amount, memo)),
+    }
+}
+
+/// `open_budget`, in the account order the program declares them. The same
+/// instruction both opens the budget and refills it, which is why the counter
+/// rules below matter.
+fn open_budget_instruction(buyer: Pubkey, session: Pubkey, monthly_limit: u64) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(buyer, true),
+            AccountMeta::new(budget_pda(&buyer), false),
+            AccountMeta::new(session, false),
+            AccountMeta::new_readonly(config_pda(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("open_budget", &monthly_limit.to_le_bytes()),
+    }
+}
+
+/// `pay_from_budget`, in the account order the program declares them.
+fn pay_from_budget_instruction(
+    session: Pubkey,
+    budget: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    amount: u64,
+    memo: &str,
+) -> Instruction {
+    let invoice = payment_pda(&seller, &reference, amount);
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(session, true),
+            AccountMeta::new(budget, false),
+            AccountMeta::new(invoice, false),
+            AccountMeta::new(seller, false),
+            AccountMeta::new(receipt_pda(&invoice), false),
+            AccountMeta::new_readonly(reference, false),
+            AccountMeta::new_readonly(config_pda(), false),
+            AccountMeta::new(treasury_pda(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("pay_from_budget", &amount_and_memo(amount, memo)),
     }
 }
 
@@ -773,6 +818,111 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
     // payer covers the network fee, so its balance is untouched.
     let session_balance = lamports(&context, session.pubkey()).await;
     assert_eq!(session_balance, LAMPORTS_PER_SOL);
+}
+
+/// A refill is `open_budget` again on the same account, so a mid-month top-up
+/// must keep the counter it started with: resetting it would hand the buyer a
+/// fresh allowance without a new month, and they could refill past their own
+/// limit. Only a calendar-month change starts the count over.
+#[tokio::test]
+async fn open_budget_keeps_spent_until_the_month_changes() {
+    let session = Keypair::new();
+    let (mut context, _admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), LAMPORTS_PER_SOL)],
+    )
+    .await;
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    let first_limit = LAMPORTS_PER_SOL / 4;
+    send(
+        &mut context,
+        &[open_budget_instruction(
+            buyer,
+            session.pubkey(),
+            first_limit,
+        )],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+    assert_eq!(budget(&context, budget_address).await.spent, 0);
+
+    // Spend part of the allowance, so the counter is no longer zero.
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = LAMPORTS_PER_SOL / 20;
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[pay_from_budget_instruction(
+            session.pubkey(),
+            budget_address,
+            seller,
+            reference,
+            amount,
+            "silent coffee",
+        )],
+        &[&session],
+    )
+    .await
+    .expect("pay_from_budget failed");
+    let spent = budget(&context, budget_address).await;
+    assert_eq!(spent.spent, amount);
+
+    // The same month, a higher limit: the pot is topped up, the limit moves,
+    // and what was already spent still counts.
+    let second_limit = LAMPORTS_PER_SOL / 2;
+    let pot_before = lamports(&context, budget_address).await;
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[open_budget_instruction(
+            buyer,
+            session.pubkey(),
+            second_limit,
+        )],
+        &[],
+    )
+    .await
+    .expect("the same-month refill failed");
+    let refilled = budget(&context, budget_address).await;
+    assert_eq!(refilled.spent, amount);
+    assert_eq!(refilled.monthly_limit, second_limit);
+    assert_eq!(refilled.month_index, spent.month_index);
+    assert!(
+        lamports(&context, budget_address).await >= pot_before,
+        "a refill should reach the new limit, not take the pot backwards"
+    );
+
+    // A calendar month later, the same call starts the counter over.
+    let mut clock: Clock = context
+        .banks_client
+        .get_sysvar()
+        .await
+        .expect("the clock sysvar should be readable");
+    clock.unix_timestamp += 40 * 86_400;
+    context.set_sysvar(&clock);
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[open_budget_instruction(
+            buyer,
+            session.pubkey(),
+            second_limit,
+        )],
+        &[],
+    )
+    .await
+    .expect("the next month's refill failed");
+    let next_month = budget(&context, budget_address).await;
+    assert_eq!(next_month.spent, 0);
+    assert_ne!(next_month.month_index, refilled.month_index);
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,9 @@ anchor-spl = { version = "=1.2.1", features = ["token"] }
 # no local validator process.
 solana-program-test = "=3.1.10"
 solana-account = "3"
+# Warping the clock to test the monthly reset, from the same crate version
+# `solana-program-test` reads the sysvar with.
+solana-clock = "3"
 solana-instruction = "3"
 solana-keypair = "3"
 solana-pubkey = "3"

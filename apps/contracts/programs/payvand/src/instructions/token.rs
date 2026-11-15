@@ -449,13 +449,18 @@ pub fn open_token_budget_handler<'info, 'ctx>(
         )?;
     }
 
+    // Same rule as `open_budget`: a refill keeps the month's counter, so a
+    // mid-month top-up raises the limit without granting the limit again.
+    let now = current_month_index()?;
     let budget = &mut ctx.accounts.budget;
     budget.buyer = ctx.accounts.buyer.key();
     budget.session_key = session;
     budget.mint = ctx.accounts.mint.key();
     budget.monthly_limit = monthly_limit;
-    budget.spent = 0;
-    budget.month_index = current_month_index()?;
+    if budget.month_index != now {
+        budget.spent = 0;
+        budget.month_index = now;
+    }
     budget.bump = ctx.bumps.budget;
     Ok(())
 }

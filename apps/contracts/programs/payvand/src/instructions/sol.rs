@@ -351,12 +351,19 @@ pub fn open_budget_handler<'info, 'ctx>(
         )?;
     }
 
+    // A refill is this same instruction on the same account
+    // (`init_if_needed`), so the counter only starts over when the calendar
+    // month has turned: raising the limit mid-month must not hand back what was
+    // already spent, or a buyer could refill their way past their own limit.
+    let now = current_month_index()?;
     let budget = &mut ctx.accounts.budget;
     budget.buyer = ctx.accounts.buyer.key();
     budget.session_key = session;
     budget.monthly_limit = monthly_limit;
-    budget.spent = 0;
-    budget.month_index = current_month_index()?;
+    if budget.month_index != now {
+        budget.spent = 0;
+        budget.month_index = now;
+    }
     // close_budget validates `bump = budget.bump`; without this the
     // stored bump stays 0 and closing can never pass its seeds check.
     budget.bump = ctx.bumps.budget;

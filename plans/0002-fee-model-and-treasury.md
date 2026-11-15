@@ -795,17 +795,31 @@ a same-month top-up raises the pot and limit and keeps the counter.
 
 Acceptance criteria:
 
-- [ ] Same-month `open_budget` and `open_token_budget` preserve `spent` and
+- [x] Same-month `open_budget` and `open_token_budget` preserve `spent` and
       update `monthly_limit`.
-- [ ] A calendar-month change resets `spent` and updates `month_index`.
-- [ ] `budget.vue` copy no longer says a refill restarts the counter.
-- [ ] The rotate flow preserves `spent` unless the month changed.
+- [x] A calendar-month change resets `spent` and updates `month_index`.
+- [x] `budget.vue` copy no longer says a refill restarts the counter.
+- [x] The rotate flow preserves `spent` unless the month changed.
 
 Verification:
 
-- [ ] Anchor test: spend, top up, assert `spent` preserved.
-- [ ] Anchor test: month change resets the counter.
-- [ ] Web copy review.
+- [x] Harness test (not the Anchor suite, which this repo does not run):
+      `open_budget_keeps_spent_until_the_month_changes` spends, refills, asserts
+      `spent` and `month_index` stand, warps the clock 40 days, and asserts the
+      counter and month both start over. Deleting the month comparison turns it
+      red.
+- [x] Web copy review: `budget.success.refilled` and `budget.success.rotated`
+      said the counter restarts; both now say the month's spending keeps
+      counting, in all five locales.
+
+**Fixed 2026-11-15:** both handlers set `spent = 0` unconditionally, so a
+mid-month refill (the same `init_if_needed` instruction on the same account)
+handed back the whole limit — a buyer could refill past it. `open_budget` and
+`open_token_budget` now reset the counter only when
+`budget.month_index != current_month_index()`, which is also what
+`remainingThisMonth` in `useBudget.ts` already assumed. The token handler gets
+the same change, but the harness has no SPL mint setup yet (Task 3.4), so only
+the SOL path is exercised.
 
 Files likely touched:
 
@@ -814,6 +828,7 @@ Files likely touched:
 - `apps/web/app/pages/budget.vue`
 - `apps/web/app/composables/useBudget.ts`
 - `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Task 2.1.
 

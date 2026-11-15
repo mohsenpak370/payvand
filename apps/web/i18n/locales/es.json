@@ -313,8 +313,8 @@
       "noBudgetToClose": "Todavía no hay ningún presupuesto que cerrar."
     },
     "success": {
-      "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y el contador mensual vuelve a cero. Rellena desde aquí cuando quieras uno mayor.",
-      "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. El contador mensual se reinicia con el relleno, así que desde ahora puedes gastar el límite entero.",
+      "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y lo gastado este mes sigue contando. Rellena desde aquí cuando quieras uno mayor.",
+      "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. Lo que ya has gastado este mes sigue contando, así que lo que queda es lo que puedes gastar.",
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
       "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera."

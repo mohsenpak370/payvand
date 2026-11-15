@@ -313,8 +313,8 @@
       "noBudgetToClose": "Es gibt noch kein Budget zum Schließen."
     },
     "success": {
-      "rotated": "Dieses Gerät zahlt jetzt ohne Nachfrage, und der Schlüssel des anderen Geräts funktioniert sofort nicht mehr. Nichts wurde bewegt: Das Limit ist jetzt {limit}, das war bereits im Topf, und der Monatszähler startet bei null. Füll hier auf, wenn du ein größeres Limit willst.",
-      "refilled": "Aufgefüllt — der Topf hält wieder {limit} und jede Zahlung darin läuft ohne Fenster. Der Monatszähler startet mit dem Auffüllen neu, das ganze Limit ist also ab jetzt ausgebbar.",
+      "rotated": "Dieses Gerät zahlt jetzt ohne Nachfrage, und der Schlüssel des anderen Geräts funktioniert sofort nicht mehr. Nichts wurde bewegt: Das Limit ist jetzt {limit}, das war bereits im Topf, und die Ausgaben dieses Monats zählen weiter dagegen. Füll hier auf, wenn du ein größeres Limit willst.",
+      "refilled": "Aufgefüllt — der Topf hält wieder {limit} und jede Zahlung darin läuft ohne Fenster. Was du diesen Monat schon ausgegeben hast, zählt weiter, ausgeben kannst du also den Rest.",
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
       "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet."
