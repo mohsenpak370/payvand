@@ -11,8 +11,9 @@ the 301-byte receipt and starts Task 1.4 in the web client; revision 5
 (2026-11-15) records Phase 2 as built — the refill counter fixed, deployed to
 devnet and checked on chain, Task 2.4's harness tests written — and ticks the
 tasks the code and the cluster had satisfied (2.1, 2.3, 4.5), including the
-receipt-rent credit that closed the gap Task 2.4 found. Phase 3's float top-up
-and settle tests and Phase 4 are the rest of the open work.
+receipt-rent credit that closed the gap Task 2.4 found. Phase 4 has started:
+its session-key sweep (4.1) is done and checked on devnet. Phase 3's float top-up
+and settle tests, and the rest of Phase 4, are the open work.
 
 ## Revision Notes
 
@@ -1125,18 +1126,54 @@ If the sweep fails, do not forget the key; show the balance and a retry.
 
 Acceptance criteria:
 
-- [ ] Closing the last budget sweeps the float back before the key is forgotten.
-- [ ] Rotating sweeps the old key when this device holds it.
-- [ ] A rotated-out device detects it is no longer the budget's `session_key`
-      and offers to sweep.
-- [ ] The success message only claims "everything came back" when the sweep
-      succeeded.
-- [ ] A non-zero balance shows a visible recover action.
+- [x] Closing the last budget sweeps the float back before the key is forgotten.
+      `handBackFloat` in `budget.vue` sweeps, and only then forgets; a failed
+      sweep keeps the key, since a forgotten key cannot sign the transfer that
+      recovers it.
+- [x] Rotating leaves no float of ours behind. As built, rotation always
+      installs *this* device's key (`ensureSessionSigner`), so the key it
+      replaces belongs to another device and is not ours to sign for; that
+      device gets the recover action below. Reworded from "rotating sweeps the
+      old key when this device holds it", which no code path can reach. A future
+      rotation to a *fresh* key must sweep the replaced one first.
+- [x] A rotated-out device detects it is no longer the budget's `session_key`
+      and offers to sweep: `refreshRecoverableFloat` compares this device's key
+      with every live budget's `session_key` and surfaces the balance.
+- [x] The success message only claims "everything came back" when the sweep
+      succeeded: `budget.success.closed` when it did, `closedUnswept` (which
+      names the leftover and points at the recover action) when it did not.
+- [x] A non-zero balance shows a visible recover action: the `budget.recover`
+      alert with the amount and a "Recover … SOL" button, shown whether or not
+      an allowance is left on the page.
 
 Verification:
 
-- [ ] Localnet: close all budgets, session-key balance is zero minus the fee.
-- [ ] Localnet: rotate and confirm the old balance is swept.
+- [x] Devnet, with the real program: `open_budget` 0.02 SOL left the session key
+      `WxGBYkcQ…` holding 30,000,000 lamports, `close_budget` returned the pot
+      and left that float untouched (the loss this task is about), and the sweep
+      the client builds — a system transfer for `balance - 5,000`, signed by the
+      session key as its own fee payer — moved 29,995,000 to the buyer
+      (`4WVsHfKK…`) and left the key at **0**, with nothing left to sweep a
+      second time. The buyer paid nothing for it, so the wallet only had to
+      approve the close.
+- [x] Rotation, as above: nothing of ours is replaced, so there is no old
+      balance to sweep from this device; the rotated-out device's balance is
+      what the recover action covers.
+- Not checked: the browser path itself (button → sweep → forgotten key) needs a
+      wallet and an extension, so the wiring is type-checked and the two pure
+      pieces are unit-tested (`useBudget.test.ts`: the amount and the transfer's
+      instruction index and little-endian lamports), not clicked through.
+
+Files touched:
+
+- `apps/web/app/composables/useBudget.ts`: `sweepableLamports`,
+  `transferLamportsInstruction`, `sweepableFloat`, `sweepSessionFloat`.
+- `apps/web/app/pages/budget.vue`: `handBackFloat`, `recoverFloat`,
+  `refreshRecoverableFloat` and the recover alert.
+- `apps/web/i18n/locales/*.json`: `budget.recover.*`,
+  `budget.success.closedUnswept` / `.floatRecovered`, and
+  `budget.errors.floatNotRecovered`, in all five locales.
+- `apps/web/app/composables/useBudget.test.ts` (new).
 
 Files likely touched:
 

@@ -275,6 +275,11 @@
       "description": "Der Schlüssel, der für dieses Budget ohne Nachfrage zahlt, liegt auf einem anderen Gerät. Ihn zu übernehmen braucht eine Bestätigung, bewegt kein Geld und stoppt das andere Gerät beim Ausgeben.",
       "action": "Stattdessen dieses Gerät verwenden"
     },
+    "recover": {
+      "title": "Restbetrag auf dem Schlüssel dieses Geräts",
+      "body": "Der Sitzungsschlüssel dieses Geräts hält noch {amount} SOL, die kein Budget ausgeben kann. Schick sie hier in dein Wallet zurück — danach wird der Schlüssel vergessen.",
+      "action": "{amount} SOL zurückholen"
+    },
     "limitLabel": "Monatliches Limit ({currency})",
     "limitHelp": "Gilt ab der nächsten Signatur — jederzeit auffüllen, senken oder erhöhen.",
     "lowLimitTitle": "Limit niedrig halten",
@@ -310,14 +315,17 @@
       "notEnoughToken": "Nicht genug {currency}",
       "tokenBody": "Dieses Wallet hält {held}, aber das bewegt {needed} in den Topf, um {limit} zu erreichen. Senk das Limit oder hol dir kostenlose Test-Token von https://faucet.circle.com und versuch es erneut.",
       "readFailure": "Dein Budget konnte nicht gelesen werden.",
-      "noBudgetToClose": "Es gibt noch kein Budget zum Schließen."
+      "noBudgetToClose": "Es gibt noch kein Budget zum Schließen.",
+      "floatNotRecovered": "Restbetrag nicht zurückgeholt"
     },
     "success": {
       "rotated": "Dieses Gerät zahlt jetzt ohne Nachfrage, und der Schlüssel des anderen Geräts funktioniert sofort nicht mehr. Nichts wurde bewegt: Das Limit ist jetzt {limit}, das war bereits im Topf, und die Ausgaben dieses Monats zählen weiter dagegen. Füll hier auf, wenn du ein größeres Limit willst.",
       "refilled": "Aufgefüllt — der Topf hält wieder {limit} und jede Zahlung darin läuft ohne Fenster. Was du diesen Monat schon ausgegeben hast, zählt weiter, ausgeben kannst du also den Rest.",
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
-      "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet."
+      "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet.",
+      "closedUnswept": "{currency}-Budget geschlossen — der Topf ist zurück in deinem Wallet, aber der Restbetrag auf dem Sitzungsschlüssel dieses Geräts konnte noch nicht zurückgeschickt werden. Hol ihn unten zurück.",
+      "floatRecovered": "{amount} SOL vom Sitzungsschlüssel zurückgeholt."
     },
     "cost": {
       "title": "Diese Signatur kostet",

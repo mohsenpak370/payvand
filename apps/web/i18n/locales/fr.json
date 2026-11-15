@@ -275,6 +275,11 @@
       "description": "La clé qui paie silencieusement pour cette autorisation se trouve sur un autre appareil. La reprendre demande une validation, ne déplace aucun fonds et empêche l'autre appareil de dépenser.",
       "action": "Utiliser cet appareil à la place"
     },
+    "recover": {
+      "title": "Solde restant sur la clé de cet appareil",
+      "body": "La clé de session de cet appareil contient encore {amount} SOL qu'aucun budget ne peut dépenser. Renvoyez-les ici dans votre portefeuille — la clé est ensuite oubliée.",
+      "action": "Récupérer {amount} SOL"
+    },
     "limitLabel": "Limite mensuelle ({currency})",
     "limitHelp": "Appliquée à la prochaine signature — rechargez, baissez ou augmentez à tout moment.",
     "lowLimitTitle": "Gardez la limite basse",
@@ -310,14 +315,17 @@
       "notEnoughToken": "Pas assez de {currency}",
       "tokenBody": "Ce portefeuille contient {held}, mais cette opération déplace {needed} dans la cagnotte pour atteindre {limit}. Baissez la limite, ou obtenez des jetons de test gratuits sur https://faucet.circle.com et réessayez.",
       "readFailure": "Impossible de lire votre budget.",
-      "noBudgetToClose": "Il n'y a pas encore de budget à fermer."
+      "noBudgetToClose": "Il n'y a pas encore de budget à fermer.",
+      "floatNotRecovered": "Solde non récupéré"
     },
     "success": {
       "rotated": "Cet appareil paie désormais silencieusement, et la clé détenue par l'autre appareil a cessé de fonctionner aussitôt. Rien n'a bougé : la limite est maintenant {limit}, ce que la cagnotte contenait déjà, et les dépenses du mois comptent toujours. Rechargez d'ici quand vous voulez une limite plus élevée.",
       "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et chaque paiement dans cette limite se fait sans fenêtre. Ce que vous avez déjà dépensé ce mois-ci compte toujours, il ne reste donc que le solde à dépenser.",
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
-      "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille."
+      "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille.",
+      "closedUnswept": "Budget {currency} fermé — la cagnotte est revenue dans votre portefeuille, mais le solde de la clé de session de cet appareil n'a pas encore pu être renvoyé. Récupérez-le ci-dessous.",
+      "floatRecovered": "{amount} SOL récupérés depuis la clé de session."
     },
     "cost": {
       "title": "Cette signature coûte",

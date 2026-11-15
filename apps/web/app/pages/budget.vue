@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { address } from '@vue-solana/nuxt/kit'
+import { address, type Address } from '@vue-solana/nuxt/kit'
 import type { BudgetState, TokenBudgetState } from '~/composables/useBudget'
 import type { SupportedCurrency } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
@@ -36,7 +36,10 @@ const success = ref('')
 const budget = ref<BudgetState | null>(null)
 const budgetPot = ref(0)
 /** The session key this device holds, if any — the only key that can pay here. */
-const deviceKeyAddress = ref<string | null>(null)
+const deviceKeyAddress = ref<Address | null>(null)
+/** What this device's key still holds that no allowance can spend. */
+const recoverableFloat = ref(0)
+const sweeping = ref(false)
 
 const activeMint = computed(() =>
   activeCurrency.value === 'sol'
@@ -73,6 +76,15 @@ const view = computed(() => {
  */
 const foreignDevice = computed(
   () => Boolean(view.value && view.value.sessionKey !== deviceKeyAddress.value)
+)
+
+/**
+ * Every session key an allowance on this page names. A key of ours that is not
+ * in here no longer pays anything, so its float is ours to take back.
+ */
+const liveSessionKeys = computed(() =>
+  [budget.value?.sessionKey, ...Object.values(tokenBudgets.value).map(entry => entry?.sessionKey)]
+    .filter((key): key is Address => Boolean(key))
 )
 
 /** What it would take to put the pot back to the full monthly limit. */
@@ -190,12 +202,27 @@ function shorten(value: string) {
   return `${value.slice(0, 4)}…${value.slice(-4)}`
 }
 
+/**
+ * A key this device holds that no remaining allowance names is one it was
+ * rotated out of, or one whose budget is gone: nothing here can spend its
+ * float, so it becomes a visible recover action instead of lost lamports.
+ */
+async function refreshRecoverableFloat() {
+  const key = deviceKeyAddress.value
+  if (!key || liveSessionKeys.value.includes(key)) {
+    recoverableFloat.value = 0
+    return
+  }
+  recoverableFloat.value = await budgetApi.sweepableFloat(key).catch(() => 0)
+}
+
 async function refresh() {
   budget.value = null
   budgetPot.value = 0
   tokenBudgets.value = {}
   if (!publicKey.value) {
     deviceKeyAddress.value = null
+    recoverableFloat.value = 0
     return
   }
   deviceKeyAddress.value = (await peekSessionSigner(publicKey.value))?.address ?? null
@@ -213,6 +240,7 @@ async function refresh() {
   } catch (error) {
     failure.value = error instanceof Error ? error.message : t('budget.errors.readFailure')
   }
+  await refreshRecoverableFloat()
 }
 
 watch(publicKey, refresh, { immediate: true })
@@ -448,6 +476,53 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
   }
 }
 
+/**
+ * Sends a stranded float home, then forgets the dead key. Only keys no
+ * remaining allowance names reach this: a live key needs its float to pay for
+ * the silent payments it makes.
+ */
+async function recoverFloat() {
+  const buyer = publicKey.value
+  const key = deviceKeyAddress.value
+  if (!buyer || !key || liveSessionKeys.value.includes(key)) return
+  resetMessages()
+  sweeping.value = true
+  try {
+    const { swept } = await budgetApi.sweepSessionFloat(buyer)
+    recoverableFloat.value = 0
+    if (deviceKeyAddress.value === key) {
+      forgetSessionSigner(buyer)
+      deviceKeyAddress.value = null
+    }
+    success.value = t('budget.success.floatRecovered', { amount: lamportsToSol(swept) })
+  } catch (error) {
+    recordFailure(error)
+  } finally {
+    sweeping.value = false
+  }
+}
+
+/**
+ * Hands the session key's float back before the key is forgotten. A forgotten
+ * key cannot sign the transfer that recovers it, so a failed sweep keeps the
+ * key, leaves the balance on screen with a retry, and makes the message say the
+ * budget closed without claiming the float came back.
+ */
+async function handBackFloat(buyer: Address) {
+  try {
+    await budgetApi.sweepSessionFloat(buyer)
+    forgetSessionSigner(buyer)
+    deviceKeyAddress.value = null
+    recoverableFloat.value = 0
+    success.value = t('budget.success.closed', { currency: unitLabel.value })
+  } catch (error) {
+    recordFailure(error)
+    failureTitle.value = t('budget.errors.floatNotRecovered')
+    success.value = t('budget.success.closedUnswept', { currency: unitLabel.value })
+    await refreshRecoverableFloat()
+  }
+}
+
 /** Reclaim everything left in one currency's allowance (1 signature). */
 async function closeBudget() {
   const buyer = publicKey.value
@@ -496,11 +571,15 @@ async function closeBudget() {
     await refresh()
 
     // The session key is only forgotten once no allowance is left to spend
-    // with it — the other currencies' budgets still need it.
+    // with it — the other currencies' budgets still need it — and only after
+    // its float is back, which `handBackFloat` does and reports.
     const anyLeft
       = Boolean(budget.value) || Object.values(tokenBudgets.value).some(entry => Boolean(entry))
-    if (!anyLeft) forgetSessionSigner(buyer)
-    success.value = t('budget.success.closed', { currency: unitLabel.value })
+    if (anyLeft) {
+      success.value = t('budget.success.closed', { currency: unitLabel.value })
+    } else {
+      await handBackFloat(buyer)
+    }
   } catch (error) {
     recordFailure(error)
   } finally {
@@ -736,6 +815,24 @@ async function closeBudget() {
         >
           {{ $t('budget.connectPrompt') }}
         </p>
+
+        <UAlert
+          v-if="connected && recoverableFloat > 0 && !busy"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-hand-coins"
+          :title="$t('budget.recover.title')"
+          :description="$t('budget.recover.body', { amount: lamportsToSol(recoverableFloat) })"
+        >
+          <template #actions>
+            <UButton
+              :label="$t('budget.recover.action', { amount: lamportsToSol(recoverableFloat) })"
+              size="sm"
+              :loading="busy || sweeping || txLoading"
+              @click="recoverFloat"
+            />
+          </template>
+        </UAlert>
 
         <UAlert
           v-if="failure"

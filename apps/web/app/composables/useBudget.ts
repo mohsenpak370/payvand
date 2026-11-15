@@ -1,4 +1,6 @@
 import {
+  AccountRole,
+  address,
   appendTransactionMessageInstruction,
   createTransactionMessage,
   getAddressDecoder,
@@ -10,6 +12,7 @@ import {
   signTransactionMessageWithSigners,
   getTransactionDecoder,
   type Address,
+  type Instruction,
   type KeyPairSigner
 } from '@vue-solana/nuxt/kit'
 import {
@@ -26,6 +29,7 @@ import type { compileWireTransaction } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
 
 const BUDGET_SEED = new TextEncoder().encode('budget')
+const SYSTEM_PROGRAM_ID = address('11111111111111111111111111111111')
 /** A token budget per buyer per mint, under its own seed prefix. */
 const TOKEN_BUDGET_SEED = new TextEncoder().encode('token-budget')
 
@@ -68,6 +72,48 @@ export interface BudgetState {
   monthIndex: number
   /** Total lamports held by the PDA (rent-exempt reserve + remaining pot). */
   lamports: number
+}
+
+/**
+ * What a transaction the session key signs costs: the cluster's base fee, and
+ * this client sets no priority fee on those payments. The sweep is one
+ * signature, so reserving exactly this empties the key rather than stranding
+ * dust on one this device is about to forget; the quoted
+ * `NETWORK_FEE_LAMPORTS` would leave half of itself behind for nothing.
+ */
+const SESSION_SIGNATURE_FEE = 5_000
+
+/**
+ * What a sweep of `balance` lamports actually returns: everything but the one
+ * signature's cost the session key has to keep to pay for its own transaction.
+ * A key that holds no more than that has nothing to hand back.
+ */
+export function sweepableLamports(balance: number): number {
+  const swept = balance - SESSION_SIGNATURE_FEE
+  return swept > 0 ? swept : 0
+}
+
+/**
+ * The system program's `transfer`, built by hand because the system program is
+ * not in our IDL: a 4-byte instruction index and the lamports, little-endian.
+ */
+export function transferLamportsInstruction(
+  from: Address,
+  to: Address,
+  lamports: number
+): Instruction {
+  const data = new Uint8Array(12)
+  const view = new DataView(data.buffer)
+  view.setUint32(0, 2, true)
+  view.setBigUint64(4, BigInt(lamports), true)
+  return {
+    programAddress: SYSTEM_PROGRAM_ID,
+    accounts: [
+      { address: from, role: AccountRole.WRITABLE_SIGNER },
+      { address: to, role: AccountRole.WRITABLE }
+    ],
+    data
+  }
 }
 
 /**
@@ -312,7 +358,7 @@ export function useBudget() {
    */
   async function submitWithSession(
     session: KeyPairSigner,
-    instruction: ReturnType<typeof buildInstruction>
+    instruction: Instruction
   ): Promise<string> {
     const { value: lifetime } = await client.rpc.getLatestBlockhash().send()
     const message = setTransactionMessageLifetimeUsingBlockhash(
@@ -342,6 +388,36 @@ export function useBudget() {
       })
     }
     throw new Error(appT('errors.notConfirmed'))
+  }
+
+  /** Lamports a sweep of this session key would hand back to the buyer. */
+  async function sweepableFloat(sessionAddress: Address): Promise<number> {
+    const balance = Number(
+      (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
+    )
+    return sweepableLamports(balance)
+  }
+
+  /**
+   * Hands this device's session-key float back to the buyer. The session key
+   * signs and is its own fee payer, so the sweep costs no wallet approval; the
+   * program cannot do this itself because the key is not a PDA. Answers
+   * `swept: 0` when there is nothing to send, and throws when the transfer could
+   * not land — the caller keeps the key in that case rather than leaving the
+   * float on a key it can no longer sign with.
+   */
+  async function sweepSessionFloat(
+    buyer: Address
+  ): Promise<{ swept: number, signature: string | null }> {
+    const session = await peekSessionSigner(buyer)
+    if (!session) return { swept: 0, signature: null }
+    const swept = await sweepableFloat(session.address)
+    if (swept <= 0) return { swept: 0, signature: null }
+    const signature = await submitWithSession(
+      session,
+      transferLamportsInstruction(session.address, buyer, swept)
+    )
+    return { swept, signature }
   }
 
   /** The token account a budget PDA owns for one mint: where its tokens sit. */
@@ -479,6 +555,8 @@ export function useBudget() {
     preflight,
     silentPaymentObstacle,
     sendSilentPayment,
+    sweepableFloat,
+    sweepSessionFloat,
     tokenVault,
     loadTokenBudget,
     tokenRemainingThisMonth,

@@ -275,6 +275,11 @@
       "description": "La clave que paga sin preguntar por este presupuesto está en otro dispositivo. Hacerse con ella requiere una aprobación, no mueve fondos y detiene el gasto del otro dispositivo.",
       "action": "Usar este dispositivo"
     },
+    "recover": {
+      "title": "Saldo sobrante en la clave de este dispositivo",
+      "body": "La clave de sesión de este dispositivo aún tiene {amount} SOL que ningún presupuesto puede gastar. Devuélvelos aquí a tu cartera — después la clave se olvida.",
+      "action": "Recuperar {amount} SOL"
+    },
     "limitLabel": "Límite mensual ({currency})",
     "limitHelp": "Se aplica en la siguiente firma — rellena, baja o sube cuando quieras.",
     "lowLimitTitle": "Mantén el límite bajo",
@@ -310,14 +315,17 @@
       "notEnoughToken": "No hay suficiente {currency}",
       "tokenBody": "Esta cartera tiene {held}, pero esto mueve {needed} a la reserva para llegar a {limit}. Baja el límite u obtén tokens de prueba gratis en https://faucet.circle.com y vuelve a intentarlo.",
       "readFailure": "No se pudo leer tu presupuesto.",
-      "noBudgetToClose": "Todavía no hay ningún presupuesto que cerrar."
+      "noBudgetToClose": "Todavía no hay ningún presupuesto que cerrar.",
+      "floatNotRecovered": "El saldo no se ha recuperado"
     },
     "success": {
       "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y lo gastado este mes sigue contando. Rellena desde aquí cuando quieras uno mayor.",
       "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. Lo que ya has gastado este mes sigue contando, así que lo que queda es lo que puedes gastar.",
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
-      "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera."
+      "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera.",
+      "closedUnswept": "Presupuesto de {currency} cerrado — la reserva ha vuelto a tu cartera, pero el saldo de la clave de sesión de este dispositivo todavía no ha podido volver. Recupéralo abajo.",
+      "floatRecovered": "Recuperados {amount} SOL de la clave de sesión."
     },
     "cost": {
       "title": "Esta firma cuesta",
