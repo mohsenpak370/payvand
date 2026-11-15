@@ -192,10 +192,6 @@ export function usePaymentCheckout() {
   const items = computed<PaymentItem[]>(() => payload.value?.items ?? [])
 
   /**
-   * `missing` is the normal state of a fresh invoice: its account is created
-   * inside the buyer's own transaction, so nothing watches it beforehand.
-   */
-  /**
    * The fee's destination for this mint does not exist yet, so the program
    * would reject the settle after the buyer signed. That account is the
    * protocol's own setup — one call of `open_treasury_token_account` by the
@@ -439,19 +435,14 @@ export function usePaymentCheckout() {
       const amount = payableAmount.value
       const memo = current.memo || ''
 
-      // Preflight against the same numbers the program will use: an amount
-      // below the rent-plus-fee floor is rejected on chain, and a policy the
-      // client could not read is not a reason to guess.
+      // Preflight against the numbers the program will use: a policy the client
+      // could not read is not a reason to guess, and the two checks below are
+      // rejected on chain — after the buyer had signed. The button is already
+      // held for them, so this stands for every other caller; the test beside
+      // this file fails if it goes away.
       const quote = costs.value ?? await refreshCosts()
       if (!quote) throw new Error(costsError.value || appT('errors.feeConfigUnavailable'))
-      // Both of these are rejected on chain, so neither may reach a signature.
-      // The button is already held for the first, but `pay()` is what runs when
-      // anything else calls it — the stage machine, a keyboard submit, a click
-      // that lands before the quote arrives — and a doomed transaction the
-      // buyer has to approve is worse than a sentence saying why not.
-      if (quote.treasuryTokenAccountMissing) {
-        throw new Error(appT('errors.treasuryTokenAccountMissing'))
-      }
+      if (quote.treasuryTokenAccountMissing) throw new Error(appT('errors.treasuryTokenAccountMissing'))
       if (amount < quote.minPayable) throw new Error(appT('errors.invoiceTooSmall'))
 
       const payment = await addressFor(option, amount)

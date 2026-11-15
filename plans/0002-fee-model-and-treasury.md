@@ -1329,7 +1329,14 @@ the first thing the live payment run produced). `pay()` itself refuses on the
 same quote — the button is one door, not the only one — and throws
 `errors.treasuryTokenAccountMissing` before any wallet request; checked on the
 local dev build with the treasury read forced empty: the failure was that
-sentence and the stubbed wallet was never asked to sign.
+sentence and the stubbed wallet was never asked to sign. The deployed bundle
+carries the same branch ahead of `settle_token_payment`, and
+`apps/web/app/composables/usePaymentCheckout.test.ts` now pins it: it calls
+`pay()` with a quote whose treasury account is missing and fails if anything is
+built or the wallet is asked to sign (deleting the guard was checked to turn it
+red), with a second case sending the same invoice once the account is there.
+The provisioning script now takes each account's writable/signer flag from the
+IDL instead of naming two of them, so a flag change there follows through.
 
 
 Smoke tests:

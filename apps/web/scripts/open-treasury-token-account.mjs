@@ -82,8 +82,9 @@ async function main() {
     seeds: [getAddressEncoder().encode(treasury), getAddressEncoder().encode(TOKEN_PROGRAM_ID), getAddressEncoder().encode(mint)]
   })
 
-  // The IDL names the accounts; this only says where each one lives, so an
-  // account added there fails loudly here instead of going unnoticed.
+  // The IDL names the accounts and says which of them are writable or signers;
+  // this only says where each one lives, so an account added there fails loudly
+  // here instead of going unnoticed, and a flag changed there follows through.
   const known = {
     admin: admin.address,
     config,
@@ -94,10 +95,11 @@ async function main() {
     associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
     system_program: SYSTEM_PROGRAM_ID
   }
-  const accounts = definition.accounts.map(({ name }) => {
+  // `AccountRole`: 0 readonly, 1 writable, 2 readonly signer, 3 writable signer.
+  const accounts = definition.accounts.map(({ name, writable, signer }) => {
     const resolved = known[name]
     if (!resolved) fail(`the IDL asks for an account this script cannot place: ${name}`)
-    return { address: resolved, role: name === 'admin' ? 3 : name === 'treasury_token_account' ? 1 : 0 }
+    return { address: resolved, role: (signer === true ? 2 : 0) + (writable === true ? 1 : 0) }
   })
 
   console.log(`cluster   ${args.cluster}`)
