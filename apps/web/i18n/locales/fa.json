@@ -726,6 +726,7 @@
     "memoPlaceholder": "قهوه",
     "createFailureTitle": "ساخت پرداخت ممکن نشد",
     "createFailure": "ساخت پرداخت ممکن نشد.",
+    "tokenAccountFailure": "فاکتور ساخته نشد: حساب توکن فروشنده باز نشد.",
     "createCode": "ساخت کد پرداخت",
     "connectFirst": "اول کیف پول فروشنده را وصل کنید.",
     "enterPrice": "قیمتی بزرگ‌تر از ۰ وارد کنید.",

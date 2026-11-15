@@ -726,6 +726,7 @@
     "memoPlaceholder": "Café",
     "createFailureTitle": "Impossible de créer le paiement",
     "createFailure": "Impossible de créer le paiement.",
+    "tokenAccountFailure": "La facture n'a pas été créée : le compte de jetons du vendeur n'a pas pu être ouvert.",
     "createCode": "Créer le code de paiement",
     "connectFirst": "Connectez d'abord votre portefeuille vendeur.",
     "enterPrice": "Saisissez un prix supérieur à 0.",

@@ -32,6 +32,7 @@ const { playSuccess } = useTransactionSounds()
 // settings — everyone else creates codes the way they always have.
 const { shopsEnabled } = useShopPreference()
 const { publicKey, connected } = useSolanaWallet()
+const { ensureSellerTokenAccounts } = useSellerTokenAccount()
 
 // One price, in the currency the code charges: the dropdown beside the field is
 // that currency, so there is no second control to reconcile against it. The
@@ -277,7 +278,20 @@ async function createPayment() {
 
   busy.value = true
   try {
-    // Nothing to sign: derive the invoice address from the amount locally,
+    // A token invoice can only pay into an account the seller already owns, so
+    // theirs is opened first — one signature, paid by the seller, before a code
+    // exists to be scanned. A SOL invoice needs nothing.
+    try {
+      await ensureSellerTokenAccounts(
+        seller,
+        invoiceOptions.value.map(option => option.currency),
+        cluster
+      )
+    } catch {
+      throw new Error(t('sell.tokenAccountFailure'))
+    }
+
+    // Nothing else to sign: derive the invoice address from the amount locally,
     // then record the details. The customer's payment funds the account.
     const reference = createReference()
 

@@ -726,6 +726,7 @@
     "memoPlaceholder": "Kaffee",
     "createFailureTitle": "Zahlung konnte nicht erstellt werden",
     "createFailure": "Die Zahlung konnte nicht erstellt werden.",
+    "tokenAccountFailure": "Die Rechnung wurde nicht erstellt: Das Token-Konto des Verkäufers ließ sich nicht öffnen.",
     "createCode": "Zahlungscode erstellen",
     "connectFirst": "Verbinde zuerst dein Verkäufer-Wallet.",
     "enterPrice": "Gib einen Preis größer als 0 ein.",

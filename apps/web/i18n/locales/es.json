@@ -726,6 +726,7 @@
     "memoPlaceholder": "Café",
     "createFailureTitle": "No se pudo crear el pago",
     "createFailure": "No se pudo crear el pago.",
+    "tokenAccountFailure": "La factura no se creó: no se pudo abrir la cuenta de token del vendedor.",
     "createCode": "Crear código de pago",
     "connectFirst": "Conecta primero tu cartera de vendedor.",
     "enterPrice": "Escribe un precio mayor que 0.",

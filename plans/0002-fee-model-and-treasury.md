@@ -1296,11 +1296,13 @@ Smoke tests:
       tokens and −2,179,320 lamports (the permanent receipt). The pool comes out
       ahead in tokens and down one receipt rent, which is what the fee has to
       cover; the treasury token balance is the pool the plan converts later.
-- [ ] A seller whose token account is missing now blocks the payment instead of
-      being charged to the buyer (creating it inside a settlement would hand
-      rent to whoever is named). Not yet exercised on chain: the page shows the
-      notice (`/p/…` invoice to a seller with no account), and the program
-      refuses the CPI with `AccountNotInitialized`.
+- [x] The seller's account is opened by the seller, not the buyer: `/sell`
+      creates it with one `CreateIdempotent` signature before the invoice
+      exists (paid by the seller, skipped when it is already there), and the
+      checkout keeps the notice as the fallback for a code made elsewhere. The
+      instruction is pinned by a unit test and was run on devnet for a fresh
+      owner (`3DaYgcKv…`: account created, 1,488,440 lamports, owned by the
+      token program).
 - [ ] Wrong-mint close fails; decoy vault rejected. **Blocked on Phase 3**
       (Task 3.4); not exercised.
 - [x] `close_budget` returns the pot and the account rent to the buyer and the

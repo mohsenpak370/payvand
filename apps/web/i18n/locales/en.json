@@ -726,6 +726,7 @@
     "memoPlaceholder": "Coffee",
     "createFailureTitle": "Could not create the payment",
     "createFailure": "Could not create the payment.",
+    "tokenAccountFailure": "The invoice was not created: the seller's token account could not be opened.",
     "createCode": "Create payment code",
     "connectFirst": "Connect your seller wallet first.",
     "enterPrice": "Enter a price greater than 0.",
