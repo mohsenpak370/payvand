@@ -1138,7 +1138,11 @@ Acceptance criteria:
       rotation to a *fresh* key must sweep the replaced one first.
 - [x] A rotated-out device detects it is no longer the budget's `session_key`
       and offers to sweep: `refreshRecoverableFloat` compares this device's key
-      with every live budget's `session_key` and surfaces the balance.
+      with every live budget's `session_key` and surfaces the balance — only
+      after a read that succeeded (`budgetsRead`), since a failed read leaves
+      the budgets null and is no evidence that nothing needs the key. A sweep
+      whose confirmation poll times out re-reads the key before failing: the
+      balance decides, so a float that already moved is not reported as stuck.
 - [x] The success message only claims "everything came back" when the sweep
       succeeded: `budget.success.closed` when it did, `closedUnswept` (which
       names the leftover and points at the recover action) when it did not.

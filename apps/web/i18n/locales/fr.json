@@ -316,7 +316,8 @@
       "tokenBody": "Ce portefeuille contient {held}, mais cette opération déplace {needed} dans la cagnotte pour atteindre {limit}. Baissez la limite, ou obtenez des jetons de test gratuits sur https://faucet.circle.com et réessayez.",
       "readFailure": "Impossible de lire votre budget.",
       "noBudgetToClose": "Il n'y a pas encore de budget à fermer.",
-      "floatNotRecovered": "Solde non récupéré"
+      "floatNotRecovered": "Budget fermé, solde non récupéré",
+      "floatUnsweptBody": "{reason} La cagnotte est revenue dans votre portefeuille, mais {amount} SOL restent sur la clé de cet appareil — récupérez-les ci-dessous."
     },
     "success": {
       "rotated": "Cet appareil paie désormais silencieusement, et la clé détenue par l'autre appareil a cessé de fonctionner aussitôt. Rien n'a bougé : la limite est maintenant {limit}, ce que la cagnotte contenait déjà, et les dépenses du mois comptent toujours. Rechargez d'ici quand vous voulez une limite plus élevée.",
@@ -324,7 +325,6 @@
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
       "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille.",
-      "closedUnswept": "Budget {currency} fermé — la cagnotte est revenue dans votre portefeuille, mais le solde de la clé de session de cet appareil n'a pas encore pu être renvoyé. Récupérez-le ci-dessous.",
       "floatRecovered": "{amount} SOL récupérés depuis la clé de session."
     },
     "cost": {

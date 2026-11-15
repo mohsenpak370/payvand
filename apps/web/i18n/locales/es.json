@@ -316,7 +316,8 @@
       "tokenBody": "Esta cartera tiene {held}, pero esto mueve {needed} a la reserva para llegar a {limit}. Baja el límite u obtén tokens de prueba gratis en https://faucet.circle.com y vuelve a intentarlo.",
       "readFailure": "No se pudo leer tu presupuesto.",
       "noBudgetToClose": "Todavía no hay ningún presupuesto que cerrar.",
-      "floatNotRecovered": "El saldo no se ha recuperado"
+      "floatNotRecovered": "Presupuesto cerrado, saldo no recuperado",
+      "floatUnsweptBody": "{reason} La reserva ha vuelto a tu cartera, pero {amount} SOL siguen en la clave de este dispositivo — recupéralos abajo."
     },
     "success": {
       "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y lo gastado este mes sigue contando. Rellena desde aquí cuando quieras uno mayor.",
@@ -324,7 +325,6 @@
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
       "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera.",
-      "closedUnswept": "Presupuesto de {currency} cerrado — la reserva ha vuelto a tu cartera, pero el saldo de la clave de sesión de este dispositivo todavía no ha podido volver. Recupéralo abajo.",
       "floatRecovered": "Recuperados {amount} SOL de la clave de sesión."
     },
     "cost": {

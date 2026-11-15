@@ -402,8 +402,8 @@ export function useBudget() {
    * Hands this device's session-key float back to the buyer. The session key
    * signs and is its own fee payer, so the sweep costs no wallet approval; the
    * program cannot do this itself because the key is not a PDA. Answers
-   * `swept: 0` when there is nothing to send, and throws when the transfer could
-   * not land — the caller keeps the key in that case rather than leaving the
+   * `swept: 0` when there is nothing to send, and throws only when the float is
+   * still there — the caller keeps the key in that case rather than leaving the
    * float on a key it can no longer sign with.
    */
   async function sweepSessionFloat(
@@ -413,11 +413,21 @@ export function useBudget() {
     if (!session) return { swept: 0, signature: null }
     const swept = await sweepableFloat(session.address)
     if (swept <= 0) return { swept: 0, signature: null }
-    const signature = await submitWithSession(
-      session,
-      transferLamportsInstruction(session.address, buyer, swept)
-    )
-    return { swept, signature }
+    try {
+      const signature = await submitWithSession(
+        session,
+        transferLamportsInstruction(session.address, buyer, swept)
+      )
+      return { swept, signature }
+    } catch (error) {
+      // A send can land and still time out in the confirmation poll below, and
+      // reporting that as a failure would keep a key whose float has already
+      // moved home — and show a retry for money that is back. The balance is
+      // the truth; only a key that still holds a float failed to sweep.
+      const left = await sweepableFloat(session.address).catch(() => swept)
+      if (left > 0) throw error
+      return { swept, signature: null }
+    }
   }
 
   /** The token account a budget PDA owns for one mint: where its tokens sit. */

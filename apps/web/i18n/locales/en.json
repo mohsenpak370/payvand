@@ -316,7 +316,8 @@
       "tokenBody": "This wallet holds {held}, but this moves {needed} into the pot to reach {limit}. Lower the limit, or get free test tokens from https://faucet.circle.com and try again.",
       "readFailure": "Could not read your budget.",
       "noBudgetToClose": "There is no budget to close yet.",
-      "floatNotRecovered": "The float could not be recovered"
+      "floatNotRecovered": "Budget closed, float not recovered",
+      "floatUnsweptBody": "{reason} The pot is back in your wallet, but {amount} SOL is still on this device's key — recover it below."
     },
     "success": {
       "rotated": "This device now pays silently, and the key the other device held stopped working at once. Nothing moved: the limit is now {limit}, what the pot already held, and this month's spending still counts against it. Top up from here whenever you want a bigger one.",
@@ -324,7 +325,6 @@
       "updated": "Budget updated — your limit and pot are in sync again.",
       "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
       "closed": "{currency} budget closed — everything left went back to your wallet.",
-      "closedUnswept": "{currency} budget closed — the pot went back to your wallet, but the float on this device's session key could not be sent back yet. Recover it below.",
       "floatRecovered": "Recovered {amount} SOL from the session key."
     },
     "cost": {

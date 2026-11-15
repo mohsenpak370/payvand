@@ -40,6 +40,12 @@ const deviceKeyAddress = ref<Address | null>(null)
 /** What this device's key still holds that no allowance can spend. */
 const recoverableFloat = ref(0)
 const sweeping = ref(false)
+/**
+ * Whether the last read of the budgets succeeded. A failed read leaves them
+ * null, which must not be mistaken for "no allowance needs this key": that
+ * guess would sweep a live key's float and forget it.
+ */
+const budgetsRead = ref(false)
 
 const activeMint = computed(() =>
   activeCurrency.value === 'sol'
@@ -209,7 +215,7 @@ function shorten(value: string) {
  */
 async function refreshRecoverableFloat() {
   const key = deviceKeyAddress.value
-  if (!key || liveSessionKeys.value.includes(key)) {
+  if (!key || !budgetsRead.value || liveSessionKeys.value.includes(key)) {
     recoverableFloat.value = 0
     return
   }
@@ -220,6 +226,7 @@ async function refresh() {
   budget.value = null
   budgetPot.value = 0
   tokenBudgets.value = {}
+  budgetsRead.value = false
   if (!publicKey.value) {
     deviceKeyAddress.value = null
     recoverableFloat.value = 0
@@ -237,6 +244,7 @@ async function refresh() {
       if (!mint) continue
       tokenBudgets.value[currency] = await budgetApi.loadTokenBudget(publicKey.value, mint)
     }
+    budgetsRead.value = true
   } catch (error) {
     failure.value = error instanceof Error ? error.message : t('budget.errors.readFailure')
   }
@@ -477,23 +485,30 @@ async function applyLimit(limit: number, intent: 'save' | 'rotate' | 'refill') {
 }
 
 /**
- * Sends a stranded float home, then forgets the dead key. Only keys no
- * remaining allowance names reach this: a live key needs its float to pay for
- * the silent payments it makes.
+ * Sweeps this device's float home and only then forgets the key — the one place
+ * a session key is dropped, so no path can forget one still holding lamports.
+ * Throws with the key and its float intact, which is what leaves a retry.
+ */
+async function sweepHomeAndForget(buyer: Address): Promise<number> {
+  const { swept } = await budgetApi.sweepSessionFloat(buyer)
+  forgetSessionSigner(buyer)
+  deviceKeyAddress.value = null
+  recoverableFloat.value = 0
+  return swept
+}
+
+/**
+ * Sends a stranded float home after the key stopped paying for anything: a
+ * rotated-out device, or a budget closed from another one.
  */
 async function recoverFloat() {
   const buyer = publicKey.value
   const key = deviceKeyAddress.value
-  if (!buyer || !key || liveSessionKeys.value.includes(key)) return
+  if (!buyer || !key || !budgetsRead.value || liveSessionKeys.value.includes(key)) return
   resetMessages()
   sweeping.value = true
   try {
-    const { swept } = await budgetApi.sweepSessionFloat(buyer)
-    recoverableFloat.value = 0
-    if (deviceKeyAddress.value === key) {
-      forgetSessionSigner(buyer)
-      deviceKeyAddress.value = null
-    }
+    const swept = await sweepHomeAndForget(buyer)
     success.value = t('budget.success.floatRecovered', { amount: lamportsToSol(swept) })
   } catch (error) {
     recordFailure(error)
@@ -503,23 +518,21 @@ async function recoverFloat() {
 }
 
 /**
- * Hands the session key's float back before the key is forgotten. A forgotten
- * key cannot sign the transfer that recovers it, so a failed sweep keeps the
- * key, leaves the balance on screen with a retry, and makes the message say the
- * budget closed without claiming the float came back.
+ * Hands the float back after the last allowance is gone, and says what happened
+ * to it: the close worked either way, so the message must not claim everything
+ * came back when the float is still on this device's key.
  */
 async function handBackFloat(buyer: Address) {
   try {
-    await budgetApi.sweepSessionFloat(buyer)
-    forgetSessionSigner(buyer)
-    deviceKeyAddress.value = null
-    recoverableFloat.value = 0
+    await sweepHomeAndForget(buyer)
     success.value = t('budget.success.closed', { currency: unitLabel.value })
   } catch (error) {
-    recordFailure(error)
     failureTitle.value = t('budget.errors.floatNotRecovered')
-    success.value = t('budget.success.closedUnswept', { currency: unitLabel.value })
     await refreshRecoverableFloat()
+    failure.value = t('budget.errors.floatUnsweptBody', {
+      reason: describeFailure(error),
+      amount: lamportsToSol(recoverableFloat.value)
+    })
   }
 }
 
@@ -572,7 +585,12 @@ async function closeBudget() {
 
     // The session key is only forgotten once no allowance is left to spend
     // with it — the other currencies' budgets still need it — and only after
-    // its float is back, which `handBackFloat` does and reports.
+    // its float is back, which `handBackFloat` does and reports. An unreadable
+    // budget list answers neither question, so the key and its float stay put.
+    if (!budgetsRead.value) {
+      failure.value = t('budget.errors.readFailure')
+      return
+    }
     const anyLeft
       = Boolean(budget.value) || Object.values(tokenBudgets.value).some(entry => Boolean(entry))
     if (anyLeft) {
@@ -817,7 +835,7 @@ async function closeBudget() {
         </p>
 
         <UAlert
-          v-if="connected && recoverableFloat > 0 && !busy"
+          v-if="connected && budgetsRead && recoverableFloat > 0 && !busy"
           color="warning"
           variant="subtle"
           icon="i-lucide-hand-coins"

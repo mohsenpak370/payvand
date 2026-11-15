@@ -316,7 +316,8 @@
       "tokenBody": "Dieses Wallet hält {held}, aber das bewegt {needed} in den Topf, um {limit} zu erreichen. Senk das Limit oder hol dir kostenlose Test-Token von https://faucet.circle.com und versuch es erneut.",
       "readFailure": "Dein Budget konnte nicht gelesen werden.",
       "noBudgetToClose": "Es gibt noch kein Budget zum Schließen.",
-      "floatNotRecovered": "Restbetrag nicht zurückgeholt"
+      "floatNotRecovered": "Budget geschlossen, Restbetrag nicht zurückgeholt",
+      "floatUnsweptBody": "{reason} Der Topf ist zurück in deinem Wallet, aber {amount} SOL liegen noch auf dem Schlüssel dieses Geräts — hol sie unten zurück."
     },
     "success": {
       "rotated": "Dieses Gerät zahlt jetzt ohne Nachfrage, und der Schlüssel des anderen Geräts funktioniert sofort nicht mehr. Nichts wurde bewegt: Das Limit ist jetzt {limit}, das war bereits im Topf, und die Ausgaben dieses Monats zählen weiter dagegen. Füll hier auf, wenn du ein größeres Limit willst.",
@@ -324,7 +325,6 @@
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
       "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet.",
-      "closedUnswept": "{currency}-Budget geschlossen — der Topf ist zurück in deinem Wallet, aber der Restbetrag auf dem Sitzungsschlüssel dieses Geräts konnte noch nicht zurückgeschickt werden. Hol ihn unten zurück.",
       "floatRecovered": "{amount} SOL vom Sitzungsschlüssel zurückgeholt."
     },
     "cost": {
