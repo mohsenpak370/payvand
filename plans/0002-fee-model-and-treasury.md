@@ -9,9 +9,11 @@ tested on the program, with the client half (Tasks 1.3–1.5) and any deployment
 still to come; revision 4 (2026-11-14) recomputes every fee and rent figure for
 the 301-byte receipt and starts Task 1.4 in the web client; revision 5
 (2026-11-15) records Phase 2 as built — the refill counter fixed, deployed to
-devnet and checked on chain — and ticks the tasks the code had already
-satisfied (2.1, 2.3, 4.5), leaving Task 2.4's harness tests, Phase 3's float
-top-up and settle tests, and Phase 4 as the work still open.
+devnet and checked on chain, Task 2.4's harness tests written — and ticks the
+tasks the code had already satisfied (2.1, 4.5). Task 2.3's first criterion
+stays open until an upgrade credits the receipt rent before the pot check;
+Phase 3's float top-up and settle tests and Phase 4 are the rest of the open
+work.
 
 ## Revision Notes
 
@@ -870,11 +872,14 @@ key SOL.
 
 Acceptance criteria:
 
-- [x] The UI never offers a budget payment the session key cannot fund — with
-      one gap left by the program, recorded under Task 2.4: the obstacle
-      compares `availablePot >= amount`, while `pay_from_budget` checks the pot
-      before the treasury refunds the receipt rent, so the pot transiently has
-      to hold `amount + receipt_rent`.
+- [ ] The UI never offers a budget payment the session key cannot fund. The
+      client side is right — `silentPaymentObstacle` asks the pot against the
+      price, which is exactly what the settle spends — but the condition only
+      holds once `pay_from_budget` credits the treasury's receipt-rent refund
+      before it checks the pot (done in the tree on 2026-11-15, Task 2.4).
+      **Held open until that build is on devnet:** the deployed program checks
+      the pot before the refund, so the live page can still offer the last
+      receipt rent of a limit and have it refused `InsufficientBudget`.
 - [x] "Remaining" equals what the user can actually spend: `remainingThisMonth`
       subtracts `spent` only in the month it belongs to, and the obstacle asks
       it before the pot.
@@ -905,12 +910,11 @@ Acceptance criteria:
 
 - [x] Payment at the limit succeeds; one lamport over fails.
       `pay_from_budget_stops_at_the_monthly_limit`: two 0.05 SOL invoices reach
-      a 0.10 SOL limit and settle, the third is refused with
-      `BudgetExhausted` (6005), and the counter stays at the limit. The
-      invoices are whole amounts because the smallest payable invoice is far
-      above one lamport, and the pot carries one receipt rent of slack — see the
-      follow-up below. Removing the month check turns the test red: the payment
-      then fails with `InsufficientBudget` (6006).
+      a 0.10 SOL limit and settle leaving the pot at the budget's own rent, the
+      third is refused with `BudgetExhausted` (6005), and the counter stays at
+      the limit. The invoices are whole amounts because the smallest payable
+      invoice is far above one lamport. Removing the month check turns the test
+      red: the payment then fails with `InsufficientBudget` (6006).
 - [x] Same-month refill preserves `spent`; a month change resets it.
       `open_budget_keeps_spent_until_the_month_changes` (Task 2.2).
 - [x] Pot and vault balances match the documented deltas — the pot in
@@ -931,14 +935,23 @@ Verification:
       Anchor suite (`anchor test`) still needs a Devnet cluster and is not run
       in this repo.
 
-**Follow-up found while writing these (2026-11-15):** the pot check runs before
-`pay_from_treasury` refunds the receipt rent, so a payment transiently needs
-`amount + receipt_rent` in the pot although it only spends `amount`. The
-client's `silentPaymentObstacle` compares the pot against `amount` alone (Task
-2.3), so the last receipt rent of a limit can be offered by the page and then
-refused `InsufficientBudget` on chain. Either the check should credit the
-refund it is about to receive — matching Task 2.1's "the pot pays exactly the
-invoice amount" — or the preflight should require the extra rent. Not decided.
+**Follow-up found while writing these, and fixed the same day (2026-11-15):**
+the pot check ran before `pay_from_treasury` refunds the receipt rent, so a
+payment transiently needed `amount + receipt_rent` in the pot although it only
+spends `amount` — the last receipt rent of every limit was unspendable, and the
+client's preflight (which compares the pot against the price) would wave it
+through only to have it refused. The program now credits that refund in the
+check (`pot + receipt_rent >= outflow`), which is what the transfer order has
+always done; the client needed no change. The token path never had the problem:
+it refunds the rents out of its own float, capped at what is there.
+
+`pay_from_budget_stops_at_the_monthly_limit` now runs with the pot holding
+exactly the limit and no slack: the invoice that reaches the limit settles and
+leaves the pot at the budget's own rent, i.e. the limit is spendable to its last
+lamport. Restoring the old check turns that test red with
+`InsufficientBudget` (6006). **Not deployed yet:** the devnet program still
+carries the old check, so Task 2.3's first criterion stays unticked until an
+upgrade puts the credit on the cluster.
 
 Files likely touched:
 

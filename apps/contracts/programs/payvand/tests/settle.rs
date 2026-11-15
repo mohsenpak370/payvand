@@ -1039,20 +1039,13 @@ async fn pay_from_budget_stops_at_the_monthly_limit() {
     .await
     .expect("open_budget failed");
 
-    // `pay_from_budget` checks the pot before the treasury refunds the receipt
-    // rent, so the pot has to front it: with no slack, the invoice that reaches
-    // the limit would fail for the pot and never test the limit at all. One
-    // receipt rent of slack makes the month the binding check here.
-    let held = account(&context, budget_address)
-        .await
-        .expect("budget account missing");
-    context.set_account(
-        &budget_address,
-        &Account {
-            lamports: held.lamports + receipt_rent(),
-            ..held
-        }
-        .into(),
+    // No slack is added to the pot on purpose: it holds exactly the limit, so
+    // the payment that reaches the limit also drains it to its last lamport.
+    // The treasury credits the receipt-rent refund before the pot is checked,
+    // which is what makes that possible.
+    assert_eq!(
+        lamports(&context, budget_address).await - budget_rent(),
+        limit
     );
 
     pay_from_budget(&mut context, budget_address, &session, amount, "first")
@@ -1068,6 +1061,11 @@ async fn pay_from_budget_stops_at_the_monthly_limit() {
     .await
     .expect("the payment that reaches the limit should settle");
     assert_eq!(budget(&context, budget_address).await.spent, limit);
+    assert_eq!(
+        lamports(&context, budget_address).await,
+        budget_rent(),
+        "the whole limit should be spendable, down to the pot's last lamport"
+    );
 
     let over = pay_from_budget(&mut context, budget_address, &session, amount, "over")
         .await

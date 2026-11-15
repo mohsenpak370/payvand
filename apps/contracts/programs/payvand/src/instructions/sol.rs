@@ -442,7 +442,16 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     let to_seller = amount - payment_rent - fee;
     let to_session = payment_rent.saturating_add(receipt_rent);
     let outflow = to_seller.saturating_add(fee).saturating_add(to_session);
-    require!(pot >= outflow, PaymentError::InsufficientBudget);
+    // The treasury refunds the receipt rent into the pot just below, before the
+    // pot is debited, so that refund is already part of what the pot can pay:
+    // the pot only has to hold the price itself. Checking the raw pot against
+    // `outflow` made the last receipt rent of every limit unspendable, and the
+    // client's preflight, which quotes the pot against the price, would then be
+    // right while the settle still failed.
+    require!(
+        pot.saturating_add(receipt_rent) >= outflow,
+        PaymentError::InsufficientBudget
+    );
 
     // The treasury funds the permanent receipt, refunding the pot so it pays
     // exactly the invoice amount. This is a CPI and must run before the direct
