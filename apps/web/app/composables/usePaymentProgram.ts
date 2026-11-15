@@ -36,6 +36,12 @@ export const ASSOCIATED_TOKEN_PROGRAM_ID = address(
 /**
  * Circle's published mints. Stablecoins are worth one unit of their fiat, so
  * a price in them needs no exchange rate — only the mint to send it to.
+ *
+ * Adding a mint is two steps, not one: the program must also open its own
+ * account for that mint (`open_treasury_token_account`, run by the deployer)
+ * before any invoice in it can settle. The checkout reads that account and
+ * refuses to let a buyer sign until it exists, so a mint added here without it
+ * is unpurchasable rather than silently broken.
  */
 const CURRENCY_MINTS: Record<'usdc' | 'eurc', { mainnet: string, devnet: string }> = {
   usdc: {

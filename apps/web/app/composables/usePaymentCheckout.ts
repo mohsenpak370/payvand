@@ -195,12 +195,24 @@ export function usePaymentCheckout() {
    * `missing` is the normal state of a fresh invoice: its account is created
    * inside the buyer's own transaction, so nothing watches it beforehand.
    */
+  /**
+   * The fee's destination for this mint does not exist yet, so the program
+   * would reject the settle after the buyer signed. That account is the
+   * protocol's own setup — one call of `open_treasury_token_account` by the
+   * deployer — never something a buyer can pay or fix, so the page says what is
+   * missing and holds the button.
+   */
+  const treasuryTokenAccountMissing = computed(
+    () => costs.value?.treasuryTokenAccountMissing === true
+  )
+
   const canPay = computed(
     () =>
       connected.value
       && canSignTransaction.value
       && !busy.value
       && !settled.value
+      && !treasuryTokenAccountMissing.value
       && (record.value?.status === 'pending' || record.value?.status === 'missing')
   )
 
@@ -211,7 +223,10 @@ export function usePaymentCheckout() {
 
   /** True when this browser can settle the invoice with no wallet popup. */
   const canPaySilently = computed(
-    () => Boolean(activeBudget.value) && sessionReady.value && !budgetObstacle.value
+    () => Boolean(activeBudget.value)
+      && sessionReady.value
+      && !budgetObstacle.value
+      && !treasuryTokenAccountMissing.value
   )
 
   const stage = computed<CheckoutStage>(() => {
@@ -607,6 +622,7 @@ export function usePaymentCheckout() {
     paymentMemo,
     items,
     canPay,
+    treasuryTokenAccountMissing,
     stage,
     load,
     pay,

@@ -59,6 +59,7 @@ const {
   paymentMemo,
   items,
   canPay,
+  treasuryTokenAccountMissing,
   stage,
   load,
   pay,
@@ -474,7 +475,13 @@ useSeoMeta({
                 them rent, so the page says so instead of quoting a fee for it.
               -->
               <p
-                v-if="costs && costs.sellerTokenAccountRent > 0"
+                v-if="treasuryTokenAccountMissing"
+                class="mt-1 max-w-xs text-xs text-warning"
+              >
+                {{ $t('checkout.treasuryTokenAccountMissing') }}
+              </p>
+              <p
+                v-else-if="costs && costs.sellerTokenAccountRent > 0"
                 class="mt-1 max-w-xs text-xs text-warning"
               >
                 {{ $t('checkout.sellerTokenAccountMissing') }}

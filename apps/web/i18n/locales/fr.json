@@ -347,6 +347,7 @@
     "total": "Total",
     "networkFee": "Frais de réseau Solana",
     "sellerTokenAccountMissing": "Ce vendeur n'a pas encore ouvert son compte de jetons ; la facture ne pourra pas être payée avant.",
+    "treasuryTokenAccountMissing": "Le protocole ne peut pas encore percevoir ses frais dans ce jeton : il n'en a pas le compte. Rien n'a été envoyé — ce code fonctionnera dès que ce compte sera ouvert.",
     "protocolFee": "Frais du protocole",
     "referenceCode": "Code de référence",
     "details": {

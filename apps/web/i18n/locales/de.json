@@ -347,6 +347,7 @@
     "total": "Gesamt",
     "networkFee": "Solana-Netzwerkgebühr",
     "sellerTokenAccountMissing": "Dieser Verkäufer hat sein Token-Konto noch nicht eröffnet; die Rechnung ist erst danach zahlbar.",
+    "treasuryTokenAccountMissing": "Das Protokoll kann seine Gebühr in diesem Token noch nicht annehmen: Es hat kein Konto dafür. Es wurde nichts gesendet — dieser Code funktioniert, sobald das Konto eröffnet ist.",
     "protocolFee": "Protokollgebühr",
     "referenceCode": "Referenzcode",
     "details": {

@@ -134,6 +134,15 @@ pub mod payvand {
         instructions::token::settle_token_payment_handler(ctx, amount, memo)
     }
 
+    /// Opens the treasury's own token account for a mint, paid by the admin.
+    ///
+    /// A mint the treasury has no account for cannot be settled: the fee has
+    /// nowhere to go, and the buyer would only find out after signing. Run this
+    /// once for every mint the app can price in, before its first invoice.
+    pub fn open_treasury_token_account(ctx: Context<OpenTreasuryTokenAccount>) -> Result<()> {
+        instructions::token::open_treasury_token_account_handler(ctx)
+    }
+
     /// Buyer opens (or tops up) this month's budget for one token and
     /// registers a session key for it. One wallet signature per token; after
     /// that the session key settles token invoices from the vault without

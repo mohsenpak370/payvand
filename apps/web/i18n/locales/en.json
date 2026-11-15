@@ -347,6 +347,7 @@
     "total": "Total",
     "networkFee": "Solana network fee",
     "sellerTokenAccountMissing": "This seller has not opened their token account yet, so this invoice cannot be paid until they do.",
+    "treasuryTokenAccountMissing": "The protocol cannot take its fee in this token yet: it has no account for it. Nothing has been sent — this code works once that account is opened.",
     "protocolFee": "Protocol fee",
     "referenceCode": "Reference code",
     "details": {

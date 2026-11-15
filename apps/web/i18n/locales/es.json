@@ -347,6 +347,7 @@
     "total": "Total",
     "networkFee": "Comisión de red de Solana",
     "sellerTokenAccountMissing": "Este vendedor aún no ha abierto su cuenta de token, así que esta factura no se puede pagar hasta que lo haga.",
+    "treasuryTokenAccountMissing": "El protocolo aún no puede cobrar su comisión en este token: no tiene una cuenta para él. No se ha enviado nada — este código funcionará cuando esa cuenta se abra.",
     "protocolFee": "Comisión del protocolo",
     "referenceCode": "Código de referencia",
     "details": {

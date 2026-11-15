@@ -54,6 +54,12 @@ export interface InvoiceCosts {
   networkFee: number
   /** Lamports: the seller's token account rent, only when it has to be made. */
   sellerTokenAccountRent: number
+  /**
+   * The treasury has no account for this mint, so the fee has nowhere to go and
+   * no invoice in the currency can settle. Proving that belongs to the caller,
+   * which is the only place that reads the chain.
+   */
+  treasuryTokenAccountMissing: boolean
   /** The smallest amount the program accepts, in base units. */
   minPayable: number
 }
@@ -111,6 +117,8 @@ export interface InvoiceQuoteInput {
   receiptRent: number
   /** Lamports the payer must add because the seller has no token account yet. */
   sellerTokenAccountRent?: number
+  /** Read on chain by the caller: the treasury's account for this mint. */
+  treasuryTokenAccountMissing?: boolean
 }
 
 /** The whole quote, from a policy and rents the caller already read. */
@@ -138,6 +146,7 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     receiptRent: input.receiptRent,
     networkFee: NETWORK_FEE_LAMPORTS,
     sellerTokenAccountRent: Math.trunc(input.sellerTokenAccountRent ?? 0),
+    treasuryTokenAccountMissing: input.treasuryTokenAccountMissing === true,
     // Only a SOL settle takes its rent out of the price (`amount > rent + fee`).
     // A token settle refunds the rents from the treasury and asks only that the
     // seller receive something (`amount > fee`), so its floor carries no rent.

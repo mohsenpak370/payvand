@@ -87,6 +87,46 @@ pub struct SettleTokenPayment<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Opens the treasury's token account for a mint, paid by the admin.
+///
+/// `settle_token_payment` sends the fee into `treasury_token_account`, so a mint
+/// the treasury has no account for makes every invoice in it unpurchasable — a
+/// settle that fails on the buyer's signature with `AccountNotInitialized`.
+/// The treasury is a PDA: nobody can create its associated account as a wallet
+/// owner would, and only this program can sign for it. This is that one call.
+///
+/// Idempotent on purpose, so provisioning a mint twice is a no-op and the step
+/// can be repeated safely by a deploy script.
+#[derive(Accounts)]
+pub struct OpenTreasuryTokenAccount<'info> {
+    /// Pays the account's rent. The treasury's own lamports are the pool the
+    /// fee is measured against, so they are not spent on accounts.
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+
+    #[account(seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
+    pub mint: Account<'info, Mint>,
+
+    /// The fee's destination in this mint: the treasury's own account, created
+    /// here when it is missing and left alone when it is not.
+    #[account(
+        init_if_needed,
+        payer = admin,
+        associated_token::mint = mint,
+        associated_token::authority = treasury
+    )]
+    pub treasury_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
 #[derive(Accounts)]
 pub struct OpenTokenBudget<'info> {
     #[account(mut)]
@@ -593,5 +633,13 @@ pub fn close_token_budget_handler<'info, 'ctx>(
     ))?;
 
     msg!("token budget closed; vault returned to the buyer");
+    Ok(())
+}
+
+/// The account checks are the instruction: `init_if_needed` opens the
+/// treasury's own account for the mint, paid by the admin, and Anchor proves it
+/// is exactly that account (the ATA for this mint and the treasury PDA) before
+/// the handler runs. Nothing is left to do, and a second call changes nothing.
+pub fn open_treasury_token_account_handler(_ctx: Context<OpenTreasuryTokenAccount>) -> Result<()> {
     Ok(())
 }

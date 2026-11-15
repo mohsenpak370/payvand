@@ -1298,10 +1298,26 @@ things had to be mended first, both found by attempting the payment:
 - The treasury had no Circle-USDC or EURC token account, so the settle failed
   `AccountNotInitialized` on `treasury_token_account`. Both were opened paid by
   the deployer (`7G5ziyiB…` USDC, `ERJ39bL1…` EURC, owner the treasury PDA);
-  the test mint's `3zhVS5bm…` was made the same way. **Every new mint the app
-  offers needs this one-time account before its first invoice can settle** —
-  nothing in the program creates it, because the treasury only signs through
-  `invoke_signed`.
+  the test mint's `3zhVS5bm…` was made the same way.
+
+**Provisioning a mint is now a program step (2026-11-15):** `open_treasury_token_account`
+(`OpenTreasuryTokenAccount` in `instructions/token.rs`) opens the treasury's
+associated account for a mint, paid by the admin, idempotent, and gated on
+`config.admin`. It exists because the treasury is a PDA: only the program can
+sign for it, so a deployer could not open that account with a wallet call. The
+program was upgraded in place for it (`276L62U4…`, 515,072 bytes, same ID and
+authority) and the instruction was proved on devnet with a mint created for the
+purpose: `5WkCtigV…` had no treasury account, one call (`4crPU2iH…`) created
+`HdpMqUjB…` (1,488,440 lamports, authority the treasury `9tyu74Vy…`), and a
+second call (`5n9dJ4BN…`) changed nothing.
+
+Adding a currency is therefore two steps, and the second one is not optional:
+put the mint in `CURRENCY_MINTS` and run
+`open_treasury_token_account` for it on that cluster. The checkout now reads
+the treasury's account for the invoice's mint and, when it is missing, shows
+what is missing and holds the pay button instead of letting the settle fail
+`AccountNotInitialized` after the buyer signs (that error was the first thing
+the live payment run produced).
 
 Smoke tests:
 

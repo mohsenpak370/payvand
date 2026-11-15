@@ -11,7 +11,8 @@ import type { SupportedCurrency } from './usePaymentApi'
 import {
   accountDiscriminator,
   deriveAssociatedTokenAddress,
-  deriveConfigPda
+  deriveConfigPda,
+  deriveTreasuryTokenAccount
 } from './usePaymentProgram'
 
 /**
@@ -143,13 +144,27 @@ export function useInvoiceCosts() {
       if (!info.value) sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE)
     }
 
+    // The fee leaves for the treasury's own account, which only the deployer
+    // can open (`open_treasury_token_account`). Without it no invoice in this
+    // mint settles at all, and the buyer would learn that from a raw error
+    // after signing — so the quote carries the fact.
+    let treasuryTokenAccountMissing = false
+    if (isToken && options.mint) {
+      const feeAccount = await deriveTreasuryTokenAccount(address(options.mint))
+      const info = await client.rpc
+        .getAccountInfo(feeAccount, { commitment: 'confirmed', encoding: 'base64' })
+        .send()
+      treasuryTokenAccountMissing = !info.value
+    }
+
     return invoiceCosts({
       policy,
       amount,
       currency,
       invoiceRent,
       receiptRent,
-      sellerTokenAccountRent
+      sellerTokenAccountRent,
+      treasuryTokenAccountMissing
     })
   }
 

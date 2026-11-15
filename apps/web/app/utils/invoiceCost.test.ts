@@ -161,6 +161,17 @@ describe('invoiceCosts', () => {
     expect(costs.amount).toBeGreaterThanOrEqual(costs.minPayable)
   })
 
+  it('carries the read that says the fee has nowhere to go', () => {
+    // The quote cannot see the chain; the caller's read says whether the
+    // treasury has an account for the mint, and the checkout holds the button
+    // on it rather than letting a settle fail after signing.
+    const token = { ...base, currency: 'usdc' as const, amount: 1_500_000 }
+
+    expect(invoiceCosts({ ...token, treasuryTokenAccountMissing: true }).treasuryTokenAccountMissing)
+      .toBe(true)
+    expect(invoiceCosts(token).treasuryTokenAccountMissing).toBe(false)
+  })
+
   it('reports the whole base units the wire carries, not the fraction', () => {
     const costs = invoiceCosts({ ...base, amount: 1_000.75 })
 
