@@ -817,9 +817,23 @@ mid-month refill (the same `init_if_needed` instruction on the same account)
 handed back the whole limit — a buyer could refill past it. `open_budget` and
 `open_token_budget` now reset the counter only when
 `budget.month_index != current_month_index()`, which is also what
-`remainingThisMonth` in `useBudget.ts` already assumed. The token handler gets
-the same change, but the harness has no SPL mint setup yet (Task 3.4), so only
-the SOL path is exercised.
+`remainingThisMonth` in `useBudget.ts` already assumed. Both paths are covered
+by harness tests that run in `cargo test`:
+`open_budget_keeps_spent_until_the_month_changes` (spend, refill, then a clock
+warp into the next month) and
+`open_token_budget_keeps_spent_until_the_month_changes` (the
+same rule on the token account; the harness has no SPL runtime, so the counter
+is written into the account between opens to stand in for a payment).
+
+The program was upgraded in place on devnet for it (`4k8QbJ4n…`, slot
+522521670, same ID and authority). The account needed a 10,240-byte
+`solana program extend` first, because the loader only grows data in that step
+and the fix added 16 bytes; it now holds 525,312 bytes. The rule was then
+checked on chain: budget `fQadYNyE…` opened at 0.05 SOL (`66vW41yu…`), a
+`pay_from_budget` of 0.01 SOL recorded `spent` 10,000,000 (`5QMkCEpB…`), and a
+refill to 0.08 SOL (`2fS72BEQ…`) left `spent` at 10,000,000, the limit at
+80,000,000, the month index unchanged at 24323 and 0.07 SOL spendable. The
+budget is still open at `fQadYNyE…` (session key `8nnbn9Wu…`) for inspection.
 
 Files likely touched:
 
@@ -1008,11 +1022,17 @@ Acceptance criteria:
 - [ ] Treasury ATA receives `fee_t` and its rent is not charged to the payer.
 - [ ] Payment account closed to the rent payer, not the seller.
 - [ ] A settled token invoice cannot be replayed.
-- [ ] Token monthly limit enforced and preserved across a same-month top-up.
+- [x] Token monthly limit enforced and preserved across a same-month top-up:
+      `open_token_budget_keeps_spent_until_the_month_changes` in the Rust
+      harness (2026-11-15). The settle-side items still need an SPL runtime in
+      `solana-program-test`, which the harness does not have: the test writes
+      the counter into the budget account between opens rather than paying.
 
 Verification:
 
-- [ ] `cd apps/contracts && anchor test`
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` (the suite this
+      repo actually runs; `anchor test` needs a Devnet cluster and is not run
+      here).
 
 Files likely touched:
 
@@ -1270,6 +1290,13 @@ nothing was paying at the time.
   same numbers the settle produced. A shop page then rendered "You receive
   0.01176 SOL after the 2% fee" and the 0.00181864 SOL rent for a 0.012 SOL
   cart.
+
+**Program upgraded again for the refill fix (2026-11-15):** in place, same ID
+and authority, signature `4k8QbJ4n…`, slot 522521670, 525,312 bytes after a
+10,240-byte `solana program extend` (the loader will not grow data by 16 bytes
+alone). The on-chain check and its signatures are recorded under Task 2.2; the
+IDL did not change, so `apps/web/app/assets/payvand.idl.json` needed no
+regeneration and the deployed web app keeps working unchanged.
 
 **Web redeploy (2026-11-14):** the production build that quotes from `Config`
 and sends the treasury account is live at `https://payvand-app.vercel.app`

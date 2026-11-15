@@ -29,13 +29,14 @@
 #![allow(deprecated)]
 
 use anchor_lang::prelude::Rent;
-use anchor_lang::{system_program::ID as SYSTEM_PROGRAM_ID, AccountDeserialize};
+use anchor_lang::{system_program::ID as SYSTEM_PROGRAM_ID, AccountDeserialize, AnchorSerialize};
 use payvand::constants::{
     BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
     PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
 };
+use payvand::constants::{TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE};
 use payvand::state::{
-    Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenPayment,
+    Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenBudget, TokenPayment,
 };
 use sha2::{Digest, Sha256};
 use solana_account::Account;
@@ -166,6 +167,74 @@ fn discriminator(name: &str) -> [u8; 8] {
     out
 }
 
+/// Anchor account discriminator: `sha256("account:<name>")[..8]`.
+fn account_discriminator(name: &str) -> [u8; 8] {
+    let digest = Sha256::digest(format!("account:{name}").as_bytes());
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    out
+}
+
+fn address(text: &str) -> Pubkey {
+    text.parse().expect("the test's fixed address should parse")
+}
+
+/// The SPL token program. The token-budget test never CPIs into it (the vault is
+/// pre-funded to the limit, so no transfer is due), but both the accounts' owner
+/// and Anchor's `Program<Token>` check name it.
+fn token_program() -> Pubkey {
+    address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+}
+
+/// The associated-token program, likewise present only as an executable stub.
+fn associated_token_program() -> Pubkey {
+    address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
+}
+
+/// A mint account in the SPL layout: authority, supply, decimals, initialized.
+fn spl_mint_account(authority: Pubkey, decimals: u8) -> Account {
+    let mut data = vec![0u8; 82];
+    data[0..4].copy_from_slice(&1u32.to_le_bytes());
+    data[4..36].copy_from_slice(authority.as_ref());
+    data[44] = decimals;
+    data[45] = 1;
+    Account {
+        lamports: Rent::default().minimum_balance(data.len()),
+        data,
+        owner: token_program(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// A token account in the SPL layout: mint, authority, amount, initialized.
+fn spl_token_account(mint: Pubkey, authority: Pubkey, amount: u64) -> Account {
+    let mut data = vec![0u8; 165];
+    data[0..32].copy_from_slice(mint.as_ref());
+    data[32..64].copy_from_slice(authority.as_ref());
+    data[64..72].copy_from_slice(&amount.to_le_bytes());
+    data[108] = 1;
+    Account {
+        lamports: Rent::default().minimum_balance(data.len()),
+        data,
+        owner: token_program(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// An executable account with no code behind it, for a program this test names
+/// but never calls.
+fn stub_program_account() -> Account {
+    Account {
+        lamports: Rent::default().minimum_balance(0),
+        data: Vec::new(),
+        owner: bpf_loader_upgradeable::id(),
+        executable: true,
+        rent_epoch: 0,
+    }
+}
+
 /// Borsh-encoded instruction data: discriminator, then the arguments.
 fn instruction_data(name: &str, args: &[u8]) -> Vec<u8> {
     let mut data = discriminator(name).to_vec();
@@ -207,6 +276,24 @@ fn receipt_pda(invoice: &Pubkey) -> Pubkey {
 fn budget_pda(buyer: &Pubkey) -> Pubkey {
     let (pda, _bump) = Pubkey::find_program_address(&[BUDGET_SEED, buyer.as_ref()], &payvand::id());
     pda
+}
+
+/// `["token-budget", buyer, mint]` and its canonical bump, so a test that writes
+/// the account by hand stores the bump the program's seeds check expects.
+fn token_budget_pda(buyer: &Pubkey, mint: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[TOKEN_BUDGET_SEED, buyer.as_ref(), mint.as_ref()],
+        &payvand::id(),
+    )
+}
+
+/// The canonical associated token account for `wallet` and `mint`.
+fn associated_token_address(wallet: Pubkey, mint: Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[wallet.as_ref(), token_program().as_ref(), mint.as_ref()],
+        &associated_token_program(),
+    )
+    .0
 }
 
 /// `["config"]` — the singleton fee policy.
@@ -395,6 +482,67 @@ fn open_budget_instruction(buyer: Pubkey, session: Pubkey, monthly_limit: u64) -
     }
 }
 
+/// `open_token_budget`, in the account order the program declares them.
+fn open_token_budget_instruction(
+    buyer: Pubkey,
+    budget: Pubkey,
+    mint: Pubkey,
+    buyer_token_account: Pubkey,
+    vault: Pubkey,
+    session: Pubkey,
+    monthly_limit: u64,
+) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(buyer, true),
+            AccountMeta::new(budget, false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(buyer_token_account, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new(session, false),
+            AccountMeta::new_readonly(token_program(), false),
+            AccountMeta::new_readonly(associated_token_program(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("open_token_budget", &monthly_limit.to_le_bytes()),
+    }
+}
+
+/// A `TokenBudget` account as the program would have written it after spending
+/// `spent` in `month_index`. The harness has no SPL runtime, so a token payment
+/// cannot run here; this stands in for one, and what the test checks is the
+/// counter the next `open_token_budget` keeps.
+fn written_token_budget(
+    buyer: Pubkey,
+    session: Pubkey,
+    mint: Pubkey,
+    monthly_limit: u64,
+    spent: u64,
+    month_index: u64,
+    bump: u8,
+) -> Account {
+    let mut data = account_discriminator("TokenBudget").to_vec();
+    TokenBudget {
+        buyer,
+        session_key: session,
+        mint,
+        monthly_limit,
+        spent,
+        month_index,
+        bump,
+    }
+    .serialize(&mut data)
+    .expect("the token budget serializes");
+    Account {
+        lamports: Rent::default().minimum_balance(TOKEN_BUDGET_SPACE),
+        data,
+        owner: payvand::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
 /// `pay_from_budget`, in the account order the program declares them.
 fn pay_from_budget_instruction(
     session: Pubkey,
@@ -476,6 +624,13 @@ async fn budget(context: &ProgramTestContext, address: Pubkey) -> Budget {
         .await
         .expect("budget account missing");
     Budget::try_deserialize(&mut account.data.as_slice()).expect("budget did not decode")
+}
+
+async fn token_budget(context: &ProgramTestContext, address: Pubkey) -> TokenBudget {
+    let account = account(context, address)
+        .await
+        .expect("token budget account missing");
+    TokenBudget::try_deserialize(&mut account.data.as_slice()).expect("token budget did not decode")
 }
 
 async fn config(context: &ProgramTestContext, address: Pubkey) -> Config {
@@ -923,6 +1078,116 @@ async fn open_budget_keeps_spent_until_the_month_changes() {
     let next_month = budget(&context, budget_address).await;
     assert_eq!(next_month.spent, 0);
     assert_ne!(next_month.month_index, refilled.month_index);
+}
+
+/// The token budget runs the same rule, so it gets the same proof. A token
+/// payment cannot run in this harness (there is no SPL runtime), so the counter
+/// is written into the account between opens — the exact state a payment
+/// leaves behind — and what is checked is whether the next `open_token_budget`
+/// keeps or clears it.
+#[tokio::test]
+async fn open_token_budget_keeps_spent_until_the_month_changes() {
+    let mut test = program_test();
+    let admin = Keypair::new();
+    let buyer = Keypair::new();
+    let session = Keypair::new();
+    let mint = Keypair::new().pubkey();
+    let buyer_token_account = Keypair::new().pubkey();
+    let (budget_address, bump) = token_budget_pda(&buyer.pubkey(), &mint);
+    let vault = associated_token_address(budget_address, mint);
+
+    test.add_account(admin.pubkey(), system_account(LAMPORTS_PER_SOL / 10));
+    test.add_account(buyer.pubkey(), system_account(LAMPORTS_PER_SOL));
+    test.add_account(session.pubkey(), system_account(TEST_SESSION_FLOAT));
+    test.add_account(treasury_pda(), system_account(TREASURY_LAMPORTS));
+    test.add_account(mint, spl_mint_account(buyer.pubkey(), 6));
+    test.add_account(
+        buyer_token_account,
+        spl_token_account(mint, buyer.pubkey(), 1_000),
+    );
+    // The vault already holds more than every limit below, so each open skips
+    // its token transfer and the test stays inside the month rule.
+    test.add_account(vault, spl_token_account(mint, budget_address, 1_000));
+    test.add_account(token_program(), stub_program_account());
+    test.add_account(associated_token_program(), stub_program_account());
+
+    let mut context = test.start_with_context().await;
+    context.set_account(
+        &program_data_address(),
+        &program_data_account(Some(admin.pubkey())).into(),
+    );
+    send(
+        &mut context,
+        &[initialize_config_instruction(
+            admin.pubkey(),
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("initialize_config failed");
+
+    let open = |limit: u64| {
+        open_token_budget_instruction(
+            buyer.pubkey(),
+            budget_address,
+            mint,
+            buyer_token_account,
+            vault,
+            session.pubkey(),
+            limit,
+        )
+    };
+
+    send(&mut context, &[open(50)], &[&buyer])
+        .await
+        .expect("open_token_budget failed");
+    let opened = token_budget(&context, budget_address).await;
+    assert_eq!(opened.spent, 0);
+    assert_eq!(opened.monthly_limit, 50);
+    assert_eq!(opened.bump, bump);
+
+    // Mid-month, the same account has spent part of the limit.
+    let spent = written_token_budget(
+        buyer.pubkey(),
+        session.pubkey(),
+        mint,
+        50,
+        20,
+        opened.month_index,
+        bump,
+    );
+    context.set_account(&budget_address, &spent.into());
+    refresh_blockhash(&mut context).await;
+    send(&mut context, &[open(80)], &[&buyer])
+        .await
+        .expect("the same-month token refill failed");
+    let refilled = token_budget(&context, budget_address).await;
+    assert_eq!(refilled.spent, 20);
+    assert_eq!(refilled.monthly_limit, 80);
+    assert_eq!(refilled.month_index, opened.month_index);
+
+    // A calendar month later the same open starts the counter over.
+    let stale = written_token_budget(
+        buyer.pubkey(),
+        session.pubkey(),
+        mint,
+        80,
+        20,
+        opened.month_index - 1,
+        bump,
+    );
+    context.set_account(&budget_address, &stale.into());
+    refresh_blockhash(&mut context).await;
+    send(&mut context, &[open(80)], &[&buyer])
+        .await
+        .expect("the next month's token refill failed");
+    let next_month = token_budget(&context, budget_address).await;
+    assert_eq!(next_month.spent, 0);
+    assert_eq!(next_month.month_index, opened.month_index);
 }
 
 // ---------------------------------------------------------------------------
