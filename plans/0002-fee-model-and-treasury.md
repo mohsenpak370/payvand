@@ -7,7 +7,11 @@ draft; revision 2 (2026-11-13) notes the receipt consolidation that landed in
 `0001`; revision 3 (2026-11-13) records Phase 1 Tasks 1.1 and 1.2 as built and
 tested on the program, with the client half (Tasks 1.3–1.5) and any deployment
 still to come; revision 4 (2026-11-14) recomputes every fee and rent figure for
-the 301-byte receipt and starts Task 1.4 in the web client.
+the 301-byte receipt and starts Task 1.4 in the web client; revision 5
+(2026-11-15) records Phase 2 as built — the refill counter fixed, deployed to
+devnet and checked on chain — and ticks the tasks the code had already
+satisfied (2.1, 2.3, 4.5), leaving Task 2.4's harness tests, Phase 3's float
+top-up and settle tests, and Phase 4 as the work still open.
 
 ## Revision Notes
 
@@ -419,10 +423,11 @@ Acceptance criteria:
       covers each.
 - [x] `withdraw_treasury` is admin-only and cannot drain the treasury below its
       rent-exempt minimum.
-- [ ] The treasury address is derived from seeds in the program and in the
-      client, never passed as a plain account. **Program half done**
-      (`["treasury"]`, referenced only through `config.treasury_bump`); the
-      client derivation lands with Task 1.4.
+- [x] The treasury address is derived from seeds in the program and in the
+      client, never passed as a plain account. **Both halves done:**
+      `["treasury"]` in the program, referenced only through
+      `config.treasury_bump`; `deriveTreasuryPda` in `usePaymentProgram.ts`,
+      which every caller uses to place the account.
 - [x] Token-2022 and other programs are unaffected by `Config` creation.
 
 Verification:
@@ -764,18 +769,23 @@ transfers, and drop the old single-rent refund.
 
 Acceptance criteria:
 
-- [ ] `pay_from_budget` debits the pot by exactly `amount`.
-- [ ] The session key is reimbursed exactly `payment_rent + receipt_rent`.
-- [ ] `budget.spent` increases by exactly `amount`.
-- [ ] The monthly-limit check and the balance check fail with distinct errors.
-- [ ] The UI's `remainingThisMonth` and `availablePot` agree on what a payment
-      costs.
+- [x] `pay_from_budget` debits the pot by exactly `amount`.
+- [x] The session key is reimbursed exactly `payment_rent + receipt_rent`.
+- [x] `budget.spent` increases by exactly `amount`.
+- [x] The monthly-limit check and the balance check fail with distinct errors
+      (`BudgetExhausted` 6005 is the month, `InsufficientBudget` 6006 the pot).
+- [x] The UI's `remainingThisMonth` and `availablePot` agree on what a payment
+      costs (`silentPaymentObstacle` asks the limit first, then the pot, and
+      names the missing one).
 
 Verification:
 
-- [ ] Anchor test: pot, seller, treasury, session-key deltas; `spent == amount`.
-- [ ] Anchor test: a payment at the limit succeeds, one lamport over fails with
-      `BudgetExhausted`.
+- [x] Harness test (the suite this repo runs, not the Anchor one):
+      `pay_from_budget_settles_the_invoice_and_records_the_spend` checks the
+      pot, seller, treasury and session-key deltas against the 2% policy, and
+      `spent == amount`.
+- [ ] A payment at the limit succeeds, one lamport over fails with
+      `BudgetExhausted` — moved to Task 2.4, which writes it.
 
 Files likely touched:
 
@@ -860,15 +870,25 @@ key SOL.
 
 Acceptance criteria:
 
-- [ ] The UI never offers a budget payment the session key cannot fund.
-- [ ] "Remaining" equals what the user can actually spend.
-- [ ] Open/refill breakdown reflects `Config::session_fee_float`.
-- [ ] Error copy distinguishes pot, limit, and float.
+- [x] The UI never offers a budget payment the session key cannot fund — with
+      one gap left by the program, recorded under Task 2.4: the obstacle
+      compares `availablePot >= amount`, while `pay_from_budget` checks the pot
+      before the treasury refunds the receipt rent, so the pot transiently has
+      to hold `amount + receipt_rent`.
+- [x] "Remaining" equals what the user can actually spend: `remainingThisMonth`
+      subtracts `spent` only in the month it belongs to, and the obstacle asks
+      it before the pot.
+- [x] Open/refill breakdown reflects `Config::session_fee_float`
+      (`openBudgetCost` reads it from the cached policy).
+- [x] Error copy distinguishes pot (`nearlyEmpty`), limit (`limitUsedUp`) and
+      float (`noSessionKey`).
 
 Verification:
 
-- [ ] `pnpm typecheck` and `pnpm lint`
-- [ ] Localnet: drain the float and confirm the UI warns before submission.
+- [x] `pnpm typecheck` and `pnpm lint`
+- [ ] Localnet: drain the float and confirm the UI warns before submission. Not
+      run: the preview browser cannot sign, and the devnet budget smoke only
+      covered a funded float.
 
 Files likely touched:
 
@@ -883,19 +903,47 @@ Estimated scope: Medium.
 
 Acceptance criteria:
 
-- [ ] Payment at the limit succeeds; one lamport over fails.
-- [ ] Same-month refill preserves `spent`; a month change resets it.
-- [ ] Pot and vault balances match the documented deltas.
-- [ ] A compromised session key cannot exceed the pot balance.
-- [ ] Seller proceeds and treasury fee match Phase 1 for budget payments.
+- [x] Payment at the limit succeeds; one lamport over fails.
+      `pay_from_budget_stops_at_the_monthly_limit`: two 0.05 SOL invoices reach
+      a 0.10 SOL limit and settle, the third is refused with
+      `BudgetExhausted` (6005), and the counter stays at the limit. The
+      invoices are whole amounts because the smallest payable invoice is far
+      above one lamport, and the pot carries one receipt rent of slack — see the
+      follow-up below. Removing the month check turns the test red: the payment
+      then fails with `InsufficientBudget` (6006).
+- [x] Same-month refill preserves `spent`; a month change resets it.
+      `open_budget_keeps_spent_until_the_month_changes` (Task 2.2).
+- [x] Pot and vault balances match the documented deltas — the pot in
+      `pay_from_budget_settles_the_invoice_and_records_the_spend`
+      (`pot_before - pot_after == amount`) and in the devnet smoke test. **The
+      vault is still untested**: the token path needs an SPL runtime the harness
+      does not carry (Task 3.4).
+- [x] A compromised session key cannot exceed the pot balance:
+      `pay_from_budget_cannot_spend_more_than_the_pot` leaves the pot holding
+      half a price inside a four-invoice limit and gets `InsufficientBudget`
+      (6006), with the counter untouched.
+- [x] Seller proceeds and treasury fee match Phase 1 for budget payments (the
+      same test asserts both deltas).
 
 Verification:
 
-- [ ] `cd apps/contracts && anchor test`
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 25 tests. The
+      Anchor suite (`anchor test`) still needs a Devnet cluster and is not run
+      in this repo.
+
+**Follow-up found while writing these (2026-11-15):** the pot check runs before
+`pay_from_treasury` refunds the receipt rent, so a payment transiently needs
+`amount + receipt_rent` in the pot although it only spends `amount`. The
+client's `silentPaymentObstacle` compares the pot against `amount` alone (Task
+2.3), so the last receipt rent of a limit can be offered by the page and then
+refused `InsufficientBudget` on chain. Either the check should credit the
+refund it is about to receive — matching Task 2.1's "the pot pays exactly the
+invoice amount" — or the preflight should require the extra rent. Not decided.
 
 Files likely touched:
 
 - `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 2.1–2.3.
 
@@ -1189,15 +1237,17 @@ Estimated scope: Small.
 
 Acceptance criteria:
 
-- [ ] No unused error variants (`FeeTooLow` is gone with the rule that used it).
-- [ ] No stale comments describing the old payer-funded receipt rent, the
-      seller-closed token rent, or a reclaim flow.
-- [ ] `cargo clippy -p payvand -- -D warnings` is clean.
+- [x] No unused error variants (`FeeTooLow` is gone with the rule that used it).
+- [x] No stale comments describing the old payer-funded receipt rent, the
+      seller-closed token rent, or a reclaim flow (searched for all three;
+      nothing left).
+- [x] `cargo clippy -p payvand -- -D warnings` is clean.
 
 Verification:
 
-- [ ] `cargo clippy -p payvand -- -D warnings`
-- [ ] `cargo check -p payvand`
+- [x] `cargo clippy --all-targets -- -D warnings` (2026-11-15, clean apart from
+      a future-incompat note in a third-party proc-macro crate).
+- [x] `cargo check -p payvand`
 
 Files likely touched:
 

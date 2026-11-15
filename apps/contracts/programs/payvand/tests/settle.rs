@@ -71,6 +71,10 @@ const INVALID_FEE_BPS: &str = "Custom(6012)";
 const TREASURY_UNDERFUNDED: &str = "Custom(6014)";
 /// `PaymentError::FeeModeUnsupported`.
 const FEE_MODE_UNSUPPORTED: &str = "Custom(6015)";
+/// `PaymentError::BudgetExhausted`: the month's limit, not the pot.
+const BUDGET_EXHAUSTED: &str = "Custom(6005)";
+/// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
+const INSUFFICIENT_BUDGET: &str = "Custom(6006)";
 /// The policy every test starts from unless it says otherwise.
 const TEST_FEE_BPS: u16 = 200;
 const TEST_FIXED_FEE: u64 = 0;
@@ -570,6 +574,32 @@ fn pay_from_budget_instruction(
     }
 }
 
+/// One `pay_from_budget` with a fresh seller and reference, so each call gets
+/// its own invoice address and nothing is deduped or replayed.
+async fn pay_from_budget(
+    context: &mut ProgramTestContext,
+    budget: Pubkey,
+    session: &Keypair,
+    amount: u64,
+    tag: &str,
+) -> Result<(), String> {
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    send(
+        context,
+        &[pay_from_budget_instruction(
+            session.pubkey(),
+            budget,
+            seller,
+            reference,
+            amount,
+            tag,
+        )],
+        &[session],
+    )
+    .await
+}
+
 /// Sends `instructions` with the test payer as fee payer, plus `signers`.
 /// Advances the blockhash. Without this, re-sending an identical instruction
 /// produces an identical transaction, which the bank dedupes as "already
@@ -654,6 +684,12 @@ fn invoice_rent() -> u64 {
 /// The treasury's own rent-exempt minimum: it holds no data.
 fn treasury_rent() -> u64 {
     Rent::default().minimum_balance(0)
+}
+
+/// What the budget account's own rent costs, and therefore what the program
+/// subtracts before calling the rest the pot.
+fn budget_rent() -> u64 {
+    Rent::default().minimum_balance(BUDGET_SPACE)
 }
 
 /// The seller-side fee under the default test policy.
@@ -973,6 +1009,128 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
     // payer covers the network fee, so its balance is untouched.
     let session_balance = lamports(&context, session.pubkey()).await;
     assert_eq!(session_balance, LAMPORTS_PER_SOL);
+}
+
+/// The limit is a ceiling, not a suggestion: once `spent` reaches it, the next
+/// invoice is refused for the month, with the error that names the month rather
+/// than the pot.
+#[tokio::test]
+async fn pay_from_budget_stops_at_the_monthly_limit() {
+    let amount = LAMPORTS_PER_SOL / 20;
+    let limit = amount * 2;
+    let session = Keypair::new();
+    let (mut context, _admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), LAMPORTS_PER_SOL)],
+    )
+    .await;
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    send(
+        &mut context,
+        &[open_budget_instruction(buyer, session.pubkey(), limit)],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+
+    // `pay_from_budget` checks the pot before the treasury refunds the receipt
+    // rent, so the pot has to front it: with no slack, the invoice that reaches
+    // the limit would fail for the pot and never test the limit at all. One
+    // receipt rent of slack makes the month the binding check here.
+    let held = account(&context, budget_address)
+        .await
+        .expect("budget account missing");
+    context.set_account(
+        &budget_address,
+        &Account {
+            lamports: held.lamports + receipt_rent(),
+            ..held
+        }
+        .into(),
+    );
+
+    pay_from_budget(&mut context, budget_address, &session, amount, "first")
+        .await
+        .expect("the first payment failed");
+    pay_from_budget(
+        &mut context,
+        budget_address,
+        &session,
+        amount,
+        "to the limit",
+    )
+    .await
+    .expect("the payment that reaches the limit should settle");
+    assert_eq!(budget(&context, budget_address).await.spent, limit);
+
+    let over = pay_from_budget(&mut context, budget_address, &session, amount, "over")
+        .await
+        .expect_err("a payment past the limit must be refused");
+    assert!(
+        over.contains(BUDGET_EXHAUSTED),
+        "expected BudgetExhausted, got {over}"
+    );
+    assert_eq!(
+        budget(&context, budget_address).await.spent,
+        limit,
+        "a refused payment must not move the counter"
+    );
+}
+
+/// The month is only one bound: the session key can never spend more than the
+/// pot actually holds, even inside the limit, and that has its own error so the
+/// page can say which resource is missing.
+#[tokio::test]
+async fn pay_from_budget_cannot_spend_more_than_the_pot() {
+    let amount = LAMPORTS_PER_SOL / 20;
+    let session = Keypair::new();
+    let (mut context, _admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), LAMPORTS_PER_SOL)],
+    )
+    .await;
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    send(
+        &mut context,
+        &[open_budget_instruction(buyer, session.pubkey(), amount * 4)],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+
+    // The month would allow it; the pot holds half the price.
+    let held = account(&context, budget_address)
+        .await
+        .expect("budget account missing");
+    context.set_account(
+        &budget_address,
+        &Account {
+            lamports: budget_rent() + amount / 2,
+            ..held
+        }
+        .into(),
+    );
+
+    let refused = pay_from_budget(&mut context, budget_address, &session, amount, "too big")
+        .await
+        .expect_err("a payment larger than the pot must be refused");
+    assert!(
+        refused.contains(INSUFFICIENT_BUDGET),
+        "expected InsufficientBudget, got {refused}"
+    );
+    assert_eq!(budget(&context, budget_address).await.spent, 0);
 }
 
 /// A refill is `open_budget` again on the same account, so a mid-month top-up
