@@ -1134,8 +1134,14 @@ Acceptance criteria:
       installs *this* device's key (`ensureSessionSigner`), so the key it
       replaces belongs to another device and is not ours to sign for; that
       device gets the recover action below. Reworded from "rotating sweeps the
-      old key when this device holds it", which no code path can reach. A future
-      rotation to a *fresh* key must sweep the replaced one first.
+      old key when this device holds it", which no code path can reach.
+      Checked rather than assumed (2026-11-15): rotation should **not** mint a
+      fresh key. A fresh key would strand the float this device already holds
+      and make `open_budget` buy a second one, and the key it replaces lives on
+      the other device either way, so nothing is made sweepable by it.
+      `useSessionKey.test.ts` pins that this device answers with the same key
+      every time and that only forgetting drops it; generating one per call
+      turns that test red, which is the prompt to add the sweep then.
 - [x] A rotated-out device detects it is no longer the budget's `session_key`
       and offers to sweep: `refreshRecoverableFloat` compares this device's key
       with every live budget's `session_key` and surfaces the balance — only
@@ -1177,7 +1183,8 @@ Files touched:
 - `apps/web/i18n/locales/*.json`: `budget.recover.*`,
   `budget.success.closedUnswept` / `.floatRecovered`, and
   `budget.errors.floatNotRecovered`, in all five locales.
-- `apps/web/app/composables/useBudget.test.ts` (new).
+- `apps/web/app/composables/useBudget.test.ts` (new) and
+  `useSessionKey.test.ts` (new, pins the rotation invariant above).
 
 Files likely touched:
 

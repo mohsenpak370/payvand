@@ -316,6 +316,11 @@ async function saveLimit() {
  * being able to spend. The limit written is what the pot already holds, since
  * `open_*_budget` tops the pot up to the limit it is given; rotating at the old
  * limit would pull the spent part back out of the wallet.
+ *
+ * The key it installs is this device's own, not a fresh one. The key being
+ * replaced belongs to the other device and could only be swept from there,
+ * while a fresh key here would strand the float this device already holds and
+ * buy a second one — reusing it puts that float back to work instead.
  */
 async function rotateToThisDevice() {
   const current = view.value
