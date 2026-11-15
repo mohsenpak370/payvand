@@ -151,6 +151,16 @@ describe('invoiceCosts', () => {
     expect(costs.minPayable).toBe(2_542_531)
   })
 
+  it('takes no rent into a token invoice floor, which is the fee alone', () => {
+    // `settle_token_payment` refunds the rents from the treasury and asks only
+    // that the seller receive something, so `amount > fee` is the whole guard:
+    // a 1.5 USDC price must not be measured against the lamport invoice rent.
+    const costs = invoiceCosts({ ...base, currency: 'usdc', amount: 1_500_000 })
+
+    expect(costs.minPayable).toBe(1)
+    expect(costs.amount).toBeGreaterThanOrEqual(costs.minPayable)
+  })
+
   it('reports the whole base units the wire carries, not the fraction', () => {
     const costs = invoiceCosts({ ...base, amount: 1_000.75 })
 

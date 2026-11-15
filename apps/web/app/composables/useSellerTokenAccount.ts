@@ -17,10 +17,10 @@ const SYSTEM_PROGRAM_ID = address('11111111111111111111111111111111')
 
 /**
  * `CreateIdempotent` on the associated-token program: opens the owner's own
- * account for a mint, paid by the owner, and succeeds without doing anything
- * when the account is already there. The settle only ever pays into an account
- * that exists — creating one inside a payment would hand its rent to whoever
- * named the seller — so the seller opens theirs when they price in a token.
+ * account for a mint, paid by the owner. The settle only ever pays into an
+ * account that exists — creating one inside a payment would hand its rent to
+ * whoever named the seller — so the seller opens theirs when they price in a
+ * token.
  */
 export function openTokenAccountInstruction(
   owner: Address,
@@ -44,36 +44,32 @@ export function openTokenAccountInstruction(
 }
 
 /**
- * The seller's side of a token invoice: the accounts the currencies need, in
- * their own transaction. Nothing is created when they already exist, so
- * re-pricing in the same token costs no signature.
+ * The seller's side of a token invoice: their account for the price's mint,
+ * opened in its own transaction. A SOL price, or an account that is already
+ * there, asks for no signature at all.
  */
 export function useSellerTokenAccount() {
   const { client } = useSolanaClient()
   const { execute } = useSolanaSignAndSendTransaction()
 
-  async function ensureSellerTokenAccounts(
+  async function ensureSellerTokenAccount(
     seller: Address,
-    currencies: SupportedCurrency[],
+    currency: SupportedCurrency,
     cluster: string
-  ): Promise<number> {
-    const mints = [...new Set(currencies
-      .map(currency => (currency === 'sol' ? null : mintForCurrency(currency, cluster)))
-      .filter((mint): mint is Address => Boolean(mint)))]
-    if (!mints.length) return 0
+  ): Promise<void> {
+    if (currency === 'sol') return
+    const mint = mintForCurrency(currency, cluster)
+    // A cluster with no mint for this currency has nothing to open.
+    if (!mint) return
+    const tokenAccount = await deriveAssociatedTokenAddress(seller, mint)
 
-    const missing: Instruction[] = []
-    for (const mint of mints) {
-      const tokenAccount = await deriveAssociatedTokenAddress(seller, mint)
-      const info = await client.rpc
-        .getAccountInfo(tokenAccount, { commitment: 'confirmed', encoding: 'base64' })
-        .send()
-      if (!info.value) missing.push(openTokenAccountInstruction(seller, mint, tokenAccount))
-    }
-    if (!missing.length) return 0
+    const existing = await client.rpc
+      .getAccountInfo(tokenAccount, { commitment: 'confirmed', encoding: 'base64' })
+      .send()
+    if (existing.value) return
 
     const wire = await compileWireTransaction({
-      instruction: missing,
+      instruction: openTokenAccountInstruction(seller, mint, tokenAccount),
       payer: seller,
       rpc: client.rpc
     })
@@ -81,8 +77,7 @@ export function useSellerTokenAccount() {
       confirm: true,
       confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
     })
-    return missing.length
   }
 
-  return { ensureSellerTokenAccounts }
+  return { ensureSellerTokenAccount }
 }

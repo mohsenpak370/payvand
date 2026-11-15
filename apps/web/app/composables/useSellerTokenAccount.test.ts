@@ -10,7 +10,7 @@ import { openTokenAccountInstruction } from './useSellerTokenAccount'
  * fails at payment time rather than at build time.
  */
 describe('openTokenAccountInstruction', () => {
-  const owner = address('9WMT ojUUWWn4dhuqrS6zqqP8s1X1FSgg7u7DGNwGAMAT'.replace(' ', ''))
+  const owner = address('9WMTojUUWWn4dhuqrS6zqqP8s1X1FSgg7u7DGNwGAMAT')
   const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
   const tokenAccount = address('FzXSgvDiVQqQMTwKZ5VwGxVgcAvU5QqZ3q8Z1MRyS7iB')
   const instruction = openTokenAccountInstruction(owner, mint, tokenAccount)

@@ -138,6 +138,9 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     receiptRent: input.receiptRent,
     networkFee: NETWORK_FEE_LAMPORTS,
     sellerTokenAccountRent: Math.trunc(input.sellerTokenAccountRent ?? 0),
-    minPayable: minimumPayable(policy, input.invoiceRent)
+    // Only a SOL settle takes its rent out of the price (`amount > rent + fee`).
+    // A token settle refunds the rents from the treasury and asks only that the
+    // seller receive something (`amount > fee`), so its floor carries no rent.
+    minPayable: minimumPayable(policy, input.currency === 'sol' ? input.invoiceRent : 0)
   }
 }

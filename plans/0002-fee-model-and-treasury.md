@@ -1282,6 +1282,27 @@ rent plus one 5,000 lamport fee. The invoice (`3mnEP2W8…`, "Seller ATA check",
 1.5 USDC) was created afterwards; its live `/p/…` page shows the price and
 "≈ 0.00001 SOL" for the network fee and no seller-account notice.
 
+**The live token invoice paid (2026-11-15):** deployment `payvand-op9ze5szb-…`
+(aliased like the others) paid `3mnEP2W8…` from a funded devnet buyer through
+the page itself, signature `CRXEr1Ns…`. From the transaction: buyer −1.5 USDC
+and −5,000 lamports, no rent and no fee; seller +1.47 USDC; treasury token
+account +0.03 USDC; the 2,179,320-lamport receipt written, with the pool down
+exactly that and the 1,981,200-lamport invoice paid back into it on close. Two
+things had to be mended first, both found by attempting the payment:
+
+- `minPayable` measured every invoice against the lamport invoice rent, so the
+  checkout refused 1.5 USDC as "below the smallest amount the program can
+  settle". Only a SOL settle takes its rent out of the price; a token settle
+  refunds the rents from the pool and asks only `amount > fee`, so the rent is
+  in that floor for SOL alone now.
+- The treasury had no Circle-USDC or EURC token account, so the settle failed
+  `AccountNotInitialized` on `treasury_token_account`. Both were opened paid by
+  the deployer (`7G5ziyiB…` USDC, `ERJ39bL1…` EURC, owner the treasury PDA);
+  the test mint's `3zhVS5bm…` was made the same way. **Every new mint the app
+  offers needs this one-time account before its first invoice can settle** —
+  nothing in the program creates it, because the treasury only signs through
+  `invoke_signed`.
+
 Smoke tests:
 
 - [x] SOL invoice at 0.01 SOL: payer pays 0.01 exactly (plus the 5,000 lamport

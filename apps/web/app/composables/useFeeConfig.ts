@@ -131,8 +131,9 @@ export function useInvoiceCosts() {
     const invoiceRent = await rentFor(isToken ? TOKEN_PAYMENT_SPACE : PAYMENT_SPACE)
     const receiptRent = await rentFor(PAYMENT_RECEIPT_SPACE)
 
-    // A fresh seller has no token account, and the settle transaction creates
-    // it with the payer's lamports, so that rent is the payer's cost.
+    // A seller prices in a token only once their account exists, so a code
+    // without one was made elsewhere: this is what the checkout tells the buyer
+    // to ask the seller for, never a lamport the buyer pays.
     let sellerTokenAccountRent = 0
     if (isToken && options.mint && options.seller) {
       const account = await deriveAssociatedTokenAddress(options.seller, address(options.mint))

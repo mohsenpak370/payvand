@@ -32,7 +32,7 @@ const { playSuccess } = useTransactionSounds()
 // settings — everyone else creates codes the way they always have.
 const { shopsEnabled } = useShopPreference()
 const { publicKey, connected } = useSolanaWallet()
-const { ensureSellerTokenAccounts } = useSellerTokenAccount()
+const { ensureSellerTokenAccount } = useSellerTokenAccount()
 
 // One price, in the currency the code charges: the dropdown beside the field is
 // that currency, so there is no second control to reconcile against it. The
@@ -282,11 +282,7 @@ async function createPayment() {
     // theirs is opened first — one signature, paid by the seller, before a code
     // exists to be scanned. A SOL invoice needs nothing.
     try {
-      await ensureSellerTokenAccounts(
-        seller,
-        invoiceOptions.value.map(option => option.currency),
-        cluster
-      )
+      await ensureSellerTokenAccount(seller, priceCurrency.value, cluster)
     } catch {
       throw new Error(t('sell.tokenAccountFailure'))
     }
