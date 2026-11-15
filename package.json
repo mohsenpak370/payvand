@@ -12,6 +12,7 @@
     "anchor:build": "cd apps/contracts && anchor build && cp target/idl/payvand.json ../web/app/assets/payvand.idl.json",
     "anchor:deploy": "cd apps/contracts && anchor deploy",
     "anchor:keys": "cd apps/contracts && anchor keys list",
+    "treasury:open": "pnpm -C apps/web treasury:open",
     "prepare": "husky",
     "test:web": "pnpm -C apps/web test"
   },

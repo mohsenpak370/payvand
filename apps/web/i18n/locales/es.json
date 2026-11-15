@@ -443,6 +443,7 @@
     "notBudgetAccount": "Esa dirección no es una cuenta de presupuesto.",
     "feeConfigUnavailable": "La configuración de comisiones no está disponible ahora. Inténtalo de nuevo en un momento.",
     "invoiceTooSmall": "Este precio está por debajo del importe mínimo que el programa puede liquidar.",
+    "treasuryTokenAccountMissing": "Esta factura aún no se puede liquidar: el protocolo no tiene una cuenta para cobrar su comisión en este token. No se ha enviado nada — recarga cuando esa cuenta esté abierta.",
     "notTokenBudgetAccount": "Esa dirección no es una cuenta de presupuesto de token.",
     "solForLimit": "Esta cartera no tiene SOL suficiente para ese límite. Bájalo o recarga la cartera primero.",
     "rejectedOnChain": "La transacción se rechazaría en la cadena, así que no se ha enviado. Si todavía no tienes presupuesto, el límite debe ser mayor que 0; si no, recarga la página e inténtalo otra vez.",

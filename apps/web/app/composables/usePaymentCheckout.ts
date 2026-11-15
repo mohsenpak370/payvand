@@ -444,6 +444,14 @@ export function usePaymentCheckout() {
       // client could not read is not a reason to guess.
       const quote = costs.value ?? await refreshCosts()
       if (!quote) throw new Error(costsError.value || appT('errors.feeConfigUnavailable'))
+      // Both of these are rejected on chain, so neither may reach a signature.
+      // The button is already held for the first, but `pay()` is what runs when
+      // anything else calls it — the stage machine, a keyboard submit, a click
+      // that lands before the quote arrives — and a doomed transaction the
+      // buyer has to approve is worse than a sentence saying why not.
+      if (quote.treasuryTokenAccountMissing) {
+        throw new Error(appT('errors.treasuryTokenAccountMissing'))
+      }
       if (amount < quote.minPayable) throw new Error(appT('errors.invoiceTooSmall'))
 
       const payment = await addressFor(option, amount)

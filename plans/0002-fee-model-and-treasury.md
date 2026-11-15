@@ -1312,12 +1312,25 @@ purpose: `5WkCtigV…` had no treasury account, one call (`4crPU2iH…`) created
 second call (`5n9dJ4BN…`) changed nothing.
 
 Adding a currency is therefore two steps, and the second one is not optional:
-put the mint in `CURRENCY_MINTS` and run
-`open_treasury_token_account` for it on that cluster. The checkout now reads
-the treasury's account for the invoice's mint and, when it is missing, shows
-what is missing and holds the pay button instead of letting the settle fail
-`AccountNotInitialized` after the buyer signs (that error was the first thing
-the live payment run produced).
+put the mint in `CURRENCY_MINTS`, then provision it with one command —
+`pnpm treasury:open --mint <mint> --cluster devnet`
+(`apps/web/scripts/open-treasury-token-account.mjs`: reads the checked-in IDL
+for the instruction's discriminator and account list, derives the config and
+treasury PDAs plus the associated account, signs with `~/.config/solana/id.json`
+unless `--keypair`/`--rpc` say otherwise, and reports "already open" instead of
+sending a second transaction). Proved on devnet with mint `AJBMc6Ju…`: the
+script created `4adC9BGM…` (authority the treasury `9tyu74Vy…`) in `2tqHv1Rn…`
+and the second run sent nothing.
+
+The checkout now reads the treasury's account for the invoice's mint and, when
+it is missing, shows what is missing and holds the pay button instead of letting
+the settle fail `AccountNotInitialized` after the buyer signs (that error was
+the first thing the live payment run produced). `pay()` itself refuses on the
+same quote — the button is one door, not the only one — and throws
+`errors.treasuryTokenAccountMissing` before any wallet request; checked on the
+local dev build with the treasury read forced empty: the failure was that
+sentence and the stubbed wallet was never asked to sign.
+
 
 Smoke tests:
 

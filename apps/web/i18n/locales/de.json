@@ -443,6 +443,7 @@
     "notBudgetAccount": "Diese Adresse ist kein Budgetkonto.",
     "feeConfigUnavailable": "Die Gebühreneinstellungen sind gerade nicht verfügbar. Versuche es gleich noch einmal.",
     "invoiceTooSmall": "Dieser Preis liegt unter dem kleinsten Betrag, den das Programm abrechnen kann.",
+    "treasuryTokenAccountMissing": "Diese Rechnung kann noch nicht beglichen werden: Das Protokoll hat kein Konto für seine Gebühr in diesem Token. Es wurde nichts gesendet — lade neu, sobald das Konto eröffnet ist.",
     "notTokenBudgetAccount": "Diese Adresse ist kein Token-Budgetkonto.",
     "solForLimit": "Dieses Wallet hält nicht genug SOL für dieses Limit. Senk es oder füll das Wallet zuerst auf.",
     "rejectedOnChain": "Die Transaktion würde on-chain abgelehnt, deshalb wurde sie nicht gesendet. Wenn du noch kein Budget hast, muss das Limit größer als 0 sein; andernfalls lade die Seite neu und versuch es erneut.",

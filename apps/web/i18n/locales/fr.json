@@ -443,6 +443,7 @@
     "notBudgetAccount": "Cette adresse n'est pas un compte de budget.",
     "feeConfigUnavailable": "Les réglages de frais ne sont pas disponibles pour le moment. Réessaie dans un instant.",
     "invoiceTooSmall": "Ce prix est inférieur au plus petit montant que le programme peut régler.",
+    "treasuryTokenAccountMissing": "Cette facture ne peut pas encore être réglée : le protocole n'a pas de compte pour percevoir ses frais dans ce jeton. Rien n'a été envoyé — rechargez une fois ce compte ouvert.",
     "notTokenBudgetAccount": "Cette adresse n'est pas un compte de budget de jetons.",
     "solForLimit": "Ce portefeuille ne contient pas assez de SOL pour cette limite. Baissez-la ou rechargez le portefeuille d'abord.",
     "rejectedOnChain": "La transaction serait rejetée sur la chaîne, elle n'a donc pas été envoyée. Si vous n'avez pas encore de budget, la limite doit être supérieure à 0 ; sinon, rechargez la page et réessayez.",

@@ -6,6 +6,7 @@
     "dev": "nuxt dev",
     "preview": "nuxt preview",
     "test": "vitest run",
+    "treasury:open": "node scripts/open-treasury-token-account.mjs",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "postinstall": "nuxt prepare",

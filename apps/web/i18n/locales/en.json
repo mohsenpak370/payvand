@@ -443,6 +443,7 @@
     "notBudgetAccount": "That address is not a budget account.",
     "feeConfigUnavailable": "The fee settings are not available right now. Try again in a moment.",
     "invoiceTooSmall": "This price is below the smallest amount the program can settle.",
+    "treasuryTokenAccountMissing": "This invoice cannot be settled yet: the protocol has no fee account for its token. Nothing was sent — reload once that account has been opened.",
     "notTokenBudgetAccount": "That address is not a token budget account.",
     "solForLimit": "This wallet does not hold enough SOL for that limit. Lower it or top the wallet up first.",
     "rejectedOnChain": "The transaction would be rejected on-chain, so it was not sent. If you have no budget yet, the limit must be greater than 0; otherwise reload the page and try again.",
