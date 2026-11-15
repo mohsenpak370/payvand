@@ -1271,6 +1271,17 @@ and nothing else — no protocol fee and no rent row. It was checked in the
 browser, not paid from it: the preview Chromium has no signing wallet, so the
 settle itself is the script one above.
 
+**Web redeploy after the seller-account change (2026-11-15):** deployment
+`payvand-2igo44ob4-…` is aliased to `https://payvand-app.vercel.app`. Checked on
+the live site with a wallet-standard stub that hands its bytes to a throwaway
+devnet signer: a fresh seller (`6dQg…KjPz`, 0.03 SOL, no token account) picked
+USDC, priced 1.5, and pressed Create. The page asked for one signature, the
+account `4dLexG6t…` appeared for mint `4zMM…` (1,488,440 lamports, owned by the
+token program) in `4qXd94JX…`, and the seller's balance fell by exactly that
+rent plus one 5,000 lamport fee. The invoice (`3mnEP2W8…`, "Seller ATA check",
+1.5 USDC) was created afterwards; its live `/p/…` page shows the price and
+"≈ 0.00001 SOL" for the network fee and no seller-account notice.
+
 Smoke tests:
 
 - [x] SOL invoice at 0.01 SOL: payer pays 0.01 exactly (plus the 5,000 lamport
