@@ -1583,11 +1583,16 @@ Smoke tests:
 - [x] `close_budget` returns the pot and the account rent to the buyer and the
       account is gone (`42FiDA7V…`; the stand-in budget `5Jirbyfw…` likewise
       closed a 38,963,680 lamport account back to the wallet).
-- [ ] Close all budgets: the float is swept and the vault drained. Not run, and
-      the SOL build does not sweep the float: `close_budget` closes only the
-      budget account, so the session key keeps its 30,000,000 float less
-      network fees. Reading the key's balance after a close is also unchecked,
-      and `close_token_budget`'s vault drain needs a token budget (Phase 3).
+- [ ] Close all budgets: the float is swept and the vault drained. The SOL half
+      is checked on devnet (2026-11-15, Task 4.1): a 0.02 SOL budget put
+      30,000,000 lamports on session key `WxGBYkcQ…`, `close_budget` returned the
+      pot and left that float untouched — which is why the sweep exists — and
+      the client's sweep then moved 29,995,000 lamports to the buyer and left
+      the key at **0** (`4WVsHfKK…`), with nothing left for a second sweep.
+      Still open: `close_token_budget`'s vault drain needs a token budget and a
+      token settle on devnet (Phase 3), and the close→sweep path was run as the
+      instructions themselves, not clicked through `/budget` with a wallet — so
+      the browser flow that calls them is still unexercised.
 - [x] Shop page estimates match the settled balances: the 0.012 SOL cart showed
       "You receive 0.01176 SOL after the 2% fee" and `0.00181864 SOL` rent.
 - [x] Budget page estimates match the settled balances: `/budget` rendered
