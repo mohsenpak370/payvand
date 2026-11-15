@@ -324,7 +324,7 @@
       "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et chaque paiement dans cette limite se fait sans fenêtre. Ce que vous avez déjà dépensé ce mois-ci compte toujours, il ne reste donc que le solde à dépenser.",
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
-      "closed": "Budget {currency} fermé — tout ce qui restait est revenu dans votre portefeuille.",
+      "closed": "Budget {currency} fermé — tout ce qu’il contenait est revenu dans votre portefeuille.",
       "floatRecovered": "{amount} SOL récupérés depuis la clé de session."
     },
     "cost": {
@@ -891,18 +891,18 @@
   },
   "terms": {
     "metaTitle": "Conditions d'utilisation — Payvand",
-    "metaDescription": "Ce que fait Payvand, ce qu'il ne fait pas, et la poignée de règles qui vont avec son usage : les paiements vont de portefeuille à portefeuille, nous ne détenons jamais l'argent, et une transaction payée ne peut pas être annulée.",
-    "updated": "8 novembre 2026",
+    "metaDescription": "Ce que Payvand fait, ce qu’il ne fait pas, et les quelques règles qui l’accompagnent : les paiements vont de portefeuille à portefeuille, seuls les frais du protocole passent par le programme, et une transaction payée ne peut pas être annulée.",
+    "updated": "15 novembre 2026",
     "title": "Conditions d'utilisation",
     "description": "Ce que fait Payvand, ce qu'il ne fait pas, et la poignée de règles qui vont avec son usage.",
     "what": {
       "title": "Ce qu'est Payvand",
-      "body": "Payvand transforme un montant en code de paiement. Un vendeur saisit le prix, l'app construit un QR code, et un client le scanne avec un portefeuille Solana et valide une transaction. L'argent passe du portefeuille du client à celui du vendeur via le réseau Solana — sans compte au milieu et sans processeur de cartes.",
+      "body": "Payvand transforme un montant en code de paiement. Un vendeur saisit le prix, l’app construit un QR code, et le client le scanne avec un portefeuille Solana et approuve une transaction. L’argent passe du portefeuille du client à celui du vendeur sur le réseau Solana — sans processeur de cartes et sans entreprise qui le détienne ; seule la part des frais du protocole, qui paie les enregistrements, n’arrive pas au vendeur.",
       "accept": "Utiliser l'app vaut acceptation de ces conditions. Si vous ne les acceptez pas, merci de ne pas l'utiliser."
     },
     "money": {
       "title": "Nous ne détenons jamais l'argent",
-      "hold": "Payvand ne détient, ne reçoit et ne transmet vos fonds à aucun moment, et n'a aucun moyen de les déplacer, de les geler ou de les prendre.",
+      "hold": "Payvand ne détient, ne reçoit ni ne transmet vos fonds à aucun moment, et ne peut ni les déplacer, ni les geler, ni les prendre. La seule exception est les frais du protocole qu’un vendeur paie sur une vente : ils vont sur un compte du programme qui couvre d’abord le coût des enregistrements permanents de paiement, et le projet peut retirer l’excédent.",
       "reverse": "Nous ne pouvons pas annuler, inverser ni rembourser un paiement. Seul le destinataire peut renvoyer de l'argent, depuis son propre portefeuille.",
       "seed": "Nous ne demandons jamais de phrase de récupération ni de clé privée, et personne travaillant sur Payvand ne vous les demandera. Quiconque le fait n'est pas nous.",
       "budgetBefore": "La seule chose que l'app peut signer sans votre portefeuille est le budget d'entraînement, avec une clé que votre navigateur crée et conserve (voir la",
@@ -933,7 +933,7 @@
     },
     "fees": {
       "title": "Frais",
-      "body": "Payvand ne facture rien pour créer ou scanner un code de paiement. Le réseau Solana prélève de petits frais pour la transaction, et un paiement crée un enregistrement sur la chaîne qui coûte un peu de loyer — les deux sont payés depuis le portefeuille du client, et le portefeuille affiche le total avant toute validation."
+      "body": "Créer ou scanner un code de paiement ne coûte rien au client au-delà de ce qui est affiché : il paie le prix indiqué plus les frais de réseau Solana. Les vendeurs paient les frais du protocole — actuellement 2 % du prix, déduits de ce qu’ils reçoivent plutôt qu’ajoutés — et l’app affiche le montant exact avant qu’un code soit partagé. Le protocole paie l’enregistrement permanent d’un paiement sur la chaîne, et la location temporaire avancée lors d’un paiement revient dans la même transaction."
     },
     "testMoney": {
       "title": "Argent de test",
@@ -987,6 +987,7 @@
   },
   "invoiceSplit": {
     "netReceive": "Tu reçois {net} après les frais de {percent} %",
-    "rentNote": "Le loyer du code ({rent} SOL) te revient une fois payé ; le protocole paie l'enregistrement du paiement."
+    "rentNote": "Le loyer du code ({rent} SOL) te revient une fois payé ; le protocole paie l'enregistrement du paiement.",
+    "rentNoteToken": "Un code en jetons ne vous coûte pas de SOL : l’acheteur avance sa location et la récupère, et le protocole paie l’enregistrement permanent du paiement."
   }
 }

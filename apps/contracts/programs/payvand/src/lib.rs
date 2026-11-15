@@ -113,8 +113,11 @@ pub mod payvand {
         instructions::sol::pay_from_budget_handler(ctx, amount, memo)
     }
 
-    /// Reclaim whatever is left in the budget and retire the session key.
-    /// One wallet signature — the buyer gets every lamport back.
+    /// Reclaim whatever is left in the budget and retire it. One wallet
+    /// signature: the pot and the account's rent go back to the buyer, less the
+    /// network fee. The session key's fee float is not this account's money — a
+    /// PDA cannot move lamports off a plain keypair — so the client sweeps it
+    /// from the device that holds the key.
     pub fn close_budget(ctx: Context<CloseBudget>) -> Result<()> {
         instructions::sol::close_budget_handler(ctx)
     }
@@ -164,7 +167,9 @@ pub mod payvand {
     }
 
     /// Drain the token vault back to the buyer and retire the budget. One
-    /// wallet signature; every token and lamport comes back.
+    /// wallet signature: the tokens come back, and so do the vault's rent, the
+    /// budget account's rent and the lamports it kept to refund invoice rents.
+    /// The session key's float is swept by the client, as in `close_budget`.
     pub fn close_token_budget(ctx: Context<CloseTokenBudget>) -> Result<()> {
         instructions::token::close_token_budget_handler(ctx)
     }

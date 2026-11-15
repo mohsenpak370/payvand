@@ -324,7 +324,7 @@
       "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. Lo que ya has gastado este mes sigue contando, así que lo que queda es lo que puedes gastar.",
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
-      "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba ha vuelto a tu cartera.",
+      "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba en él ha vuelto a tu cartera.",
       "floatRecovered": "Recuperados {amount} SOL de la clave de sesión."
     },
     "cost": {
@@ -891,18 +891,18 @@
   },
   "terms": {
     "metaTitle": "Términos de uso — Payvand",
-    "metaDescription": "Qué hace Payvand, qué no hace y el puñado de reglas que acompañan su uso: los pagos van de cartera a cartera, nunca retenemos el dinero y una transacción pagada no se puede deshacer.",
-    "updated": "8 de noviembre de 2026",
+    "metaDescription": "Qué hace Payvand, qué no hace y las pocas reglas que trae: los pagos van de cartera a cartera, solo la comisión del protocolo pasa por el programa, y un pago confirmado no se puede deshacer.",
+    "updated": "15 de noviembre de 2026",
     "title": "Términos de uso",
     "description": "Qué hace Payvand, qué no hace y el puñado de reglas que acompañan su uso.",
     "what": {
       "title": "Qué es Payvand",
-      "body": "Payvand convierte un importe en un código de pago. El vendedor escribe cuánto cuesta algo, la app construye un código QR y un cliente lo escanea con una cartera de Solana y aprueba una transacción. El dinero va de la cartera del cliente a la del vendedor por la red de Solana — sin ninguna cuenta en medio y sin procesador de tarjetas.",
+      "body": "Payvand convierte un importe en un código de pago. El vendedor escribe cuánto cuesta algo, la app construye un código QR y el cliente lo escanea con una cartera de Solana y aprueba una transacción. El dinero pasa de la cartera del cliente a la del vendedor por la red de Solana: sin procesador de tarjetas y sin ninguna empresa reteniéndolo; la única parte que no llega al vendedor es la comisión del protocolo, que paga los registros de pago.",
       "accept": "Usar la app significa que aceptas estos términos. Si no los aceptas, no la uses."
     },
     "money": {
       "title": "Nunca retenemos el dinero",
-      "hold": "Payvand no retiene, recibe ni transmite tus fondos en ningún momento, y no tiene forma de moverlos, congelarlos ni tomarlos.",
+      "hold": "Payvand no guarda, recibe ni transmite tu dinero en ningún momento, y no puede moverlo, congelarlo ni tomarlo. La única excepción es la comisión del protocolo que paga el vendedor en una venta: va a una cuenta del programa que cubre primero el coste de los registros permanentes de pago, y el proyecto puede retirar el excedente.",
       "reverse": "No podemos cancelar, revertir ni reembolsar un pago. Solo el destinatario puede devolver dinero, desde su propia cartera.",
       "seed": "Nunca pedimos una frase de recuperación ni una clave privada, y nadie que trabaje en Payvand te la pedirá jamás. Quien lo haga no somos nosotros.",
       "budgetBefore": "Lo único que la app puede firmar sin tu cartera es el presupuesto de práctica, con una clave que crea y guarda tu propio navegador (consulta la",
@@ -933,7 +933,7 @@
     },
     "fees": {
       "title": "Comisiones",
-      "body": "Payvand no cobra nada por crear o escanear un código de pago. La red de Solana cobra una comisión pequeña por la transacción, y un pago crea un registro en la cadena que cuesta un poco de renta — las dos cosas las paga la cartera del cliente, y la cartera muestra el total antes de que apruebes nada."
+      "body": "Crear o escanear un código de pago no cuesta nada al cliente más allá de lo que muestra: paga el precio que ve más la comisión de red de Solana. Los vendedores pagan la comisión del protocolo — hoy el 2 % del precio, descontado de lo que reciben en lugar de sumarse — y la app muestra el importe exacto antes de compartir un código. El registro permanente de un pago en la cadena lo paga el protocolo, y la renta temporal que adelanta un pago vuelve en la misma transacción."
     },
     "testMoney": {
       "title": "Dinero de prueba",
@@ -987,6 +987,7 @@
   },
   "invoiceSplit": {
     "netReceive": "Recibes {net} después de la comisión del {percent}%",
-    "rentNote": "El alquiler del código ({rent} SOL) te vuelve cuando se paga; el protocolo paga el registro del pago."
+    "rentNote": "El alquiler del código ({rent} SOL) te vuelve cuando se paga; el protocolo paga el registro del pago.",
+    "rentNoteToken": "Un código en tokens no te cuesta SOL: el comprador adelanta su renta y se la devuelven, y el protocolo paga el registro permanente del pago."
   }
 }

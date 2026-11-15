@@ -11,9 +11,10 @@ the 301-byte receipt and starts Task 1.4 in the web client; revision 5
 (2026-11-15) records Phase 2 as built — the refill counter fixed, deployed to
 devnet and checked on chain, Task 2.4's harness tests written — and ticks the
 tasks the code and the cluster had satisfied (2.1, 2.3, 4.5), including the
-receipt-rent credit that closed the gap Task 2.4 found. Phase 4 has started:
-its session-key sweep (4.1) is done and checked on devnet. Phase 3's float top-up
-and settle tests, and the rest of Phase 4, are the open work.
+receipt-rent credit that closed the gap Task 2.4 found. Phase 4 is under way:
+the session-key sweep (4.1) is done and checked on devnet, and the documentation
+that promised the old model (4.2) is corrected. Phase 3's float top-up and
+settle tests, and 4.3–4.5, are the open work.
 
 ## Revision Notes
 
@@ -183,11 +184,19 @@ Open questions (do not block Phase 1, but decide before Phase 3/5):
 
 ## Fee And Rent Numbers
 
-Rent uses Solana's rent-exempt formula, `(bytes + 128) × 6960` lamports. These
-values are what the program and the client must agree on; tests assert them via
-`Rent::minimum_balance`, and the web client already reads rent over RPC
+Rent uses Solana's rent-exempt formula, `(bytes + 128) × lamports_per_byte`.
+These values are what the program and the client must agree on; tests assert
+them via `Rent::minimum_balance`, and the web client already reads rent over RPC
 (`useBudget.ts` → `rentMinimum`), so nothing hardcodes a stale number except
 these planning figures.
+
+**The per-byte rate drifted (2026-11-15).** The tables below were written at
+6,960 lamports per byte; devnet now charges **5,080** — `Budget` 1,143,000 for
+97 bytes, the 301-byte receipt 2,179,320, a token account 1,488,440. Read the
+figures here as ratios: the break-even rule (`fee_bps × amount ≥ receipt rent`)
+and the treasury floor (`receipt rent + the treasury's own rent`) are the durable
+parts, and `README.md`'s "Fees, rent and the treasury" states them with the
+live receipt rent.
 
 | Account | Bytes | Lamports | SOL |
 | --- | ---: | ---: | ---: |
@@ -1208,17 +1217,51 @@ sellers need no SOL.
 
 Acceptance criteria:
 
-- [ ] Doc comments match behavior.
-- [ ] UI success messages are accurate.
-- [ ] `README.md` documents the fee model, the treasury, and the break-even
-      economics from "Fee And Rent Numbers".
-- [ ] `DEV.md` documents `initialize_config`, `update_config`,
-      `withdraw_treasury`, and the treasury funding step.
+- [x] Doc comments match behavior (2026-11-15). `lib.rs` no longer promises that
+      `close_budget` returns "every lamport" or that `close_token_budget`
+      returns "every token and lamport": they return the pot, or the vault with
+      both rents and the float the budget kept, and the session key's float is
+      swept by the client because a PDA cannot move lamports off a keypair. The
+      close comment in `budget.vue` says which of the two it is doing.
+- [x] UI success messages are accurate. `budget.success.closed` says "everything
+      left *in it*", since a session key that still pays another currency's
+      allowance keeps its float on purpose (and a failed sweep already speaks
+      through `closedUnswept`/`floatUnsweptBody`, Task 4.1). `invoiceSplit.
+      rentNote` was true only for SOL — a token invoice refunds the payer and
+      closes to the treasury, so the seller gets no rent back — and now has a
+      `rentNoteToken` sibling that `InvoiceSplitNote` picks by currency. The
+      terms page stopped claiming Payvand charges nothing and never receives
+      funds: the seller pays `fee_bps`, the protocol funds the permanent record,
+      and that fee is the only money that passes through.
+- [x] `README.md` documents the fee model, the treasury and the break-even
+      economics: a "Fees, rent and the treasury" section with who pays and who
+      receives, the SOL ledger step by step, the token variant (sellers need no
+      SOL, the treasury needs its account per mint), the budget variant,
+      break-even at `fee_bps × amount ≥ receipt rent` (≈0.109 SOL at 2% and
+      today's rent), the subsidy below it, `TreasuryUnderfunded`, and the
+      `fixed_fee_lamports` trade-off. The old closing note that had
+      `settle_payment` moving lamports "straight from the payer to the seller"
+      now describes the fee split and the treasury-funded receipt.
+- [x] `DEV.md` documents `initialize_config`, `update_config`,
+      `withdraw_treasury` and the treasury funding step: the live `Config`
+      values with their addresses, the seeds and who may sign, the limits
+      (`fee_bps ≤ 10_000`, `session_fee_float ≥ 5_477_520`), the plain transfer
+      that funds the treasury, `pnpm treasury:open --mint` for a new token, and
+      the account layout for reading `Config` by hand.
 
 Verification:
 
-- [ ] Doc review.
-- [ ] Manual close/rotate and invoice flows.
+- [x] Doc review (2026-11-15): every claim was checked against the handlers —
+      `settle_payment` splits the transfer, closes the invoice to the seller and
+      refunds the payer out of the treasury; `close_token_budget` drains the
+      vault, closes it to the buyer and refunds the budget's float;
+      `validate_fee_policy` and `withdraw_treasury` enforce the limits now
+      documented. `cargo fmt --check`, `cargo clippy -D warnings`,
+      `pnpm typecheck`, `eslint` and the 40 web tests all pass, and the five
+      locale files carry the same keys.
+- [ ] Manual close/rotate and invoice flows in a browser: not run — there is no
+      wallet or extension in this environment. The ledgers these docs describe
+      are the ones exercised on devnet under Tasks 2.2, 2.3, 4.1 and 5.2.
 
 Files likely touched:
 

@@ -324,7 +324,7 @@
       "refilled": "Aufgefüllt — der Topf hält wieder {limit} und jede Zahlung darin läuft ohne Fenster. Was du diesen Monat schon ausgegeben hast, zählt weiter, ausgeben kannst du also den Rest.",
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
-      "closed": "{currency}-Budget geschlossen — alles Verbliebene ist zurück in deinem Wallet.",
+      "closed": "{currency}-Budget geschlossen — alles, was darin lag, ist zurück in deinem Wallet.",
       "floatRecovered": "{amount} SOL vom Sitzungsschlüssel zurückgeholt."
     },
     "cost": {
@@ -891,18 +891,18 @@
   },
   "terms": {
     "metaTitle": "Nutzungsbedingungen — Payvand",
-    "metaDescription": "Was Payvand tut, was es nicht tut und die paar Regeln, die dazugehören: Zahlungen gehen von Wallet zu Wallet, wir halten das Geld nie, und eine bezahlte Transaktion lässt sich nicht zurückholen.",
-    "updated": "8. November 2026",
+    "metaDescription": "Was Payvand tut, was es nicht tut, und die wenigen Regeln, die dazugehören: Zahlungen gehen von Wallet zu Wallet, nur die Protokollgebühr läuft über das Programm, und eine bezahlte Transaktion lässt sich nicht zurücknehmen.",
+    "updated": "15. November 2026",
     "title": "Nutzungsbedingungen",
     "description": "Was Payvand tut, was es nicht tut und die paar Regeln, die zur Nutzung gehören.",
     "what": {
       "title": "Was Payvand ist",
-      "body": "Payvand macht aus einem Betrag einen Zahlungscode. Ein Verkäufer tippt ein, was etwas kostet, die App baut einen QR-Code, und ein Kunde scannt ihn mit einem Solana-Wallet und bestätigt eine Transaktion. Das Geld wandert über das Solana-Netzwerk vom Wallet des Kunden zu dem des Verkäufers — kein Konto dazwischen und kein Kartenabwickler.",
+      "body": "Payvand macht aus einem Betrag einen Zahlungscode. Ein Verkauf gibt ein, was etwas kostet, die App baut daraus einen QR-Code, und die Kundschaft scannt ihn mit einer Solana-Wallet und bestätigt eine Transaktion. Das Geld geht über das Solana-Netz von der Wallet der Kundschaft zur Wallet des Verkäufers — kein Kartenprozessor und kein Unternehmen, das dazwischen Geld hält; nur die Protokollgebühr, die die Aufzeichnungen bezahlt, erreicht den Verkäufer nicht.",
       "accept": "Die App zu nutzen bedeutet, diese Bedingungen zu akzeptieren. Wenn du das nicht tust, nutze sie bitte nicht."
     },
     "money": {
       "title": "Wir halten das Geld nie",
-      "hold": "Payvand hält, empfängt und leitet deine Gelder zu keinem Zeitpunkt weiter und hat keine Möglichkeit, sie zu bewegen, einzufrieren oder zu nehmen.",
+      "hold": "Payvand hält, empfängt oder leitet dein Geld zu keinem Zeitpunkt weiter und kann es weder bewegen noch einfrieren oder nehmen. Die einzige Ausnahme ist die Protokollgebühr, die Verkäufer bei einem Verkauf zahlen: Sie geht an ein Programm-Konto, das zuerst die Kosten der dauerhaften Zahlungsaufzeichnungen deckt; einen Überschuss kann das Projekt abheben.",
       "reverse": "Wir können eine Zahlung nicht abbrechen, umkehren oder erstatten. Nur der Empfänger kann Geld zurückschicken, aus seinem eigenen Wallet.",
       "seed": "Wir fragen nie nach einer Seed-Phrase oder einem privaten Schlüssel, und niemand, der an Payvand arbeitet, wird dich danach fragen. Wer es tut, ist nicht wir.",
       "budgetBefore": "Das Einzige, was die App ohne dein Wallet signieren kann, ist das Übungsbudget, mit einem Schlüssel, den dein eigener Browser erstellt und behält (siehe die",
@@ -933,7 +933,7 @@
     },
     "fees": {
       "title": "Gebühren",
-      "body": "Payvand berechnet nichts dafür, einen Zahlungscode zu erstellen oder zu scannen. Das Solana-Netzwerk nimmt eine kleine Gebühr für die Transaktion, und eine Zahlung legt einen Eintrag on-chain an, der etwas Miete kostet — beides zahlt das Wallet des Kunden, und das Wallet zeigt die Summe, bevor du irgendetwas bestätigst."
+      "body": "Ein Zahlungscode kostet Kundinnen und Kunden nichts über den angezeigten Betrag hinaus: Sie zahlen den Preis, den sie sehen, plus die Netzwerkgebühr von Solana. Verkäufer zahlen die Protokollgebühr — derzeit 2 % des Preises, abgezogen von dem, was sie erhalten, nicht obendrauf — und die App zeigt den genauen Betrag, bevor ein Code geteilt wird. Die dauerhafte Aufzeichnung einer Zahlung auf der Chain zahlt das Protokoll, und die vorübergehende Miete, die eine Zahlung vorstreckt, kommt in derselben Transaktion zurück."
     },
     "testMoney": {
       "title": "Testgeld",
@@ -987,6 +987,7 @@
   },
   "invoiceSplit": {
     "netReceive": "Du erhältst {net} nach der Gebühr von {percent} %",
-    "rentNote": "Die Miete des Codes ({rent} SOL) kommt beim Bezahlen zu dir zurück; den Zahlungsbeleg zahlt das Protokoll."
+    "rentNote": "Die Miete des Codes ({rent} SOL) kommt beim Bezahlen zu dir zurück; den Zahlungsbeleg zahlt das Protokoll.",
+    "rentNoteToken": "Ein Token-Code braucht kein SOL von dir: die Miete zahlt der Käufer und bekommt sie zurück, und die dauerhafte Zahlungsaufzeichnung zahlt das Protokoll."
   }
 }

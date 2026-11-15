@@ -324,7 +324,7 @@
       "refilled": "Refilled — the pot holds {limit} again and every payment inside it is back to no popups. What you already spent this month still counts, so the rest is what you can spend.",
       "updated": "Budget updated — your limit and pot are in sync again.",
       "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
-      "closed": "{currency} budget closed — everything left went back to your wallet.",
+      "closed": "{currency} budget closed — everything left in it went back to your wallet.",
       "floatRecovered": "Recovered {amount} SOL from the session key."
     },
     "cost": {
@@ -891,18 +891,18 @@
   },
   "terms": {
     "metaTitle": "Terms of use — Payvand",
-    "metaDescription": "What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, we never hold the money, and a paid transaction cannot be taken back.",
-    "updated": "8 November 2026",
+    "metaDescription": "What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, only the protocol fee passes through the program, and a paid transaction cannot be taken back.",
+    "updated": "15 November 2026",
     "title": "Terms of use",
     "description": "What Payvand does, what it does not do, and the handful of rules that come with using it.",
     "what": {
       "title": "What Payvand is",
-      "body": "Payvand turns an amount into a payment code. A seller types in what something costs, the app builds a QR code, and a customer scans it with a Solana wallet and approves one transaction. The money moves from the customer's wallet to the seller's wallet over the Solana network — there is no account in the middle and no card processor.",
+      "body": "Payvand turns an amount into a payment code. A seller types in what something costs, the app builds a QR code, and a customer scans it with a Solana wallet and approves one transaction. The money moves from the customer’s wallet to the seller’s over the Solana network — no card processor, and no company holding it in between; the only part that does not reach the seller is the protocol fee, which pays for the payment records.",
       "accept": "Using the app means you accept these terms. If you do not, please do not use it."
     },
     "money": {
       "title": "We never hold the money",
-      "hold": "Payvand does not hold, receive or pass on your funds at any point, and has no way to move, freeze or take them.",
+      "hold": "Payvand does not hold, receive or pass on your funds at any point, and has no way to move, freeze or take them. The one exception is the protocol fee a seller pays on a sale: it goes to a program account that first covers the cost of the permanent payment records, and any surplus can be withdrawn by the project.",
       "reverse": "We cannot cancel, reverse or refund a payment. Only the recipient can send money back, from their own wallet.",
       "seed": "We never ask for a seed phrase or a private key, and nobody working on Payvand will ever ask you for one. Anyone who does is not us.",
       "budgetBefore": "The only thing the app can sign without your wallet is the practice budget, with a key your own browser creates and keeps (see the",
@@ -933,7 +933,7 @@
     },
     "fees": {
       "title": "Fees",
-      "body": "Payvand charges nothing for making or scanning a payment code. The Solana network charges a small fee for the transaction, and a payment creates a record on chain that costs a little rent — both are paid from the customer's wallet, and the wallet shows the total before you approve anything."
+      "body": "Making or scanning a payment code costs the customer nothing beyond what it says: they pay the price they see plus the Solana network fee for the transaction. Sellers pay the protocol fee — currently 2% of the price, taken out of what they receive rather than added on top — and the app shows the exact amount before a code is shared. The protocol pays for the permanent record of a payment on chain, and the temporary rent a payment advances comes back in the same transaction."
     },
     "testMoney": {
       "title": "Test money",
@@ -987,6 +987,7 @@
   },
   "invoiceSplit": {
     "netReceive": "You receive {net} after the {percent}% fee",
-    "rentNote": "The code's rent ({rent} SOL) comes back to you when it is paid; the protocol pays for the payment record."
+    "rentNote": "The code's rent ({rent} SOL) comes back to you when it is paid; the protocol pays for the payment record.",
+    "rentNoteToken": "A token code needs no SOL from you: the payer’s rent is refunded to them, and the protocol pays for the payment record."
   }
 }

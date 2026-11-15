@@ -541,7 +541,11 @@ async function handBackFloat(buyer: Address) {
   }
 }
 
-/** Reclaim everything left in one currency's allowance (1 signature). */
+/**
+ * Reclaim one currency's pot and its account rent (1 signature). The session
+ * key's float follows only when this was the last allowance — the other
+ * currencies' budgets still pay with it.
+ */
 async function closeBudget() {
   const buyer = publicKey.value
   if (!buyer) return

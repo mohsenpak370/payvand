@@ -34,6 +34,7 @@ apps/web/            Nuxt app (run `pnpm dev` from the repo root)
   app/pages/sell.vue     Seller: create invoice + render QR (requires an account)
   app/pages/pay.vue      Buyer: the shared, printable payment page (name, price, QR)
   app/pages/scan.vue     Buyer: scan a QR in the app and pay from this device
+  app/pages/budget.vue   Buyer: a monthly allowance a session key spends from
   app/pages/signin.vue   Email + password sign-in
   app/pages/signup.vue   Create an account
   app/assets/payvand.idl.json   Copy of the Anchor IDL used by the client
@@ -211,6 +212,57 @@ whichever address gets funded. A buyer can therefore never pay less at the
 invoice address itself — underpayment shows up as a different, watched
 address.
 
+### Fees, rent and the treasury
+
+The fee policy is on chain in `Config`, not in the app: every settlement reads
+it, so changing `fee_bps` takes effect without a release. The default is
+`200` bps (2%), no flat fee, and `SellerPays` — the buyer is charged the price
+the QR shows, never the price plus something.
+
+| Who | Pays | Ends up with |
+| --- | --- | --- |
+| Buyer | the price, plus the Solana network fee | out exactly `amount` plus that fee, and the receipt on chain |
+| Seller | the protocol fee, taken out of the price rather than added on top | `amount − fee` |
+| Treasury | the receipt's rent, on every settlement | `fee − receipt rent` |
+
+How a SOL settlement gets there, in one signature: the payer funds the invoice
+account and the receipt; `amount − invoice rent − fee` goes to the seller; `fee` goes
+to the treasury; the invoice account closes to the seller with its rent; and
+the treasury pays the payer back the receipt rent. The payer's balance therefore
+moves by exactly `amount` plus the network fee, the seller receives exactly
+`amount − fee`, and the only lasting cost is the receipt, which the treasury
+paid for and which nobody can close.
+
+Token invoices take the fee in the token: `amount − fee_t` to the seller and
+`fee_t` to the treasury's own account for that mint. **Sellers need no SOL** to
+be paid in a token, and the payer's SOL exposure is the network fee (plus the
+seller's account rent if that seller had not opened one yet). The treasury must
+have its account for a mint opened before an invoice in that mint can settle —
+`pnpm treasury:open --mint <mint>`; the checkout reads the account and refuses
+to let anyone sign before it exists.
+
+A budget payment is the same ledger with the pot in place of the wallet: the pot
+pays exactly the price, and the session key's float (30,000,000 lamports, sized
+for three worst-case token payments) fronts the temporary rents and is
+reimbursed inside the same transaction.
+
+**Break-even.** The treasury's delta per settlement is `fee − receipt rent`, so
+an invoice starts paying for its own record once
+`fee_bps × amount ≥ receipt rent`. At 2% and devnet's rent for the 301-byte
+receipt (2,179,320 lamports, 2026-11-15) that is ≈0.109 SOL; below it the
+treasury subsidises each payment by `receipt rent − floor(amount × fee_bps /
+10_000)` lamports, which is the cost of accepting small invoices at all. Two
+levers keep that subsidy in check: `fee_bps` is adjustable on chain, and
+`fixed_fee_lamports` can make every invoice self-funding — but a flat fee that
+covers the receipt (≈0.0022 SOL today) is a fifth of a 0.01 SOL sale, so it
+defaults to 0. A settlement is refused with
+`TreasuryUnderfunded` before it moves anything when the treasury cannot cover the
+receipt rent, so a drained treasury blocks payments rather than losing them.
+
+Rent is read from the cluster (`Rent::minimum_balance`), never from a constant,
+so these figures follow it. The addresses, the current `Config` values, and the
+commands that change the policy or top the treasury up are in `DEV.md`.
+
 ### Checks
 
 ```bash
@@ -299,11 +351,12 @@ serverless cold start.
   way any phone camera opens the printable payment page.
 - Cluster defaults in the API are the public `api.*.solana.com` endpoints. For
   anything beyond testing, set `SOLANA_RPC_URL` to a dedicated provider.
-- `settle_payment` creates the invoice account (funded by the buyer), moves
-  lamports straight from the payer to the seller, writes a permanent receipt at
-  `["payment-receipt", invoice]` and closes the invoice account in the same
-  transaction, so its rent returns to the seller without a second signature.
-  The amount is part of the PDA seeds, so a code can only ever be settled for
-  exactly the amount it was shown with, and the receipt's `settled_at` makes a
-  second settlement fail with `AlreadySettled`. There is no close or reclaim
-  instruction left to call.
+- `settle_payment` creates the invoice account (funded by the payer), moves
+  `amount − fee` to the seller and `fee` to the treasury, writes a permanent
+  receipt at `["payment-receipt", invoice]` and closes the invoice account in
+  the same transaction, so its rent returns to the seller without a second
+  signature — while the treasury refunds the receipt rent so the payer is
+  charged exactly the price. The amount is part of the PDA seeds, so a code can
+  only ever be settled for exactly the amount it was shown with, and the
+  receipt's `settled_at` makes a second settlement fail with `AlreadySettled`.
+  There is no close or reclaim instruction left to call.
