@@ -10,10 +10,9 @@ still to come; revision 4 (2026-11-14) recomputes every fee and rent figure for
 the 301-byte receipt and starts Task 1.4 in the web client; revision 5
 (2026-11-15) records Phase 2 as built — the refill counter fixed, deployed to
 devnet and checked on chain, Task 2.4's harness tests written — and ticks the
-tasks the code had already satisfied (2.1, 4.5). Task 2.3's first criterion
-stays open until an upgrade credits the receipt rent before the pot check;
-Phase 3's float top-up and settle tests and Phase 4 are the rest of the open
-work.
+tasks the code and the cluster had satisfied (2.1, 2.3, 4.5), including the
+receipt-rent credit that closed the gap Task 2.4 found. Phase 3's float top-up
+and settle tests and Phase 4 are the rest of the open work.
 
 ## Revision Notes
 
@@ -872,14 +871,12 @@ key SOL.
 
 Acceptance criteria:
 
-- [ ] The UI never offers a budget payment the session key cannot fund. The
-      client side is right — `silentPaymentObstacle` asks the pot against the
-      price, which is exactly what the settle spends — but the condition only
-      holds once `pay_from_budget` credits the treasury's receipt-rent refund
-      before it checks the pot (done in the tree on 2026-11-15, Task 2.4).
-      **Held open until that build is on devnet:** the deployed program checks
-      the pot before the refund, so the live page can still offer the last
-      receipt rent of a limit and have it refused `InsufficientBudget`.
+- [x] The UI never offers a budget payment the session key cannot fund. The
+      client asks the pot against the price, which is exactly what the settle
+      spends now that `pay_from_budget` credits the treasury's receipt-rent
+      refund before checking it (Task 2.4). That build is on devnet as of
+      2026-11-15 and the spend-to-zero check below passed, so the page can no
+      longer offer a payment the pot refuses.
 - [x] "Remaining" equals what the user can actually spend: `remainingThisMonth`
       subtracts `spent` only in the month it belongs to, and the obstacle asks
       it before the pot.
@@ -949,9 +946,18 @@ it refunds the rents out of its own float, capped at what is there.
 exactly the limit and no slack: the invoice that reaches the limit settles and
 leaves the pot at the budget's own rent, i.e. the limit is spendable to its last
 lamport. Restoring the old check turns that test red with
-`InsufficientBudget` (6006). **Not deployed yet:** the devnet program still
-carries the old check, so Task 2.3's first criterion stays unticked until an
-upgrade puts the credit on the cluster.
+`InsufficientBudget` (6006).
+
+The program was upgraded in place for it the same day (`29G84AqdfAT…`, slot
+522529255, same ID and authority, 525,312 bytes — the earlier extend left
+enough room, so no second `extend`), and the rule was checked on devnet with a
+budget holding exactly its limit: buyer `FvFg6DTo…`, session `FBUG9i9Q…`, budget
+`CZJD9Wz3…` opened at 0.02 SOL (`Z1z5z1bL…`, pot 20,000,000), one 0.01 SOL
+payment (`5riCMoX3…`, pot 10,000,000, `spent` 10,000,000), a second
+(`5GHSgYo2…`) that left **pot 0** — the account at exactly its 1,143,000-lamport
+rent, `spent` 20,000,000 — and a third refused with `BudgetExhausted` (6005).
+Under the old check that second payment fails `InsufficientBudget`, which is
+what the local teeth check showed.
 
 Files likely touched:
 
@@ -1361,6 +1367,11 @@ alone). The on-chain check and its signatures are recorded under Task 2.2; the
 IDL did not change, so `apps/web/app/assets/payvand.idl.json` needed no
 regeneration and the deployed web app keeps working unchanged.
 
+**Program upgraded once more for the receipt-rent credit (2026-11-15):**
+`29G84AqdfAT…`, slot 522529255, same ID, authority and 525,312 bytes — no extend
+needed this time. The spend-to-zero check and its signatures are under Task 2.4.
+Again the IDL is unchanged, so only the program moved.
+
 **Web redeploy (2026-11-14):** the production build that quotes from `Config`
 and sends the treasury account is live at `https://payvand-app.vercel.app`
 (deployment `payvand-ahj2ckg40-…`, built from the two-file upload tree the
@@ -1569,9 +1580,11 @@ Estimated scope: Small.
       the payer exactly the price and lands before `BuyerPays` is added; small
       invoices fail with `InvoiceTooSmall` instead of underflowing; a
       caller-supplied fee account is rejected.
-- [ ] **Checkpoint 2:** The pot pays exactly the invoice amount; `spent` matches
-      it; same-month refills preserve the counter; preflight checks match the
-      program.
+- [x] **Checkpoint 2 (2026-11-15):** The pot pays exactly the invoice amount
+      (devnet spend-to-zero: pot 0 alongside `spent == limit`); `spent` matches
+      it; same-month refills preserve the counter (`fQadYNyE…`: 0.01 spent, kept
+      across a refill); preflight checks match the program, which now credits the
+      receipt rent before checking the pot.
 - [ ] **Checkpoint 3:** Token sellers need no SOL; token fees reach the treasury
       ATA; the float covers three fresh-seller payments; wrong-mint and decoy
       vaults fail.
