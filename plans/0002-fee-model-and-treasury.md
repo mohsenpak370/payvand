@@ -1261,8 +1261,14 @@ Acceptance criteria:
       and then closes the invoice to the seller, so a fresh seller ends up
       holding the invoice rent (2,714,400 at the bank's rent). Either this
       criterion or the handler has to change; neither was decided here.
-- [ ] A settled token invoice cannot be replayed. Still untested on the token
-      path — the SOL suite's replay test does not cover `settle_token_payment`.
+- [x] A settled token invoice cannot be replayed (2026-11-16):
+      `settle_token_payment_replay_is_rejected_as_already_settled` settles an
+      invoice, then sends the same one again with a fresh blockhash and gets
+      `AlreadySettled` (6002). The seller's, the treasury's and the buyer's token
+      balances are unchanged, no second invoice account is left behind, and the
+      receipt still carries the first settle's `settled_at`, `payer` and `amount`.
+      Removing the receipt's guard lets the replay through, so the test pins the
+      guard rather than the shape of the accounts.
 - [x] Token monthly limit enforced and preserved across a same-month top-up:
       `open_token_budget_keeps_spent_until_the_month_changes` (2026-11-15), which
       writes the counter into the budget account between opens. Since
@@ -1272,7 +1278,7 @@ Acceptance criteria:
 
 Verification:
 
-- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 31 tests, the six
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 33 tests, the
       token ones executing against the deployed SPL programs; `cargo fmt --all
       --check` and `cargo clippy -p payvand --all-targets -- -D warnings` clean.
 

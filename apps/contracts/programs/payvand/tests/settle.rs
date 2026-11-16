@@ -2555,6 +2555,99 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
     );
 }
 
+/// Task 3.4's replay criterion on the token path: one settlement per invoice. The
+/// first settle closes the invoice account and leaves the receipt behind, so a
+/// replay gets a fresh invoice account and it is the receipt's `settled_at` that
+/// refuses it — before any token moves.
+#[tokio::test]
+async fn settle_token_payment_replay_is_rejected_as_already_settled() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // Both accounts are setup, not part of the payment: the treasury's for this
+    // mint, and the seller's own.
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    send(
+        &mut context,
+        &[open_treasury_token_account_instruction(
+            world.admin.pubkey(),
+            world.mint,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("open_treasury_token_account failed");
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+    let settle = || {
+        settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "spl",
+        )
+    };
+
+    send(&mut context, &[settle()], &[&world.buyer])
+        .await
+        .expect("settle_token_payment failed");
+    let seller_after_first = token_balance(&context, seller_token_account).await;
+    let treasury_after_first = token_balance(&context, treasury_token_account).await;
+    let buyer_after_first = token_balance(&context, world.buyer_token_account).await;
+    let receipt_after_first = receipt(&context, receipt_pda(&invoice)).await;
+    assert!(receipt_after_first.settled_at > 0);
+
+    // Same invoice, same accounts, a second signature from the same wallet. The
+    // new blockhash keeps this a distinct transaction rather than a duplicate.
+    refresh_blockhash(&mut context).await;
+    let error = send(&mut context, &[settle()], &[&world.buyer])
+        .await
+        .expect_err("a settled token invoice must not settle twice");
+    assert!(
+        error.contains(ALREADY_SETTLED),
+        "expected {ALREADY_SETTLED}, got {error}"
+    );
+
+    // Nothing moved, and the record still says what the first settle wrote.
+    assert_eq!(
+        token_balance(&context, seller_token_account).await,
+        seller_after_first,
+        "a rejected replay must not pay the seller again"
+    );
+    assert_eq!(
+        token_balance(&context, treasury_token_account).await,
+        treasury_after_first,
+        "a rejected replay must not pay the fee again"
+    );
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        buyer_after_first,
+        "a rejected replay must not charge the buyer again"
+    );
+    assert_eq!(
+        lamports(&context, invoice).await,
+        0,
+        "a rejected replay must not open a second invoice account"
+    );
+    let receipt_after_replay = receipt(&context, receipt_pda(&invoice)).await;
+    assert_eq!(
+        receipt_after_replay.settled_at,
+        receipt_after_first.settled_at
+    );
+    assert_eq!(receipt_after_replay.payer, receipt_after_first.payer);
+    assert_eq!(receipt_after_replay.amount, receipt_after_first.amount);
+}
+
 /// Task 3.2's criterion, with sellers that hold neither SOL nor a token account:
 /// three consecutive payments fit inside the floats the budget opens with, the
 /// budget handing back both records each time and the session key paying for the
