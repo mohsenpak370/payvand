@@ -35,6 +35,8 @@ const execute = vi.fn(async () => 'SIGNATURE')
 const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
 /** The transfers a spent float needs; most payments here need none. */
 const tokenFloatTopUpInstructions = vi.fn(async () => [] as unknown[])
+/** What the wallet reports about its own signer, per test. */
+let walletCanSign = true
 const buildInstruction = vi.fn(() => ({
   programAddress: reference,
   accounts: [],
@@ -86,10 +88,11 @@ beforeEach(() => {
     validateDiscount: async () => null
   }))
   vi.stubGlobal('useSolanaClient', () => ({ client: { rpc: {} } }))
+  walletCanSign = true
   vi.stubGlobal('useSolanaWallet', () => ({
     publicKey: ref(payer),
     connected: ref(true),
-    canSignTransaction: ref(true)
+    canSignTransaction: ref(walletCanSign)
   }))
   vi.stubGlobal('useSolanaSignAndSendTransaction', () => ({ execute }))
   sendSilentTokenPayment.mockClear()
@@ -179,6 +182,41 @@ describe('paying from the allowance', () => {
     expect(sendSilentTokenPayment).not.toHaveBeenCalled()
     expect(checkout.signature.value).toBeNull()
     expect(checkout.failure.value).toBe('')
+  })
+
+  it('pays from the allowance when the wallet cannot sign', async () => {
+    // The session key is what signs this payment; the wallet only says who is
+    // paying. Gating the allowance on the wallet's own signer took the hold
+    // button away from wallets that report they cannot sign.
+    walletCanSign = false
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+    // `load()` leaves this false once the code is read; these tests set the
+    // payload directly.
+    checkout.loading.value = false
+
+    expect(checkout.stage.value).toBe('silent')
+    expect(checkout.canPayFromAllowance.value).toBe(true)
+    expect(checkout.canPayWithWallet.value).toBe(false)
+    expect(checkout.blockedReason.value).toBe('')
+
+    checkout.beginHold()
+    expect(checkout.holding.value).toBe(true)
+    checkout.stopHold()
+
+    await checkout.pay(true)
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SILENT_SIGNATURE')
+  })
+
+  it('says plainly when neither path can pay', async () => {
+    walletCanSign = false
+    // No allowance here, so nothing can sign this invoice.
+    const checkout = checkoutFor(quoteFor(false))
+    checkout.loading.value = false
+
+    expect(checkout.stage.value).toBe('wallet')
+    expect(checkout.canPay.value).toBe(false)
+    expect(checkout.blockedReason.value).toBe('checkout.walletCannotSign')
   })
 
   it('refills the float before paying when it is spent', async () => {

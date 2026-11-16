@@ -203,14 +203,18 @@ export function usePaymentCheckout() {
     () => costs.value?.treasuryTokenAccountMissing === true
   )
 
-  const canPay = computed(
+  /**
+   * The invoice itself, whatever signs: nothing is sent while one payment is in
+   * flight, after one landed, or to a seller whose fee account does not exist.
+   * An unpaid invoice is a record that is not settled — `pending` and the older
+   * `missing` both mean nobody has paid it yet.
+   */
+  const invoicePayable = computed(
     () =>
-      connected.value
-      && canSignTransaction.value
-      && !busy.value
+      Boolean(record.value)
       && !settled.value
+      && !busy.value
       && !treasuryTokenAccountMissing.value
-      && (record.value?.status === 'pending' || record.value?.status === 'missing')
   )
 
   /** The allowance that would pay this invoice, in whichever currency it is. */
@@ -225,6 +229,40 @@ export function usePaymentCheckout() {
       && !budgetObstacle.value
       && !treasuryTokenAccountMissing.value
   )
+
+  /**
+   * The session key signs an allowance payment, so a wallet that cannot sign is
+   * no obstacle to it — the wallet only says who is paying. Gating this path on
+   * the wallet's signer is what made the hold button unavailable on wallets that
+   * report they cannot sign.
+   */
+  const canPayFromAllowance = computed(
+    () => connected.value && Boolean(publicKey.value) && invoicePayable.value && canPaySilently.value
+  )
+
+  /** A wallet payment is the wallet's own approval, so that wallet must sign. */
+  const canPayWithWallet = computed(
+    () => connected.value
+      && Boolean(publicKey.value)
+      && canSignTransaction.value
+      && invoicePayable.value
+  )
+
+  /** Something can be paid right now, by either path. */
+  const canPay = computed(() => canPayFromAllowance.value || canPayWithWallet.value)
+
+  /**
+   * What is in the way when no path can pay, in the buyer's words. The stage
+   * picks the button; this explains a button that cannot be used. It stays empty
+   * for what the page already says elsewhere: no wallet to connect yet, an
+   * invoice that is paid, an allowance that cannot be used here (the stage's own
+   * setup step or its obstacle), and a missing treasury account.
+   */
+  const blockedReason = computed(() => {
+    if (!connected.value || !publicKey.value || settled.value) return ''
+    if (canPaySilently.value || canSignTransaction.value) return ''
+    return appT('checkout.walletCannotSign')
+  })
 
   const stage = computed<CheckoutStage>(() => {
     if (loading.value) return 'loading'
@@ -347,8 +385,8 @@ export function usePaymentCheckout() {
   function beginHold() {
     // A press already under way keeps its own clock. A held space bar repeats
     // keydown, and a second finger is not a new press; either would restart the
-    // count and the hold could never finish. `busy` is already part of `canPay`.
-    if (holding.value || !canPay.value || !canPaySilently.value) return
+    // count and the hold could never finish.
+    if (holding.value || !canPayFromAllowance.value) return
     holding.value = true
     const startedAt = Date.now()
     holdTimer = setInterval(() => {
@@ -642,6 +680,9 @@ export function usePaymentCheckout() {
     paymentMemo,
     items,
     canPay,
+    canPayFromAllowance,
+    canPayWithWallet,
+    blockedReason,
     treasuryTokenAccountMissing,
     stage,
     load,

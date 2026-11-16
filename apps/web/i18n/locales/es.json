@@ -383,6 +383,7 @@
     "yourWallet": "tu cartera",
     "walletHint": "Aprueba en {wallet}. No se envía nada hasta que lo hagas.",
     "obstacleTitle": "Tu presupuesto no cubre esto",
+    "walletCannotSign": "Esta cartera no firma transacciones aquí. Conecta una que sí pueda o paga con un presupuesto mensual.",
     "allowanceOffer": {
       "title": "La próxima vez, con un toque",
       "description": "Un presupuesto mensual deja que los pagos dentro de él pasen sin ninguna ventana de cartera.",

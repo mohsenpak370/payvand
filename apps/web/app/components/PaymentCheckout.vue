@@ -59,7 +59,9 @@ const {
   paymentDescription,
   paymentMemo,
   items,
-  canPay,
+  canPayFromAllowance,
+  canPayWithWallet,
+  blockedReason,
   treasuryTokenAccountMissing,
   stage,
   load,
@@ -622,7 +624,7 @@ useSeoMeta({
                   block
                   icon="i-lucide-zap"
                   :loading="busy"
-                  :disabled="!canPay"
+                  :disabled="!canPayFromAllowance"
                   class="relative touch-none overflow-hidden select-none"
                   :aria-label="$t('checkout.hold.label', { amount: payableLabel })"
                   @pointerdown.prevent="startHold"
@@ -660,11 +662,20 @@ useSeoMeta({
                   :label="$t('checkout.pay', { amount: payableLabel })"
                   icon="i-lucide-wallet"
                   :loading="busy"
-                  :disabled="!canPay"
+                  :disabled="!canPayWithWallet"
                   block
                   @click="pay()"
                 />
-                <p class="mt-2 text-xs text-muted">
+                <p
+                  v-if="blockedReason"
+                  class="mt-2 text-xs text-warning"
+                >
+                  {{ blockedReason }}
+                </p>
+                <p
+                  v-else
+                  class="mt-2 text-xs text-muted"
+                >
                   {{ $t('checkout.walletHint', { wallet: selectedWallet?.name || $t('checkout.yourWallet') }) }}
                 </p>
                 <UAlert
@@ -717,12 +728,18 @@ useSeoMeta({
                 <UButton
                   :label="$t('checkout.payWith', { wallet: selectedWallet?.name || $t('checkout.yourWallet') })"
                   :loading="busy"
-                  :disabled="!canPay"
+                  :disabled="!canPayWithWallet"
                   color="neutral"
                   variant="soft"
                   block
                   @click="pay()"
                 />
+                <p
+                  v-if="blockedReason"
+                  class="text-xs text-warning"
+                >
+                  {{ blockedReason }}
+                </p>
               </div>
 
               <!-- Nothing connected: the wallets this browser can offer. -->

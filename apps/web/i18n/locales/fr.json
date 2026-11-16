@@ -383,6 +383,7 @@
     "yourWallet": "votre portefeuille",
     "walletHint": "Validez dans {wallet}. Rien n'est envoyé tant que vous ne le faites pas.",
     "obstacleTitle": "Votre autorisation ne couvre pas ce montant",
+    "walletCannotSign": "Ce portefeuille ne signe pas de transactions ici. Connectez-en un qui le fait, ou payez avec une autorisation mensuelle.",
     "allowanceOffer": {
       "title": "Payez en un seul geste la prochaine fois",
       "description": "Une autorisation mensuelle permet aux paiements dans sa limite de passer sans aucune fenêtre de portefeuille.",

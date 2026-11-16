@@ -383,6 +383,7 @@
     "yourWallet": "your wallet",
     "walletHint": "Approve in {wallet}. Nothing is sent until you do.",
     "obstacleTitle": "Your allowance cannot cover this",
+    "walletCannotSign": "This wallet does not sign transactions here. Connect a wallet that does, or pay from a monthly allowance.",
     "allowanceOffer": {
       "title": "Pay in one tap next time",
       "description": "A monthly allowance lets payments inside it go through without any wallet popup.",
