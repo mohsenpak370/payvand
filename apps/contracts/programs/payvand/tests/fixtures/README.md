@@ -34,3 +34,19 @@ than stubbed.
 Licensing: both are Apache-2.0 (Solana Program Library). They are binary
 third-party artifacts kept only as test fixtures; refresh them from the program
 IDs above when a test needs behaviour the dumps predate.
+
+## The fragile part
+
+These files are the only input to the suite that can outlive the toolchain, and
+they fail in a way that looks like a bug in the program: an ELF this runtime will
+not load reports a bare `UnsupportedProgramId` from the first transfer.
+
+- The token dump is the legacy SBF target (`e_machine` `0x0107`). The
+  associated-token dump is the deployed eBPF build (`0x00f7`), which this runtime
+  executes today even though `settle.rs` refuses a `payvand.so` built for that
+  target. If a future `solana-program-test` stops accepting it, every token test
+  fails at once; re-dump both (or pin the harness), rather than touching the
+  tests. `spl_fixture()` checks the header first and names the file.
+- A program upgrade on the cluster is invisible here until the dump is refreshed:
+  the legacy token program has not changed in years, the associated-token program
+  has. Re-dump when a token test starts disagreeing with devnet.
