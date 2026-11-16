@@ -373,8 +373,12 @@ export function useBudget() {
     )
 
     const signed = await signTransactionMessageWithSigners(message)
+    // The wire bytes are base64, and this RPC method does not assume it: the
+    // overload without `encoding` is the deprecated base58 one, so omitting it
+    // makes the node decode base64 as base58 and reject the send with
+    // `invalid base58 encoding` before the transaction is ever simulated.
     const signature = await client.rpc
-      .sendTransaction(getBase64EncodedWireTransaction(signed))
+      .sendTransaction(getBase64EncodedWireTransaction(signed), { encoding: 'base64' })
       .send()
 
     for (let i = 0; i < 90; i++) {
