@@ -675,9 +675,9 @@ async fn token_balance(context: &ProgramTestContext, address: Pubkey) -> u64 {
 }
 
 /// A `TokenBudget` account as the program would have written it after spending
-/// `spent` in `month_index`. The harness has no SPL runtime, so a token payment
-/// cannot run here; this stands in for one, and what the test checks is the
-/// counter the next `open_token_budget` keeps.
+/// `spent` in `month_index`. Writing the counter is cheaper than paying two real
+/// invoices and keeps the refill test about the refill rule; the payments
+/// themselves run for real in the token tests at the end of this file.
 fn written_token_budget(
     buyer: Pubkey,
     session: Pubkey,
@@ -1397,11 +1397,10 @@ async fn open_budget_keeps_spent_until_the_month_changes() {
     assert_ne!(next_month.month_index, refilled.month_index);
 }
 
-/// The token budget runs the same rule, so it gets the same proof. A token
-/// payment cannot run in this harness (there is no SPL runtime), so the counter
-/// is written into the account between opens — the exact state a payment
-/// leaves behind — and what is checked is whether the next `open_token_budget`
-/// keeps or clears it.
+/// The token budget runs the same rule, so it gets the same proof. The counter
+/// is written into the account between opens — the exact state a payment leaves
+/// behind — so the test is about what the next `open_token_budget` keeps or
+/// clears, not about how the counter got there.
 #[tokio::test]
 async fn open_token_budget_keeps_spent_until_the_month_changes() {
     let mut test = program_test();
