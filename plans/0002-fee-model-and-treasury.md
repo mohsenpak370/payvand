@@ -21,7 +21,12 @@ rejections now execute instead of being described around. That closed Task
 3.3's program half (canonical-ATA vaults, `MintMismatch` on close) and most of
 3.1 and 3.4. What it also showed is that the float cannot carry three fresh
 sellers at the bank's rent and that there is no refill path, so Task 3.2 and
-Checkpoint 3 stay open. Phase 3's float top-up and 4.3–4.5 are the open work.
+Checkpoint 3 stay open. Revision 7 (2026-11-16) adds that refill path and needs
+no program change: the refund is read from the budget's lamports, so the buyer's
+own transfers are the whole top-up, computed in the client as the difference
+between one payment's need and what each account holds. Phase 3's remaining
+float work (the `Config` figure, dropping `TOKEN_BUDGET_FEE_FLOAT`) and 4.3–4.5
+are the open work.
 
 ## Revision Notes
 
@@ -1094,16 +1099,21 @@ Acceptance criteria:
       configured target and never take more than needed.
 - [ ] `open_token_budget` no longer charges a separate SOL float beyond
       `session_fee_float`.
-- [ ] The buyer can top up the float independently.
+- [x] The buyer can top up the float independently. The floats are lamports the
+      program reads live, so a refill is a plain system transfer from the buyer —
+      no limit change, no token movement — and the budget returns what is left on
+      close. `tokenFloatTopUpInstructions` in `useBudget.ts` sends only the
+      difference before a silent token payment that the float could not fund.
 - [ ] The client's open/refill cost estimate matches the program.
 - [ ] Three consecutive token payments to fresh sellers do not exhaust the
       float. Measured, not assumed (2026-11-16): at the harness's 6,960 lamports
       a byte the second payment leaves the session key 4,520,960 lamports
       against a 7,739,520 overhead, so the third is refused for want of lamports
       (`Custom(1)`); at devnet's 5,080 a byte three fit by arithmetic
-      (5,648,960 each against the 20,000,000 the two floats hold). Either way the
-      refill path this task asks for does not exist, so the criterion is not
-      met.
+      (5,648,960 each against the 20,000,000 the two floats hold). With revision
+      7's refill the three payments now complete — the third after a top-up of
+      8,923,800 lamports at the bank's rent — but the float itself still runs
+      out, so this reads as met only together with the top-up criterion above.
 
 Verification:
 
@@ -1113,8 +1123,20 @@ Verification:
       asserts the budget's float is back to its own rent and the vault still
       holds the third price. The three-payment criterion above is recorded as
       unmet.
+- [x] Rust harness: `a_top_up_lets_the_float_carry_more_fresh_sellers` spends
+      both floats on two fresh sellers, pins the third refusal, refills with two
+      system transfers from the buyer and pays the third — then refills again and
+      pays a fourth, so the refill is a rule and not a one-off. The top-up amounts
+      are computed from live balances, the way the client does.
 - [ ] Anchor test: float top-up without a limit change.
 - [ ] `pnpm typecheck`
+
+What revision 7 did not do, and still stands: the float is still the program's
+constant rather than `Config::session_fee_float`, `TOKEN_BUDGET_FEE_FLOAT` is
+still there, and `openTokenBudgetCost` still reports a refill's refund float as 0
+(`existing ? 0 : TOKEN_BUDGET_FEE_FLOAT`) while `open_token_budget` charges the
+gap up to the constant — the estimate understates a refill, which is the
+"estimate matches the program" criterion below.
 
 Files likely touched:
 

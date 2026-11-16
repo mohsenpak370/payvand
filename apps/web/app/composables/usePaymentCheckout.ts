@@ -487,6 +487,18 @@ export function usePaymentCheckout() {
       } else {
         const mint = address(option.mint)
         if (fromAllowance) {
+          // A fresh seller's account and this payment's two records come out of
+          // the floats the session key and the budget keep, so a third such
+          // payment in a row runs out of lamports. One approval refills just the
+          // gap and the payment follows it, still without a second prompt.
+          const refill = await budget.tokenFloatTopUpInstructions(payer, mint)
+          if (refill.length > 0) {
+            const wire = await compileWireTransaction({ instruction: refill, payer, rpc: client.rpc })
+            await execute(wire, {
+              confirm: true,
+              confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
+            })
+          }
           sent = await budget.sendSilentTokenPayment(payer, {
             payment,
             seller,

@@ -1,6 +1,11 @@
 import { address } from '@vue-solana/nuxt/kit'
 import { describe, expect, it } from 'vitest'
-import { sweepableLamports, transferLamportsInstruction } from './useBudget'
+import {
+  sweepableLamports,
+  tokenFloatNeed,
+  tokenFloatTopUp,
+  transferLamportsInstruction
+} from './useBudget'
 
 /**
  * Task 4.1 hands the session key's float back before the key is forgotten. The
@@ -59,5 +64,43 @@ describe('transferLamportsInstruction', () => {
     expect(data).toHaveLength(12)
     expect(view.getUint32(0, true)).toBe(2)
     expect(view.getBigUint64(4, true)).toBe(BigInt(lamports))
+  })
+})
+
+/**
+ * The allowance's two floats are what pay for a seller who has no token account,
+ * and they are spent after a couple of such payments — which is why a third one
+ * failed for want of lamports and why the client has to refill them. The refill
+ * is a plain transfer because the program refunds from the budget's lamports and
+ * hands the remainder back on close, so the only question is how much.
+ */
+describe('the token float', () => {
+  /** The harness's rent at 6,960 lamports a byte, to the lamport. */
+  const rents = { invoice: 2_714_400, receipt: 2_985_840, account: 2_039_280 }
+  const fee = 5_000
+
+  it('asks the budget for the records and the session key for the seller’s account too', () => {
+    // The session key advances all three and gets the records back from the
+    // budget; the seller's account is the one thing nobody refunds.
+    expect(tokenFloatNeed(rents, fee)).toEqual({
+      budget: rents.invoice + rents.receipt,
+      session: rents.invoice + rents.receipt + rents.account + fee
+    })
+  })
+
+  it('refills only the difference, which is what makes the third payment go', () => {
+    // What two fresh-seller payments leave behind: the budget's float is gone and
+    // the session key is down to 4,520,960 against the 7,744,520 — the three
+    // accounts and the fee — it has to front before the refund comes back.
+    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 0, session: 4_520_960 }))
+      .toEqual({ budget: 5_700_240, session: 3_223_560, total: 8_923_800 })
+  })
+
+  it('asks for nothing when both floats already cover a payment', () => {
+    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 10_000_000, session: 10_000_000 }))
+      .toEqual({ budget: 0, session: 0, total: 0 })
+    // And nothing for the side that is short of nothing, even if the other is.
+    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 5_700_240, session: 1_000 }))
+      .toEqual({ budget: 0, session: 7_743_520, total: 7_743_520 })
   })
 })

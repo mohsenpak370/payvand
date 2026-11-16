@@ -33,6 +33,8 @@ const reference = address('A8yxpWod2xrPd6YbXnaKWCTkk2WduzQKdKPUANZFQpft')
 
 const execute = vi.fn(async () => 'SIGNATURE')
 const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
+/** The transfers a spent float needs; most payments here need none. */
+const tokenFloatTopUpInstructions = vi.fn(async () => [] as unknown[])
 const buildInstruction = vi.fn(() => ({
   programAddress: reference,
   accounts: [],
@@ -91,7 +93,9 @@ beforeEach(() => {
   }))
   vi.stubGlobal('useSolanaSignAndSendTransaction', () => ({ execute }))
   sendSilentTokenPayment.mockClear()
-  vi.stubGlobal('useBudget', () => ({ sendSilentTokenPayment }))
+  tokenFloatTopUpInstructions.mockClear()
+  tokenFloatTopUpInstructions.mockImplementation(async () => [])
+  vi.stubGlobal('useBudget', () => ({ sendSilentTokenPayment, tokenFloatTopUpInstructions }))
   vi.stubGlobal('useInvoiceCosts', () => ({ estimateInvoiceCosts: async () => null }))
 })
 
@@ -175,6 +179,23 @@ describe('paying from the allowance', () => {
     expect(sendSilentTokenPayment).not.toHaveBeenCalled()
     expect(checkout.signature.value).toBeNull()
     expect(checkout.failure.value).toBe('')
+  })
+
+  it('refills the float before paying when it is spent', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+    // What a spent float needs: the buyer's transfers, which the wallet signs.
+    tokenFloatTopUpInstructions.mockResolvedValueOnce([
+      { programAddress: reference, accounts: [], data: new Uint8Array() }
+    ])
+
+    await checkout.pay(true)
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
+      sendSilentTokenPayment.mock.invocationCallOrder[0]!
+    )
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SILENT_SIGNATURE')
   })
 
   it('pays from the allowance once the hold is confirmed', async () => {

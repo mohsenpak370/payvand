@@ -2303,6 +2303,20 @@ fn token_account_rent() -> u64 {
     Rent::default().minimum_balance(165)
 }
 
+/// A plain system transfer, the bytes the client builds by hand: instruction 2
+/// and the lamports, little-endian. The program cannot make this one — the
+/// floats are lamports the buyer owns.
+fn transfer_lamports_instruction(from: Pubkey, to: Pubkey, lamports: u64) -> Instruction {
+    let mut data = Vec::with_capacity(12);
+    data.extend_from_slice(&2u32.to_le_bytes());
+    data.extend_from_slice(&lamports.to_le_bytes());
+    Instruction {
+        program_id: SYSTEM_PROGRAM_ID,
+        accounts: vec![AccountMeta::new(from, true), AccountMeta::new(to, false)],
+        data,
+    }
+}
+
 /// What the buyer holds before any test starts: enough for every budget and
 /// payment below with room to spare.
 const TEST_TOKEN_BALANCE: u64 = 1_000_000;
@@ -2614,6 +2628,101 @@ async fn the_float_carries_two_payments_to_fresh_sellers_then_runs_out() {
         token_balance(&context, world.buyer_token_account).await,
         TEST_TOKEN_BALANCE - limit
     );
+}
+
+/// Refills both floats by exactly what one more fresh seller needs — the rule
+/// the client applies: the budget's refund and the session key's advance, read
+/// from the accounts as they are now.
+async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorld) {
+    let records = token_invoice_rent() + receipt_rent();
+    let budget_spare = lamports(context, world.budget)
+        .await
+        .saturating_sub(Rent::default().minimum_balance(TOKEN_BUDGET_SPACE));
+    let to_budget = records.saturating_sub(budget_spare);
+    let to_session = (records + token_account_rent() + TX_FEE)
+        .saturating_sub(lamports(context, world.session.pubkey()).await);
+
+    let mut instructions = Vec::new();
+    if to_budget > 0 {
+        instructions.push(transfer_lamports_instruction(
+            world.buyer.pubkey(),
+            world.budget,
+            to_budget,
+        ));
+    }
+    if to_session > 0 {
+        instructions.push(transfer_lamports_instruction(
+            world.buyer.pubkey(),
+            world.session.pubkey(),
+            to_session,
+        ));
+    }
+    if instructions.is_empty() {
+        return;
+    }
+    send(context, &instructions, &[&world.buyer])
+        .await
+        .expect("token float top-up failed");
+}
+
+/// Task 3.2's refill path: the floats are lamports the program reads live, so the
+/// buyer's plain transfers are the whole top-up — no limit change, no token
+/// movement, and whatever is left comes back when the budget closes.
+#[tokio::test]
+async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // The buyer holds every token there is here, so the month's limit is that
+    // and four 250,000 payments sit inside it.
+    let limit = TEST_TOKEN_BALANCE;
+    let price = 250_000;
+    open_token_budget(&mut context, &world, limit).await;
+
+    // Two fresh sellers spend both floats; the third is refused for want of
+    // lamports, the boundary the test above pins.
+    for _ in 0..2 {
+        pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
+    }
+    let third = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let error = send(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            third,
+            reference,
+            price,
+            "third",
+        )],
+        &[&world.session],
+    )
+    .await
+    .expect_err("the spent float must refuse a fresh seller");
+    assert!(
+        error.contains("Custom(1)"),
+        "expected the session key's transfer to fail, got {error}"
+    );
+
+    // One refill, and the same third seller goes through.
+    top_up_token_floats(&mut context, &world).await;
+    pay_from_token_budget(&mut context, &world, third, price).await;
+    assert_eq!(
+        token_balance(&context, associated_token_address(third, world.mint)).await,
+        price
+    );
+
+    // The refill is a rule, not a one-off: the next fresh seller needs its own,
+    // and gets one the same way.
+    top_up_token_floats(&mut context, &world).await;
+    let fourth = Keypair::new().pubkey();
+    pay_from_token_budget(&mut context, &world, fourth, price).await;
+    assert_eq!(
+        token_balance(&context, associated_token_address(fourth, world.mint)).await,
+        price
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, 4 * price);
 }
 
 /// Task 3.3's positive case: the canonical vault is drained into the buyer's own

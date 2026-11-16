@@ -45,6 +45,38 @@ const TOKEN_SESSION_FEE_FLOAT = 10_000_000
 const TOKEN_BUDGET_SPACE = 129
 /** Lamports a token budget keeps to refund the invoice rent it advances. */
 const TOKEN_BUDGET_FEE_FLOAT = 10_000_000
+
+/**
+ * What one payment to a seller with no token account needs from the two floats.
+ * The session key advances the seller's account and both records before the
+ * handler runs — it never gets the account back, and the budget hands the
+ * records back out of its own float — so it has to hold all three plus the fee
+ * it signs its transaction with, while the budget only needs the records.
+ */
+export function tokenFloatNeed(
+  rents: { invoice: number, receipt: number, account: number },
+  fee: number
+): { budget: number, session: number } {
+  const records = rents.invoice + rents.receipt
+  return { budget: records, session: records + rents.account + fee }
+}
+
+/**
+ * What a refill has to move: the difference between that need and what each
+ * account holds right now, per side. Both are read live because that is what
+ * the program does — it refunds from the budget's lamports, not a stored count,
+ * so a plain transfer is the whole refill and the budget hands the rest back
+ * when it closes.
+ */
+export function tokenFloatTopUp(
+  need: { budget: number, session: number },
+  held: { budget: number, session: number }
+): { budget: number, session: number, total: number } {
+  const budget = Math.max(0, need.budget - held.budget)
+  const session = Math.max(0, need.session - held.session)
+  return { budget, session, total: budget + session }
+}
+
 /** A buyer's monthly pot for one token, and what its vault holds. */
 export interface TokenBudgetState {
   pda: Address
@@ -501,6 +533,42 @@ export function useBudget() {
     return null
   }
 
+  /**
+   * The transfers that refill the token floats for the next payment: one per
+   * account that is short, and none when both already cover it. The buyer signs
+   * them — a session key cannot fund the float it spends — so this returns
+   * instructions rather than sending anything.
+   */
+  async function tokenFloatTopUpInstructions(
+    buyer: Address,
+    mint: Address
+  ): Promise<Instruction[]> {
+    const budget = await loadTokenBudget(buyer, mint)
+    if (!budget) return []
+    const [invoice, receipt, account, budgetRent, session] = await Promise.all([
+      rentMinimum(TOKEN_PAYMENT_SPACE),
+      rentMinimum(PAYMENT_RECEIPT_SPACE),
+      rentMinimum(TOKEN_ACCOUNT_SPACE),
+      rentMinimum(TOKEN_BUDGET_SPACE),
+      client.rpc.getBalance(budget.sessionKey, { commitment: 'confirmed' }).send()
+    ])
+    const topUp = tokenFloatTopUp(
+      tokenFloatNeed({ invoice, receipt, account }, NETWORK_FEE_LAMPORTS),
+      {
+        budget: Math.max(0, budget.lamports - budgetRent),
+        session: Number(session.value)
+      }
+    )
+    const transfers: Instruction[] = []
+    if (topUp.budget > 0) {
+      transfers.push(transferLamportsInstruction(buyer, budget.pda, topUp.budget))
+    }
+    if (topUp.session > 0) {
+      transfers.push(transferLamportsInstruction(buyer, budget.sessionKey, topUp.session))
+    }
+    return transfers
+  }
+
   /** Settle a token invoice from the allowance, with no wallet popup. */
   async function sendSilentTokenPayment(
     buyer: Address,
@@ -576,6 +644,7 @@ export function useBudget() {
     tokenRemainingThisMonth,
     tokenBudgetObstacle,
     sendSilentTokenPayment,
+    tokenFloatTopUpInstructions,
     openTokenBudgetCost
   }
 }
