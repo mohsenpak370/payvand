@@ -182,10 +182,14 @@ pub struct PayFromTokenBudget<'info> {
     )]
     pub budget: Account<'info, TokenBudget>,
 
+    /// The canonical vault and the only accepted one: the budget's associated
+    /// token account for this mint. A token account that merely shares the mint
+    /// and the budget's authority is a place to strand a budget's tokens, so it
+    /// is not a vault.
     #[account(
         mut,
-        token::mint = mint,
-        token::authority = budget
+        associated_token::mint = mint,
+        associated_token::authority = budget
     )]
     pub vault: Account<'info, TokenAccount>,
 
@@ -251,7 +255,14 @@ pub struct CloseTokenBudget<'info> {
 
     pub mint: Account<'info, Mint>,
 
-    #[account(mut, token::mint = mint, token::authority = budget)]
+    /// The canonical vault, as in `pay_from_token_budget`, so a decoy account
+    /// that shares the mint and the budget's authority cannot be drained in its
+    /// place.
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = budget
+    )]
     pub vault: Account<'info, TokenAccount>,
 
     #[account(mut, token::mint = mint, token::authority = buyer)]
@@ -604,6 +615,15 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
 pub fn close_token_budget_handler<'info, 'ctx>(
     ctx: Context<'ctx, CloseTokenBudget<'info>>,
 ) -> Result<()> {
+    // The mint argument decides which account the vault claim is checked
+    // against, so it has to be the budget's own: otherwise a caller names some
+    // other mint and closes against a vault this budget never funded.
+    require_keys_eq!(
+        ctx.accounts.mint.key(),
+        ctx.accounts.budget.mint,
+        PaymentError::MintMismatch
+    );
+
     let buyer = ctx.accounts.budget.buyer;
     let mint = ctx.accounts.budget.mint;
     let bump = ctx.accounts.budget.bump;
