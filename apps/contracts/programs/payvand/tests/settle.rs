@@ -806,6 +806,28 @@ async fn send(
         .map_err(|error| format!("{error:?}"))
 }
 
+/// Like `send`, but with the given key paying the fee — which is what the client
+/// does for an allowance payment: the session key is its fee payer and only
+/// signer, and the float exists to cover these fees.
+async fn send_with_fee_payer(
+    context: &mut ProgramTestContext,
+    instructions: &[Instruction],
+    payer: &Keypair,
+) -> Result<(), String> {
+    let blockhash = context.last_blockhash;
+    let tx = Transaction::new_signed_with_payer(
+        instructions,
+        Some(&payer.pubkey()),
+        &[payer],
+        blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(tx)
+        .await
+        .map_err(|error| format!("{error:?}"))
+}
+
 async fn account(context: &ProgramTestContext, address: Pubkey) -> Option<Account> {
     context
         .banks_client
@@ -2417,7 +2439,8 @@ async fn pay_from_token_budget(
     amount: u64,
 ) {
     let reference = Keypair::new().pubkey();
-    send(
+    // The session key pays, as it does in the client.
+    send_with_fee_payer(
         context,
         &[pay_from_token_budget_instruction(
             world,
@@ -2428,7 +2451,7 @@ async fn pay_from_token_budget(
             amount,
             "spl",
         )],
-        &[&world.session],
+        &world.session,
     )
     .await
     .expect("pay_from_token_budget failed");
@@ -2532,23 +2555,28 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
     );
 }
 
-/// Task 3.2's float, with sellers that hold neither SOL nor a token account: the
-/// budget refunds the two records, the session key pays for the fresh account,
-/// and when the floats run out the payment is refused with nothing moved.
+/// Task 3.2's criterion, with sellers that hold neither SOL nor a token account:
+/// three consecutive payments fit inside the floats the budget opens with, the
+/// budget handing back both records each time and the session key paying for the
+/// account nobody refunds.
 ///
-/// How many payments the float carries is the bank's number, not the cluster's:
-/// at its default rent (6,960 lamports a byte) a fresh seller costs 7,739,520 of
-/// the 20,000,000 the two floats hold, so a third has nothing to front it, while
-/// devnet's 5,080 puts the same overhead at 5,648,960 and three fit. What is
-/// asserted below is what the program promises at any rent; the refusal at the
-/// end records where this rent leaves the boundary.
+/// The sizing is the point. At the bank's 6,960 lamports a byte one payment
+/// advances 7,744,520 (both records, the seller's account, the fee) and gets
+/// 5,700,240 back, so a session float of 12,000,000 starts the third with
+/// 11,833,080 to front and a budget float of 18,000,000 covers its refunds. A
+/// fourth is beyond that and is refused, which is the boundary the refill test
+/// beside this one picks up.
 #[tokio::test]
-async fn the_float_carries_two_payments_to_fresh_sellers_then_runs_out() {
+async fn the_float_carries_three_payments_to_fresh_sellers() {
     let (mut context, world) = TokenWorld::start().await;
 
     // The session key holds nothing until `open_token_budget` funds it.
     assert_eq!(lamports(&context, world.session.pubkey()).await, 0);
-    let limit = 900_000;
+    // The buyer holds every token there is here, so the limit is that and five
+    // payments of 200,000 sit inside it — the fourth is refused for lamports,
+    // not for the month.
+    let limit = TEST_TOKEN_BALANCE;
+    let price = 200_000;
     open_token_budget(&mut context, &world, limit).await;
     assert_eq!(token_balance(&context, world.vault).await, limit);
     assert_eq!(
@@ -2558,75 +2586,70 @@ async fn the_float_carries_two_payments_to_fresh_sellers_then_runs_out() {
     let session_before = lamports(&context, world.session.pubkey()).await;
     let budget_before = lamports(&context, world.budget).await;
     // The budget's own account holds its rent plus the float it refunds the
-    // session's two records from.
+    // session's records from.
     assert_eq!(
         budget_before,
         Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + TOKEN_BUDGET_FEE_FLOAT
     );
 
-    // The first fresh seller: the budget hands back both records the session key
-    // advanced in that same payment, so the float's only net cost is the account
-    // the seller did not have.
-    let first = Keypair::new().pubkey();
-    pay_from_token_budget(&mut context, &world, first, 300_000).await;
+    // Three sellers who never held SOL or a token: the float pays for their
+    // accounts, the budget hands back both records, and the auto-close hands
+    // each seller the invoice rent.
+    for _ in 0..3 {
+        let seller = Keypair::new().pubkey();
+        pay_from_token_budget(&mut context, &world, seller, price).await;
+        assert_eq!(
+            token_balance(&context, associated_token_address(seller, world.mint)).await,
+            price
+        );
+        assert_eq!(lamports(&context, seller).await, token_invoice_rent());
+    }
+
+    // The float paid for what is nobody's to refund — three seller accounts and
+    // the three signatures — and the budget's float for the three record pairs.
     assert_eq!(
         lamports(&context, world.session.pubkey()).await,
-        session_before - token_account_rent(),
-        "the budget should refund the invoice and receipt rents in the same payment"
+        session_before - 3 * (token_account_rent() + TX_FEE),
+        "each payment costs the session key the seller's account and its own fee"
     );
     assert_eq!(
         lamports(&context, world.budget).await,
-        budget_before - (token_invoice_rent() + receipt_rent()),
-        "the budget should pay for both records out of its float"
+        budget_before - 3 * (token_invoice_rent() + receipt_rent()),
+        "the budget's float pays for both records of every payment"
     );
-    // The seller never held SOL: the float paid for its account, and the
-    // auto-close handed it the invoice rent.
+    assert_eq!(token_budget(&context, world.budget).await.spent, 3 * price);
     assert_eq!(
-        token_balance(&context, associated_token_address(first, world.mint)).await,
-        300_000
-    );
-    assert_eq!(lamports(&context, first).await, token_invoice_rent());
-
-    // A second fresh seller is paid the same way. The refund is capped by what
-    // the budget still holds, and that cap never reaches its own rent — the
-    // account stays rent-exempt while it spends its float.
-    let second = Keypair::new().pubkey();
-    pay_from_token_budget(&mut context, &world, second, 300_000).await;
-    assert_eq!(
-        token_balance(&context, associated_token_address(second, world.mint)).await,
-        300_000
-    );
-    assert!(
-        lamports(&context, world.budget).await
-            >= Rent::default().minimum_balance(TOKEN_BUDGET_SPACE),
-        "a payment must never spend the budget account's own rent"
+        token_balance(&context, world.buyer_token_account).await,
+        TEST_TOKEN_BALANCE - limit
     );
 
-    // A third has nothing left to front its account, so it is refused and leaves
-    // the counter, the vault and the buyer's balance exactly as they were.
-    let third = Keypair::new().pubkey();
+    // A fourth fresh seller is past what the floats were sized for. It is
+    // refused for want of lamports and leaves the counter and the vault alone.
+    let fourth = Keypair::new().pubkey();
     let reference = Keypair::new().pubkey();
-    send(
+    let error = send_with_fee_payer(
         &mut context,
         &[pay_from_token_budget_instruction(
             &world,
             world.mint,
             world.vault,
-            third,
+            fourth,
             reference,
-            300_000,
-            "third",
+            price,
+            "fourth",
         )],
-        &[&world.session],
+        &world.session,
     )
     .await
-    .expect_err("an exhausted float must refuse a fresh seller");
-    assert_eq!(token_budget(&context, world.budget).await.spent, 600_000);
-    // The vault still holds the third price, so lamports — not tokens — ran out.
-    assert_eq!(token_balance(&context, world.vault).await, 300_000);
+    .expect_err("three payments spend the float; the fourth needs a top-up");
+    assert!(
+        error.contains("Custom(1)"),
+        "expected the session key's transfer to fail, got {error}"
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, 3 * price);
     assert_eq!(
-        token_balance(&context, world.buyer_token_account).await,
-        TEST_TOKEN_BALANCE - limit
+        token_balance(&context, world.vault).await,
+        limit - 3 * price
     );
 }
 
@@ -2667,36 +2690,35 @@ async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorl
 
 /// Task 3.2's refill path: the floats are lamports the program reads live, so the
 /// buyer's plain transfers are the whole top-up — no limit change, no token
-/// movement, and whatever is left comes back when the budget closes.
+/// movement, and whatever is left comes back when the budget closes. Three
+/// payments fit the floats; a fourth needs the refill, and so does a fifth.
 #[tokio::test]
 async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
     let (mut context, world) = TokenWorld::start().await;
 
-    // The buyer holds every token there is here, so the month's limit is that
-    // and four 250,000 payments sit inside it.
     let limit = TEST_TOKEN_BALANCE;
-    let price = 250_000;
+    let price = 200_000;
     open_token_budget(&mut context, &world, limit).await;
 
-    // Two fresh sellers spend both floats; the third is refused for want of
-    // lamports, the boundary the test above pins.
-    for _ in 0..2 {
+    // Three fresh sellers fit, as the test above pins.
+    for _ in 0..3 {
         pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
     }
-    let third = Keypair::new().pubkey();
+
+    let fourth = Keypair::new().pubkey();
     let reference = Keypair::new().pubkey();
-    let error = send(
+    let error = send_with_fee_payer(
         &mut context,
         &[pay_from_token_budget_instruction(
             &world,
             world.mint,
             world.vault,
-            third,
+            fourth,
             reference,
             price,
-            "third",
+            "fourth",
         )],
-        &[&world.session],
+        &world.session,
     )
     .await
     .expect_err("the spent float must refuse a fresh seller");
@@ -2705,24 +2727,24 @@ async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
         "expected the session key's transfer to fail, got {error}"
     );
 
-    // One refill, and the same third seller goes through.
+    // One refill, and the same fourth seller goes through.
     top_up_token_floats(&mut context, &world).await;
-    pay_from_token_budget(&mut context, &world, third, price).await;
+    pay_from_token_budget(&mut context, &world, fourth, price).await;
     assert_eq!(
-        token_balance(&context, associated_token_address(third, world.mint)).await,
+        token_balance(&context, associated_token_address(fourth, world.mint)).await,
         price
     );
 
     // The refill is a rule, not a one-off: the next fresh seller needs its own,
     // and gets one the same way.
     top_up_token_floats(&mut context, &world).await;
-    let fourth = Keypair::new().pubkey();
-    pay_from_token_budget(&mut context, &world, fourth, price).await;
+    let fifth = Keypair::new().pubkey();
+    pay_from_token_budget(&mut context, &world, fifth, price).await;
     assert_eq!(
-        token_balance(&context, associated_token_address(fourth, world.mint)).await,
+        token_balance(&context, associated_token_address(fifth, world.mint)).await,
         price
     );
-    assert_eq!(token_budget(&context, world.budget).await.spent, 4 * price);
+    assert_eq!(token_budget(&context, world.budget).await.spent, 5 * price);
 }
 
 /// Task 3.3's positive case: the canonical vault is drained into the buyer's own

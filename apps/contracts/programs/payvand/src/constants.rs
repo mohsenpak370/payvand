@@ -28,7 +28,14 @@ pub const BUDGET_SPACE: usize = 8 + 32 + 32 + 8 + 8 + 8 + 1;
 /// Default lamports parked on a session key so its silent transactions can pay
 /// their own network fees. `Config::session_fee_float` carries the live value;
 /// `open_budget` reads it from there, and `initialize_config` starts from this.
-pub const SESSION_FEE_FLOAT: u64 = 10_000_000;
+///
+/// The token flows read this constant directly, and it is sized for three
+/// payments to sellers with no token account at mainnet's 6,960 lamports a byte:
+/// each one advances 7,744,520 (both records, the seller's account, the fee) and
+/// hands 5,700,240 back, so the third needs 11,833,080 to start. Beyond three
+/// the buyer tops the float up rather than the account being sized for a month
+/// of new sellers.
+pub const SESSION_FEE_FLOAT: u64 = 12_000_000;
 /// Lower bound `update_config` accepts for `session_fee_float`: enough to front
 /// the invoice and receipt rents of one SOL payment (`R_p + R_r`), which is
 /// 2,491,680 + 2,985,840 with the 301-byte receipt.
@@ -66,4 +73,6 @@ pub const TOKEN_BUDGET_SEED: &[u8] = b"token-budget";
 pub const TOKEN_BUDGET_SPACE: usize = 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1;
 /// Lamports parked on a token budget so it can refund the invoice rent its
 /// session key advances, without eating into the budget account's own rent.
-pub const TOKEN_BUDGET_FEE_FLOAT: u64 = 10_000_000;
+/// Three refunds are 17,100,720 at mainnet rent; the account opens with enough
+/// for those and a little over, and closes back to the buyer either way.
+pub const TOKEN_BUDGET_FEE_FLOAT: u64 = 18_000_000;

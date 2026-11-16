@@ -40,11 +40,11 @@ const BUDGET_SPACE = 97
  * from `Config` instead, so this only covers the token flows, which the program
  * still funds from its constant (Phase 3 moves them to `Config` too).
  */
-const TOKEN_SESSION_FEE_FLOAT = 10_000_000
+const TOKEN_SESSION_FEE_FLOAT = 12_000_000
 /** Mirrors `TOKEN_BUDGET_SPACE`: 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1. */
 const TOKEN_BUDGET_SPACE = 129
 /** Lamports a token budget keeps to refund the invoice rent it advances. */
-const TOKEN_BUDGET_FEE_FLOAT = 10_000_000
+const TOKEN_BUDGET_FEE_FLOAT = 18_000_000
 
 /**
  * What one payment to a seller with no token account needs from the two floats.
@@ -617,8 +617,17 @@ export function useBudget() {
     sessionAddress?: Address
   ): Promise<{ rent: number, feeFloat: number, refundFloat: number, fee: number, total: number }> {
     const existing = await loadTokenBudget(buyer, mint)
-    const rent = existing ? 0 : await rentMinimum(TOKEN_BUDGET_SPACE)
-    const refundFloat = existing ? 0 : TOKEN_BUDGET_FEE_FLOAT
+    // `open_token_budget` tops the account up to its rent plus the refund float
+    // on every call, so a returning buyer pays only the gap — the same rule the
+    // vault's token top-up follows. Charging a refill 0 understated it by
+    // whatever the last payments spent.
+    const budgetRent = await rentMinimum(TOKEN_BUDGET_SPACE)
+    const budgetTopUp = Math.max(
+      0,
+      budgetRent + TOKEN_BUDGET_FEE_FLOAT - (existing?.lamports ?? 0)
+    )
+    const rent = existing ? 0 : budgetRent
+    const refundFloat = budgetTopUp - rent
     const sessionLamports = sessionAddress
       ? Number(
           (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value

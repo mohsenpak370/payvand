@@ -24,9 +24,12 @@ sellers at the bank's rent and that there is no refill path, so Task 3.2 and
 Checkpoint 3 stay open. Revision 7 (2026-11-16) adds that refill path and needs
 no program change: the refund is read from the budget's lamports, so the buyer's
 own transfers are the whole top-up, computed in the client as the difference
-between one payment's need and what each account holds. Phase 3's remaining
-float work (the `Config` figure, dropping `TOKEN_BUDGET_FEE_FLOAT`) and 4.3–4.5
-are the open work.
+between one payment's need and what each account holds. Revision 8 (2026-11-16)
+then sized the floats themselves for three such payments — 12,000,000 on the
+session key and 18,000,000 on the budget, 0.03 SOL together — so the float
+carries three fresh sellers before any top-up and Task 3.2 and Checkpoint 3 are
+closed. Moving the token flows onto `Config::session_fee_float` and merging the
+two constants stays deferred (revision 8). Phase 3's open work is 4.3–4.5.
 
 ## Revision Notes
 
@@ -87,6 +90,36 @@ Revision 6 records what making the token flows executable taught (2026-11-16):
   at devnet's 5,080 a byte the same overhead is 5,648,960 and three fit. The
   float therefore meets Task 3.2's three-seller criterion on live rent by
   arithmetic, not by test, and only until the first refill-less exhaustion.
+
+Revision 8 records Task 3.2's decision (2026-11-16):
+
+- The task asked for three things: `Config::session_fee_float` as the token
+  flows' target, no separate `TOKEN_BUDGET_FEE_FLOAT`, and three fresh-seller
+  payments inside the float. Only the third is something a buyer feels, and it
+  is the one the criterion measured, so it drove the choice.
+- Raising the two constants closes it in two lines with no state change, no IDL
+  change and no migration: `SESSION_FEE_FLOAT` 10,000,000 → 12,000,000 and
+  `TOKEN_BUDGET_FEE_FLOAT` 10,000,000 → 18,000,000. At mainnet's 6,960 lamports a
+  byte the third payment needs a session key that starts with 11,833,080 and a
+  budget holding 17,100,720 of refund float; the rounded values leave about
+  1,200,000 of headroom over three payments, and together they are the
+  30,000,000 (0.03 SOL) this plan budgets for a session float.
+- Merging the two into one `Config` float was not taken. It is not cheaper for
+  the buyer: with the budget's refund gone the session key would have to front
+  the 5,700,240 of records per payment that the SOL path never touches, so the
+  same three payments would peak near 23,200,000 of float — and that one figure
+  would then size every SOL budget as well. It also changes what an existing
+  `session_fee_float` means on devnet and forces a client re-quote, for no change
+  in what is locked or what the buyer keeps.
+- What the buyer locks per token budget goes from 0.02 to 0.03 SOL, which is the
+  figure this plan's session-float section already assumed; close and rotate
+  still return everything unspent.
+- Two fixes came with it. `openTokenBudgetCost` now quotes a refill's refund
+  float as the gap `open_token_budget` charges instead of 0 — Task 3.2's last
+  criterion that was a real defect rather than a preference. And the harness now
+  sends allowance payments with the session key as fee payer, so the fee the
+  float exists to cover is measured instead of being paid by the harness's
+  default payer.
 
 ## Linked Docs
 
@@ -1088,55 +1121,73 @@ Estimated scope: Large.
 
 #### Task 3.2: Size and manage the session-key float
 
-Description: Use `Config::session_fee_float` (0.03 SOL default, see the numbers
-above) instead of the hardcoded `SESSION_FEE_FLOAT`, remove
-`TOKEN_BUDGET_FEE_FLOAT`, and add an explicit top-up path so a buyer can refill
-the float without changing the budget limit.
+Description: Size the token floats so the float itself carries three consecutive
+payments to sellers that hold no SOL — not three with a top-up in the middle —
+and keep the explicit top-up path for what lies beyond that. The task originally
+named the means as `Config::session_fee_float` instead of the hardcoded
+`SESSION_FEE_FLOAT` and the removal of `TOKEN_BUDGET_FEE_FLOAT`; revision 8
+records why the sizing was done instead, and those two stay deferred.
 
 Acceptance criteria:
 
-- [ ] `open_budget` and `open_token_budget` top the session key up to the
-      configured target and never take more than needed.
-- [ ] `open_token_budget` no longer charges a separate SOL float beyond
-      `session_fee_float`.
+- [x] `open_budget` tops the session key up to `Config::session_fee_float` and
+      never takes more than the gap. `open_token_budget` does the same against
+      the constants below: the gap between `rent + TOKEN_BUDGET_FEE_FLOAT` and
+      what the budget holds, and between `SESSION_FEE_FLOAT` and what the session
+      key holds. Reading either from `Config` is deferred (revision 8).
+- [x] The token floats are sized together for three payments rather than merged
+      into one `Config` float: `SESSION_FEE_FLOAT` is 12,000,000 and
+      `TOKEN_BUDGET_FEE_FLOAT` 18,000,000, which is the 0.03 SOL this plan
+      budgets for a session float. Neither call takes more than the gap.
 - [x] The buyer can top up the float independently. The floats are lamports the
       program reads live, so a refill is a plain system transfer from the buyer —
       no limit change, no token movement — and the budget returns what is left on
       close. `tokenFloatTopUpInstructions` in `useBudget.ts` sends only the
       difference before a silent token payment that the float could not fund.
-- [ ] The client's open/refill cost estimate matches the program.
-- [ ] Three consecutive token payments to fresh sellers do not exhaust the
-      float. Measured, not assumed (2026-11-16): at the harness's 6,960 lamports
-      a byte the second payment leaves the session key 4,520,960 lamports
-      against a 7,739,520 overhead, so the third is refused for want of lamports
-      (`Custom(1)`); at devnet's 5,080 a byte three fit by arithmetic
-      (5,648,960 each against the 20,000,000 the two floats hold). With revision
-      7's refill the three payments now complete — the third after a top-up of
-      8,923,800 lamports at the bank's rent — but the float itself still runs
-      out, so this reads as met only together with the top-up criterion above.
+- [x] The client's open/refill cost estimate matches the program.
+      `openTokenBudgetCost` reports a refill's refund float as the gap up to
+      `rent + TOKEN_BUDGET_FEE_FLOAT` (`Math.max(0, …)` over the account's
+      lamports) rather than 0, which is what `open_token_budget` transfers.
+- [x] Three consecutive token payments to fresh sellers do not exhaust the float.
+      Measured (2026-11-16, revision 8): at the harness's 6,960 lamports a byte
+      each payment advances 7,744,520 and is refunded 5,700,240, so the third
+      starts with 11,833,080 to front against the 12,000,000 session float, and
+      the budget's 5,700,240 refund for it sits inside the 6,599,520 its float
+      has left. The three complete, leaving 5,867,160 on the session key and
+      899,280 of the budget float; a fourth is refused for want of lamports
+      (`Custom(1)`) with the counter and the vault unchanged.
 
 Verification:
 
-- [x] Rust harness: the float carries two fresh-seller payments and the third
-      fails on lamports, pinned by
-      `the_float_carries_two_payments_to_fresh_sellers_then_runs_out`, which also
-      asserts the budget's float is back to its own rent and the vault still
-      holds the third price. The three-payment criterion above is recorded as
-      unmet.
-- [x] Rust harness: `a_top_up_lets_the_float_carry_more_fresh_sellers` spends
-      both floats on two fresh sellers, pins the third refusal, refills with two
-      system transfers from the buyer and pays the third — then refills again and
-      pays a fourth, so the refill is a rule and not a one-off. The top-up amounts
-      are computed from live balances, the way the client does.
+- [x] Rust harness: `the_float_carries_three_payments_to_fresh_sellers` pays three
+      sellers that hold neither SOL nor a token, checks each received the price
+      and the invoice rent, pins the float arithmetic exactly — the session key
+      down 3 × (account + fee), the budget down 3 × (invoice + receipt) — then
+      refuses a fourth with `Custom(1)` and asserts the counter and the vault did
+      not move. At the old 10,000,000/10,000,000 sizing the same test fails on the
+      third payment (checked by restoring it), so it pins the numbers rather than
+      describing them.
+- [x] Rust harness: `a_top_up_lets_the_float_carry_more_fresh_sellers` starts at
+      that boundary: three payments fit, the fourth is refused, one top-up pays
+      it, and a second top-up pays a fifth, so the refill is a rule and not a
+      one-off. The top-up amounts are computed from live balances, the way the
+      client does.
+- [x] Rust harness fidelity: allowance payments are sent with the session key as
+      fee payer (`send_with_fee_payer`), as the client sends them. Before that the
+      harness's default payer covered the 5,000-a-signature fee, so the float's
+      measured cost was short by 5,000 a payment.
 - [ ] Anchor test: float top-up without a limit change.
-- [ ] `pnpm typecheck`
+- [x] `nuxt typecheck` clean (`./node_modules/.bin/nuxt typecheck`; the global
+      `pnpm` shim on this machine is broken).
 
-What revision 7 did not do, and still stands: the float is still the program's
-constant rather than `Config::session_fee_float`, `TOKEN_BUDGET_FEE_FLOAT` is
-still there, and `openTokenBudgetCost` still reports a refill's refund float as 0
-(`existing ? 0 : TOKEN_BUDGET_FEE_FLOAT`) while `open_token_budget` charges the
-gap up to the constant — the estimate understates a refill, which is the
-"estimate matches the program" criterion below.
+What revision 8 decided, and what it left: the token flows still read the
+constants instead of `Config::session_fee_float`, and `TOKEN_BUDGET_FEE_FLOAT`
+still exists. Both were the task's suggested means, not its criterion; the
+criterion is that the float carries three payments, and the constants now say so
+at mainnet rent. Merging them into one `Config` float is left as a follow-up
+because it changes what `session_fee_float` means for every existing SOL budget
+and needs a devnet migration and a client re-quote, not because it is cheaper —
+revision 8 has the arithmetic.
 
 Files likely touched:
 
@@ -1796,11 +1847,11 @@ Estimated scope: Small.
       it; same-month refills preserve the counter (`fQadYNyE…`: 0.01 spent, kept
       across a refill); preflight checks match the program, which now credits the
       receipt rent before checking the pot.
-- [ ] **Checkpoint 3:** Token sellers need no SOL; token fees reach the treasury
-      ATA; the float covers three fresh-seller payments; wrong-mint and decoy
-      vaults fail. Three of the four hold and execute in the harness
-      (2026-11-16). The float clause does not: two fresh sellers at the harness's
-      rent, three on devnet's by arithmetic, and no refill path — Task 3.2.
+- [x] **Checkpoint 3 (2026-11-16):** Token sellers need no SOL; token fees reach
+      the treasury ATA; the float covers three fresh-seller payments; wrong-mint
+      and decoy vaults fail. All four execute in the harness: three sellers with
+      no SOL and no account are paid out of the float, the fourth needs a top-up,
+      and the buyer's plain transfers are the whole refill (Task 3.2).
 - [ ] **Checkpoint 4:** Closing or rotating sweeps the float; events carry the
       split; Token-2022 is documented; `Config` layout is tested; no dead code.
 - [ ] **Checkpoint 5:** `task verify`, `anchor test`, and the devnet smoke tests
