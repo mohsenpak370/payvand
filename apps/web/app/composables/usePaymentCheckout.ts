@@ -345,8 +345,10 @@ export function usePaymentCheckout() {
    * the budget going out of reach. Only a press held for the whole count pays.
    */
   function beginHold() {
-    if (!canPay.value || !canPaySilently.value || busy.value) return
-    stopHold()
+    // A press already under way keeps its own clock. A held space bar repeats
+    // keydown, and a second finger is not a new press; either would restart the
+    // count and the hold could never finish. `busy` is already part of `canPay`.
+    if (holding.value || !canPay.value || !canPaySilently.value) return
     holding.value = true
     const startedAt = Date.now()
     holdTimer = setInterval(() => {
@@ -356,10 +358,7 @@ export function usePaymentCheckout() {
       }
       const elapsed = Date.now() - startedAt
       holdProgress.value = Math.min(1, elapsed / HOLD_TO_PAY_MS)
-      if (elapsed >= HOLD_TO_PAY_MS) {
-        stopHold()
-        void pay(true)
-      }
+      if (elapsed >= HOLD_TO_PAY_MS) void pay(true)
     }, HOLD_TICK_MS)
   }
 
@@ -418,13 +417,19 @@ export function usePaymentCheckout() {
    * at all, so it runs only when the button's hold completed: `fromHold` is
    * that confirmation, and nothing else may claim it.
    */
-  async function pay(fromHold = false) {
+  async function pay(fromHold?: true) {
     const current = payload.value
     const payer = publicKey.value
-    if (!current || !payer || busy.value) return
-    if (canPaySilently.value && fromHold !== true) return
-
+    // A payment attempt always ends the press. If this one turns out to be a
+    // no-op, the interval must not call it again on every tick.
     stopHold()
+    if (!current || !payer || busy.value) return
+    // Read once: this browser's session key signs without a prompt, so only a
+    // completed hold may ask for that. Reading it again after the awaits below
+    // would let a budget that appears mid-flight turn a tap into a silent send.
+    const fromAllowance = canPaySilently.value
+    if (fromAllowance && fromHold !== true) return
+
     failure.value = ''
     busy.value = true
     try {
@@ -438,10 +443,10 @@ export function usePaymentCheckout() {
       const memo = current.memo || ''
 
       // Preflight against the numbers the program will use: a policy the client
-      // could not read is not a reason to guess, and the two checks below are
-      // rejected on chain — after the buyer had signed. The button is already
-      // held for them, so this stands for every other caller; the test beside
-      // this file fails if it goes away.
+      // could not read is not a reason to guess, and both checks below are
+      // rejected on chain — after the buyer had signed. The first also disables
+      // the button, so this is what guards every other caller; the test beside
+      // this file fails if either goes away.
       const quote = costs.value ?? await refreshCosts()
       if (!quote) throw new Error(costsError.value || appT('errors.feeConfigUnavailable'))
       if (quote.treasuryTokenAccountMissing) throw new Error(appT('errors.treasuryTokenAccountMissing'))
@@ -451,7 +456,7 @@ export function usePaymentCheckout() {
 
       let sent: string
       if (option.currency === 'sol') {
-        if (canPaySilently.value) {
+        if (fromAllowance) {
           sent = await budget.sendSilentPayment(payer, {
             payment,
             seller,
@@ -481,7 +486,7 @@ export function usePaymentCheckout() {
         }
       } else {
         const mint = address(option.mint)
-        if (canPaySilently.value) {
+        if (fromAllowance) {
           sent = await budget.sendSilentTokenPayment(payer, {
             payment,
             seller,

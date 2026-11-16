@@ -260,7 +260,7 @@ function openDiscount() {
  * That also means a drag no longer cancels by itself, so `trackHold` keeps the
  * old way out: drifting within a finger's width of the button is still the same
  * press, and pulling away from it is not. `endHold` releases the capture and
- * stops the hold; `lostpointercapture` then lands on an already stopped hold.
+ * stops the hold; the `lostpointercapture` that follows finds nothing to end.
  */
 const HOLD_SLOP_PX = 32
 
@@ -268,6 +268,9 @@ let holdTarget: Element | null = null
 let holdPointer: number | null = null
 
 function startHold(event?: PointerEvent) {
+  // A press already under way owns the button: a second finger must not take
+  // the capture, and the keydown handler beside it must not restart the clock.
+  if (holding.value) return
   const target = event?.currentTarget
   if (event && target instanceof Element) {
     holdTarget = target
@@ -308,6 +311,26 @@ function endHold() {
   }
   stopHold()
 }
+
+/**
+ * A press nobody is watching must not complete behind the buyer's back: losing
+ * the window ends it, and so does the tab going to the background — there the
+ * clock keeps running while the ticks are throttled, so the first tick after
+ * coming back would see the count already done and pay at once.
+ */
+function stopWhenHidden() {
+  if (document.hidden) endHold()
+}
+
+onMounted(() => {
+  window.addEventListener('blur', endHold)
+  document.addEventListener('visibilitychange', stopWhenHidden)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('blur', endHold)
+  document.removeEventListener('visibilitychange', stopWhenHidden)
+})
 
 async function refreshSaved() {
   saved.value = false
@@ -607,7 +630,7 @@ useSeoMeta({
                   @pointerup="endHold"
                   @pointerleave="endHold"
                   @pointercancel="endHold"
-                  @lostpointercapture="stopHold"
+                  @lostpointercapture="endHold"
                   @keydown.space.prevent="beginHold"
                   @keydown.enter.prevent="beginHold"
                   @keyup.space="stopHold"

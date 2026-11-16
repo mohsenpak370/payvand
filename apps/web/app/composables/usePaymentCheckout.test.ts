@@ -236,6 +236,25 @@ describe('the hold on the allowance button', () => {
     expect(checkout.holding.value).toBe(false)
   })
 
+  it('keeps one count when the press repeats', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+
+    checkout.beginHold()
+    await vi.advanceTimersByTimeAsync(2_900)
+    // What a held space bar does: another keydown every few ticks. A press that
+    // restarted the clock would drop the count back to zero here, and one that
+    // started a second clock would leave a timer ticking past the payment,
+    // which nothing would ever clear.
+    checkout.beginHold()
+    expect(checkout.holdProgress.value).toBeGreaterThan(0.9)
+    expect(vi.getTimerCount()).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(100)
+    await flushRealTurns()
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('sends nothing when the hold is released early', async () => {
     const checkout = withAllowance(checkoutFor(quoteFor(false)))
 
