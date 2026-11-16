@@ -383,6 +383,7 @@
     "yourWallet": "deinem Wallet",
     "walletHint": "Bestätige in {wallet}. Bis dahin wird nichts gesendet.",
     "obstacleTitle": "Dein Budget deckt das nicht",
+    "confirming": "Zahlung gesendet — der Beleg wird noch nachgetragen.",
     "walletCannotSign": "Dieses Wallet signiert hier keine Transaktionen. Verbinde eins, das es kann, oder zahle über ein Monatsbudget.",
     "allowanceOffer": {
       "title": "Beim nächsten Mal mit einem Tippen zahlen",

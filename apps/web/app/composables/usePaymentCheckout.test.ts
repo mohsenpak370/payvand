@@ -219,6 +219,36 @@ describe('paying from the allowance', () => {
     expect(checkout.blockedReason.value).toBe('checkout.walletCannotSign')
   })
 
+  it('keeps the button away until the record catches up with the send', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+    checkout.loading.value = false
+    // What the API still says right after a confirmed send: unpaid, because the
+    // receipt has not been indexed yet. This is the window where a second press
+    // used to end in a chain error.
+    const pending = checkout.record.value!
+    vi.stubGlobal('usePaymentApi', () => ({
+      getPayment: async () => pending,
+      validateDiscount: async () => null
+    }))
+
+    await checkout.pay(true)
+
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(checkout.stage.value).toBe('confirming')
+    expect(checkout.canPay.value).toBe(false)
+
+    // Out of reach in the composable too, not only on the page: a press builds
+    // nothing, and a stray `pay` sends nothing.
+    checkout.beginHold()
+    expect(checkout.holding.value).toBe(false)
+    await checkout.pay(true)
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+
+    // What the poll finds: the receipt the send is waiting for.
+    checkout.record.value = { ...pending, status: 'settled' }
+    expect(checkout.stage.value).toBe('settled')
+  })
+
   it('refills the float before paying when it is spent', async () => {
     const checkout = withAllowance(checkoutFor(quoteFor(false)))
     // What a spent float needs: the buyer's transfers, which the wallet signs.

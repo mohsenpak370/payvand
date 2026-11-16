@@ -383,6 +383,7 @@
     "yourWallet": "votre portefeuille",
     "walletHint": "Validez dans {wallet}. Rien n'est envoyé tant que vous ne le faites pas.",
     "obstacleTitle": "Votre autorisation ne couvre pas ce montant",
+    "confirming": "Paiement envoyé — en attente du reçu.",
     "walletCannotSign": "Ce portefeuille ne signe pas de transactions ici. Connectez-en un qui le fait, ou payez avec une autorisation mensuelle.",
     "allowanceOffer": {
       "title": "Payez en un seul geste la prochaine fois",

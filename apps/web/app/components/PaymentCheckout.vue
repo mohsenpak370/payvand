@@ -615,6 +615,24 @@ useSeoMeta({
               </div>
 
               <!--
+                The send is confirmed, but the record the page reads comes from
+                the API and has not caught up with it. Another press in that
+                window would only be rejected on chain, so the button stays away
+                until the receipt lands.
+              -->
+              <div
+                v-else-if="stage === 'confirming'"
+                class="flex items-center justify-center gap-2 rounded-xl border border-default px-4 py-3"
+              >
+                <UIcon
+                  name="i-lucide-loader-circle"
+                  class="size-4 animate-spin"
+                  aria-hidden="true"
+                />
+                <span class="text-sm text-muted">{{ $t('checkout.confirming') }}</span>
+              </div>
+
+              <!--
                 Paying from the allowance sends without a wallet approval, so
                 the press is the consent: the button has to be held for the
                 whole count, and letting go sends and charges nothing.

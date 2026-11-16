@@ -48,6 +48,7 @@ export type CheckoutStage
   = | 'loading'
     | 'invalid'
     | 'settled'
+    | 'confirming'
     | 'silent'
     | 'wallet'
     | 'setup'
@@ -208,12 +209,18 @@ export function usePaymentCheckout() {
    * flight, after one landed, or to a seller whose fee account does not exist.
    * An unpaid invoice is a record that is not settled — `pending` and the older
    * `missing` both mean nobody has paid it yet.
+   *
+   * `signature` is this page's own send: the chain has it, but the record the
+   * page reads comes from the API and can still say `pending`. Pressing again in
+   * that window only earns `AlreadySettled` from the program, so the button
+   * stays away until the record catches up.
    */
   const invoicePayable = computed(
     () =>
       Boolean(record.value)
       && !settled.value
       && !busy.value
+      && !signature.value
       && !treasuryTokenAccountMissing.value
   )
 
@@ -268,6 +275,9 @@ export function usePaymentCheckout() {
     if (loading.value) return 'loading'
     if (error.value || !payload.value) return 'invalid'
     if (settled.value) return 'settled'
+    // Sent from here, not yet settled: the button stays out of reach while the
+    // record catches up, and the poll below is what brings it in.
+    if (signature.value) return 'confirming'
     if (!connected.value || !publicKey.value) return 'pick'
     if (canPaySilently.value) return 'silent'
     // A budget this device cannot sign for is a one-time setup step, not a
@@ -346,7 +356,15 @@ export function usePaymentCheckout() {
   async function refreshRecord() {
     const current = payload.value
     const pda = activePda.value
-    if (!current || !pda || signature.value) return
+    // A settled receipt is the end of the story. Before that the record is worth
+    // reading again even after this page sent its own payment: that send is what
+    // the receipt is waiting to show, and the page cannot tell settled from
+    // still-settling without it.
+    if (settled.value) {
+      stopPolling()
+      return
+    }
+    if (!current || !pda) return
     try {
       record.value = await api.getPayment(pda, {
         cluster: current.cluster,
@@ -461,7 +479,9 @@ export function usePaymentCheckout() {
     // A payment attempt always ends the press. If this one turns out to be a
     // no-op, the interval must not call it again on every tick.
     stopHold()
-    if (!current || !payer || busy.value) return
+    // A send of this page's own is enough: whatever is still settling, a second
+    // attempt is rejected on chain, so nothing is built for it.
+    if (!current || !payer || busy.value || signature.value) return
     // Read once: this browser's session key signs without a prompt, so only a
     // completed hold may ask for that. Reading it again after the awaits below
     // would let a budget that appears mid-flight turn a tap into a silent send.
