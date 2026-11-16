@@ -266,17 +266,16 @@ function openDiscount() {
  */
 const HOLD_SLOP_PX = 32
 
-let holdTarget: Element | null = null
-let holdPointer: number | null = null
+/** The pointer press that is holding the button, while one is. */
+let press: { target: Element, pointer: number } | null = null
 
 function startHold(event?: PointerEvent) {
-  // A press already under way owns the button: a second finger must not take
-  // the capture, and the keydown handler beside it must not restart the clock.
+  // The finger that started the press owns the capture; a second one must not
+  // take it, and a press already running has its own clock.
   if (holding.value) return
   const target = event?.currentTarget
   if (event && target instanceof Element) {
-    holdTarget = target
-    holdPointer = event.pointerId
+    press = { target, pointer: event.pointerId }
     try {
       target.setPointerCapture(event.pointerId)
     } catch {
@@ -288,9 +287,8 @@ function startHold(event?: PointerEvent) {
 }
 
 function trackHold(event: PointerEvent) {
-  const target = holdTarget
-  if (!target || event.pointerId !== holdPointer) return
-  const rect = target.getBoundingClientRect()
+  if (!press || event.pointerId !== press.pointer) return
+  const rect = press.target.getBoundingClientRect()
   const away
     = event.clientX < rect.left - HOLD_SLOP_PX
       || event.clientX > rect.right + HOLD_SLOP_PX
@@ -299,17 +297,13 @@ function trackHold(event: PointerEvent) {
   if (away) endHold()
 }
 
+/** The end of a pointer press: let go of the capture and abandon the hold. */
 function endHold() {
-  const target = holdTarget
-  const pointer = holdPointer
-  holdTarget = null
-  holdPointer = null
-  try {
-    if (target && pointer !== null && target.hasPointerCapture(pointer)) {
-      target.releasePointerCapture(pointer)
-    }
-  } catch {
-    // The element went away with the pointer; there is nothing left to release.
+  const held = press
+  press = null
+  if (!held) return
+  if (held.target.hasPointerCapture(held.pointer)) {
+    held.target.releasePointerCapture(held.pointer)
   }
   stopHold()
 }
@@ -318,19 +312,20 @@ function endHold() {
  * A press nobody is watching must not complete behind the buyer's back: losing
  * the window ends it, and so does the tab going to the background — there the
  * clock keeps running while the ticks are throttled, so the first tick after
- * coming back would see the count already done and pay at once.
+ * coming back would see the count already done and pay at once. A keyboard press
+ * has no pointer to let go of, so both of these stop the hold itself.
  */
 function stopWhenHidden() {
-  if (document.hidden) endHold()
+  if (document.hidden) stopHold()
 }
 
 onMounted(() => {
-  window.addEventListener('blur', endHold)
+  window.addEventListener('blur', stopHold)
   document.addEventListener('visibilitychange', stopWhenHidden)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('blur', endHold)
+  window.removeEventListener('blur', stopHold)
   document.removeEventListener('visibilitychange', stopWhenHidden)
 })
 

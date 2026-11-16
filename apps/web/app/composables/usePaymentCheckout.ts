@@ -486,7 +486,7 @@ export function usePaymentCheckout() {
     // completed hold may ask for that. Reading it again after the awaits below
     // would let a budget that appears mid-flight turn a tap into a silent send.
     const fromAllowance = canPaySilently.value
-    if (fromAllowance && fromHold !== true) return
+    if (fromAllowance && !fromHold) return
 
     failure.value = ''
     busy.value = true
