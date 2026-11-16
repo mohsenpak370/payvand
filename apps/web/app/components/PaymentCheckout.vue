@@ -623,14 +623,27 @@ useSeoMeta({
               -->
               <div
                 v-else-if="stage === 'confirming'"
-                class="flex items-center justify-center gap-2 rounded-xl border border-default px-4 py-3"
+                class="flex flex-col gap-2"
               >
-                <UIcon
-                  name="i-lucide-loader-circle"
-                  class="size-4 animate-spin"
-                  aria-hidden="true"
-                />
-                <span class="text-sm text-muted">{{ $t('checkout.confirming') }}</span>
+                <div
+                  class="flex items-center justify-center gap-2 rounded-xl border border-default px-4 py-3"
+                >
+                  <UIcon
+                    name="i-lucide-loader-circle"
+                    class="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  <span class="text-sm text-muted">{{ $t('checkout.confirming') }}</span>
+                </div>
+                <!-- The chain already has this payment, so the signature is the
+                     buyer's proof of it while the receipt is slow — the same
+                     line the settled view keeps once the record arrives. -->
+                <p
+                  v-if="signature"
+                  class="overflow-hidden text-xs text-muted font-mono text-ellipsis"
+                >
+                  {{ $t('checkout.settled.signature', { signature }) }}
+                </p>
               </div>
 
               <!--
