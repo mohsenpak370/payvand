@@ -373,14 +373,14 @@
       "signature": "Signatur {signature}",
       "paidBy": "Bezahlt von {wallet}"
     },
-    "auto": {
-      "paying": "{amount} aus deinem Budget wird gezahlt",
-      "sendingIn": "Keine Bestätigung im Wallet nötig. Wird in {seconds}s gesendet."
+    "hold": {
+      "label": "Zum Zahlen {amount} halten",
+      "holding": "Weiter halten…",
+      "hint": "Wird aus deinem monatlichen Budget bezahlt — zum Senden die Taste halten, ohne Wallet-Fenster."
     },
     "pay": "{amount} zahlen",
     "payWith": "Mit {wallet} zahlen",
     "yourWallet": "deinem Wallet",
-    "silentHint": "Aus deinem monatlichen Budget bezahlt — kein Wallet-Fenster.",
     "walletHint": "Bestätige in {wallet}. Bis dahin wird nichts gesendet.",
     "obstacleTitle": "Dein Budget deckt das nicht",
     "allowanceOffer": {

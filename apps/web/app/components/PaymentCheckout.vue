@@ -43,7 +43,8 @@ const {
   discountError,
   budgetState,
   budgetObstacle,
-  autoSeconds,
+  holding,
+  holdProgress,
   payableLamports,
   payableAmount,
   priceAmount,
@@ -65,7 +66,8 @@ const {
   pay,
   applyDiscount,
   clearDiscount,
-  cancelAutoPay
+  beginHold,
+  stopHold
 } = usePaymentCheckout()
 
 const heading = computed(() => paymentName.value || paymentMemo.value || t('checkout.fallbackHeading'))
@@ -245,7 +247,7 @@ async function pick(wallet: NonNullable<typeof selectedWallet.value>) {
 
 /** Opening the code field is a decision to price this differently first. */
 function openDiscount() {
-  cancelAutoPay()
+  stopHold()
   discountOpen.value = true
 }
 
@@ -529,39 +531,43 @@ useSeoMeta({
                 </p>
               </div>
 
-              <!-- Paying silently from the allowance, with time to stop it. -->
-              <div
-                v-else-if="stage === 'auto'"
-                class="rounded-xl border border-success/40 bg-success/5 p-4"
-              >
-                <p class="text-sm font-medium">
-                  {{ $t('checkout.auto.paying', { amount: payableLabel }) }}
-                </p>
-                <p class="mt-1 text-xs text-muted">
-                  {{ $t('checkout.auto.sendingIn', { seconds: autoSeconds }) }}
-                </p>
-                <UButton
-                  :label="$t('common.cancel')"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  class="mt-2"
-                  @click="cancelAutoPay"
-                />
-              </div>
-
-              <!-- The allowance already covers it, but the buyer cancelled once. -->
+              <!--
+                Paying from the allowance sends without a wallet approval, so
+                the press is the consent: the button has to be held for the
+                whole count, and letting go sends and charges nothing.
+              -->
               <template v-else-if="stage === 'silent'">
                 <UButton
-                  :label="$t('checkout.pay', { amount: payableLabel })"
+                  block
                   icon="i-lucide-zap"
                   :loading="busy"
                   :disabled="!canPay"
-                  block
-                  @click="pay"
-                />
+                  class="relative touch-none overflow-hidden select-none"
+                  :aria-label="$t('checkout.hold.label', { amount: payableLabel })"
+                  @pointerdown.prevent="beginHold"
+                  @pointerup="stopHold"
+                  @pointerleave="stopHold"
+                  @pointercancel="stopHold"
+                  @keydown.space.prevent="beginHold"
+                  @keydown.enter.prevent="beginHold"
+                  @keyup.space="stopHold"
+                  @keyup.enter="stopHold"
+                  @blur="stopHold"
+                  @contextmenu.prevent
+                >
+                  <span
+                    class="pointer-events-none absolute inset-y-0 start-0 bg-current/20"
+                    :style="{ width: `${Math.round(holdProgress * 100)}%` }"
+                    aria-hidden="true"
+                  />
+                  <span class="relative">
+                    {{ holding
+                      ? $t('checkout.hold.holding')
+                      : $t('checkout.hold.label', { amount: payableLabel }) }}
+                  </span>
+                </UButton>
                 <p class="mt-2 text-xs text-muted">
-                  {{ $t('checkout.silentHint') }}
+                  {{ $t('checkout.hold.hint') }}
                 </p>
               </template>
 
@@ -573,7 +579,7 @@ useSeoMeta({
                   :loading="busy"
                   :disabled="!canPay"
                   block
-                  @click="pay"
+                  @click="pay()"
                 />
                 <p class="mt-2 text-xs text-muted">
                   {{ $t('checkout.walletHint', { wallet: selectedWallet?.name || $t('checkout.yourWallet') }) }}
@@ -632,7 +638,7 @@ useSeoMeta({
                   color="neutral"
                   variant="soft"
                   block
-                  @click="pay"
+                  @click="pay()"
                 />
               </div>
 
@@ -705,7 +711,7 @@ useSeoMeta({
                   size="sm"
                   :placeholder="$t('checkout.discount.placeholder')"
                   :maxlength="32"
-                  @focus="cancelAutoPay"
+                  @focus="stopHold"
                 />
                 <UButton
                   :label="$t('checkout.discount.apply')"

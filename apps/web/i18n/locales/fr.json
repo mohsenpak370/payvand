@@ -373,14 +373,14 @@
       "signature": "Signature {signature}",
       "paidBy": "Payé par {wallet}"
     },
-    "auto": {
-      "paying": "Paiement de {amount} depuis votre autorisation",
-      "sendingIn": "Aucune validation du portefeuille nécessaire. Envoi dans {seconds} s."
+    "hold": {
+      "label": "Maintenez pour payer {amount}",
+      "holding": "Continuez à maintenir…",
+      "hint": "Débité de votre autorisation mensuelle — maintenez le bouton pour envoyer, sans fenêtre de portefeuille."
     },
     "pay": "Payer {amount}",
     "payWith": "Payer avec {wallet}",
     "yourWallet": "votre portefeuille",
-    "silentHint": "Payé depuis votre autorisation mensuelle — sans fenêtre de portefeuille.",
     "walletHint": "Validez dans {wallet}. Rien n'est envoyé tant que vous ne le faites pas.",
     "obstacleTitle": "Votre autorisation ne couvre pas ce montant",
     "allowanceOffer": {

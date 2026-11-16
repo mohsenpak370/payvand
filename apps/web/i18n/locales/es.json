@@ -373,14 +373,14 @@
       "signature": "Firma {signature}",
       "paidBy": "Pagado por {wallet}"
     },
-    "auto": {
-      "paying": "Pagando {amount} desde tu presupuesto",
-      "sendingIn": "No hace falta aprobar en la cartera. Se envía en {seconds} s."
+    "hold": {
+      "label": "Mantén para pagar {amount}",
+      "holding": "Sigue manteniendo…",
+      "hint": "Se paga con tu presupuesto mensual: mantén el botón para enviar, sin ventana de cartera."
     },
     "pay": "Pagar {amount}",
     "payWith": "Pagar con {wallet}",
     "yourWallet": "tu cartera",
-    "silentHint": "Pagado desde tu presupuesto mensual — sin ventana de cartera.",
     "walletHint": "Aprueba en {wallet}. No se envía nada hasta que lo hagas.",
     "obstacleTitle": "Tu presupuesto no cubre esto",
     "allowanceOffer": {

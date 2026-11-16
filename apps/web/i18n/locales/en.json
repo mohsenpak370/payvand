@@ -373,14 +373,14 @@
       "signature": "Signature {signature}",
       "paidBy": "Paid by {wallet}"
     },
-    "auto": {
-      "paying": "Paying {amount} from your allowance",
-      "sendingIn": "No wallet approval needed. Sending in {seconds}s."
+    "hold": {
+      "label": "Hold to pay {amount}",
+      "holding": "Keep holding…",
+      "hint": "Comes out of your monthly allowance — hold the button to send, with no wallet popup."
     },
     "pay": "Pay {amount}",
     "payWith": "Pay with {wallet}",
     "yourWallet": "your wallet",
-    "silentHint": "Paid from your monthly allowance — no wallet popup.",
     "walletHint": "Approve in {wallet}. Nothing is sent until you do.",
     "obstacleTitle": "Your allowance cannot cover this",
     "allowanceOffer": {

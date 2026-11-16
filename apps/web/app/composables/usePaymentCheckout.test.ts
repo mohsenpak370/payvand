@@ -32,6 +32,7 @@ const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
 const reference = address('A8yxpWod2xrPd6YbXnaKWCTkk2WduzQKdKPUANZFQpft')
 
 const execute = vi.fn(async () => 'SIGNATURE')
+const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
 const buildInstruction = vi.fn(() => ({
   programAddress: reference,
   accounts: [],
@@ -89,13 +90,48 @@ beforeEach(() => {
     canSignTransaction: ref(true)
   }))
   vi.stubGlobal('useSolanaSignAndSendTransaction', () => ({ execute }))
-  vi.stubGlobal('useBudget', () => ({}))
+  sendSilentTokenPayment.mockClear()
+  vi.stubGlobal('useBudget', () => ({ sendSilentTokenPayment }))
   vi.stubGlobal('useInvoiceCosts', () => ({ estimateInvoiceCosts: async () => null }))
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+/** The same invoice with a USDC allowance this device can sign for. */
+function withAllowance(checkout: ReturnType<typeof usePaymentCheckout>) {
+  checkout.tokenBudgetState.value = {
+    pda: reference,
+    buyer: payer,
+    sessionKey: payer,
+    mint,
+    monthlyLimit: 5_000_000,
+    spent: 0,
+    monthIndex: 1,
+    lamports: 2_000_000,
+    amount: 5_000_000
+  }
+  checkout.sessionReady.value = true
+  checkout.record.value = {
+    id: reference,
+    status: 'pending',
+    payment_pda: reference,
+    seller,
+    reference,
+    amount_lamports: 0,
+    memo: '',
+    name: '',
+    description: '',
+    cluster: 'devnet',
+    endpoint: 'https://api.devnet.solana.com',
+    seller_user: null,
+    settled_by: null,
+    created_at_unix: 0,
+    settled_at_unix: 0
+  }
+  return checkout
+}
 
 describe('pay()', () => {
   it('refuses before building anything when the treasury has no account for the mint', async () => {
@@ -122,5 +158,31 @@ describe('pay()', () => {
     )
     expect(execute).toHaveBeenCalledTimes(1)
     expect(checkout.signature.value).toBe('SIGNATURE')
+  })
+})
+
+/**
+ * The allowance is the one path that sends with no wallet prompt, so the hold is
+ * the only thing between a stray tap — or an old version of this page that paid
+ * on load — and someone's money. `pay(true)` is what a completed hold passes.
+ */
+describe('paying from the allowance', () => {
+  it('sends nothing without the hold', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+
+    await checkout.pay()
+
+    expect(sendSilentTokenPayment).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBeNull()
+    expect(checkout.failure.value).toBe('')
+  })
+
+  it('pays from the allowance once the hold is confirmed', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+
+    await checkout.pay(true)
+
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SILENT_SIGNATURE')
   })
 })

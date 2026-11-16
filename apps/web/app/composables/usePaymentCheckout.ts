@@ -23,31 +23,31 @@ import type { BudgetState, TokenBudgetState } from './useBudget'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 
 /**
- * Paying from the allowance is the only path that needs no wallet at all, so
- * it carries the flow — but it still waits long enough to be stopped, and it
- * fires at most once per invoice per browser. A reload, a back navigation or a
- * link preview can then never charge someone twice.
+ * Paying from the allowance needs no wallet approval, so the buyer's consent is
+ * the press itself: the button has to be held for this long, or nothing is
+ * sent. Nothing pays on its own, so a reload, a back navigation or a link
+ * preview can never charge anyone.
  */
-const AUTO_PAY_SECONDS = 3
+const HOLD_TO_PAY_MS = 3_000
+/** How often the hold's fill and elapsed time are recomputed. */
+const HOLD_TICK_MS = 50
 const STATUS_POLL_MS = 5_000
-
-const autoPayKey = (paymentId: string) => `payvand.autopay.${paymentId}`
 
 /**
  * What the page can offer right now. The order is the priority: a paid invoice
- * is a receipt, a running countdown outranks every button, and the allowance is
- * always preferred over a wallet approval.
+ * is a receipt, and the allowance is always preferred over a wallet approval —
+ * but only the buyer's press ever starts a payment.
  *
  * `pick`   no wallet in this browser yet → offer the wallet list
  * `wallet` a connected wallet approves it (`budgetState === null` there means
  *          no allowance exists yet, so the page offers to set one up)
  * `setup`  a budget exists, but this device holds no session key for it
+ * `silent` the allowance covers it: one deliberate, held press pays it
  */
 export type CheckoutStage
   = | 'loading'
     | 'invalid'
     | 'settled'
-    | 'auto'
     | 'silent'
     | 'wallet'
     | 'setup'
@@ -141,8 +141,9 @@ export function usePaymentCheckout() {
   const budgetObstacle = ref<string | null>(null)
   const sessionReady = ref(false)
 
-  const autoSeconds = ref(0)
-  const autoAttempted = ref(false)
+  /** 0..1 while the allowance button is held, 0 when it is not. */
+  const holdProgress = ref(0)
+  const holding = ref(false)
 
   /** What the chosen currency is charged, after any discount, in base units. */
   const payableAmount = computed(() =>
@@ -229,7 +230,6 @@ export function usePaymentCheckout() {
     if (loading.value) return 'loading'
     if (error.value || !payload.value) return 'invalid'
     if (settled.value) return 'settled'
-    if (autoSeconds.value > 0) return 'auto'
     if (!connected.value || !publicKey.value) return 'pick'
     if (canPaySilently.value) return 'silent'
     // A budget this device cannot sign for is a one-time setup step, not a
@@ -292,11 +292,11 @@ export function usePaymentCheckout() {
 
   /**
    * Switching currency moves the invoice to a different on-chain address, so
-   * the watch address, the allowance and the countdown all follow it.
+   * the watch address and the allowance follow it, and a held press is dropped.
    */
   async function selectCurrency(currency: SupportedCurrency) {
     if (currency === selectedCurrency.value) return
-    cancelAutoPay()
+    stopHold()
     selectedCurrency.value = currency
     const option = selected.value
     if (option) {
@@ -320,49 +320,46 @@ export function usePaymentCheckout() {
   }
 
   let poll: ReturnType<typeof setInterval> | undefined
-  let countdown: ReturnType<typeof setInterval> | undefined
+  let holdTimer: ReturnType<typeof setInterval> | undefined
 
   function stopPolling() {
     if (poll) clearInterval(poll)
     poll = undefined
   }
 
-  function cancelAutoPay() {
-    if (countdown) clearInterval(countdown)
-    countdown = undefined
-    autoSeconds.value = 0
-  }
-
-  function startCountdown() {
-    cancelAutoPay()
-    autoSeconds.value = AUTO_PAY_SECONDS
-    countdown = setInterval(() => {
-      autoSeconds.value -= 1
-      if (autoSeconds.value <= 0) {
-        cancelAutoPay()
-        void pay()
-      }
-    }, 1_000)
+  /**
+   * Releases the allowance button: the hold is abandoned and nothing is sent.
+   * Safe to call when no hold is running, which is what every cancel path does.
+   */
+  function stopHold() {
+    if (holdTimer) clearInterval(holdTimer)
+    holdTimer = undefined
+    holding.value = false
+    holdProgress.value = 0
   }
 
   /**
-   * The automatic payment: only for an invoice this browser has not paid
-   * before, only when the budget can cover it, and only once the page has
-   * everything it needs to send it.
+   * Starts the allowance's deliberate press. Releasing the button, dragging off
+   * it, tabbing away or the budget going out of reach cancels it; only a press
+   * held for the whole count pays.
    */
-  function maybeAutoPay() {
-    const current = payload.value
-    if (!current || !record.value) return
-    if (record.value.status === 'settled' || autoAttempted.value) return
-    if (!canPay.value || !canPaySilently.value) return
-
-    autoAttempted.value = true
-    try {
-      sessionStorage.setItem(autoPayKey(activePda.value ?? current.id), '1')
-    } catch {
-      // Private mode: the in-memory flag still stops a double send.
-    }
-    startCountdown()
+  function beginHold() {
+    if (!canPay.value || !canPaySilently.value || busy.value) return
+    stopHold()
+    holding.value = true
+    const startedAt = Date.now()
+    holdTimer = setInterval(() => {
+      if (!canPay.value || !canPaySilently.value) {
+        stopHold()
+        return
+      }
+      const elapsed = Date.now() - startedAt
+      holdProgress.value = Math.min(1, elapsed / HOLD_TO_PAY_MS)
+      if (elapsed >= HOLD_TO_PAY_MS) {
+        stopHold()
+        void pay(true)
+      }
+    }, HOLD_TICK_MS)
   }
 
   async function load(source: string) {
@@ -376,7 +373,7 @@ export function usePaymentCheckout() {
     discount.value = null
     discountInput.value = ''
     discountError.value = ''
-    cancelAutoPay()
+    stopHold()
     stopPolling()
 
     try {
@@ -394,7 +391,6 @@ export function usePaymentCheckout() {
         ? 'sol'
         : offered[0]!.currency
       activePda.value = selected.value.payment_pda
-      autoAttempted.value = sessionStorage.getItem(autoPayKey(parsed.id)) === '1'
       record.value = await api.getPayment(activePda.value, {
         cluster: parsed.cluster,
         endpoint: parsed.endpoint
@@ -413,16 +409,21 @@ export function usePaymentCheckout() {
     } finally {
       loading.value = false
     }
-
-    maybeAutoPay()
   }
 
-  async function pay() {
+  /**
+   * Sends the invoice. A wallet payment is the buyer's tap, but a payment from
+   * the monthly allowance is signed by this device's session key with no prompt
+   * at all, so it runs only when the button's hold completed: `fromHold` is
+   * that confirmation, and nothing else may claim it.
+   */
+  async function pay(fromHold = false) {
     const current = payload.value
     const payer = publicKey.value
     if (!current || !payer || busy.value) return
+    if (canPaySilently.value && fromHold !== true) return
 
-    cancelAutoPay()
+    stopHold()
     failure.value = ''
     busy.value = true
     try {
@@ -534,9 +535,9 @@ export function usePaymentCheckout() {
     const current = payload.value
     if (!current?.seller_user) return
 
-    // The price is about to move, so an automatic payment must stop and let
-    // the buyer see what they are now paying.
-    cancelAutoPay()
+    // The price is about to move, so a held press must stop and let the buyer
+    // see what they are now paying.
+    stopHold()
     discountBusy.value = true
     discountError.value = ''
     try {
@@ -572,16 +573,15 @@ export function usePaymentCheckout() {
 
   /**
    * A wallet that arrives late — the extension finishing its injection, or the
-   * buyer returning from a wallet app — is exactly the moment the silent path
-   * becomes possible, so the automatic payment is re-considered once.
+   * buyer returning from a wallet app — decides which button the page can
+   * offer, so the allowance is read again. It never sends anything by itself.
    */
   watch(publicKey, async () => {
     await refreshBudget()
-    maybeAutoPay()
   })
 
   onBeforeUnmount(() => {
-    cancelAutoPay()
+    stopHold()
     stopPolling()
   })
 
@@ -610,7 +610,10 @@ export function usePaymentCheckout() {
     budgetState,
     budgetObstacle,
     sessionReady,
-    autoSeconds,
+    holding,
+    holdProgress,
+    beginHold,
+    stopHold,
     payableLamports,
     priceLamports,
     costs,
@@ -626,7 +629,6 @@ export function usePaymentCheckout() {
     load,
     pay,
     applyDiscount,
-    clearDiscount,
-    cancelAutoPay
+    clearDiscount
   }
 }
