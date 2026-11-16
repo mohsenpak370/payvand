@@ -178,6 +178,8 @@ describe('pay()', () => {
  */
 describe('a page that loads with the payment already on chain', () => {
   const amount = 250_000
+  /** What the API answered on its own, before the chain was consulted. */
+  let answered: string[] = []
 
   /** A record still catching up: what the API answers right after a payment. */
   function pendingRecord(id: string) {
@@ -227,7 +229,11 @@ describe('a page that loads with the payment already on chain', () => {
       endpoint: 'https://api.devnet.solana.com'
     }))
     vi.stubGlobal('usePaymentApi', () => ({
-      getPayment: async (id: string) => pendingRecord(id),
+      getPayment: async (id: string) => {
+        const fetched = pendingRecord(id)
+        answered.push(fetched.status)
+        return fetched
+      },
       validateDiscount: async () => null
     }))
     const checkout = usePaymentCheckout()
@@ -236,6 +242,7 @@ describe('a page that loads with the payment already on chain', () => {
   }
 
   beforeEach(() => {
+    answered = []
     // `load()` starts the record poll; the clock is faked so it never fires here.
     vi.useFakeTimers()
   })
@@ -252,7 +259,10 @@ describe('a page that loads with the payment already on chain', () => {
 
     const checkout = await loadInvoice(invoice)
 
-    expect(checkout.record.value?.status).toBe('pending')
+    // The API lagged; the chain did not, and the record carries the answer so
+    // every other decision on the page follows from it.
+    expect(answered).toEqual(['pending'])
+    expect(checkout.record.value?.status).toBe('settled')
     expect(checkout.stage.value).toBe('settled')
     expect(checkout.canPay.value).toBe(false)
     // Out of reach in the composable too, for both paths: no hold starts, and a
@@ -272,7 +282,7 @@ describe('a page that loads with the payment already on chain', () => {
 
     const checkout = await loadInvoice(invoice)
 
-    expect(checkout.onChainSettled.value).toBe(false)
+    expect(checkout.record.value?.status).toBe('pending')
     expect(checkout.stage.value).toBe('wallet')
     expect(checkout.canPay.value).toBe(true)
   })
