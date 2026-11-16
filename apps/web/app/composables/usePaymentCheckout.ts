@@ -339,9 +339,10 @@ export function usePaymentCheckout() {
   }
 
   /**
-   * Starts the allowance's deliberate press. Releasing the button, dragging off
-   * it, tabbing away or the budget going out of reach cancels it; only a press
-   * held for the whole count pays.
+   * Starts the allowance's deliberate press. `stopHold` ends it — the button
+   * does that when the pointer is released or the capture is lost, so a finger
+   * that drifts a little is still the same press — and so does tabbing away or
+   * the budget going out of reach. Only a press held for the whole count pays.
    */
   function beginHold() {
     if (!canPay.value || !canPaySilently.value || busy.value) return

@@ -186,3 +186,70 @@ describe('paying from the allowance', () => {
     expect(checkout.signature.value).toBe('SILENT_SIGNATURE')
   })
 })
+
+/**
+ * The hold is what lets a payment leave without a wallet prompt, so both halves
+ * matter: it must not fire early, and a released press must never fire later.
+ *
+ * The clock is faked so the three seconds pass without the test waiting, but a
+ * faked clock only advances timers: the payment's own awaits (address
+ * derivation, the stubbed RPC) settle on a real turn, so each step flushes a few
+ * of those before it asserts.
+ */
+const realSetTimeout = globalThis.setTimeout
+
+function realTurn() {
+  return new Promise<void>((resolve) => {
+    realSetTimeout(resolve, 0)
+  })
+}
+
+async function flushRealTurns() {
+  for (let turn = 0; turn < 20; turn += 1) {
+    await realTurn()
+  }
+}
+
+describe('the hold on the allowance button', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('pays only once the hold has lasted the whole count', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+
+    checkout.beginHold()
+    await vi.advanceTimersByTimeAsync(2_900)
+    await flushRealTurns()
+    expect(sendSilentTokenPayment).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBeNull()
+    expect(checkout.holding.value).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(100)
+    await flushRealTurns()
+    expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SILENT_SIGNATURE')
+    expect(checkout.holding.value).toBe(false)
+  })
+
+  it('sends nothing when the hold is released early', async () => {
+    const checkout = withAllowance(checkoutFor(quoteFor(false)))
+
+    checkout.beginHold()
+    await vi.advanceTimersByTimeAsync(2_900)
+    checkout.stopHold()
+    expect(checkout.holding.value).toBe(false)
+    expect(checkout.holdProgress.value).toBe(0)
+
+    // And nothing afterwards either: a stopped hold leaves no timer behind.
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flushRealTurns()
+    expect(sendSilentTokenPayment).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBeNull()
+    expect(checkout.failure.value).toBe('')
+  })
+})

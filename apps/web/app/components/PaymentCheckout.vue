@@ -251,6 +251,64 @@ function openDiscount() {
   discountOpen.value = true
 }
 
+/**
+ * The press has to survive a finger sliding a millimetre off the edge, which is
+ * why the button captures the pointer: while it holds that capture `pointerleave`
+ * does not fire at all, so the hold ends when the pointer is really released and
+ * not when the touch drifts.
+ *
+ * That also means a drag no longer cancels by itself, so `trackHold` keeps the
+ * old way out: drifting within a finger's width of the button is still the same
+ * press, and pulling away from it is not. `endHold` releases the capture and
+ * stops the hold; `lostpointercapture` then lands on an already stopped hold.
+ */
+const HOLD_SLOP_PX = 32
+
+let holdTarget: Element | null = null
+let holdPointer: number | null = null
+
+function startHold(event?: PointerEvent) {
+  const target = event?.currentTarget
+  if (event && target instanceof Element) {
+    holdTarget = target
+    holdPointer = event.pointerId
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      // No capture here (an older browser, or a pointer already gone): the hold
+      // still works, it just stops if the pointer leaves the button.
+    }
+  }
+  beginHold()
+}
+
+function trackHold(event: PointerEvent) {
+  const target = holdTarget
+  if (!target || event.pointerId !== holdPointer) return
+  const rect = target.getBoundingClientRect()
+  const away
+    = event.clientX < rect.left - HOLD_SLOP_PX
+      || event.clientX > rect.right + HOLD_SLOP_PX
+      || event.clientY < rect.top - HOLD_SLOP_PX
+      || event.clientY > rect.bottom + HOLD_SLOP_PX
+  if (away) endHold()
+}
+
+function endHold() {
+  const target = holdTarget
+  const pointer = holdPointer
+  holdTarget = null
+  holdPointer = null
+  try {
+    if (target && pointer !== null && target.hasPointerCapture(pointer)) {
+      target.releasePointerCapture(pointer)
+    }
+  } catch {
+    // The element went away with the pointer; there is nothing left to release.
+  }
+  stopHold()
+}
+
 async function refreshSaved() {
   saved.value = false
   savedShopId.value = ''
@@ -544,10 +602,12 @@ useSeoMeta({
                   :disabled="!canPay"
                   class="relative touch-none overflow-hidden select-none"
                   :aria-label="$t('checkout.hold.label', { amount: payableLabel })"
-                  @pointerdown.prevent="beginHold"
-                  @pointerup="stopHold"
-                  @pointerleave="stopHold"
-                  @pointercancel="stopHold"
+                  @pointerdown.prevent="startHold"
+                  @pointermove="trackHold"
+                  @pointerup="endHold"
+                  @pointerleave="endHold"
+                  @pointercancel="endHold"
+                  @lostpointercapture="stopHold"
                   @keydown.space.prevent="beginHold"
                   @keydown.enter.prevent="beginHold"
                   @keyup.space="stopHold"
