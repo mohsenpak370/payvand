@@ -13,8 +13,15 @@ devnet and checked on chain, Task 2.4's harness tests written — and ticks the
 tasks the code and the cluster had satisfied (2.1, 2.3, 4.5), including the
 receipt-rent credit that closed the gap Task 2.4 found. Phase 4 is under way:
 the session-key sweep (4.1) is done and checked on devnet, and the documentation
-that promised the old model (4.2) is corrected. Phase 3's float top-up and
-settle tests, and 4.3–4.5, are the open work.
+that promised the old model (4.2) is corrected. Revision 6 (2026-11-16) makes
+the token settle-side run in the Rust harness at all: the two SPL programs it
+CPIs into are committed as fixtures and registered in the bank, so the fee
+split, the float, the vault drain and the wrong-mint and decoy-vault
+rejections now execute instead of being described around. That closed Task
+3.3's program half (canonical-ATA vaults, `MintMismatch` on close) and most of
+3.1 and 3.4. What it also showed is that the float cannot carry three fresh
+sellers at the bank's rent and that there is no refill path, so Task 3.2 and
+Checkpoint 3 stay open. Phase 3's float top-up and 4.3–4.5 are the open work.
 
 ## Revision Notes
 
@@ -46,6 +53,35 @@ Revision 3 also records what building Task 1.2 taught:
 - The upgradeable loader's state variants are ordered `Uninitialized`, `Buffer`,
   `Program`, `ProgramData`, so the `ProgramData` bincode tag is `3`; the harness
   pins that against `bincode::serialize` instead of trusting a guess.
+
+Revision 6 records what making the token flows executable taught (2026-11-16):
+
+- `solana-program-test` has no SPL, but `ProgramTest::add_account` of a dumped
+  ELF is what `add_program` does internally. The deployed token and
+  associated-token programs are committed under
+  `apps/contracts/programs/payvand/tests/fixtures/` (devnet dumps, addresses
+  and hashes in the README there) and registered by `program_test()`, so the
+  suite pays real invoices with no cluster and no network. Both dumps execute:
+  the token program is the legacy SBF build, the associated-token program is the
+  deployed eBPF build (`e_machine` `0x00f7`) and still runs here.
+- The two token paths do not share a fee policy. `settle_token_payment` splits
+  `amount` into `amount - fee_t` for the seller and `fee_t` for the treasury's
+  account for the mint; `pay_from_token_budget` has no treasury account in its
+  interface and moves the whole amount to the seller. Task 3.1's split is
+  therefore verified on the payer path only — the budget path has no fee to
+  split until the plan decides whether it should carry one.
+- A fresh seller costs the float two things: its own account rent, paid by the
+  session key, and the invoice and receipt rents, advanced by the session key
+  and refunded by the budget. The invoice rent then follows the sale to the
+  seller on the auto-close, so the buyer's float hands a fresh seller 2,714,400
+  lamports at the bank's rent. That is the handler's documented behaviour, but
+  it is not what Task 3.4's "payment account closed to the rent payer" says.
+- `TOKEN_BUDGET_FEE_FLOAT` and `SESSION_FEE_FLOAT` are 10,000,000 each. At the
+  harness's 6,960 lamports a byte a fresh seller needs 7,739,520 of them
+  together, so the third consecutive payment is refused for want of lamports;
+  at devnet's 5,080 a byte the same overhead is 5,648,960 and three fit. The
+  float therefore meets Task 3.2's three-seller criterion on live rent by
+  arithmetic, not by test, and only until the first refill-less exhaustion.
 
 ## Linked Docs
 
@@ -996,22 +1032,44 @@ rent, and the payment account closes to whoever advanced its rent.
 
 Acceptance criteria:
 
-- [ ] Seller receives `amount - fee_t`; treasury ATA receives `fee_t`.
+- [x] Seller receives `amount - fee_t`; treasury ATA receives `fee_t` — on the
+      payer path, executing: `settle_token_payment_splits_the_price_between_seller_and_treasury`
+      pays 700,000 and checks 686,000 into the seller's account and 14,000 into
+      the treasury's account for the mint. `pay_from_token_budget` carries no
+      treasury account in its interface and moves the whole amount, so this
+      holds for one path, not both (revision 6).
 - [ ] `fee_t = min(amount * fee_bps / 10_000, amount - 1)`;
-      `require!(amount > fee_t)` so a seller never receives zero.
+      `require!(amount > fee_t)` so a seller never receives zero. No token-path
+      test yet: the SOL suite's cap and floor tests do not exercise this
+      handler's copy of the rule.
 - [ ] A fresh seller ATA is created and paid for by the payer; a fresh treasury
-      ATA is created and paid for by the treasury.
-- [ ] Zero-value transfers are skipped rather than sent.
-- [ ] The treasury refunds `R_tr` to the payer or session key.
-- [ ] The seller needs no SOL before or after the payment.
+      ATA is created and paid for by the treasury. Neither holds as written: the
+      payer path requires the seller's account to exist already (the seller
+      opens it through `/sell`), the budget path creates a fresh one and the
+      session float pays its rent, and the treasury's account is opened by the
+      admin through `open_treasury_token_account` (2026-11-15 note above). The
+      behaviour that does exist is covered under Task 3.4.
+- [ ] Zero-value transfers are skipped rather than sent: the handler skips a
+      zero fee, but nothing pins it.
+- [x] The treasury refunds `R_tr` to the payer or session key: the executed
+      settle ends with the pool exactly one receipt rent down — the refund out,
+      the invoice rent back in.
+- [x] The seller needs no SOL before or after the payment: both token tests pay
+      a seller that holds no lamports and assert it stays at zero until the
+      auto-close hands it the invoice rent.
 
 Verification:
 
-- [ ] Anchor test: seller with no ATA and no SOL receives `amount - fee_t`.
-- [ ] Anchor test: treasury ATA created on first use of a mint; second payment
-      reuses it.
-- [ ] Anchor test: payer's SOL delta is the seller ATA rent (when new) plus the
-      network fee only.
+- [x] Rust harness, not Anchor: a seller with no token account and no SOL
+      receives its tokens on the budget path, its account created and paid for
+      by the float
+      (`the_float_carries_two_payments_to_fresh_sellers_then_runs_out`).
+- [ ] Treasury ATA created on first use of a mint; second payment reuses it.
+      Proved on devnet (2026-11-15) and by `open_treasury_token_account` being
+      idempotent; the harness opens it once, so reuse is not tested.
+- [ ] The payer's SOL delta is the seller ATA rent (when new) plus the network
+      fee only. Not asserted: the payer path never creates the seller's account,
+      and the transaction's fee payer in the harness is the bank's own key.
 
 Files likely touched:
 
@@ -1039,11 +1097,22 @@ Acceptance criteria:
 - [ ] The buyer can top up the float independently.
 - [ ] The client's open/refill cost estimate matches the program.
 - [ ] Three consecutive token payments to fresh sellers do not exhaust the
-      float.
+      float. Measured, not assumed (2026-11-16): at the harness's 6,960 lamports
+      a byte the second payment leaves the session key 4,520,960 lamports
+      against a 7,739,520 overhead, so the third is refused for want of lamports
+      (`Custom(1)`); at devnet's 5,080 a byte three fit by arithmetic
+      (5,648,960 each against the 20,000,000 the two floats hold). Either way the
+      refill path this task asks for does not exist, so the criterion is not
+      met.
 
 Verification:
 
-- [ ] Anchor test: three fresh-seller token payments, float still above zero.
+- [x] Rust harness: the float carries two fresh-seller payments and the third
+      fails on lamports, pinned by
+      `the_float_carries_two_payments_to_fresh_sellers_then_runs_out`, which also
+      asserts the budget's float is back to its own rent and the vault still
+      holds the third price. The three-payment criterion above is recorded as
+      unmet.
 - [ ] Anchor test: float top-up without a limit change.
 - [ ] `pnpm typecheck`
 
@@ -1070,15 +1139,28 @@ token close/pay paths, and constrain the vault to the canonical ATA
 
 Acceptance criteria:
 
-- [ ] A wrong-mint close fails with `MintMismatch` and strands nothing.
-- [ ] A decoy token account for the same mint and authority is rejected.
-- [ ] The canonical vault is the only accepted vault; its rent returns to the
-      buyer on close.
+- [x] A wrong-mint close fails with `MintMismatch` and strands nothing:
+      `closing_a_token_budget_against_another_mint_fails_with_mint_mismatch`
+      gets `Custom(6008)` and the stand-in vault keeps its 400,000 tokens.
+- [x] A decoy token account for the same mint and authority is rejected:
+      `a_decoy_vault_with_the_same_mint_and_authority_is_rejected` gets Anchor's
+      canonical-ATA check (`ConstraintRaw`, `Custom(2009)`) and neither the decoy
+      nor the real vault moves.
+- [x] The canonical vault is the only accepted vault; its rent returns to the
+      buyer on close:
+      `closing_a_token_budget_drains_the_canonical_vault_and_returns_its_rent`
+      checks the residual 300,000 tokens are in the buyer's account, the vault
+      and budget accounts are gone, and the buyer got the vault's rent plus
+      everything the budget still held.
 
 Verification:
 
-- [ ] Anchor test: wrong-mint close fails; decoy vault rejected.
-- [ ] Anchor test: canonical vault drained and closed.
+- [x] Rust harness: wrong-mint close fails; decoy vault rejected (2026-11-16).
+- [x] Rust harness: canonical vault drained and closed, rents back to the buyer.
+
+Built (2026-11-16): the program half of this task landed with the tests. Both
+paths now use `associated_token::mint`/`authority` for the vault, and
+`close_token_budget` also requires the mint argument to be the budget's own.
 
 Files likely touched:
 
@@ -1093,23 +1175,33 @@ Estimated scope: Small.
 
 Acceptance criteria:
 
-- [ ] Wrong-mint close fails; decoy vault rejected.
-- [ ] Fresh seller: ATA created, payer pays its rent, seller receives
-      `amount - fee_t`.
-- [ ] Treasury ATA receives `fee_t` and its rent is not charged to the payer.
-- [ ] Payment account closed to the rent payer, not the seller.
-- [ ] A settled token invoice cannot be replayed.
+- [x] Wrong-mint close fails; decoy vault rejected (2026-11-16): `Custom(6008)`
+      for the mint, `Custom(2009)` for the decoy, with no token moved.
+- [x] Fresh seller: ATA created, the float pays its rent, the seller receives
+      its tokens. On the budget path, which carries no fee, the seller gets the
+      whole `amount`; the payer path's `amount - fee_t` is Task 3.1's test.
+- [x] Treasury ATA receives `fee_t` and its rent is not charged to the payer:
+      the payer's token account moves by the price alone (1,000,000 → 300,000)
+      while the treasury's account gains 14,000 and the admin paid its rent.
+- [ ] Payment account closed to the rent payer, not the seller. Not what the
+      program does: `pay_from_token_budget` refunds both rents to the session key
+      and then closes the invoice to the seller, so a fresh seller ends up
+      holding the invoice rent (2,714,400 at the bank's rent). Either this
+      criterion or the handler has to change; neither was decided here.
+- [ ] A settled token invoice cannot be replayed. Still untested on the token
+      path — the SOL suite's replay test does not cover `settle_token_payment`.
 - [x] Token monthly limit enforced and preserved across a same-month top-up:
-      `open_token_budget_keeps_spent_until_the_month_changes` in the Rust
-      harness (2026-11-15). The settle-side items still need an SPL runtime in
-      `solana-program-test`, which the harness does not have: the test writes
-      the counter into the budget account between opens rather than paying.
+      `open_token_budget_keeps_spent_until_the_month_changes` (2026-11-15), which
+      writes the counter into the budget account between opens. Since
+      2026-11-16 the settle side runs too: two paid invoices from one budget are
+      counted in
+      `the_float_carries_two_payments_to_fresh_sellers_then_runs_out`.
 
 Verification:
 
-- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` (the suite this
-      repo actually runs; `anchor test` needs a Devnet cluster and is not run
-      here).
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 31 tests, the six
+      token ones executing against the deployed SPL programs; `cargo fmt --all
+      --check` and `cargo clippy -p payvand --all-targets -- -D warnings` clean.
 
 Files likely touched:
 
@@ -1578,8 +1670,9 @@ Smoke tests:
       instruction is pinned by a unit test and was run on devnet for a fresh
       owner (`3DaYgcKv…`: account created, 1,488,440 lamports, owned by the
       token program).
-- [ ] Wrong-mint close fails; decoy vault rejected. **Blocked on Phase 3**
-      (Task 3.4); not exercised.
+- [x] Wrong-mint close fails; decoy vault rejected. Executed in the Rust harness
+      (2026-11-16): the wrong mint gives `MintMismatch`, the decoy vault Anchor's
+      canonical-ATA check, and neither moved a token. Not run on devnet.
 - [x] `close_budget` returns the pot and the account rent to the buyer and the
       account is gone (`42FiDA7V…`; the stand-in budget `5Jirbyfw…` likewise
       closed a 38,963,680 lamport account back to the wallet).
@@ -1683,7 +1776,9 @@ Estimated scope: Small.
       receipt rent before checking the pot.
 - [ ] **Checkpoint 3:** Token sellers need no SOL; token fees reach the treasury
       ATA; the float covers three fresh-seller payments; wrong-mint and decoy
-      vaults fail.
+      vaults fail. Three of the four hold and execute in the harness
+      (2026-11-16). The float clause does not: two fresh sellers at the harness's
+      rent, three on devnet's by arithmetic, and no refill path — Task 3.2.
 - [ ] **Checkpoint 4:** Closing or rotating sweeps the float; events carry the
       split; Token-2022 is documented; `Config` layout is tested; no dead code.
 - [ ] **Checkpoint 5:** `task verify`, `anchor test`, and the devnet smoke tests
