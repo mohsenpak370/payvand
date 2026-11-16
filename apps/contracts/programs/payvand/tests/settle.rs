@@ -1,5 +1,5 @@
 //! Contract test harness: an in-process bank plus the settlement paths for the
-//! SOL instructions, including the Phase 1 receipt and replay rules.
+//! SOL and token instructions, including the Phase 1 receipt and replay rules.
 //!
 //! The tests run the program's real SBF binary — `target/deploy/payvand.so` —
 //! inside `solana-program-test`, so they need no cluster, no
@@ -20,6 +20,10 @@
 //! builds the eBPF target (arch v1), which `solana-program-test` 3.1.10 cannot
 //! execute — the suite would otherwise fail with a bare `UnsupportedProgramId`.
 //!
+//! The runtime ships no SPL: the deployed token and associated-token programs
+//! the token flows need are committed as ELFs under `tests/fixtures/` and
+//! registered by `program_test()` (see the README there).
+//!
 //! PDA helpers below derive addresses from the program's own `constants`
 //! module, so a seed change breaks the tests instead of silently passing
 //! against a copy.
@@ -34,7 +38,10 @@ use payvand::constants::{
     BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
     PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
 };
-use payvand::constants::{TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE};
+use payvand::constants::{
+    SESSION_FEE_FLOAT, TOKEN_BUDGET_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE,
+    TOKEN_PAYMENT_SEED, TOKEN_PAYMENT_SPACE,
+};
 use payvand::state::{
     Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenBudget, TokenPayment,
 };
@@ -45,7 +52,7 @@ use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_program_test::{ProgramTest, ProgramTestContext};
 use solana_pubkey::Pubkey;
-use solana_sdk_ids::bpf_loader_upgradeable;
+use solana_sdk_ids::{bpf_loader, bpf_loader_upgradeable};
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 
@@ -75,6 +82,11 @@ const FEE_MODE_UNSUPPORTED: &str = "Custom(6015)";
 const BUDGET_EXHAUSTED: &str = "Custom(6005)";
 /// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
 const INSUFFICIENT_BUDGET: &str = "Custom(6006)";
+/// `PaymentError::MintMismatch`: the mint named is not the budget's.
+const MINT_MISMATCH: &str = "Custom(6008)";
+/// Anchor's `ConstraintRaw`: a non-`init` `associated_token::` constraint
+/// compares the account against the derived address, so a decoy fails here.
+const NOT_ASSOCIATED_TOKEN_ACCOUNT: &str = "Custom(2009)";
 /// The policy every test starts from unless it says otherwise.
 const TEST_FEE_BPS: u16 = 200;
 const TEST_FIXED_FEE: u64 = 0;
@@ -149,7 +161,38 @@ fn locate_program() {
 /// binary through the same entrypoint the cluster uses.
 fn program_test() -> ProgramTest {
     locate_program();
-    ProgramTest::new("payvand", payvand::id(), None)
+    let mut test = ProgramTest::new("payvand", payvand::id(), None);
+    test.add_account(token_program(), spl_fixture("spl_token"));
+    test.add_account(
+        associated_token_program(),
+        spl_fixture("spl_associated_token_account"),
+    );
+    test
+}
+
+/// One of the deployed SPL programs committed under `tests/fixtures/`.
+///
+/// The runtime has no built-in SPL, and `ProgramTest::add_program` can only find
+/// artifacts our own build produces in `SBF_OUT_DIR`. Registering the dumped ELF
+/// as an executable account is what that helper does internally, so the token
+/// CPIs below run the real programs with no network access at test time.
+fn spl_fixture(name: &str) -> Account {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(format!("{name}.so"));
+    let data = std::fs::read(&path).unwrap_or_else(|error| {
+        panic!(
+            "missing SPL fixture {} ({error}): see tests/fixtures/README.md",
+            path.display()
+        )
+    });
+    Account {
+        lamports: Rent::default().minimum_balance(data.len()),
+        data,
+        owner: bpf_loader::id(),
+        executable: true,
+        rent_epoch: 0,
+    }
 }
 
 /// An empty system account holding `lamports`.
@@ -183,14 +226,14 @@ fn address(text: &str) -> Pubkey {
     text.parse().expect("the test's fixed address should parse")
 }
 
-/// The SPL token program. The token-budget test never CPIs into it (the vault is
-/// pre-funded to the limit, so no transfer is due), but both the accounts' owner
-/// and Anchor's `Program<Token>` check name it.
+/// The SPL token program: owner of every mint and token account, and the program
+/// the transfers and closes CPI into.
 fn token_program() -> Pubkey {
     address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
 }
 
-/// The associated-token program, likewise present only as an executable stub.
+/// The associated-token program, which creates the vault and a fresh seller's
+/// token account.
 fn associated_token_program() -> Pubkey {
     address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 }
@@ -223,18 +266,6 @@ fn spl_token_account(mint: Pubkey, authority: Pubkey, amount: u64) -> Account {
         data,
         owner: token_program(),
         executable: false,
-        rent_epoch: 0,
-    }
-}
-
-/// An executable account with no code behind it, for a program this test names
-/// but never calls.
-fn stub_program_account() -> Account {
-    Account {
-        lamports: Rent::default().minimum_balance(0),
-        data: Vec::new(),
-        owner: bpf_loader_upgradeable::id(),
-        executable: true,
         rent_epoch: 0,
     }
 }
@@ -511,6 +542,136 @@ fn open_token_budget_instruction(
         ],
         data: instruction_data("open_token_budget", &monthly_limit.to_le_bytes()),
     }
+}
+
+/// `["token-payment", seller, reference, mint, amount]` — the invoice address
+/// the token paths derive, and the receipt's seed.
+fn token_payment_pda(seller: &Pubkey, reference: &Pubkey, mint: &Pubkey, amount: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            TOKEN_PAYMENT_SEED,
+            seller.as_ref(),
+            reference.as_ref(),
+            mint.as_ref(),
+            &amount.to_le_bytes(),
+        ],
+        &payvand::id(),
+    )
+    .0
+}
+
+/// `pay_from_token_budget`, in the account order the program declares them. The
+/// mint and vault are arguments rather than read from the world, so a test can
+/// pass a stand-in for either.
+fn pay_from_token_budget_instruction(
+    world: &TokenWorld,
+    mint: Pubkey,
+    vault: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    amount: u64,
+    memo: &str,
+) -> Instruction {
+    let invoice = token_payment_pda(&seller, &reference, &mint, amount);
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(world.session.pubkey(), true),
+            AccountMeta::new(world.budget, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(seller, false),
+            AccountMeta::new(associated_token_address(seller, mint), false),
+            AccountMeta::new(invoice, false),
+            AccountMeta::new(receipt_pda(&invoice), false),
+            AccountMeta::new_readonly(reference, false),
+            AccountMeta::new_readonly(token_program(), false),
+            AccountMeta::new_readonly(associated_token_program(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("pay_from_token_budget", &amount_and_memo(amount, memo)),
+    }
+}
+
+/// `close_token_budget`, in the account order the program declares them.
+fn close_token_budget_instruction(
+    buyer: Pubkey,
+    budget: Pubkey,
+    mint: Pubkey,
+    vault: Pubkey,
+    buyer_token_account: Pubkey,
+) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(buyer, true),
+            AccountMeta::new(budget, false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new(buyer_token_account, false),
+            AccountMeta::new_readonly(token_program(), false),
+        ],
+        data: instruction_data("close_token_budget", &[]),
+    }
+}
+
+/// `open_treasury_token_account`: the treasury's own account for `mint`, paid by
+/// the admin, which is where `settle_token_payment` sends the fee.
+fn open_treasury_token_account_instruction(admin: Pubkey, mint: Pubkey) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(admin, true),
+            AccountMeta::new_readonly(config_pda(), false),
+            AccountMeta::new_readonly(treasury_pda(), false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(associated_token_address(treasury_pda(), mint), false),
+            AccountMeta::new_readonly(token_program(), false),
+            AccountMeta::new_readonly(associated_token_program(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("open_treasury_token_account", &[]),
+    }
+}
+
+/// `settle_token_payment`: the payer's own path, where the buyer carries nothing
+/// but the price and the seller's account must already exist.
+fn settle_token_payment_instruction(
+    payer: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    mint: Pubkey,
+    amount: u64,
+    memo: &str,
+) -> Instruction {
+    let invoice = token_payment_pda(&seller, &reference, &mint, amount);
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(payer, true),
+            AccountMeta::new(invoice, false),
+            AccountMeta::new(seller, false),
+            AccountMeta::new(associated_token_address(seller, mint), false),
+            AccountMeta::new(associated_token_address(payer, mint), false),
+            AccountMeta::new_readonly(mint, false),
+            AccountMeta::new(receipt_pda(&invoice), false),
+            AccountMeta::new_readonly(reference, false),
+            AccountMeta::new_readonly(config_pda(), false),
+            AccountMeta::new(treasury_pda(), false),
+            AccountMeta::new(associated_token_address(treasury_pda(), mint), false),
+            AccountMeta::new_readonly(token_program(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("settle_token_payment", &amount_and_memo(amount, memo)),
+    }
+}
+
+/// The amount a token account holds: bytes 64..72 of the SPL layout.
+async fn token_balance(context: &ProgramTestContext, address: Pubkey) -> u64 {
+    let account = account(context, address)
+        .await
+        .unwrap_or_else(|| panic!("{address} is not a token account"));
+    u64::from_le_bytes(account.data[64..72].try_into().expect("8 bytes"))
 }
 
 /// A `TokenBudget` account as the program would have written it after spending
@@ -1264,8 +1425,6 @@ async fn open_token_budget_keeps_spent_until_the_month_changes() {
     // The vault already holds more than every limit below, so each open skips
     // its token transfer and the test stays inside the month rule.
     test.add_account(vault, spl_token_account(mint, budget_address, 1_000));
-    test.add_account(token_program(), stub_program_account());
-    test.add_account(associated_token_program(), stub_program_account());
 
     let mut context = test.start_with_context().await;
     context.set_account(
@@ -2113,4 +2272,476 @@ fn program_data_metadata_layout_matches_bincode() {
     };
     let bytes = bincode::serialize(&finalized).expect("ProgramData serializes");
     assert_eq!(bytes[12], 0);
+}
+
+// ---------------------------------------------------------------------------
+// Token flows: the SPL programs execute for real
+// ---------------------------------------------------------------------------
+
+/// What `init` puts in a token invoice, and what its close hands back.
+fn token_invoice_rent() -> u64 {
+    Rent::default().minimum_balance(TOKEN_PAYMENT_SPACE)
+}
+
+/// A token account's rent: 165 bytes of the SPL layout.
+fn token_account_rent() -> u64 {
+    Rent::default().minimum_balance(165)
+}
+
+/// A bank with a funded buyer who already holds a token account, a session key
+/// that starts with no lamports, and the derived budget and vault addresses.
+struct TokenWorld {
+    admin: Keypair,
+    buyer: Keypair,
+    session: Keypair,
+    mint: Pubkey,
+    buyer_token_account: Pubkey,
+    budget: Pubkey,
+    vault: Pubkey,
+}
+
+impl TokenWorld {
+    /// Builds the bank, starts it, and bootstraps the config under the default
+    /// test policy, so a test begins with nothing left to set up.
+    async fn start(buyer_tokens: u64) -> (ProgramTestContext, TokenWorld) {
+        let admin = Keypair::new();
+        let buyer = Keypair::new();
+        let session = Keypair::new();
+        let mint = Keypair::new().pubkey();
+        let buyer_token_account = associated_token_address(buyer.pubkey(), mint);
+        let (budget, _bump) = token_budget_pda(&buyer.pubkey(), &mint);
+        let vault = associated_token_address(budget, mint);
+
+        let mut test = program_test();
+        test.add_account(admin.pubkey(), system_account(LAMPORTS_PER_SOL / 10));
+        test.add_account(buyer.pubkey(), system_account(LAMPORTS_PER_SOL));
+        test.add_account(treasury_pda(), system_account(TREASURY_LAMPORTS));
+        test.add_account(mint, spl_mint_account(admin.pubkey(), 6));
+        test.add_account(
+            buyer_token_account,
+            spl_token_account(mint, buyer.pubkey(), buyer_tokens),
+        );
+
+        let mut context = test.start_with_context().await;
+        context.set_account(
+            &program_data_address(),
+            &program_data_account(Some(admin.pubkey())).into(),
+        );
+        send(
+            &mut context,
+            &[initialize_config_instruction(
+                admin.pubkey(),
+                TEST_FEE_BPS,
+                TEST_FIXED_FEE,
+                FeeMode::SellerPays,
+                TEST_SESSION_FLOAT,
+            )],
+            &[&admin],
+        )
+        .await
+        .expect("initialize_config failed");
+
+        (
+            context,
+            TokenWorld {
+                admin,
+                buyer,
+                session,
+                mint,
+                buyer_token_account,
+                budget,
+                vault,
+            },
+        )
+    }
+}
+
+/// `open_token_budget` for the world's buyer and session key.
+async fn open_token_budget(context: &mut ProgramTestContext, world: &TokenWorld, limit: u64) {
+    send(
+        context,
+        &[open_token_budget_instruction(
+            world.buyer.pubkey(),
+            world.budget,
+            world.mint,
+            world.buyer_token_account,
+            world.vault,
+            world.session.pubkey(),
+            limit,
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("open_token_budget failed");
+}
+
+/// One `pay_from_token_budget` from the session key to `seller`, who is expected
+/// to hold neither SOL nor a token account.
+async fn pay_from_token_budget(
+    context: &mut ProgramTestContext,
+    world: &TokenWorld,
+    seller: Pubkey,
+    amount: u64,
+) {
+    let reference = Keypair::new().pubkey();
+    send(
+        context,
+        &[pay_from_token_budget_instruction(
+            world,
+            world.mint,
+            world.vault,
+            seller,
+            reference,
+            amount,
+            "spl",
+        )],
+        &[&world.session],
+    )
+    .await
+    .expect("pay_from_token_budget failed");
+}
+
+/// Task 3.1's split on the payer path: the seller receives `amount - fee_t`, the
+/// treasury's account for the mint receives `fee_t`, and the buyer loses exactly
+/// the price.
+#[tokio::test]
+async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+
+    // The treasury's account for this mint is provisioned once by the admin: the
+    // treasury is a PDA, so nobody can open it the way a wallet owner would.
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    send(
+        &mut context,
+        &[open_treasury_token_account_instruction(
+            world.admin.pubkey(),
+            world.mint,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("open_treasury_token_account failed");
+    assert_eq!(token_balance(&context, treasury_token_account).await, 0);
+
+    // The seller has an account but no SOL; opening it is their own step.
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let fee_t = fee(amount);
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+    let treasury_before = lamports(&context, treasury_pda()).await;
+
+    send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "spl",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("settle_token_payment failed");
+
+    // The split, and nothing else leaving the buyer.
+    assert_eq!(
+        token_balance(&context, seller_token_account).await,
+        amount - fee_t
+    );
+    assert_eq!(token_balance(&context, treasury_token_account).await, fee_t);
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        1_000_000 - amount
+    );
+    // The seller carried no SOL before or after the payment.
+    assert_eq!(lamports(&context, seller).await, 0);
+
+    // The invoice closes to the pool, which keeps its rent and pays the
+    // receipt's; the receipt is the record that stays.
+    assert_eq!(lamports(&context, invoice).await, 0);
+    let kept = receipt(&context, receipt_pda(&invoice)).await;
+    assert_eq!(kept.invoice, invoice);
+    assert_eq!(kept.amount, amount);
+    assert_eq!(kept.payer, world.buyer.pubkey());
+    assert!(kept.settled_at > 0);
+    // The pool advanced both rents back to the payer and took the invoice's
+    // back when it closed, so it is one receipt rent down for the record.
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - receipt_rent()
+    );
+}
+
+/// Task 3.2's float, measured with sellers who never held SOL: the two floats
+/// carry two of them and the third needs a refill that does not exist yet.
+///
+/// A fresh seller costs the float its own account rent (paid by the session
+/// key) plus the invoice and receipt rents (advanced by the session key and
+/// refunded by the budget). At this bank's default rent of 6,960 lamports a
+/// byte that overhead is 2,039,280 + 5,700,240 = 7,739,520, so the 20,000,000
+/// the two floats hold cannot front three. Devnet charges 5,080 a byte, which
+/// puts the same overhead at 5,648,960 and leaves room for three inside the
+/// 20,000,000, so the "three fresh sellers" criterion in the plan is
+/// rent-dependent and not what this bank can show. What it can show — and what
+/// this test pins — is the mechanism and the exact point of exhaustion.
+#[tokio::test]
+async fn the_float_carries_two_payments_to_fresh_sellers_then_runs_out() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+
+    // The session key holds nothing until `open_token_budget` funds it.
+    assert_eq!(lamports(&context, world.session.pubkey()).await, 0);
+    let limit = 900_000;
+    open_token_budget(&mut context, &world, limit).await;
+    assert_eq!(token_balance(&context, world.vault).await, limit);
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        SESSION_FEE_FLOAT
+    );
+    // The budget's own account holds its rent plus the float it refunds the
+    // session's two records from.
+    assert_eq!(
+        lamports(&context, world.budget).await,
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + TOKEN_BUDGET_FEE_FLOAT
+    );
+
+    for _ in 0..2 {
+        let seller = Keypair::new().pubkey();
+        pay_from_token_budget(&mut context, &world, seller, 300_000).await;
+        // The seller never held SOL; what it holds now is the invoice rent the
+        // auto-close hands it, and a token account the float paid for.
+        assert_eq!(lamports(&context, seller).await, token_invoice_rent());
+        assert_eq!(
+            token_balance(&context, associated_token_address(seller, world.mint)).await,
+            300_000
+        );
+    }
+
+    // Two sellers down, the session key can no longer front a fresh one, and
+    // the budget's float — which refunds both records — is spent.
+    let session = lamports(&context, world.session.pubkey()).await;
+    let fresh_seller = token_account_rent() + token_invoice_rent() + receipt_rent();
+    assert!(session > 0);
+    assert!(
+        session < fresh_seller,
+        "a third fresh seller should need a refill: session {session}, overhead {fresh_seller}"
+    );
+    assert_eq!(
+        lamports(&context, world.budget).await,
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE)
+    );
+
+    // The third payment is refused for want of lamports, not by the program's
+    // own limits, and nothing is charged or recorded.
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let error = send(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            reference,
+            300_000,
+            "third",
+        )],
+        &[&world.session],
+    )
+    .await
+    .expect_err("the exhausted float must refuse the third payment");
+    assert!(
+        error.contains("Custom(1)"),
+        "expected an insufficient-funds failure, got {error}"
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, 600_000);
+    // The vault still holds the third price, so lamports — not tokens — were
+    // the limit.
+    assert_eq!(token_balance(&context, world.vault).await, 300_000);
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        1_000_000 - limit
+    );
+}
+
+/// Task 3.3's positive case: the canonical vault is drained into the buyer's own
+/// account and closed, and both rents come back with it.
+#[tokio::test]
+async fn closing_a_token_budget_drains_the_canonical_vault_and_returns_its_rent() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+    open_token_budget(&mut context, &world, 500_000).await;
+    pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), 200_000).await;
+    assert_eq!(token_balance(&context, world.vault).await, 300_000);
+
+    let buyer_before = lamports(&context, world.buyer.pubkey()).await;
+    let budget_before = lamports(&context, world.budget).await;
+    send(
+        &mut context,
+        &[close_token_budget_instruction(
+            world.buyer.pubkey(),
+            world.budget,
+            world.mint,
+            world.vault,
+            world.buyer_token_account,
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("close_token_budget failed");
+
+    // What the vault still held is back in the buyer's own account.
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        1_000_000 - 200_000
+    );
+    // The vault and the budget are gone, and everything they held came back
+    // with them: the vault's rent plus the budget's rent and leftover float.
+    assert_eq!(lamports(&context, world.vault).await, 0);
+    assert_eq!(lamports(&context, world.budget).await, 0);
+    assert_eq!(
+        lamports(&context, world.buyer.pubkey()).await,
+        buyer_before + token_account_rent() + budget_before
+    );
+}
+
+/// Task 3.3's wrong-mint case on the close path: the mint argument must be the
+/// budget's own, and a close against another mint strands nothing.
+#[tokio::test]
+async fn closing_a_token_budget_against_another_mint_fails_with_mint_mismatch() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+    open_token_budget(&mut context, &world, 500_000).await;
+
+    // Another mint with its own canonical vault for the same budget, so every
+    // account type and ATA constraint is satisfied and only the budget's own
+    // mint can reject the close.
+    let other_mint = Keypair::new().pubkey();
+    let other_vault = associated_token_address(world.budget, other_mint);
+    let other_buyer_account = associated_token_address(world.buyer.pubkey(), other_mint);
+    context.set_account(
+        &other_mint,
+        &spl_mint_account(world.admin.pubkey(), 6).into(),
+    );
+    context.set_account(
+        &other_vault,
+        &spl_token_account(other_mint, world.budget, 400_000).into(),
+    );
+    context.set_account(
+        &other_buyer_account,
+        &spl_token_account(other_mint, world.buyer.pubkey(), 0).into(),
+    );
+
+    let error = send(
+        &mut context,
+        &[close_token_budget_instruction(
+            world.buyer.pubkey(),
+            world.budget,
+            other_mint,
+            other_vault,
+            other_buyer_account,
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect_err("a close against another mint must fail");
+    assert!(
+        error.contains(MINT_MISMATCH),
+        "expected {MINT_MISMATCH}, got {error}"
+    );
+
+    // Nothing moved: the stand-in vault still holds its tokens and the budget is
+    // still open with its own mint and its own vault.
+    assert_eq!(token_balance(&context, other_vault).await, 400_000);
+    assert_eq!(token_budget(&context, world.budget).await.mint, world.mint);
+    assert_eq!(token_balance(&context, world.vault).await, 500_000);
+}
+
+/// Task 3.3's wrong-mint case on the pay path: the mint named must be the one
+/// the budget was opened for.
+#[tokio::test]
+async fn paying_from_another_mints_vault_fails_with_mint_mismatch() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+    open_token_budget(&mut context, &world, 500_000).await;
+
+    let other_mint = Keypair::new().pubkey();
+    let other_vault = associated_token_address(world.budget, other_mint);
+    context.set_account(
+        &other_mint,
+        &spl_mint_account(world.admin.pubkey(), 6).into(),
+    );
+    context.set_account(
+        &other_vault,
+        &spl_token_account(other_mint, world.budget, 400_000).into(),
+    );
+
+    let error = send(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            other_mint,
+            other_vault,
+            Keypair::new().pubkey(),
+            Keypair::new().pubkey(),
+            100_000,
+            "vault",
+        )],
+        &[&world.session],
+    )
+    .await
+    .expect_err("a payment from another mint must fail");
+    assert!(
+        error.contains(MINT_MISMATCH),
+        "expected {MINT_MISMATCH}, got {error}"
+    );
+
+    assert_eq!(token_balance(&context, other_vault).await, 400_000);
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
+    assert_eq!(token_balance(&context, world.vault).await, 500_000);
+}
+
+/// Task 3.3's decoy case: an account with the right mint and the right authority
+/// but the wrong address is not a vault, on the pay path or the close path.
+#[tokio::test]
+async fn a_decoy_vault_with_the_same_mint_and_authority_is_rejected() {
+    let (mut context, world) = TokenWorld::start(1_000_000).await;
+    open_token_budget(&mut context, &world, 500_000).await;
+
+    // Same mint, same authority as the canonical vault, different address: a
+    // place to strand the budget's tokens, not a vault.
+    let decoy = Keypair::new().pubkey();
+    context.set_account(
+        &decoy,
+        &spl_token_account(world.mint, world.budget, 1_000_000).into(),
+    );
+
+    let error = send(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            decoy,
+            Keypair::new().pubkey(),
+            Keypair::new().pubkey(),
+            100_000,
+            "vault",
+        )],
+        &[&world.session],
+    )
+    .await
+    .expect_err("a decoy vault must be rejected");
+    assert!(
+        error.contains(NOT_ASSOCIATED_TOKEN_ACCOUNT),
+        "expected {NOT_ASSOCIATED_TOKEN_ACCOUNT}, got {error}"
+    );
+
+    assert_eq!(token_balance(&context, decoy).await, 1_000_000);
+    assert_eq!(token_balance(&context, world.vault).await, 500_000);
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
 }
