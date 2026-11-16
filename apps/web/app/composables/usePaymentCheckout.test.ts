@@ -2,6 +2,7 @@ import { address } from '@vue-solana/nuxt/kit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoiceCosts, type InvoiceCosts } from '~/utils/invoiceCost'
 import { usePaymentCheckout } from './usePaymentCheckout'
+import { derivePaymentPda, derivePaymentReceiptPda } from './usePaymentProgram'
 
 /**
  * `pay()` is the last thing between an invoice and a signature, and one of its
@@ -165,6 +166,115 @@ describe('pay()', () => {
     )
     expect(execute).toHaveBeenCalledTimes(1)
     expect(checkout.signature.value).toBe('SIGNATURE')
+  })
+})
+
+/**
+ * A reload lands in the gap between a confirmed send and the record that reports
+ * it: the API's node answers at its own commitment, so for a few seconds it still
+ * says `pending`. The page trusted the record alone, so the button came back for
+ * an invoice the chain had already paid, and the second press earned the chain
+ * error that made the buyer reload in the first place. `load()` asks the chain.
+ */
+describe('a page that loads with the payment already on chain', () => {
+  const amount = 250_000
+
+  /** A record still catching up: what the API answers right after a payment. */
+  function pendingRecord(id: string) {
+    return {
+      id,
+      status: 'pending' as const,
+      payment_pda: id,
+      seller,
+      reference,
+      amount_lamports: amount,
+      memo: '',
+      name: '',
+      description: '',
+      cluster: 'devnet',
+      endpoint: 'https://api.devnet.solana.com',
+      seller_user: null,
+      settled_by: null,
+      created_at_unix: 0,
+      settled_at_unix: 0
+    }
+  }
+
+  /** The buyer's node, holding exactly the accounts named. */
+  function chainHolds(accounts: string[]) {
+    vi.stubGlobal('useSolanaClient', () => ({
+      client: {
+        rpc: {
+          getAccountInfo: (key: string) => ({
+            send: async () => ({ value: accounts.includes(key) ? { data: ['', 'base64'] } : null })
+          })
+        }
+      }
+    }))
+  }
+
+  async function loadInvoice(invoice: string) {
+    vi.stubGlobal('unwrapQrText', (text: string) => text)
+    vi.stubGlobal('parseQrPayload', () => ({
+      v: 1,
+      id: invoice,
+      seller,
+      reference,
+      amount_lamports: amount,
+      memo: '',
+      name: 'Reloaded invoice',
+      cluster: 'devnet',
+      endpoint: 'https://api.devnet.solana.com'
+    }))
+    vi.stubGlobal('usePaymentApi', () => ({
+      getPayment: async (id: string) => pendingRecord(id),
+      validateDiscount: async () => null
+    }))
+    const checkout = usePaymentCheckout()
+    await checkout.load('payvand://reloaded')
+    return checkout
+  }
+
+  beforeEach(() => {
+    // `load()` starts the record poll; the clock is faked so it never fires here.
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('offers no button when the receipt exists and the record has not caught up', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    // The invoice account is gone — a settled SOL invoice leaves only its
+    // receipt — so this also pins that the receipt is read.
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+
+    const checkout = await loadInvoice(invoice)
+
+    expect(checkout.record.value?.status).toBe('pending')
+    expect(checkout.stage.value).toBe('settled')
+    expect(checkout.canPay.value).toBe(false)
+    // Out of reach in the composable too, for both paths: no hold starts, and a
+    // press that reached `pay()` builds nothing.
+    checkout.beginHold()
+    expect(checkout.holding.value).toBe(false)
+    await checkout.pay(true)
+    await checkout.pay()
+    expect(sendSilentTokenPayment).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBeNull()
+  })
+
+  it('still offers the invoice when the chain holds nothing for it', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([])
+
+    const checkout = await loadInvoice(invoice)
+
+    expect(checkout.onChainSettled.value).toBe(false)
+    expect(checkout.stage.value).toBe('wallet')
+    expect(checkout.canPay.value).toBe(true)
   })
 })
 

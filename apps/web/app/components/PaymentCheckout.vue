@@ -133,8 +133,14 @@ async function copyRefCode() {
 const detailRows = computed(() => [
   { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true },
   { label: t('checkout.details.network'), value: networkLabel(payload.value?.cluster || ''), mono: false },
+  // The chain can hold the payment before the record does, so a settled invoice
+  // reads as paid here too instead of contradicting the sheet's own answer.
   ...(record.value
-    ? [{ label: t('checkout.details.status'), value: statusLabel(record.value.status), mono: false }]
+    ? [{
+        label: t('checkout.details.status'),
+        value: statusLabel(settled.value ? 'settled' : record.value.status),
+        mono: false
+      }]
     : [])
 ])
 

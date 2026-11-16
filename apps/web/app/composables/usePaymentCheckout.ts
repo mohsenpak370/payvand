@@ -111,6 +111,13 @@ export function usePaymentCheckout() {
   const failure = ref('')
   const busy = ref(false)
   const signature = ref<string | null>(null)
+  /**
+   * The chain holds this invoice's payment, whatever the record says. A reload
+   * lands in the seconds between a confirmed send and the commitment the API's
+   * node reads, when the record still answers `pending` — the window in which
+   * the button used to come back and the second press earned a chain error.
+   */
+  const onChainSettled = ref(false)
 
   const discount = ref<DiscountPreview | null>(null)
   const discountInput = ref('')
@@ -180,7 +187,9 @@ export function usePaymentCheckout() {
       return null
     }
   }
-  const settled = computed(() => record.value?.status === 'settled')
+  const settled = computed(
+    () => record.value?.status === 'settled' || onChainSettled.value
+  )
 
   // Name and description ride in the code itself: the chain stores only the
   // memo, so a record read back by id comes without them.
@@ -339,6 +348,42 @@ export function usePaymentCheckout() {
   }
 
   /**
+   * Whether the chain already holds this payment. `settle_*` creates the payment
+   * account and its receipt in one instruction and nothing closes them, so
+   * either one existing at `confirmed` means the invoice is paid — even while the
+   * record still says `pending`.
+   *
+   * A read that fails answers false: a flaky node must not talk the page out of
+   * a payment the buyer can still make.
+   */
+  async function paidOnChain(pda: string): Promise<boolean> {
+    const payment = address(pda)
+    const holds = async (key: Address) => {
+      const info = await client.rpc
+        .getAccountInfo(key, { commitment: 'confirmed', encoding: 'base64' })
+        .send()
+      return Boolean(info.value)
+    }
+    try {
+      if (await holds(payment)) return true
+      return await holds(await derivePaymentReceiptPda(payment))
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Whether any address this code can be paid on holds a payment. A code that
+   * takes SOL and USDC has one address per currency, and the chain is the only
+   * place that knows which of them was already paid.
+   */
+  async function paidAnywhere(pdas: (string | null)[]): Promise<boolean> {
+    const unique = [...new Set(pdas.filter((pda): pda is string => Boolean(pda)))]
+    const found = await Promise.all(unique.map(paidOnChain))
+    return found.some(Boolean)
+  }
+
+  /**
    * Switching currency moves the invoice to a different on-chain address, so
    * the watch address and the allowance follow it, and a held press is dropped.
    */
@@ -351,16 +396,19 @@ export function usePaymentCheckout() {
       activePda.value = (await addressFor(option, payableAmount.value)).toString()
     }
     await Promise.all([refreshCosts(), refreshBudget()])
+    // The invoice may have been paid on the currency being switched to, and one
+    // already found stays found: switching cannot re-offer a paid invoice.
+    onChainSettled.value
+      = onChainSettled.value || await paidAnywhere([activePda.value])
   }
 
   async function refreshRecord() {
     const current = payload.value
     const pda = activePda.value
-    // A settled receipt is the end of the story. Before that the record is worth
-    // reading again even after this page sent its own payment: that send is what
-    // the receipt is waiting to show, and the page cannot tell settled from
-    // still-settling without it.
-    if (settled.value) {
+    // The record saying settled is the end of the story — not the chain read
+    // that already took the button away: the receipt is where `settled_by`
+    // comes from, so the poll keeps reading until it arrives.
+    if (record.value?.status === 'settled') {
       stopPolling()
       return
     }
@@ -424,6 +472,7 @@ export function usePaymentCheckout() {
     failure.value = ''
     signature.value = null
     record.value = null
+    onChainSettled.value = false
     payload.value = null
     activePda.value = null
     discount.value = null
@@ -457,6 +506,16 @@ export function usePaymentCheckout() {
       if (parsed.discount) await applyDiscount(parsed.discount.code)
       await Promise.all([refreshCosts(), refreshBudget()])
 
+      // The record is what the API's node answers, and that read trails a
+      // confirmed payment by a few seconds — exactly the moment a reload lands
+      // in. The chain decides: a payment account or receipt on any address this
+      // code can be paid on means the invoice is paid, so the button never comes
+      // back for it.
+      onChainSettled.value = await paidAnywhere([
+        activePda.value,
+        ...offered.map(option => option.payment_pda)
+      ])
+
       poll = setInterval(() => {
         void refreshRecord()
       }, STATUS_POLL_MS)
@@ -479,9 +538,9 @@ export function usePaymentCheckout() {
     // A payment attempt always ends the press. If this one turns out to be a
     // no-op, the interval must not call it again on every tick.
     stopHold()
-    // A send of this page's own is enough: whatever is still settling, a second
-    // attempt is rejected on chain, so nothing is built for it.
-    if (!current || !payer || busy.value || signature.value) return
+    // A send of this page's own, or a payment the chain already holds, is
+    // enough: a second attempt is rejected on chain, so nothing is built for it.
+    if (!current || !payer || busy.value || signature.value || settled.value) return
     // Read once: this browser's session key signs without a prompt, so only a
     // completed hold may ask for that. Reading it again after the awaits below
     // would let a budget that appears mid-flight turn a tap into a silent send.
@@ -679,6 +738,7 @@ export function usePaymentCheckout() {
     failure,
     busy,
     signature,
+    onChainSettled,
     discount,
     discountInput,
     discountBusy,
