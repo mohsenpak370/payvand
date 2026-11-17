@@ -331,6 +331,33 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.canPayFromAllowance.value).toBe(false)
   })
 
+  it('asks the chain less often than the API while the invoice stays unpaid', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([])
+    const checkout = await loadInvoice(invoice)
+    expect(checkout.stage.value).toBe('wallet')
+
+    const atLoad = chainReads
+    // The first tick asks the chain, so a payment made elsewhere is noticed at
+    // once rather than only when the indexer catches up.
+    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.waitFor(() => expect(chainReads).toBe(atLoad + 1))
+
+    // A minute of an unpaid page: twelve API ticks, and the chain asked a
+    // handful of times — the gap widens as nothing moves.
+    await vi.advanceTimersByTimeAsync(55_000)
+    await vi.waitFor(() => expect(answered.length).toBe(13))
+    const reads = chainReads - atLoad
+    expect(reads).toBeGreaterThanOrEqual(2)
+    expect(reads).toBeLessThanOrEqual(4)
+
+    // And the widest gap still notices: the next payment shows up within a
+    // minute of it landing, without a reload.
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(checkout.stage.value).toBe('settled'))
+  })
+
   it('stops reading a settled record, API and chain alike', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])

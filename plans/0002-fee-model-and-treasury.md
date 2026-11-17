@@ -143,19 +143,28 @@ Revision 9 records the checkout's reload window (2026-11-17):
   positive answer moves the record: a read that errors, or a code whose accounts
   are both absent, leaves the invoice payable, because a flaky node must not talk
   a buyer out of a payment they can still make.
-- The record poll makes the same read on every tick, which is the other half of
-  the window: a checkout left open while the invoice is paid on another device —
-  or in another currency — used to keep offering the button until the API's node
-  caught up, and the confirming stage could hang on a slow indexer behind it.
-  Both callers share `watchAddresses()`, so the addresses watched on load and
-  while polling cannot drift.
+- The record poll makes the same read, which is the other half of the window: a
+  checkout left open while the invoice is paid on another device — or in another
+  currency — used to keep offering the button until the API's node caught up, and
+  the confirming stage could hang on a slow indexer behind it. Both callers share
+  `watchAddresses()`, so the addresses watched on load and while polling cannot
+  drift.
+- The chain read runs on a slower cadence than the API's five seconds: it follows
+  the first tick and then the gap doubles to a minute (`CHAIN_READ_GAPS`), so an
+  unpaid invoice costs the buyer's RPC a handful of `getAccountInfo` calls a
+  minute instead of up to three every five seconds — and a payment made elsewhere
+  is still noticed on the first tick, or within a minute at the widest gap. The
+  schedule restarts with a new invoice.
 - A settled record the chain produced is not the end of the poll: it has no payer
   until the API's node catches up, and the sheet names the payer from that field
   alone. So the poll stops on a settled record *that names its payer*, takes only
   `settled_by` from a lagging answer — never its status, which must not unsettle an
   invoice the chain holds — and stops once the payer arrives. `stops reading a
   settled record, API and chain alike` advances six intervals on a paid page and
-  asserts neither count grows, so the stop is measured rather than assumed.
+  asserts neither count grows, and `asks the chain less often than the API while
+  the invoice stays unpaid` counts both over a minute (twelve API reads, four chain
+  reads at most) and then shows the widest gap still notices a payment, so the
+  cadence is measured rather than assumed.
 - Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
   already on chain`: `offers no button when the receipt exists and the record has
   not caught up` and `settles the open page once the invoice is paid somewhere

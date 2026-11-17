@@ -32,6 +32,14 @@ const HOLD_TO_PAY_MS = 3_000
 /** How often the hold's fill and elapsed time are recomputed. */
 const HOLD_TICK_MS = 50
 const STATUS_POLL_MS = 5_000
+/**
+ * API ticks between chain reads: the first follows the first tick, then the gap
+ * doubles until it is a minute. The chain is where a payment made on another
+ * device or in another currency appears before the indexer does, so it is worth
+ * asking early — but a page left open on an unpaid invoice must not spend three
+ * `getAccountInfo` calls of the buyer's RPC every five seconds for hours.
+ */
+const CHAIN_READ_GAPS = [1, 2, 4, 12] as const
 
 /**
  * What the page can offer right now. The order is the priority: a paid invoice
@@ -343,6 +351,14 @@ export function usePaymentCheckout() {
    * follows the discount, and each offered currency's own. Nothing but the chain
    * knows which of them took the money.
    */
+  /**
+   * The chain-read cadence: `ticksUntilChainRead` counts API ticks down to the
+   * next read, and `chainReads` is how many have happened, which picks the next
+   * gap. Both start over with a new invoice.
+   */
+  let ticksUntilChainRead = 0
+  let chainReads = 0
+
   function watchAddresses(): (string | null)[] {
     return [activePda.value, ...options.value.map(option => option.payment_pda)]
   }
@@ -426,9 +442,17 @@ export function usePaymentCheckout() {
         return
       }
       record.value = fetched
-      // The same read as a load, one tick at a time: an invoice paid in another
-      // wallet — or in another currency — must not keep offering the button while
-      // the API's node catches up.
+      // The same read as a load, on a slower and widening cadence: an invoice
+      // paid in another wallet — or in another currency — must not keep offering
+      // the button while the API's node catches up, and an invoice nobody has
+      // paid must not cost the RPC a read every tick.
+      if (ticksUntilChainRead > 0) {
+        ticksUntilChainRead -= 1
+        return
+      }
+      ticksUntilChainRead
+        = CHAIN_READ_GAPS[Math.min(chainReads, CHAIN_READ_GAPS.length - 1)]! - 1
+      chainReads += 1
       await settleFromChain(watchAddresses())
     } catch {
       // Keep the last known status; the next tick retries.
@@ -509,6 +533,8 @@ export function usePaymentCheckout() {
         ? 'sol'
         : offered[0]!.currency
       activePda.value = selected.value.payment_pda
+      ticksUntilChainRead = 0
+      chainReads = 0
       record.value = await api.getPayment(activePda.value, {
         cluster: parsed.cluster,
         endpoint: parsed.endpoint
