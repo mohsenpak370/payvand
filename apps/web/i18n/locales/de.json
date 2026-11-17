@@ -376,7 +376,8 @@
     "hold": {
       "label": "Zum Zahlen {amount} halten",
       "holding": "Weiter halten…",
-      "hint": "Wird aus deinem monatlichen Budget bezahlt — zum Senden die Taste halten, ohne Wallet-Fenster."
+      "hint": "Wird aus deinem monatlichen Budget bezahlt — zum Senden die Taste halten, ohne Wallet-Fenster.",
+      "blocked": "Diese Rechnung kann noch nicht bezahlt werden — es wird nichts gesendet. Was fehlt, steht oben."
     },
     "pay": "{amount} zahlen",
     "payWith": "Mit {wallet} zahlen",

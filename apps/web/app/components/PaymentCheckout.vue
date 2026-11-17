@@ -580,7 +580,18 @@ useSeoMeta({
                   @start="beginHold"
                   @stop="stopHold"
                 />
-                <p class="mt-2 text-xs text-muted">
+                <!-- A dead hold button beside "hold to send" reads as broken, so
+                     the stage says what is missing in the button's place. -->
+                <p
+                  v-if="treasuryTokenAccountMissing"
+                  class="mt-2 text-xs text-warning"
+                >
+                  {{ $t('checkout.hold.blocked') }}
+                </p>
+                <p
+                  v-else
+                  class="mt-2 text-xs text-muted"
+                >
                   {{ $t('checkout.hold.hint') }}
                 </p>
               </template>

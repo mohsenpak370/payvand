@@ -376,7 +376,8 @@
     "hold": {
       "label": "Maintenez pour payer {amount}",
       "holding": "Continuez à maintenir…",
-      "hint": "Débité de votre autorisation mensuelle — maintenez le bouton pour envoyer, sans fenêtre de portefeuille."
+      "hint": "Débité de votre autorisation mensuelle — maintenez le bouton pour envoyer, sans fenêtre de portefeuille.",
+      "blocked": "Cette facture ne peut pas encore être payée — rien n'est envoyé. Ce qui manque est expliqué plus haut."
     },
     "pay": "Payer {amount}",
     "payWith": "Payer avec {wallet}",

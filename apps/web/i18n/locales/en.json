@@ -376,7 +376,8 @@
     "hold": {
       "label": "Hold to pay {amount}",
       "holding": "Keep holding…",
-      "hint": "Comes out of your monthly allowance — hold the button to send, with no wallet popup."
+      "hint": "Comes out of your monthly allowance — hold the button to send, with no wallet popup.",
+      "blocked": "This invoice cannot be paid yet — nothing is sent. What is missing is explained above."
     },
     "pay": "Pay {amount}",
     "payWith": "Pay with {wallet}",

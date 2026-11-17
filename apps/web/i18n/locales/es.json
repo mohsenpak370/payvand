@@ -376,7 +376,8 @@
     "hold": {
       "label": "Mantén para pagar {amount}",
       "holding": "Sigue manteniendo…",
-      "hint": "Se paga con tu presupuesto mensual: mantén el botón para enviar, sin ventana de cartera."
+      "hint": "Se paga con tu presupuesto mensual: mantén el botón para enviar, sin ventana de cartera.",
+      "blocked": "Esta factura todavía no se puede pagar: no se envía nada. Lo que falta se explica arriba."
     },
     "pay": "Pagar {amount}",
     "payWith": "Pagar con {wallet}",
