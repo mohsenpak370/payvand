@@ -153,7 +153,9 @@ Revision 9 records the checkout's reload window (2026-11-17):
   until the API's node catches up, and the sheet names the payer from that field
   alone. So the poll stops on a settled record *that names its payer*, takes only
   `settled_by` from a lagging answer — never its status, which must not unsettle an
-  invoice the chain holds — and stops once the payer arrives.
+  invoice the chain holds — and stops once the payer arrives. `stops reading a
+  settled record, API and chain alike` advances six intervals on a paid page and
+  asserts neither count grows, so the stop is measured rather than assumed.
 - Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
   already on chain`: `offers no button when the receipt exists and the record has
   not caught up` and `settles the open page once the invoice is paid somewhere

@@ -209,11 +209,13 @@ describe('a page that loads with the payment already on chain', () => {
   let apiPayer: string | null = null
 
   /**
-   * The accounts the buyer's node holds. The composable takes its client at
-   * setup, so the stub reads this list on every call: a test can move the chain
-   * under a page that is already open.
+   * The accounts the buyer's node holds, and how often it was asked. The
+   * composable takes its client at setup, so the stub reads this list on every
+   * call: a test can move the chain under a page that is already open, and can
+   * count the reads a settled page must stop making.
    */
   let chainAccounts: string[] = []
+  let chainReads = 0
 
   /** The buyer's node, holding exactly the accounts named. */
   function chainHolds(accounts: string[]) {
@@ -222,9 +224,10 @@ describe('a page that loads with the payment already on chain', () => {
       client: {
         rpc: {
           getAccountInfo: (key: string) => ({
-            send: async () => ({
-              value: chainAccounts.includes(key) ? { data: ['', 'base64'] } : null
-            })
+            send: async () => {
+              chainReads += 1
+              return { value: chainAccounts.includes(key) ? { data: ['', 'base64'] } : null }
+            }
           })
         }
       }
@@ -261,6 +264,7 @@ describe('a page that loads with the payment already on chain', () => {
     answered = []
     apiPayer = null
     chainAccounts = []
+    chainReads = 0
     // `load()` starts the record poll; the clock is faked so it never fires here.
     vi.useFakeTimers()
   })
@@ -325,6 +329,25 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.stage.value).toBe('settled')
     expect(checkout.canPayWithWallet.value).toBe(false)
     expect(checkout.canPayFromAllowance.value).toBe(false)
+  })
+
+  it('stops reading a settled record, API and chain alike', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    // The API has the payer, so this record settles with nothing left to ask.
+    apiPayer = 'WalletPaidFromAnotherDevice111111111111111111'
+    const checkout = await loadInvoice(invoice)
+    expect(checkout.stage.value).toBe('settled')
+    expect(checkout.record.value?.settled_by).toBe(apiPayer)
+
+    // A paid page can sit open for as long as the buyer leaves the tab: several
+    // intervals later it must have asked neither the API nor the chain again.
+    const asked = answered.length
+    const reads = chainReads
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(answered.length).toBe(asked)
+    expect(chainReads).toBe(reads)
   })
 
   it('names the payer once the API catches up with a payment the chain already held', async () => {
