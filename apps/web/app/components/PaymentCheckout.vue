@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Shop } from '~/composables/useShop'
-import { acceptsHoldPress, strayedFromHoldBounds } from '~/utils/holdSlop'
 
 const props = withDefaults(
   defineProps<{
@@ -253,85 +252,6 @@ function openDiscount() {
   stopHold()
   discountOpen.value = true
 }
-
-/*
- * The press has to survive a finger sliding a millimetre off the edge, which is
- * why the button captures the pointer: while it holds that capture `pointerleave`
- * does not fire at all, so the hold ends when the pointer is really released and
- * not when the touch drifts.
- *
- * That also means a drag no longer cancels by itself, so `trackHold` keeps the
- * old way out: drifting within a finger's width of the button is still the same
- * press, and pulling away from it is not — `strayedFromHoldBounds` is that rule,
- * and `holdSlop.test.ts` holds both of its sides.
- *
- * Nothing here lets go of the capture: the browser does that when the pointer is
- * released, cancelled or taken away, and every one of those ends the hold below.
- * `endHold` is idempotent, so the `lostpointercapture` that follows a release
- * finds no press and changes nothing.
- */
-
-/** The id of the pointer holding the button, while one is. */
-let press: number | null = null
-
-function startHold(event?: PointerEvent) {
-  // A press already running keeps its own clock, and a right-click or a second
-  // finger is not the deliberate press this button asks for.
-  if (holding.value) return
-  if (event && !acceptsHoldPress(event)) return
-  const target = event?.currentTarget
-  if (event && target instanceof Element) {
-    press = event.pointerId
-    try {
-      target.setPointerCapture(event.pointerId)
-    } catch {
-      // No capture here (an older browser, or a pointer already gone): the hold
-      // still works, it just stops if the pointer leaves the button.
-    }
-  }
-  beginHold()
-}
-
-function trackHold(event: PointerEvent) {
-  const target = event.currentTarget
-  if (press === null || event.pointerId !== press || !(target instanceof Element)) return
-  const away = strayedFromHoldBounds(target.getBoundingClientRect(), {
-    x: event.clientX,
-    y: event.clientY
-  })
-  if (away) endHold()
-}
-
-/** The end of a pointer press: abandon the hold, and let the browser drop the capture. */
-function endHold() {
-  press = null
-  stopHold()
-}
-
-/**
- * A press nobody is watching must not complete behind the buyer's back: losing
- * the window ends it, and so does the tab going to the background — there the
- * clock keeps running while the ticks are throttled, so the first tick after
- * coming back would see the count already done and pay at once. Both go through
- * `endHold`, which also forgets the press.
- */
-function stopWhenHidden() {
-  if (document.hidden) endHold()
-}
-
-onMounted(() => {
-  window.addEventListener('blur', endHold)
-  document.addEventListener('visibilitychange', stopWhenHidden)
-})
-
-// A hold belongs to the button on screen: the sheet closing or the invoice
-// changing takes the press with it, so the clock cannot finish on its own and
-// send a payment from a page nobody is looking at.
-onBeforeUnmount(() => {
-  window.removeEventListener('blur', endHold)
-  document.removeEventListener('visibilitychange', stopWhenHidden)
-  endHold()
-})
 
 async function refreshSaved() {
   saved.value = false
@@ -650,41 +570,16 @@ useSeoMeta({
                 whole count, and letting go sends and charges nothing.
               -->
               <template v-else-if="stage === 'silent'">
-                <!-- While the button holds the pointer's capture, `pointerup`,
-                     `pointercancel` and `lostpointercapture` are the ends it
-                     gets; `pointerleave` is the one that still works when the
-                     browser refused the capture. All four are idempotent. -->
-                <UButton
-                  block
-                  icon="i-lucide-zap"
+                <HoldToPayButton
+                  :label="$t('checkout.hold.label', { amount: payableLabel })"
+                  :holding-label="$t('checkout.hold.holding')"
+                  :holding="holding"
+                  :progress="holdProgress"
                   :loading="busy"
                   :disabled="!canPayFromAllowance"
-                  class="relative touch-none overflow-hidden select-none"
-                  :aria-label="$t('checkout.hold.label', { amount: payableLabel })"
-                  @pointerdown.prevent="startHold"
-                  @pointermove="trackHold"
-                  @pointerup="endHold"
-                  @pointerleave="endHold"
-                  @pointercancel="endHold"
-                  @lostpointercapture="endHold"
-                  @keydown.space.prevent="beginHold"
-                  @keydown.enter.prevent="beginHold"
-                  @keyup.space="stopHold"
-                  @keyup.enter="stopHold"
-                  @blur="stopHold"
-                  @contextmenu.prevent
-                >
-                  <span
-                    class="pointer-events-none absolute inset-y-0 start-0 bg-current/20"
-                    :style="{ width: `${Math.round(holdProgress * 100)}%` }"
-                    aria-hidden="true"
-                  />
-                  <span class="relative">
-                    {{ holding
-                      ? $t('checkout.hold.holding')
-                      : $t('checkout.hold.label', { amount: payableLabel }) }}
-                  </span>
-                </UButton>
+                  @start="beginHold"
+                  @stop="stopHold"
+                />
                 <p class="mt-2 text-xs text-muted">
                   {{ $t('checkout.hold.hint') }}
                 </p>
