@@ -121,6 +121,32 @@ Revision 8 records Task 3.2's decision (2026-11-16):
   float exists to cover is measured instead of being paid by the harness's
   default payer.
 
+Revision 9 records the checkout's reload window (2026-11-17):
+
+- The confirming stage holds the pay button away while **this page's own** send
+  is in flight: `signature` is set, so `invoicePayable` is false and the stage
+  reads `confirming` until the record says settled. A reload has no signature —
+  it is a new page — and the record it reads first is the API's, which trails the
+  chain by a few seconds. So the button came back for an invoice the chain
+  already held, and the press earned `AlreadySettled` (6002): the error the
+  confirming stage exists to prevent, one page load later.
+- `load()` now asks the chain as part of loading: for every address this code can
+  be paid on (SOL and each offered token), it reads the invoice account and its
+  receipt at `confirmed`, and writes a settled record when either one exists. A
+  code that takes SOL and USDC has one address per currency, so every offered
+  address is checked rather than the one the currency switch happens to be on.
+- The answer goes into `record`, not into a flag beside it, so the stage,
+  `invoicePayable` and the poll read one state and cannot disagree. Only a
+  positive answer moves the record: a read that errors, or a code whose accounts
+  are both absent, leaves the invoice payable, because a flaky node must not talk
+  a buyer out of a payment they can still make.
+- Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
+  already on chain`: `offers no button when the receipt exists and the record has
+  not caught up` fails if the chain read is removed, and `still offers the
+  invoice when the chain holds nothing for it` keeps the fix from turning every
+  load into a paid page. The window is a rule the checkout enforces, not a lucky
+  read.
+
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
