@@ -230,13 +230,20 @@ export function usePaymentCheckout() {
     selected.value.currency === 'sol' ? budgetState.value : tokenBudgetState.value
   )
 
-  /** True when this browser can settle the invoice with no wallet popup. */
+  /**
+   * This browser can settle the invoice with no wallet popup: an allowance for
+   * this currency that this device holds the key for, and nothing in its way.
+   *
+   * It says nothing about the invoice or the wallet — `invoicePayable` and
+   * `walletReady` are what the two payment paths add to it — so the stage can
+   * read it as "this device has a way to pay" on its own.
+   */
   const canPaySilently = computed(
-    () => Boolean(activeBudget.value)
-      && sessionReady.value
-      && !budgetObstacle.value
-      && !treasuryTokenAccountMissing.value
+    () => Boolean(activeBudget.value) && sessionReady.value && !budgetObstacle.value
   )
+
+  /** Both payment paths send as a connected wallet, whatever signs the payment. */
+  const walletReady = computed(() => connected.value && Boolean(publicKey.value))
 
   /**
    * The session key signs an allowance payment, so a wallet that cannot sign is
@@ -245,32 +252,24 @@ export function usePaymentCheckout() {
    * report they cannot sign.
    */
   const canPayFromAllowance = computed(
-    () => connected.value && Boolean(publicKey.value) && invoicePayable.value && canPaySilently.value
+    () => walletReady.value && invoicePayable.value && canPaySilently.value
   )
 
   /** A wallet payment is the wallet's own approval, so that wallet must sign. */
   const canPayWithWallet = computed(
-    () => connected.value
-      && Boolean(publicKey.value)
-      && canSignTransaction.value
-      && invoicePayable.value
+    () => walletReady.value && canSignTransaction.value && invoicePayable.value
   )
 
-  /** Something can be paid right now, by either path. */
-  const canPay = computed(() => canPayFromAllowance.value || canPayWithWallet.value)
-
   /**
-   * What is in the way when no path can pay, in the buyer's words. The stage
-   * picks the button; this explains a button that cannot be used. It stays empty
-   * for what the page already says elsewhere: no wallet to connect yet, an
-   * invoice that is paid, an allowance that cannot be used here (the stage's own
-   * setup step or its obstacle), and a missing treasury account.
+   * What the wallet button cannot do, in the buyer's words. It is only read in
+   * the two stages that render that button, and both are reached only by a
+   * connected wallet on an unpaid invoice — a disconnected page shows the wallet
+   * list, and a paid one shows the receipt — so the only thing left to explain is
+   * a wallet that will not sign, which the allowance path does not need.
    */
-  const blockedReason = computed(() => {
-    if (!connected.value || !publicKey.value || settled.value) return ''
-    if (canPaySilently.value || canSignTransaction.value) return ''
-    return appT('checkout.walletCannotSign')
-  })
+  const blockedReason = computed(() =>
+    canSignTransaction.value ? '' : appT('checkout.walletCannotSign')
+  )
 
   const stage = computed<CheckoutStage>(() => {
     if (loading.value) return 'loading'
@@ -445,7 +444,9 @@ export function usePaymentCheckout() {
     holding.value = true
     const startedAt = Date.now()
     holdTimer = setInterval(() => {
-      if (!canPay.value || !canPaySilently.value) {
+      // The press belongs to the allowance: if this browser can no longer pay
+      // from it, or can no longer pay this invoice at all, the count is over.
+      if (!canPayFromAllowance.value) {
         stopHold()
         return
       }
@@ -745,7 +746,6 @@ export function usePaymentCheckout() {
     paymentDescription,
     paymentMemo,
     items,
-    canPay,
     canPayFromAllowance,
     canPayWithWallet,
     blockedReason,

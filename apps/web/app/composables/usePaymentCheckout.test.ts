@@ -264,7 +264,8 @@ describe('a page that loads with the payment already on chain', () => {
     expect(answered).toEqual(['pending'])
     expect(checkout.record.value?.status).toBe('settled')
     expect(checkout.stage.value).toBe('settled')
-    expect(checkout.canPay.value).toBe(false)
+    expect(checkout.canPayFromAllowance.value).toBe(false)
+    expect(checkout.canPayWithWallet.value).toBe(false)
     // Out of reach in the composable too, for both paths: no hold starts, and a
     // press that reached `pay()` builds nothing.
     checkout.beginHold()
@@ -284,7 +285,7 @@ describe('a page that loads with the payment already on chain', () => {
 
     expect(checkout.record.value?.status).toBe('pending')
     expect(checkout.stage.value).toBe('wallet')
-    expect(checkout.canPay.value).toBe(true)
+    expect(checkout.canPayWithWallet.value).toBe(true)
   })
 })
 
@@ -317,7 +318,6 @@ describe('paying from the allowance', () => {
     expect(checkout.stage.value).toBe('silent')
     expect(checkout.canPayFromAllowance.value).toBe(true)
     expect(checkout.canPayWithWallet.value).toBe(false)
-    expect(checkout.blockedReason.value).toBe('')
 
     checkout.beginHold()
     expect(checkout.holding.value).toBe(true)
@@ -335,8 +335,23 @@ describe('paying from the allowance', () => {
     checkout.loading.value = false
 
     expect(checkout.stage.value).toBe('wallet')
-    expect(checkout.canPay.value).toBe(false)
+    expect(checkout.canPayFromAllowance.value).toBe(false)
+    expect(checkout.canPayWithWallet.value).toBe(false)
     expect(checkout.blockedReason.value).toBe('checkout.walletCannotSign')
+  })
+
+  it('keeps the device’s own button when the invoice is what cannot be paid', () => {
+    // An allowance this device can sign for, on an invoice whose treasury account
+    // the seller never opened: the stage is still the allowance's, because the
+    // device does have a way to pay, and `invoicePayable` is what keeps the
+    // button disabled — the page says why, above it. Sending the buyer to the
+    // wallet stage would offer a second button that cannot pay either.
+    const checkout = withAllowance(checkoutFor(quoteFor(true)))
+    checkout.loading.value = false
+
+    expect(checkout.stage.value).toBe('silent')
+    expect(checkout.canPayFromAllowance.value).toBe(false)
+    expect(checkout.canPayWithWallet.value).toBe(false)
   })
 
   it('keeps the button away until the record catches up with the send', async () => {
@@ -355,7 +370,8 @@ describe('paying from the allowance', () => {
 
     expect(sendSilentTokenPayment).toHaveBeenCalledTimes(1)
     expect(checkout.stage.value).toBe('confirming')
-    expect(checkout.canPay.value).toBe(false)
+    expect(checkout.canPayFromAllowance.value).toBe(false)
+    expect(checkout.canPayWithWallet.value).toBe(false)
 
     // Out of reach in the composable too, not only on the page: a press builds
     // nothing, and a stray `pay` sends nothing.
