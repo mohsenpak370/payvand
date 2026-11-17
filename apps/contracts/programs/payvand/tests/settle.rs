@@ -2776,17 +2776,44 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
     );
 }
 
-/// Refills both floats by exactly what one more fresh seller needs — the rule
-/// the client applies: the budget's refund and the session key's advance, read
-/// from the accounts as they are now.
+/// The client's refill rule (`tokenFloatNeed` + `tokenFloatTopUp` in
+/// `apps/web/app/composables/useBudget.ts`), in one place: the budget carries the
+/// two records, the session key fronts the seller's account and its own fee on
+/// top of them, and each side is topped up by the difference from what it holds.
+///
+/// The two copies cannot be merged — a Rust harness cannot call the app — so the
+/// vectors in `tests/fixtures/token-float-top-up.txt` are the shared truth both
+/// this and `useBudget.test.ts` assert against.
+fn token_float_top_up(
+    invoice_rent: u64,
+    receipt_rent: u64,
+    account_rent: u64,
+    fee: u64,
+    budget_held: u64,
+    session_held: u64,
+) -> (u64, u64) {
+    let records = invoice_rent + receipt_rent;
+    (
+        records.saturating_sub(budget_held),
+        (records + account_rent + fee).saturating_sub(session_held),
+    )
+}
+
+/// Refills both floats by exactly what one more fresh seller needs, by the rule
+/// above and the accounts as they are now.
 async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorld) {
-    let records = token_invoice_rent() + receipt_rent();
-    let budget_spare = lamports(context, world.budget)
+    let budget_held = lamports(context, world.budget)
         .await
         .saturating_sub(Rent::default().minimum_balance(TOKEN_BUDGET_SPACE));
-    let to_budget = records.saturating_sub(budget_spare);
-    let to_session = (records + token_account_rent() + TX_FEE)
-        .saturating_sub(lamports(context, world.session.pubkey()).await);
+    let session_held = lamports(context, world.session.pubkey()).await;
+    let (to_budget, to_session) = token_float_top_up(
+        token_invoice_rent(),
+        receipt_rent(),
+        token_account_rent(),
+        TX_FEE,
+        budget_held,
+        session_held,
+    );
 
     let mut instructions = Vec::new();
     if to_budget > 0 {
@@ -2809,6 +2836,39 @@ async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorl
     send(context, &instructions, &[&world.buyer])
         .await
         .expect("token float top-up failed");
+}
+
+/// The shared vectors: the rule here and the client's rule read the same table, so
+/// one moving without the other is a red test rather than a stale comment.
+#[test]
+fn the_float_top_up_rule_matches_the_shared_vectors() {
+    let fixture = include_str!("fixtures/token-float-top-up.txt");
+    let mut rows = 0;
+    for line in fixture.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let numbers = line
+            .split_whitespace()
+            .map(|number| {
+                number
+                    .parse::<u64>()
+                    .expect("a number in the float fixture")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(numbers.len(), 8, "a row needs eight numbers: {line}");
+        let top_up = token_float_top_up(
+            numbers[0], numbers[1], numbers[2], numbers[3], numbers[4], numbers[5],
+        );
+        assert_eq!(
+            (top_up.0, top_up.1),
+            (numbers[6], numbers[7]),
+            "row: {line}"
+        );
+        rows += 1;
+    }
+    assert!(rows > 0, "the float fixture should hold vectors");
 }
 
 /// Task 3.2's refill path: the floats are lamports the program reads live, so the

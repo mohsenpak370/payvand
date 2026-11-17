@@ -1232,6 +1232,13 @@ Verification:
       fee payer (`send_with_fee_payer`), as the client sends them. Before that the
       harness's default payer covered the 5,000-a-signature fee, so the float's
       measured cost was short by 5,000 a payment.
+- [x] The harness's refill rule is checked against the client's.
+      `top_up_token_floats` models what `tokenFloatNeed` + `tokenFloatTopUp` in
+      `apps/web/app/composables/useBudget.ts` do, and a harness cannot call an app,
+      so the copy is pinned rather than trusted: both suites read
+      `tests/fixtures/token-float-top-up.txt` — `the_float_top_up_rule_matches_the_shared_vectors`
+      in `tests/settle.rs`, and the same rows in `useBudget.test.ts` — so editing
+      the rule on either side, or a row itself, fails on both.
 - [x] Anchor test: float top-up without a limit change.
       `a_float_top_up_needs_no_limit_change` spends the float to the boundary the
       two tests above measure (three payments, a fourth refused), refills it with

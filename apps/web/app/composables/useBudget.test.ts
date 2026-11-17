@@ -99,6 +99,36 @@ describe('the token float', () => {
       .toEqual({ budget: 5_700_240, session: 3_223_560, total: 8_923_800 })
   })
 
+  it('is the same rule the contract harness applies, from the shared vectors', () => {
+    // The harness funds real payments from `token_float_top_up` in
+    // `tests/settle.rs`, which models this rule because it cannot call it. Both
+    // suites read these rows, so a change to one copy without the other fails
+    // here instead of leaving a stale comment saying they agree.
+    const rows = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../contracts/programs/payvand/tests/fixtures/token-float-top-up.txt',
+          import.meta.url
+        )
+      ),
+      'utf8'
+    )
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => line.split(/\s+/).map(Number))
+
+    expect(rows.length).toBeGreaterThan(0)
+    for (const [invoice, receipt, account, fee, budgetHeld, sessionHeld, toBudget, toSession] of rows) {
+      const topUp = tokenFloatTopUp(
+        tokenFloatNeed({ invoice: invoice!, receipt: receipt!, account: account! }, fee!),
+        { budget: budgetHeld!, session: sessionHeld! }
+      )
+
+      expect([topUp.budget, topUp.session]).toEqual([toBudget, toSession])
+    }
+  })
+
   it('asks for nothing when both floats already cover a payment', () => {
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 10_000_000, session: 10_000_000 }))
       .toEqual({ budget: 0, session: 0, total: 0 })

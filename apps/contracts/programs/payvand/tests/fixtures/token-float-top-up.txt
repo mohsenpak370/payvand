@@ -1,0 +1,20 @@
+# The token float refill, as vectors instead of prose.
+#
+# Three copies of the rule exist — the client's `tokenFloatNeed` + `tokenFloatTopUp`
+# in `apps/web/app/composables/useBudget.ts`, and the harness's
+# `token_float_top_up` below in `tests/settle.rs` — because the two run in different
+# languages and different worlds. They still must agree: the harness says it models
+# what the client does, so a change to one without the other would make that a lie.
+# Both suites read this file and assert their own rule against it.
+#
+# Columns: invoice_rent receipt_rent account_rent fee budget_held session_held | to_budget to_session
+# The rents and fee are the ones `useBudget.test.ts` measures at (6,960 lamports a
+# byte) and the base fee: the numbers the client example uses.
+#
+# A pair worn down to the boundary: the records float is gone and the session key
+# is down to what a settled payment left it.
+2714400 2985840 2039280 5000 0 4520960 5700240 3223560
+# Both sides already cover a payment, so the refill is nothing.
+2714400 2985840 2039280 5000 10000000 10000000 0 0
+# One side short only: the budget is covered, the session key is not.
+2714400 2985840 2039280 5000 5700240 1000 0 7743520
