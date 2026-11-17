@@ -144,12 +144,32 @@ const signatureProof = computed(() => ({
   explorerLabel: t('checkout.settled.explorer')
 }))
 
-// Written once and printed on the sheet: paper has nothing to click.
-const detailRows = computed(() => [
+/**
+ * Written once and printed on the sheet: paper has nothing to click, so a printed
+ * sheet carries the same facts the screen shows. That includes the code the buyer
+ * reads back and, once it is paid, the wallet that paid it — the copy row and its
+ * explorer link live in the part of the page the print view hides, so without
+ * these rows the paper would describe a payment it cannot be traced from.
+ */
+interface DetailRow {
+  label: string
+  value: string
+  mono: boolean
+  /** A code or an address: it wraps on paper instead of being cut short. */
+  wrap?: boolean
+}
+
+const detailRows = computed<DetailRow[]>(() => [
   { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true },
   { label: t('checkout.details.network'), value: networkLabel(payload.value?.cluster || ''), mono: false },
   ...(record.value
     ? [{ label: t('checkout.details.status'), value: statusLabel(record.value.status), mono: false }]
+    : []),
+  ...(refCode.value
+    ? [{ label: t('checkout.referenceCode'), value: refCode.value, mono: true, wrap: true }]
+    : []),
+  ...(record.value?.settled_by
+    ? [{ label: t('checkout.settled.paidByLabel'), value: record.value.settled_by, mono: true, wrap: true }]
     : [])
 ])
 
@@ -818,8 +838,8 @@ useSeoMeta({
                 >
                   <dt>{{ row.label }}</dt>
                   <dd
-                    class="truncate"
-                    :class="row.mono ? 'font-mono' : ''"
+                    class="min-w-0"
+                    :class="[row.mono ? 'font-mono' : '', row.wrap ? 'break-all' : 'truncate']"
                   >
                     {{ row.value }}
                   </dd>
