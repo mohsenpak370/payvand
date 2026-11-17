@@ -398,24 +398,38 @@ export function usePaymentCheckout() {
   async function refreshRecord() {
     const current = payload.value
     const pda = activePda.value
-    // A settled record is the end of the story. Before that the record is worth
-    // reading again even after this page sent its own payment: that send is what
-    // the receipt is waiting to show, and the page cannot tell settled from
-    // still-settling without it.
-    if (settled.value) {
+    // A settled record that names its payer is the end of the story. One that
+    // does not is worth another read: the chain settles the sheet before the API
+    // does, so on a reload the payer is still on its way. Before that, the record
+    // is worth reading again even after this page sent its own payment — that send
+    // is what the receipt is waiting to show, and the page cannot tell settled
+    // from still-settling without it.
+    if (settled.value && record.value?.settled_by) {
       stopPolling()
       return
     }
     if (!current || !pda) return
     try {
-      record.value = await api.getPayment(pda, {
+      const fetched = await api.getPayment(pda, {
         cluster: current.cluster,
         endpoint: current.endpoint
       })
+      if (settled.value) {
+        // The chain got there first, so only the payer is missing — and only the
+        // payer is taken, because a lagging answer must not unsettle an invoice
+        // the chain already holds. Once the API agrees it is settled, there is
+        // nothing left to ask.
+        if (record.value && fetched.settled_by) {
+          record.value = { ...record.value, settled_by: fetched.settled_by }
+        }
+        if (fetched.status === 'settled') stopPolling()
+        return
+      }
+      record.value = fetched
       // The same read as a load, one tick at a time: an invoice paid in another
       // wallet — or in another currency — must not keep offering the button while
       // the API's node catches up.
-      if (!settled.value) await settleFromChain(watchAddresses())
+      await settleFromChain(watchAddresses())
     } catch {
       // Keep the last known status; the next tick retries.
     }

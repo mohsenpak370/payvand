@@ -149,12 +149,18 @@ Revision 9 records the checkout's reload window (2026-11-17):
   caught up, and the confirming stage could hang on a slow indexer behind it.
   Both callers share `watchAddresses()`, so the addresses watched on load and
   while polling cannot drift.
+- A settled record the chain produced is not the end of the poll: it has no payer
+  until the API's node catches up, and the sheet names the payer from that field
+  alone. So the poll stops on a settled record *that names its payer*, takes only
+  `settled_by` from a lagging answer — never its status, which must not unsettle an
+  invoice the chain holds — and stops once the payer arrives.
 - Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
   already on chain`: `offers no button when the receipt exists and the record has
   not caught up` and `settles the open page once the invoice is paid somewhere
-  else` fail if either chain read is removed, and `still offers the invoice when
-  the chain holds nothing for it` keeps the fix from turning every load into a
-  paid page. The window is a rule the checkout enforces, not a lucky read.
+  else` fail if either chain read is removed, `names the payer once the API
+  catches up with a payment the chain already held` fails if the poll stops on any
+  settled record, and `still offers the invoice when the chain holds nothing for
+  it` keeps the fix from turning every load into a paid page. The window is a rule the checkout enforces, not a lucky read.
 
 ## Linked Docs
 

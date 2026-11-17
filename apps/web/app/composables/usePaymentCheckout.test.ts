@@ -203,6 +203,12 @@ describe('a page that loads with the payment already on chain', () => {
   }
 
   /**
+   * The payer the API reports, which a test can move while the page is open: the
+   * composable takes its api at setup, the same way it takes its client.
+   */
+  let apiPayer: string | null = null
+
+  /**
    * The accounts the buyer's node holds. The composable takes its client at
    * setup, so the stub reads this list on every call: a test can move the chain
    * under a page that is already open.
@@ -240,7 +246,7 @@ describe('a page that loads with the payment already on chain', () => {
     }))
     vi.stubGlobal('usePaymentApi', () => ({
       getPayment: async (id: string) => {
-        const fetched = pendingRecord(id)
+        const fetched = { ...pendingRecord(id), settled_by: apiPayer }
         answered.push(fetched.status)
         return fetched
       },
@@ -253,6 +259,7 @@ describe('a page that loads with the payment already on chain', () => {
 
   beforeEach(() => {
     answered = []
+    apiPayer = null
     chainAccounts = []
     // `load()` starts the record poll; the clock is faked so it never fires here.
     vi.useFakeTimers()
@@ -318,6 +325,27 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.stage.value).toBe('settled')
     expect(checkout.canPayWithWallet.value).toBe(false)
     expect(checkout.canPayFromAllowance.value).toBe(false)
+  })
+
+  it('names the payer once the API catches up with a payment the chain already held', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    const checkout = await loadInvoice(invoice)
+    // Settled from the chain alone: the sheet can say paid but not yet who paid.
+    expect(checkout.stage.value).toBe('settled')
+    expect(checkout.record.value?.settled_by).toBeNull()
+
+    // The API's node still calls it pending, but it has the payer now.
+    apiPayer = 'WalletPaidFromAnotherDevice111111111111111111'
+    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.waitFor(() => expect(checkout.record.value?.settled_by).toBe(apiPayer))
+    // The payer is taken; the status is not, because the chain already settled it.
+    expect(checkout.record.value?.status).toBe('settled')
+
+    // Nothing left to ask: the poll stops rather than calling the API forever.
+    const asked = answered.length
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(answered.length).toBe(asked)
   })
 })
 
