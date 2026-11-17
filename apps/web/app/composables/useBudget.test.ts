@@ -69,9 +69,9 @@ describe('transferLamportsInstruction', () => {
 })
 
 /**
- * The allowance's two floats are what pay for a seller who has no token account,
- * and they are spent after a couple of such payments — which is why a third one
- * failed for want of lamports and why the client has to refill them. The refill
+ * The allowance's two floats are what pay for a seller who has no token account.
+ * They are sized for three such payments, not for ever: the budget's 18,000,000
+ * refunds 5,700,240 of records a payment, so a fourth needs a refill. The refill
  * is a plain transfer because the program refunds from the budget's lamports and
  * hands the remainder back on close, so the only question is how much.
  */
@@ -89,10 +89,10 @@ describe('the token float', () => {
     })
   })
 
-  it('refills only the difference, which is what makes the third payment go', () => {
-    // What two fresh-seller payments leave behind: the budget's float is gone and
-    // the session key is down to 4,520,960 against the 7,744,520 — the three
-    // accounts and the fee — it has to front before the refund comes back.
+  it('refills only the difference, which is what makes the next payment go', () => {
+    // A worn-down pair: the records float is gone, and the session key is down to
+    // 4,520,960 against the 7,744,520 — the three accounts and the fee — it has
+    // to front before the refund comes back.
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 0, session: 4_520_960 }))
       .toEqual({ budget: 5_700_240, session: 3_223_560, total: 8_923_800 })
   })
@@ -151,8 +151,8 @@ describe('tokenOpenCost', () => {
   })
 
   it('asks nothing of a budget that still holds its float, or more', () => {
-    // Two payments' refunds can leave it above the rent plus the float; the
-    // handler moves nothing there, and neither may the quote.
+    // A budget someone over-funded can hold more than the rent plus the float;
+    // the handler moves nothing there, and neither may the quote.
     expect(tokenOpenCost({ exists: true, ...held(RENT + REFUND_FLOAT) }).refundFloat).toBe(0)
     expect(tokenOpenCost({ exists: true, ...held(RENT + REFUND_FLOAT + 5_000_000) }).refundFloat).toBe(0)
   })
