@@ -131,8 +131,9 @@ async function copyRefCode() {
 
 /**
  * The signature proves the payment in both stages — while the receipt catches up
- * and once it has — so what the line says is written once here rather than twice
- * in the template, and neither stage can drift from the other.
+ * and once it has — and in the dialog a buyer may leave on screen after closing
+ * the sheet, so what the line says is written once here rather than three times
+ * in the template, and none of them can drift from the others.
  */
 const signatureProof = computed(() => ({
   signature: signature.value ?? '',
@@ -948,6 +949,14 @@ useSeoMeta({
               {{ $t('checkout.result.readToSeller') }}
             </p>
           </div>
+
+          <!-- The sheet's proof, repeated here: a buyer who closes the dialog and
+               keeps only this screen must still be able to open the payment. -->
+          <SignatureProof
+            v-if="signature"
+            v-bind="signatureProof"
+            class="w-full animate-pay-rise-3 motion-reduce:animate-none"
+          />
 
           <div
             class="mt-1 flex w-full gap-2 animate-pay-rise-3 motion-reduce:animate-none"
