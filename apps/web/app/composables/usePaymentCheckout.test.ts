@@ -202,13 +202,23 @@ describe('a page that loads with the payment already on chain', () => {
     }
   }
 
+  /**
+   * The accounts the buyer's node holds. The composable takes its client at
+   * setup, so the stub reads this list on every call: a test can move the chain
+   * under a page that is already open.
+   */
+  let chainAccounts: string[] = []
+
   /** The buyer's node, holding exactly the accounts named. */
   function chainHolds(accounts: string[]) {
+    chainAccounts = accounts
     vi.stubGlobal('useSolanaClient', () => ({
       client: {
         rpc: {
           getAccountInfo: (key: string) => ({
-            send: async () => ({ value: accounts.includes(key) ? { data: ['', 'base64'] } : null })
+            send: async () => ({
+              value: chainAccounts.includes(key) ? { data: ['', 'base64'] } : null
+            })
           })
         }
       }
@@ -243,6 +253,7 @@ describe('a page that loads with the payment already on chain', () => {
 
   beforeEach(() => {
     answered = []
+    chainAccounts = []
     // `load()` starts the record poll; the clock is faked so it never fires here.
     vi.useFakeTimers()
   })
@@ -287,6 +298,26 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.record.value?.status).toBe('pending')
     expect(checkout.stage.value).toBe('wallet')
     expect(checkout.canPayWithWallet.value).toBe(true)
+  })
+
+  it('settles the open page once the invoice is paid somewhere else', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([])
+    const checkout = await loadInvoice(invoice)
+    // Left open and unpaid: the buyer's own wallet is the action.
+    expect(checkout.stage.value).toBe('wallet')
+
+    // Paid from another wallet, or another device: the chain holds the receipt
+    // while the API's node still answers `pending`.
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    // The tick reads the API and then the chain, so the answer lands a couple of
+    // awaits after the timer fires rather than on it.
+    await vi.waitFor(() => expect(checkout.record.value?.status).toBe('settled'))
+    expect(checkout.stage.value).toBe('settled')
+    expect(checkout.canPayWithWallet.value).toBe(false)
+    expect(checkout.canPayFromAllowance.value).toBe(false)
   })
 })
 

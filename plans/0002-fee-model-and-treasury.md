@@ -143,12 +143,18 @@ Revision 9 records the checkout's reload window (2026-11-17):
   positive answer moves the record: a read that errors, or a code whose accounts
   are both absent, leaves the invoice payable, because a flaky node must not talk
   a buyer out of a payment they can still make.
+- The record poll makes the same read on every tick, which is the other half of
+  the window: a checkout left open while the invoice is paid on another device —
+  or in another currency — used to keep offering the button until the API's node
+  caught up, and the confirming stage could hang on a slow indexer behind it.
+  Both callers share `watchAddresses()`, so the addresses watched on load and
+  while polling cannot drift.
 - Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
   already on chain`: `offers no button when the receipt exists and the record has
-  not caught up` fails if the chain read is removed, and `still offers the
-  invoice when the chain holds nothing for it` keeps the fix from turning every
-  load into a paid page. The window is a rule the checkout enforces, not a lucky
-  read.
+  not caught up` and `settles the open page once the invoice is paid somewhere
+  else` fail if either chain read is removed, and `still offers the invoice when
+  the chain holds nothing for it` keeps the fix from turning every load into a
+  paid page. The window is a rule the checkout enforces, not a lucky read.
 
 ## Linked Docs
 

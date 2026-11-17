@@ -339,6 +339,15 @@ export function usePaymentCheckout() {
   }
 
   /**
+   * Every address this code could have been paid on: the one being priced, which
+   * follows the discount, and each offered currency's own. Nothing but the chain
+   * knows which of them took the money.
+   */
+  function watchAddresses(): (string | null)[] {
+    return [activePda.value, ...options.value.map(option => option.payment_pda)]
+  }
+
+  /**
    * Records a payment the chain already holds as settled. Every `settle_*`
    * instruction closes its invoice in the same transaction, so the receipt is
    * the only account a settled invoice leaves behind — and it exists at
@@ -403,6 +412,10 @@ export function usePaymentCheckout() {
         cluster: current.cluster,
         endpoint: current.endpoint
       })
+      // The same read as a load, one tick at a time: an invoice paid in another
+      // wallet — or in another currency — must not keep offering the button while
+      // the API's node catches up.
+      if (!settled.value) await settleFromChain(watchAddresses())
     } catch {
       // Keep the last known status; the next tick retries.
     }
@@ -496,10 +509,7 @@ export function usePaymentCheckout() {
       // confirmed payment — the moment a reload lands in. Every address this
       // code can be paid on is checked, so a payment in another currency counts
       // too.
-      await settleFromChain([
-        activePda.value,
-        ...offered.map(option => option.payment_pda)
-      ])
+      await settleFromChain(watchAddresses())
 
       poll = setInterval(() => {
         void refreshRecord()
