@@ -30,6 +30,72 @@ session key and 18,000,000 on the budget, 0.03 SOL together — so the float
 carries three fresh sellers before any top-up and Task 3.2 and Checkpoint 3 are
 closed. Moving the token flows onto `Config::session_fee_float` and merging the
 two constants stays deferred (revision 8). Phase 3's open work is 4.3–4.5.
+Revision 10 (2026-11-17) audits the plan against the code and sorts what is left:
+Phases 1–3 are built, and most of their unticked boxes are verification this repo
+does not run (a manual localnet, an `anchor test` pass), not missing code. 4.1,
+4.2 and 4.5 are done. Open work is grouped under **Remaining Work** below; the
+substance of it is Task 4.3 (program events), the un-actioned half of Task 4.4
+(no Token-2022 rejection, only `Config`'s size pinned), the boundary cases in 1.6
+and 3.1, one closure decision in 3.4, and 5.2–5.3.
+
+## Remaining Work
+
+Audited 2026-11-17 against `apps/contracts/programs/payvand` and `apps/web`. Each
+line says where it stands, so a later pass does not have to re-derive it.
+
+### Code
+
+- **Task 4.3 — program events: not started.** The program logs with `msg!` only:
+  no `#[event]`, no `emit!`, and `target/idl/payvand.json` has no `events`
+  section. What it needs is unchanged: a settle event carrying the split, a
+  `ConfigUpdated` event, and the IDL regenerated and copied.
+- **Task 4.4 — Token-2022: decided, not enforced.** No program check rejects a
+  Token-2022 mint with a named error; a payment into one fails inside the SPL
+  CPI. The layout half is partly pinned: `CONFIG_SPACE` is asserted in the
+  harness inside `initialize_config_records_the_upgrade_authority`), `BUDGET_SPACE` and
+  `TOKEN_BUDGET_SPACE` are not.
+- **Task 1.6 — three boundary cases missing.** The rounding floor (`99` at 2% →
+  fee 1, seller 98), the `fee_bps = 10_000` cap, and the
+  withdrawal-then-undersized-settle sequence (`TreasuryUnderfunded`). The
+  withdrawal cap itself is tested.
+- **Task 3.1 — the token fee's floor and cap are unexercised**, and the
+  zero-fee transfer skip is not pinned. The split test covers 2% only.
+- **Task 3.4 — one criterion contradicts the program.** It asks the payment
+  account to close to the rent payer; `pay_from_token_budget` refunds both rents
+  to the session key and closes the invoice to the seller. One of the two has to
+  change, and that decision was never taken.
+
+### Verification this repo does not run
+
+- `anchor test` appears in 1.6, 5.1 and 5.3. The suite this repo runs is
+  `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml --test
+  settle` against the committed SBF artifact and the SPL ELF fixtures.
+- Manual localnet/browser checks: 1.4 (config TTL refresh), 1.5 (fee note on a
+  settled invoice), 2.3 (float drained, UI warns), 4.2 (close/rotate and invoice
+  flows in a browser).
+
+### Rollout record
+
+- **Task 5.2** — the devnet rollout is recorded in the revision notes (deployed,
+  `Config` set, budgets opened and paid from). Three checkboxes stay open because
+  nothing recorded them: the close-all-budgets sweep on devnet, `solana program
+  show <PROGRAM_ID>`, and `solana account <CONFIG_PDA>` / `<TREASURY_PDA>`.
+
+### Deferred by decision
+
+- **Task 1.3 — `BuyerPays`.** Every settle path requires `SellerPays` and refuses
+  `BuyerPays` with `FeeModeUnsupported` (`sol.rs`, `token.rs`), so the mode exists
+  in `Config` and charges nothing. The charging half was never built and no
+  product asks for it.
+- Token-2022 migration (`token_interface`), and merging the two float constants
+  onto `Config::session_fee_float` (revision 8).
+
+### Archival
+
+- **Task 5.3** — `plans/README.md` still lists this plan as `Draft`, the file has
+  not moved to `plans/archive/`, and the follow-ups (Token-2022, relayer/sponsor,
+  per-shop fees) are not written out. Everything here is ready for that step once
+  4.3/4.4 are decided; nothing in the archive flow depends on code.
 
 ## Revision Notes
 
@@ -668,6 +734,13 @@ Dependencies: Task 1.1.
 Estimated scope: Large.
 
 #### Task 1.3: Add the `BuyerPays` fee mode
+
+**Status (2026-11-17): deferred by decision.** Every settle path requires
+`SellerPays` and refuses `BuyerPays` with `FeeModeUnsupported` — `sol.rs` for
+both the direct and the budget path, `token.rs` for the token path — which is the
+safe half of this task: the mode cannot be selected and cannot charge anyone. The
+charging half below was never built. The criteria stay unticked because nothing
+implements them; a SKU that needs `BuyerPays` starts here.
 
 Description: Add the config-only branch that charges the fee to the payer. The
 UI never sends it and no product uses it yet; it exists so a future SKU can
@@ -1532,6 +1605,9 @@ Dependencies: Task 4.1.
 Estimated scope: Small.
 
 #### Task 4.3: Program events
+
+**Status (2026-11-17): not started.** The program logs with `msg!` only — no
+`#[event]`, no `emit!`, and the generated IDL has no `events` section.
 
 Description: Emit events for every state change, with the fee/rent split so an
 indexer can reconstruct proceeds without re-deriving `Config`. This task owns
