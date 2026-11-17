@@ -129,6 +129,20 @@ async function copyRefCode() {
   }, 2_000)
 }
 
+/**
+ * The signature proves the payment in both stages — while the receipt catches up
+ * and once it has — so what the line says is written once here rather than twice
+ * in the template, and neither stage can drift from the other.
+ */
+const signatureProof = computed(() => ({
+  signature: signature.value ?? '',
+  cluster: payload.value?.cluster ?? '',
+  label: t('checkout.settled.signatureLabel'),
+  copyLabel: t('checkout.settled.copySignature'),
+  copiedLabel: t('common.copied'),
+  explorerLabel: t('checkout.settled.explorer')
+}))
+
 // Written once and printed on the sheet: paper has nothing to click.
 const detailRows = computed(() => [
   { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true },
@@ -525,12 +539,7 @@ useSeoMeta({
                 </p>
                 <SignatureProof
                   v-if="signature"
-                  :signature="signature"
-                  :cluster="payload?.cluster ?? ''"
-                  :label="$t('checkout.settled.signatureLabel')"
-                  :copy-label="$t('checkout.settled.copySignature')"
-                  :copied-label="$t('common.copied')"
-                  :explorer-label="$t('checkout.settled.explorer')"
+                  v-bind="signatureProof"
                 />
                 <p
                   v-else-if="record?.settled_by"
@@ -565,12 +574,7 @@ useSeoMeta({
                      line the settled view keeps once the record arrives. -->
                 <SignatureProof
                   v-if="signature"
-                  :signature="signature"
-                  :cluster="payload?.cluster ?? ''"
-                  :label="$t('checkout.settled.signatureLabel')"
-                  :copy-label="$t('checkout.settled.copySignature')"
-                  :copied-label="$t('common.copied')"
-                  :explorer-label="$t('checkout.settled.explorer')"
+                  v-bind="signatureProof"
                 />
               </div>
 
