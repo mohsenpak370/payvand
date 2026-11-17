@@ -22,6 +22,14 @@ const props = defineProps<{
   progress: number
   loading: boolean
   disabled: boolean
+  /** What the button does, when there is nothing in the way. */
+  hint: string
+  /**
+   * Why it cannot be pressed, written out; empty when it can. A disabled button
+   * under a line telling the buyer to hold it reads as broken, so the reason
+   * takes the hint's place rather than sitting somewhere else on the sheet.
+   */
+  blockedReason?: string
 }>()
 
 const emit = defineEmits<{ start: [], stop: [] }>()
@@ -46,9 +54,11 @@ const emit = defineEmits<{ start: [], stop: [] }>()
 let press: number | null = null
 
 function startHold(event?: PointerEvent) {
-  // A press already running keeps its own clock, and a right-click or a second
-  // finger is not the deliberate press this button asks for.
-  if (props.holding) return
+  // A press already running keeps its own clock, a disabled button is not a
+  // press (the browser would not send one, but the handler does not rely on
+  // that), and a right-click or a second finger is not the deliberate press this
+  // button asks for.
+  if (props.holding || props.disabled) return
   if (event && !acceptsHoldPress(event)) return
   const target = event?.currentTarget
   if (event && target instanceof Element) {
@@ -139,4 +149,16 @@ onBeforeUnmount(() => {
       {{ holding ? holdingLabel : label }}
     </span>
   </UButton>
+  <p
+    v-if="blockedReason"
+    class="mt-2 text-xs text-warning"
+  >
+    {{ blockedReason }}
+  </p>
+  <p
+    v-else
+    class="mt-2 text-xs text-muted"
+  >
+    {{ hint }}
+  </p>
 </template>

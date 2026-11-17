@@ -25,6 +25,10 @@ const RECT = {
   toJSON: () => ({})
 } as DOMRect
 
+const HINT = 'Comes out of your monthly allowance — hold the button to send, with no wallet popup.'
+/** What the checkout passes when the treasury has no account for the token. */
+const BLOCKED = 'This invoice cannot be paid yet — nothing is sent. What is missing is explained above.'
+
 /** UButton renders a `<button>`; a bare one is enough to bind the handlers to. */
 const UButtonStub = defineComponent({
   inheritAttrs: false,
@@ -42,6 +46,7 @@ function mountButton(props: Record<string, unknown> = {}) {
       progress: 0,
       loading: false,
       disabled: false,
+      hint: HINT,
       ...props
     },
     global: { stubs: { UButton: UButtonStub } }
@@ -148,6 +153,50 @@ describe('HoldToPayButton', () => {
 
     press(button.element, 'pointerdown', { button: 2, clientX: 200, clientY: 120 })
     press(button.element, 'pointerdown', { isPrimary: false, clientX: 200, clientY: 120 })
+
+    expect(wrapper.emitted('start')).toBeUndefined()
+  })
+})
+
+/**
+ * The rule this component exists to keep: a button the buyer cannot press never
+ * stands there asking to be held. The checkout sets `disabled` from the invoice
+ * and hands over the reason; the reason takes the hint's place, right under it.
+ */
+describe('HoldToPayButton, when the invoice cannot be paid', () => {
+  it('disables the button and puts the reason where the hint was', () => {
+    const { wrapper } = mountButton({ disabled: true, blockedReason: BLOCKED })
+
+    const button = wrapper.get('button')
+    expect(button.attributes('disabled')).toBeDefined()
+
+    // One caption, in the button's own block and directly after it: the buyer
+    // reads the reason where the press would have been, not elsewhere on the
+    // sheet.
+    const captions = wrapper.findAll('p')
+    expect(captions).toHaveLength(1)
+    expect(captions[0]!.text()).toBe(BLOCKED)
+    expect(captions[0]!.classes()).toContain('text-warning')
+    expect(wrapper.element.children[0]!.tagName).toBe('BUTTON')
+    expect(wrapper.element.children[1]!.tagName).toBe('P')
+    expect(wrapper.text()).not.toContain(HINT)
+  })
+
+  it('still says what the button does when nothing is in the way', () => {
+    const { wrapper } = mountButton()
+
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('p').text()).toBe(HINT)
+    expect(wrapper.get('p').classes()).toContain('text-muted')
+    expect(wrapper.text()).not.toContain(BLOCKED)
+  })
+
+  it('cannot start a press while it is disabled', () => {
+    // The browser sends no pointer events to a disabled button, but the handler
+    // does not rely on that: the press is refused here as well, so no clock can
+    // start behind a button that says it cannot pay.
+    const { wrapper, button } = mountButton({ disabled: true, blockedReason: BLOCKED })
+    press(button.element, 'pointerdown', { clientX: 200, clientY: 120 })
 
     expect(wrapper.emitted('start')).toBeUndefined()
   })

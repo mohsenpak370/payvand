@@ -577,23 +577,13 @@ useSeoMeta({
                   :progress="holdProgress"
                   :loading="busy"
                   :disabled="!canPayFromAllowance"
+                  :hint="$t('checkout.hold.hint')"
+                  :blocked-reason="
+                    treasuryTokenAccountMissing ? $t('checkout.hold.blocked') : ''
+                  "
                   @start="beginHold"
                   @stop="stopHold"
                 />
-                <!-- A dead hold button beside "hold to send" reads as broken, so
-                     the stage says what is missing in the button's place. -->
-                <p
-                  v-if="treasuryTokenAccountMissing"
-                  class="mt-2 text-xs text-warning"
-                >
-                  {{ $t('checkout.hold.blocked') }}
-                </p>
-                <p
-                  v-else
-                  class="mt-2 text-xs text-muted"
-                >
-                  {{ $t('checkout.hold.hint') }}
-                </p>
               </template>
 
               <!-- A connected wallet: one tap, straight to its approval. -->
