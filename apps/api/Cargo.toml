@@ -38,6 +38,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 solana-rpc-client = "3"
 solana-pubkey = "3"
+# The commitment level of the invoice reads; already resolved through
+# solana-rpc-client, named here because `fetch_payment` sets it explicitly.
+solana-commitment-config = "3"
 sha2 = "0.10"
 libsql = "0.10"
 # Parsing RPC endpoints the way a browser would, so a payment code cannot

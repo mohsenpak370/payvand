@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::str::FromStr;
@@ -590,7 +591,7 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
 
     // The invoice and its receipt are two different addresses, and only one of
     // them exists at a time, so ask for both in one round trip.
-    let rpc = RpcClient::new(endpoint.clone());
+    let rpc = payment_rpc(endpoint.clone());
     let accounts = match rpc.get_multiple_accounts(&[pubkey, receipt_address]).await {
         Ok(accounts) => accounts,
         Err(error) => {
@@ -622,6 +623,17 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
         // the normal state of an invoice nobody has scanned yet.
         None => Ok(pending_record(pubkey, cluster, endpoint)),
     }
+}
+
+/// The client every invoice read goes through.
+///
+/// `RpcClient::new` reads at `finalized`, which trails the `confirmed` a wallet
+/// waits for by a dozen seconds on mainnet: a payment the buyer could already see
+/// in their wallet came back `pending` from this API, and the checkout had to
+/// read the chain itself to cover the gap. `confirmed` is the same level the send
+/// settled at, so the record catches up within a slot or two.
+fn payment_rpc(endpoint: String) -> RpcClient {
+    RpcClient::new_with_commitment(endpoint, CommitmentConfig::confirmed())
 }
 
 /// The best record for one invoice address: its receipt if it was settled, the
@@ -1287,6 +1299,15 @@ mod tests {
                 "{hostile} should not be fetched"
             );
         }
+    }
+
+    /// The checkout reads invoice state, not settlement history: `finalized`
+    /// trails the `confirmed` a wallet waits for by a dozen seconds, and a paid
+    /// invoice came back `pending` for exactly that long.
+    #[test]
+    fn invoice_reads_use_confirmed_commitment() {
+        let rpc = payment_rpc("https://api.devnet.solana.com".into());
+        assert_eq!(rpc.commitment(), CommitmentConfig::confirmed());
     }
 
     #[test]

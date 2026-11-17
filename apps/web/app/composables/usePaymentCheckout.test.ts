@@ -170,11 +170,12 @@ describe('pay()', () => {
 })
 
 /**
- * A reload lands in the gap between a confirmed send and the record that reports
- * it: the API's node answers at its own commitment, so for a few seconds it still
- * says `pending`. The page trusted the record alone, so the button came back for
- * an invoice the chain had already paid, and the second press earned the chain
- * error that made the buyer reload in the first place. `load()` asks the chain.
+ * A reload can land in the slot between a send the cluster has confirmed and the
+ * API's node voting it `confirmed`: for that moment the record still says
+ * `pending`. The page trusted the record alone, so the button came back for an
+ * invoice the chain had already paid, and the second press earned the chain error
+ * that made the buyer reload in the first place. `load()` asks the chain once;
+ * the poll takes its answers from the API, which now reads at `confirmed` too.
  */
 describe('a page that loads with the payment already on chain', () => {
   const amount = 250_000
@@ -207,6 +208,9 @@ describe('a page that loads with the payment already on chain', () => {
    * composable takes its api at setup, the same way it takes its client.
    */
   let apiPayer: string | null = null
+
+  /** Whether the API has caught up with the payment, which it now does in a slot. */
+  let apiSettled = false
 
   /**
    * The accounts the buyer's node holds, and how often it was asked. The
@@ -249,7 +253,11 @@ describe('a page that loads with the payment already on chain', () => {
     }))
     vi.stubGlobal('usePaymentApi', () => ({
       getPayment: async (id: string) => {
-        const fetched = { ...pendingRecord(id), settled_by: apiPayer }
+        const fetched = {
+          ...pendingRecord(id),
+          status: (apiSettled ? 'settled' : 'pending') as 'settled' | 'pending',
+          settled_by: apiPayer
+        }
         answered.push(fetched.status)
         return fetched
       },
@@ -263,6 +271,7 @@ describe('a page that loads with the payment already on chain', () => {
   beforeEach(() => {
     answered = []
     apiPayer = null
+    apiSettled = false
     chainAccounts = []
     chainReads = 0
     // `load()` starts the record poll; the clock is faked so it never fires here.
@@ -311,51 +320,39 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.canPayWithWallet.value).toBe(true)
   })
 
-  it('settles the open page once the invoice is paid somewhere else', async () => {
+  it('settles the open page from the API alone, without reading the chain', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([])
     const checkout = await loadInvoice(invoice)
     // Left open and unpaid: the buyer's own wallet is the action.
     expect(checkout.stage.value).toBe('wallet')
+    const readsAtLoad = chainReads
 
-    // Paid from another wallet, or another device: the chain holds the receipt
-    // while the API's node still answers `pending`.
-    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    // Paid from another wallet, or another device. The API reads the cluster at
+    // `confirmed`, the level the send waited for, so the very next tick has it —
+    // and the page does not have to ask the buyer's RPC anything to find out.
+    apiSettled = true
     await vi.advanceTimersByTimeAsync(5_000)
+    await vi.waitFor(() => expect(checkout.stage.value).toBe('settled'))
 
-    // The tick reads the API and then the chain, so the answer lands a couple of
-    // awaits after the timer fires rather than on it.
-    await vi.waitFor(() => expect(checkout.record.value?.status).toBe('settled'))
-    expect(checkout.stage.value).toBe('settled')
     expect(checkout.canPayWithWallet.value).toBe(false)
     expect(checkout.canPayFromAllowance.value).toBe(false)
+    expect(chainReads).toBe(readsAtLoad)
+    expect(answered).toEqual(['pending', 'settled'])
   })
 
-  it('asks the chain less often than the API while the invoice stays unpaid', async () => {
+  it('keeps an unpaid page to one chain read, however long it stays open', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([])
     const checkout = await loadInvoice(invoice)
     expect(checkout.stage.value).toBe('wallet')
+    const readsAtLoad = chainReads
 
-    const atLoad = chainReads
-    // The first tick asks the chain, so a payment made elsewhere is noticed at
-    // once rather than only when the indexer catches up.
-    await vi.advanceTimersByTimeAsync(5_000)
-    await vi.waitFor(() => expect(chainReads).toBe(atLoad + 1))
-
-    // A minute of an unpaid page: twelve API ticks, and the chain asked a
-    // handful of times — the gap widens as nothing moves.
-    await vi.advanceTimersByTimeAsync(55_000)
-    await vi.waitFor(() => expect(answered.length).toBe(13))
-    const reads = chainReads - atLoad
-    expect(reads).toBeGreaterThanOrEqual(2)
-    expect(reads).toBeLessThanOrEqual(4)
-
-    // And the widest gap still notices: the next payment shows up within a
-    // minute of it landing, without a reload.
-    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    // A minute of an unpaid page: twelve API ticks and not one chain read. The
+    // read at load is the only one, so a tab left open costs the RPC nothing.
     await vi.advanceTimersByTimeAsync(60_000)
-    await vi.waitFor(() => expect(checkout.stage.value).toBe('settled'))
+    await vi.waitFor(() => expect(answered.length).toBe(13))
+    expect(chainReads).toBe(readsAtLoad)
   })
 
   it('stops reading a settled record, API and chain alike', async () => {
