@@ -7,6 +7,7 @@
     "preview": "nuxt preview",
     "test": "vitest run",
     "treasury:open": "node scripts/open-treasury-token-account.mjs",
+    "smoke:guards": "node scripts/devnet-token-guard-smoke.mjs",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "postinstall": "nuxt prepare",

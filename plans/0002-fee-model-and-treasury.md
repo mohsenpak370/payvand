@@ -1235,6 +1235,19 @@ Built (2026-11-16): the program half of this task landed with the tests. Both
 paths now use `associated_token::mint`/`authority` for the vault, and
 `close_token_budget` also requires the mint argument to be the budget's own.
 
+Run on devnet (2026-11-17): the harness proves the built artifact, not the
+deployed one, so `apps/web/scripts/devnet-token-guard-smoke.mjs`
+(`pnpm smoke:guards`) repeats both refusals against program
+`4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J`. It opened a token budget on a
+throwaway mint (500,000 limit, `3FMX5rV3…`), closed it with another mint's
+canonical vault — every ATA constraint satisfied, so only the mint check can
+refuse — got `Custom(6008)` (`2J5T2gqf…`), then built a token account with the
+vault's mint and authority at an address that is not the vault (`JD6T8b2e…`)
+and had both `pay_from_token_budget` (`458yh73z…`) and `close_token_budget`
+(`21ek1M93…`) refused with `Custom(2009)`, Anchor's canonical-ATA check. The
+real vault still held 500,000, the decoy and the seller held 0 and the budget
+was still open, so nothing was stranded; the run then closed it (`fSrvNdKA…`).
+
 Files likely touched:
 
 - `apps/contracts/programs/payvand/src/instructions/token.rs`
@@ -1634,6 +1647,17 @@ regeneration and the deployed web app keeps working unchanged.
 needed this time. The spend-to-zero check and its signatures are under Task 2.4.
 Again the IDL is unchanged, so only the program moved.
 
+**Program upgraded for the mint/vault constraints and the raised floats
+(2026-11-17):** in place, same ID, authority and 525,312 bytes, slot 522910696,
+upgrade `46z2UtBU…`.
+ProgramData `8GQRqbdm…` starts with exactly what a fresh `cargo build-sbf` of the
+current source produces (516,992 bytes, sha256 `18599442…`, 8,320 trailing zero
+bytes), so the deployed artifact is the checked-in program and rebuilding the
+same source is a no-op. The guards that make that build different were then run
+against it on devnet (Task 3.3), and the budget that run opened reported the new
+floats — 12,000,000 lamports on the session key, 18,000,000 on the budget — so
+the amount the program moved is the deployed build's own constant.
+
 **Web redeploy (2026-11-14):** the production build that quotes from `Config`
 and sends the treasury account is live at `https://payvand-app.vercel.app`
 (deployment `payvand-ahj2ckg40-…`, built from the two-file upload tree the
@@ -1751,7 +1775,10 @@ Smoke tests:
       token program).
 - [x] Wrong-mint close fails; decoy vault rejected. Executed in the Rust harness
       (2026-11-16): the wrong mint gives `MintMismatch`, the decoy vault Anchor's
-      canonical-ATA check, and neither moved a token. Not run on devnet.
+      canonical-ATA check, and neither moved a token. Repeated on devnet
+      (2026-11-17) against the deployed program: `Custom(6008)` on the
+      wrong-mint close, `Custom(2009)` on both decoy-vault calls, balances
+      unmoved (`pnpm smoke:guards`, signatures under Task 3.3).
 - [x] `close_budget` returns the pot and the account rent to the buyer and the
       account is gone (`42FiDA7V…`; the stand-in budget `5Jirbyfw…` likewise
       closed a 38,963,680 lamport account back to the wallet).
@@ -1857,7 +1884,10 @@ Estimated scope: Small.
       the treasury ATA; the float covers three fresh-seller payments; wrong-mint
       and decoy vaults fail. All four execute in the harness: three sellers with
       no SOL and no account are paid out of the float, the fourth needs a top-up,
-      and the buyer's plain transfers are the whole refill (Task 3.2).
+      and the buyer's plain transfers are the whole refill (Task 3.2). The two
+      refusals were then repeated on devnet against the deployed program
+      (2026-11-17, `pnpm smoke:guards`): `Custom(6008)` for the wrong mint,
+      `Custom(2009)` twice for the decoy vault, nothing stranded.
 - [ ] **Checkpoint 4:** Closing or rotating sweeps the float; events carry the
       split; Token-2022 is documented; `Config` layout is tested; no dead code.
 - [ ] **Checkpoint 5:** `task verify`, `anchor test`, and the devnet smoke tests
