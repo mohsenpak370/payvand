@@ -836,9 +836,11 @@ useSeoMeta({
                   :key="row.label"
                   class="flex justify-between gap-3"
                 >
-                  <dt>{{ row.label }}</dt>
+                  <dt class="shrink-0 whitespace-nowrap">
+                    {{ row.label }}
+                  </dt>
                   <dd
-                    class="min-w-0"
+                    class="min-w-0 text-end"
                     :class="[row.mono ? 'font-mono' : '', row.wrap ? 'break-all' : 'truncate']"
                   >
                     {{ row.value }}
