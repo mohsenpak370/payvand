@@ -4,6 +4,7 @@ import {
   sweepableLamports,
   tokenFloatNeed,
   tokenFloatTopUp,
+  tokenOpenCost,
   transferLamportsInstruction
 } from './useBudget'
 
@@ -102,5 +103,72 @@ describe('the token float', () => {
     // And nothing for the side that is short of nothing, even if the other is.
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 5_700_240, session: 1_000 }))
       .toEqual({ budget: 0, session: 7_743_520, total: 7_743_520 })
+  })
+})
+
+/**
+ * `open_token_budget` brings the budget account to `rent + TOKEN_BUDGET_FEE_FLOAT`
+ * on every call — `wanted - held` in the handler — and hands that float back to
+ * the session key as invoices settle. The page quotes the same signature, so
+ * these numbers are the program's: mainnet rent for `TOKEN_BUDGET_SPACE` (129
+ * bytes), and the two floats from `constants.rs`.
+ */
+describe('tokenOpenCost', () => {
+  const RENT = (129 + 128) * 3_480 * 2 // 1,788,720 lamports
+  const REFUND_FLOAT = 18_000_000 // TOKEN_BUDGET_FEE_FLOAT
+  const SESSION_FLOAT = 12_000_000 // SESSION_FEE_FLOAT
+  const FEE = 10_000 // NETWORK_FEE_LAMPORTS
+  const held = (lamports: number) => ({ budgetRent: RENT, sessionHeld: SESSION_FLOAT, fee: FEE, held: lamports })
+
+  it('prices a first open at the account rent, the whole float and the session float', () => {
+    // `init` leaves the new account holding exactly its rent, so the handler
+    // moves the float on top of it.
+    // A fresh session key too: it holds nothing to offset its float.
+    expect(tokenOpenCost({ exists: false, ...held(0), sessionHeld: 0 })).toEqual({
+      rent: RENT,
+      refundFloat: REFUND_FLOAT,
+      feeFloat: SESSION_FLOAT,
+      fee: FEE,
+      total: RENT + REFUND_FLOAT + SESSION_FLOAT + FEE
+    })
+  })
+
+  it('prices a refill at the float its payments spent, not at zero', () => {
+    // A budget worn down to 6,000,000 of float: the signature puts back the
+    // difference, which is what the page has to show.
+    const cost = tokenOpenCost({ exists: true, ...held(RENT + 6_000_000) })
+
+    expect(cost.rent).toBe(0)
+    expect(cost.refundFloat).toBe(REFUND_FLOAT - 6_000_000)
+    expect(cost.total).toBe(REFUND_FLOAT - 6_000_000 + FEE)
+  })
+
+  it('asks a refill for the whole float when the float is gone', () => {
+    const cost = tokenOpenCost({ exists: true, ...held(RENT) })
+
+    expect(cost.refundFloat).toBe(REFUND_FLOAT)
+    expect(cost.total).toBe(REFUND_FLOAT + FEE)
+  })
+
+  it('asks nothing of a budget that still holds its float, or more', () => {
+    // Two payments' refunds can leave it above the rent plus the float; the
+    // handler moves nothing there, and neither may the quote.
+    expect(tokenOpenCost({ exists: true, ...held(RENT + REFUND_FLOAT) }).refundFloat).toBe(0)
+    expect(tokenOpenCost({ exists: true, ...held(RENT + REFUND_FLOAT + 5_000_000) }).refundFloat).toBe(0)
+  })
+
+  it('adds whatever the session key is short of its own float', () => {
+    const cost = tokenOpenCost({ exists: true, ...held(RENT + REFUND_FLOAT), sessionHeld: 5_000_000 })
+
+    expect(cost.feeFloat).toBe(SESSION_FLOAT - 5_000_000)
+    expect(cost.total).toBe(SESSION_FLOAT - 5_000_000 + FEE)
+  })
+
+  it('prices a key this device has not made yet at the whole session float', () => {
+    // `sessionAddress` is optional, and a missing one is quoted as empty rather
+    // than at the buyer's own balance.
+    const cost = tokenOpenCost({ exists: false, ...held(0), sessionHeld: 0 })
+
+    expect(cost.feeFloat).toBe(SESSION_FLOAT)
   })
 })

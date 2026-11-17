@@ -46,6 +46,50 @@ const TOKEN_BUDGET_SPACE = 129
 /** Lamports a token budget keeps to refund the invoice rent it advances. */
 const TOKEN_BUDGET_FEE_FLOAT = 18_000_000
 
+export interface TokenOpenCostInput {
+  /** A budget account is already there for this buyer and mint. */
+  exists: boolean
+  /** Lamports on it; 0 when it does not exist. */
+  held: number
+  /** Rent for `TOKEN_BUDGET_SPACE`, as the cluster charges it. */
+  budgetRent: number
+  /** Lamports on the session key that will sign; 0 for a key not made yet. */
+  sessionHeld: number
+  /** The network fee the signature costs. */
+  fee: number
+}
+
+/**
+ * One `open_token_budget` signature, priced from what was read: what it costs on
+ * top of the tokens it moves.
+ *
+ * The handler brings the budget account to its rent plus the refund float on
+ * every call — `wanted - held` — and the account hands that float back to the
+ * session key as it settles invoices. So a first open pays the account's rent
+ * and the whole float, a refill pays only the gap its payments spent, and one
+ * that still holds its float pays nothing. Pricing a refill at zero is what made
+ * the page understate it.
+ */
+export function tokenOpenCost(
+  input: TokenOpenCostInput
+): { rent: number, refundFloat: number, feeFloat: number, fee: number, total: number } {
+  const rent = input.exists ? 0 : input.budgetRent
+  const budgetTopUp = Math.max(
+    0,
+    input.budgetRent + TOKEN_BUDGET_FEE_FLOAT - (input.exists ? input.held : 0)
+  )
+  // A first open's top-up includes the account's rent; only the rest is float.
+  const refundFloat = budgetTopUp - rent
+  const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - input.sessionHeld)
+  return {
+    rent,
+    refundFloat,
+    feeFloat,
+    fee: input.fee,
+    total: rent + refundFloat + feeFloat + input.fee
+  }
+}
+
 /**
  * What one payment to a seller with no token account needs from the two floats.
  * The session key advances the seller's account and both records before the
@@ -607,35 +651,32 @@ export function useBudget() {
   }
 
   /**
-   * What one `open_token_budget` signature costs on top of the tokens it
-   * moves: the session-key float, the budget account's rent and its refund
-   * float, and the network fee.
+   * What one `open_token_budget` signature costs on top of the tokens it moves.
+   * The reads are here; the pricing is `tokenOpenCost`, which is where the rule
+   * about refills lives and where it is tested.
    */
   async function openTokenBudgetCost(
     buyer: Address,
     mint: Address,
     sessionAddress?: Address
   ): Promise<{ rent: number, feeFloat: number, refundFloat: number, fee: number, total: number }> {
-    const existing = await loadTokenBudget(buyer, mint)
-    // `open_token_budget` tops the account up to its rent plus the refund float
-    // on every call, so a returning buyer pays only the gap — the same rule the
-    // vault's token top-up follows. Charging a refill 0 understated it by
-    // whatever the last payments spent.
-    const budgetRent = await rentMinimum(TOKEN_BUDGET_SPACE)
-    const budgetTopUp = Math.max(
-      0,
-      budgetRent + TOKEN_BUDGET_FEE_FLOAT - (existing?.lamports ?? 0)
-    )
-    const rent = existing ? 0 : budgetRent
-    const refundFloat = budgetTopUp - rent
-    const sessionLamports = sessionAddress
-      ? Number(
-          (await client.rpc.getBalance(sessionAddress, { commitment: 'confirmed' }).send()).value
-        )
-      : 0
-    const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - sessionLamports)
-    const fee = NETWORK_FEE_LAMPORTS
-    return { rent, feeFloat, refundFloat, fee, total: rent + refundFloat + feeFloat + fee }
+    const [existing, budgetRent, sessionLamports] = await Promise.all([
+      loadTokenBudget(buyer, mint),
+      rentMinimum(TOKEN_BUDGET_SPACE),
+      sessionAddress
+        ? client.rpc
+            .getBalance(sessionAddress, { commitment: 'confirmed' })
+            .send()
+            .then(({ value }) => Number(value))
+        : Promise.resolve(0)
+    ])
+    return tokenOpenCost({
+      exists: Boolean(existing),
+      held: existing?.lamports ?? 0,
+      budgetRent,
+      sessionHeld: sessionLamports,
+      fee: NETWORK_FEE_LAMPORTS
+    })
   }
 
   return {
