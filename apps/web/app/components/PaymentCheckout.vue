@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Shop } from '~/composables/useShop'
+import { strayedFromHoldBounds } from '~/utils/holdSlop'
 
 const props = withDefaults(
   defineProps<{
@@ -253,7 +254,7 @@ function openDiscount() {
   discountOpen.value = true
 }
 
-/**
+/*
  * The press has to survive a finger sliding a millimetre off the edge, which is
  * why the button captures the pointer: while it holds that capture `pointerleave`
  * does not fire at all, so the hold ends when the pointer is really released and
@@ -261,10 +262,10 @@ function openDiscount() {
  *
  * That also means a drag no longer cancels by itself, so `trackHold` keeps the
  * old way out: drifting within a finger's width of the button is still the same
- * press, and pulling away from it is not. `endHold` releases the capture and
- * stops the hold; the `lostpointercapture` that follows finds nothing to end.
+ * press, and pulling away from it is not — `strayedFromHoldBounds` is that rule,
+ * and `holdSlop.test.ts` holds both of its sides. `endHold` releases the capture
+ * and stops the hold; the `lostpointercapture` that follows finds nothing to end.
  */
-const HOLD_SLOP_PX = 32
 
 /** The pointer press that is holding the button, while one is. */
 let press: { target: Element, pointer: number } | null = null
@@ -289,12 +290,7 @@ function startHold(event?: PointerEvent) {
 function trackHold(event: PointerEvent) {
   if (!press || event.pointerId !== press.pointer) return
   const rect = press.target.getBoundingClientRect()
-  const away
-    = event.clientX < rect.left - HOLD_SLOP_PX
-      || event.clientX > rect.right + HOLD_SLOP_PX
-      || event.clientY < rect.top - HOLD_SLOP_PX
-      || event.clientY > rect.bottom + HOLD_SLOP_PX
-  if (away) endHold()
+  if (strayedFromHoldBounds(rect, { x: event.clientX, y: event.clientY })) endHold()
 }
 
 /** The end of a pointer press: let go of the capture and abandon the hold. */
