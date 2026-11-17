@@ -746,6 +746,7 @@ export function usePaymentCheckout() {
     paymentDescription,
     paymentMemo,
     items,
+    canPaySilently,
     canPayFromAllowance,
     canPayWithWallet,
     blockedReason,

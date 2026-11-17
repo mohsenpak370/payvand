@@ -349,9 +349,13 @@ describe('paying from the allowance', () => {
     const checkout = withAllowance(checkoutFor(quoteFor(true)))
     checkout.loading.value = false
 
-    expect(checkout.stage.value).toBe('silent')
+    // The change itself: the device still has a way to pay, and neither path may
+    // take this invoice. Without `canPaySilently` the stage name alone could be
+    // produced by conditions that have nothing to do with the treasury account.
+    expect(checkout.canPaySilently.value).toBe(true)
     expect(checkout.canPayFromAllowance.value).toBe(false)
     expect(checkout.canPayWithWallet.value).toBe(false)
+    expect(checkout.stage.value).toBe('silent')
   })
 
   it('keeps the button away until the record catches up with the send', async () => {
