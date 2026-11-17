@@ -253,8 +253,9 @@ describe('a page that loads with the payment already on chain', () => {
 
   it('offers no button when the receipt exists and the record has not caught up', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
-    // The invoice account is gone — a settled SOL invoice leaves only its
-    // receipt — so this also pins that the receipt is read.
+    // Every `settle_*` closes its invoice in the same transaction, so a settled
+    // invoice leaves only its receipt — this is the account the page must read,
+    // and the test fails if it reads the invoice account instead.
     chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
 
     const checkout = await loadInvoice(invoice)

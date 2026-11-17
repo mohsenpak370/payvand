@@ -339,36 +339,33 @@ export function usePaymentCheckout() {
   }
 
   /**
-   * Records a payment the chain already holds as settled. `settle_*` writes the
-   * payment account and its receipt in one instruction and nothing closes them,
-   * so either one existing at `confirmed` is the answer the API gives a few
-   * seconds later at its own commitment — and a reload lands in that gap, when
-   * the record still says `pending` and the pay button would come back for an
-   * invoice that is already paid.
+   * Records a payment the chain already holds as settled. Every `settle_*`
+   * instruction closes its invoice in the same transaction, so the receipt is
+   * the only account a settled invoice leaves behind — and it exists at
+   * `confirmed` a few seconds before the API says so. A reload lands in that
+   * gap, when the record still says `pending` and the pay button would come back
+   * for an invoice that is already paid.
    *
-   * A read that fails changes nothing: a flaky node must not talk the page out
-   * of a payment the buyer can still make.
+   * One read per address, in parallel: a code that takes SOL and USDC has an
+   * address per currency and the chain is the only place that knows which one
+   * was paid. A read that fails changes nothing — a flaky node must not talk the
+   * page out of a payment the buyer can still make.
    */
   async function settleFromChain(pdas: (string | null)[]): Promise<void> {
     if (!record.value || settled.value) return
-    const read = (key: Address) =>
-      client.rpc
-        .getAccountInfo(key, { commitment: 'confirmed', encoding: 'base64' })
-        .send()
-    const holds = async (pda: string) => {
-      try {
-        const payment = address(pda)
-        if ((await read(payment)).value) return true
-        return Boolean((await read(await derivePaymentReceiptPda(payment))).value)
-      } catch {
-        return false
-      }
-    }
-    // A code that takes SOL and USDC has one address per currency, and the chain
-    // is the only place that knows which of them was paid.
+    const paid = (pda: string) =>
+      derivePaymentReceiptPda(address(pda))
+        .then(receipt =>
+          client.rpc
+            .getAccountInfo(receipt, { commitment: 'confirmed', encoding: 'base64' })
+            .send()
+        )
+        .then(({ value }) => Boolean(value))
+        .catch(() => false)
+
     const unique = [...new Set(pdas.filter((pda): pda is string => Boolean(pda)))]
-    const found = await Promise.all(unique.map(holds))
-    if (!found.some(Boolean)) return
+    const settledSomewhere = await Promise.all(unique.map(paid))
+    if (!settledSomewhere.some(Boolean)) return
     record.value = { ...record.value, status: 'settled' }
   }
 

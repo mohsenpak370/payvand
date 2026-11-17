@@ -131,10 +131,13 @@ Revision 9 records the checkout's reload window (2026-11-17):
   already held, and the press earned `AlreadySettled` (6002): the error the
   confirming stage exists to prevent, one page load later.
 - `load()` now asks the chain as part of loading: for every address this code can
-  be paid on (SOL and each offered token), it reads the invoice account and its
-  receipt at `confirmed`, and writes a settled record when either one exists. A
-  code that takes SOL and USDC has one address per currency, so every offered
-  address is checked rather than the one the currency switch happens to be on.
+  be paid on (SOL and each offered token) it reads that address's receipt at
+  `confirmed`, and writes a settled record when one exists. The receipt is the
+  only account worth reading — every `settle_*` closes its invoice in the same
+  transaction, so a settled invoice leaves nothing else behind. A code that takes
+  SOL and USDC has one address per currency, so every offered address is checked
+  rather than the one the currency switch happens to be on; the reads run in
+  parallel, so a load costs one round trip, not one per currency.
 - The answer goes into `record`, not into a flag beside it, so the stage,
   `invoicePayable` and the poll read one state and cannot disagree. Only a
   positive answer moves the record: a read that errors, or a code whose accounts
