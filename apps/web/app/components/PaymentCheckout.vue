@@ -530,23 +530,27 @@ useSeoMeta({
                 />
                 <!-- The code stays on the sheet too, not only in the result
                      dialog the buyer may have already dismissed. -->
-                <p
+                <!-- The code and the wallet that paid copy the same way the
+                     signature does: shortened on the screen, whole on paper. -->
+                <CopyField
                   v-if="refCode"
-                  class="text-xs text-muted"
-                >
-                  {{ $t('checkout.referenceCode') }}
-                  <span class="font-mono tracking-wider text-default">{{ refCode }}</span>
-                </p>
+                  :label="$t('checkout.referenceCode')"
+                  :value="refCode"
+                  :copy-label="$t('checkout.result.copyCode')"
+                  :copied-label="$t('common.copied')"
+                />
                 <SignatureProof
                   v-if="signature"
                   v-bind="signatureProof"
                 />
-                <p
+                <CopyField
                   v-else-if="record?.settled_by"
-                  class="text-xs text-muted"
-                >
-                  {{ $t('checkout.settled.paidBy', { wallet: record.settled_by }) }}
-                </p>
+                  :label="$t('checkout.settled.paidByLabel')"
+                  :value="record.settled_by"
+                  :keep="6"
+                  :copy-label="$t('checkout.settled.copyWallet')"
+                  :copied-label="$t('common.copied')"
+                />
               </div>
 
               <!--

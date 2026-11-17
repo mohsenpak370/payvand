@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed } from 'vue'
 import { explorerTxUrl } from '~/utils/explorer'
 
 /**
@@ -7,8 +7,9 @@ import { explorerTxUrl } from '~/utils/explorer'
  * only read is not proof of anything: this one is short enough to sit on the
  * sheet, copies the whole signature, and opens it on the cluster's explorer.
  *
- * Paper has nothing to click, so the buttons drop out of the print view and the
- * full signature prints in place of the short one.
+ * The line itself is `CopyField`, the same row the reference code and the payer's
+ * wallet use, so every value the sheet hands over copies the same way — and paper
+ * keeps the full one where the buttons drop out.
  */
 const props = defineProps<{
   signature: string
@@ -20,53 +21,18 @@ const props = defineProps<{
   explorerLabel: string
 }>()
 
-/** Long enough to recognise and compare, short enough never to wrap the sheet. */
-const short = computed(() =>
-  props.signature.length > 20
-    ? `${props.signature.slice(0, 8)}…${props.signature.slice(-8)}`
-    : props.signature
-)
-
 const href = computed(() => explorerTxUrl(props.signature, props.cluster))
-
-const copied = ref(false)
-let reset: ReturnType<typeof setTimeout> | undefined
-
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(props.signature)
-  } catch {
-    // A refused clipboard leaves the signature selectable and the link there.
-    return
-  }
-  copied.value = true
-  clearTimeout(reset)
-  reset = setTimeout(() => {
-    copied.value = false
-  }, 2_000)
-}
-
-onBeforeUnmount(() => clearTimeout(reset))
 </script>
 
 <template>
-  <div class="flex items-center gap-2 text-xs text-muted">
-    <span class="shrink-0">{{ label }}</span>
-    <span
-      class="font-mono text-default print:hidden"
-      :title="signature"
-    >{{ short }}</span>
-    <span class="hidden break-all font-mono text-default print:inline">{{ signature }}</span>
-    <div class="ml-auto flex shrink-0 items-center gap-1 print:hidden">
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-        :aria-label="copied ? copiedLabel : copyLabel"
-        :title="copied ? copiedLabel : copyLabel"
-        @click="copy"
-      />
+  <CopyField
+    :label="label"
+    :value="signature"
+    :keep="8"
+    :copy-label="copyLabel"
+    :copied-label="copiedLabel"
+  >
+    <template #actions>
       <UButton
         v-if="href"
         size="xs"
@@ -79,6 +45,6 @@ onBeforeUnmount(() => clearTimeout(reset))
         :aria-label="explorerLabel"
         :title="explorerLabel"
       />
-    </div>
-  </div>
+    </template>
+  </CopyField>
 </template>

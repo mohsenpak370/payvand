@@ -2,6 +2,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
+import CopyField from './CopyField.vue'
 import SignatureProof from './SignatureProof.vue'
 
 /**
@@ -32,7 +33,8 @@ function mountProof(props: Record<string, unknown> = {}) {
       explorerLabel: 'View on explorer',
       ...props
     },
-    global: { stubs: { UButton: UButtonStub } }
+    // Nuxt auto-imports `CopyField` in the app; a unit mount has to be told.
+    global: { stubs: { UButton: UButtonStub }, components: { CopyField } }
   })
 }
 

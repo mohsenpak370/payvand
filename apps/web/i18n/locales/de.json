@@ -373,7 +373,9 @@
       "signatureLabel": "Signatur",
       "copySignature": "Signatur kopieren",
       "explorer": "Im Explorer ansehen",
-      "paidBy": "Bezahlt von {wallet}"
+      "paidBy": "Bezahlt von {wallet}",
+      "paidByLabel": "Bezahlt von",
+      "copyWallet": "Wallet kopieren"
     },
     "hold": {
       "label": "Zum Zahlen {amount} halten",
