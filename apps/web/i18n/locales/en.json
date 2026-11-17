@@ -373,7 +373,6 @@
       "signatureLabel": "Signature",
       "copySignature": "Copy signature",
       "explorer": "View on explorer",
-      "paidBy": "Paid by {wallet}",
       "paidByLabel": "Paid by",
       "copyWallet": "Copy wallet"
     },

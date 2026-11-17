@@ -373,7 +373,6 @@
       "signatureLabel": "امضا",
       "copySignature": "رونوشت امضا",
       "explorer": "دیدن در کاوشگر",
-      "paidBy": "پرداخت‌شده با {wallet}",
       "paidByLabel": "پرداخت‌شده با",
       "copyWallet": "کپی کیف پول"
     },
