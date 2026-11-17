@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HOLD_SLOP_PX, strayedFromHoldBounds } from './holdSlop'
+import { HOLD_SLOP_PX, acceptsHoldPress, strayedFromHoldBounds } from './holdSlop'
 
 /**
  * A 100×40 button at (200, 300). The numbers are literals rather than derived
@@ -56,5 +56,19 @@ describe('strayedFromHoldBounds', () => {
     // A change here is a change to how a buyer cancels a payment, so it should
     // be made deliberately, with this line and the cases above in view.
     expect(SLOP).toBe(32)
+  })
+})
+
+describe('acceptsHoldPress', () => {
+  it('takes the primary press', () => {
+    expect(acceptsHoldPress({ button: 0, isPrimary: true })).toBe(true)
+  })
+
+  it('refuses the presses that are not a decision to pay', () => {
+    // A right-click, a middle-click, and every finger after the first one down:
+    // each would otherwise start a countdown that ends in a charge.
+    expect(acceptsHoldPress({ button: 2, isPrimary: true })).toBe(false)
+    expect(acceptsHoldPress({ button: 1, isPrimary: true })).toBe(false)
+    expect(acceptsHoldPress({ button: 0, isPrimary: false })).toBe(false)
   })
 })

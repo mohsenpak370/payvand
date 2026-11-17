@@ -42,3 +42,20 @@ export function strayedFromHoldBounds(
     || point.y > bounds.bottom + slop
   )
 }
+
+/** The parts of a `pointerdown` that decide whether it may start a hold. */
+export interface HoldPress {
+  /** 0 is the primary button; 1 and 2 are the middle and secondary ones. */
+  button: number
+  /** False for every touch after the first one down. */
+  isPrimary: boolean
+}
+
+/**
+ * Whether a `pointerdown` is the press a hold is for. Only the primary press
+ * may start one: a right-click, a middle-click or a second finger would start a
+ * countdown the buyer never meant, and the countdown pays.
+ */
+export function acceptsHoldPress(press: HoldPress): boolean {
+  return press.button === 0 && press.isPrimary
+}

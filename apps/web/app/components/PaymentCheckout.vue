@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Shop } from '~/composables/useShop'
-import { strayedFromHoldBounds } from '~/utils/holdSlop'
+import { acceptsHoldPress, strayedFromHoldBounds } from '~/utils/holdSlop'
 
 const props = withDefaults(
   defineProps<{
@@ -263,20 +263,25 @@ function openDiscount() {
  * That also means a drag no longer cancels by itself, so `trackHold` keeps the
  * old way out: drifting within a finger's width of the button is still the same
  * press, and pulling away from it is not — `strayedFromHoldBounds` is that rule,
- * and `holdSlop.test.ts` holds both of its sides. `endHold` releases the capture
- * and stops the hold; the `lostpointercapture` that follows finds nothing to end.
+ * and `holdSlop.test.ts` holds both of its sides.
+ *
+ * Nothing here lets go of the capture: the browser does that when the pointer is
+ * released, cancelled or taken away, and every one of those ends the hold below.
+ * `endHold` is idempotent, so the `lostpointercapture` that follows a release
+ * finds no press and changes nothing.
  */
 
-/** The pointer press that is holding the button, while one is. */
-let press: { target: Element, pointer: number } | null = null
+/** The id of the pointer holding the button, while one is. */
+let press: number | null = null
 
 function startHold(event?: PointerEvent) {
-  // The finger that started the press owns the capture; a second one must not
-  // take it, and a press already running has its own clock.
+  // A press already running keeps its own clock, and a right-click or a second
+  // finger is not the deliberate press this button asks for.
   if (holding.value) return
+  if (event && !acceptsHoldPress(event)) return
   const target = event?.currentTarget
   if (event && target instanceof Element) {
-    press = { target, pointer: event.pointerId }
+    press = event.pointerId
     try {
       target.setPointerCapture(event.pointerId)
     } catch {
@@ -288,19 +293,18 @@ function startHold(event?: PointerEvent) {
 }
 
 function trackHold(event: PointerEvent) {
-  if (!press || event.pointerId !== press.pointer) return
-  const rect = press.target.getBoundingClientRect()
-  if (strayedFromHoldBounds(rect, { x: event.clientX, y: event.clientY })) endHold()
+  const target = event.currentTarget
+  if (press === null || event.pointerId !== press || !(target instanceof Element)) return
+  const away = strayedFromHoldBounds(target.getBoundingClientRect(), {
+    x: event.clientX,
+    y: event.clientY
+  })
+  if (away) endHold()
 }
 
-/** The end of a pointer press: let go of the capture and abandon the hold. */
+/** The end of a pointer press: abandon the hold, and let the browser drop the capture. */
 function endHold() {
-  const held = press
   press = null
-  if (!held) return
-  if (held.target.hasPointerCapture(held.pointer)) {
-    held.target.releasePointerCapture(held.pointer)
-  }
   stopHold()
 }
 
@@ -308,21 +312,25 @@ function endHold() {
  * A press nobody is watching must not complete behind the buyer's back: losing
  * the window ends it, and so does the tab going to the background — there the
  * clock keeps running while the ticks are throttled, so the first tick after
- * coming back would see the count already done and pay at once. A keyboard press
- * has no pointer to let go of, so both of these stop the hold itself.
+ * coming back would see the count already done and pay at once. Both go through
+ * `endHold`, which also forgets the press.
  */
 function stopWhenHidden() {
-  if (document.hidden) stopHold()
+  if (document.hidden) endHold()
 }
 
 onMounted(() => {
-  window.addEventListener('blur', stopHold)
+  window.addEventListener('blur', endHold)
   document.addEventListener('visibilitychange', stopWhenHidden)
 })
 
+// A hold belongs to the button on screen: the sheet closing or the invoice
+// changing takes the press with it, so the clock cannot finish on its own and
+// send a payment from a page nobody is looking at.
 onBeforeUnmount(() => {
-  window.removeEventListener('blur', stopHold)
+  window.removeEventListener('blur', endHold)
   document.removeEventListener('visibilitychange', stopWhenHidden)
+  endHold()
 })
 
 async function refreshSaved() {
@@ -642,6 +650,10 @@ useSeoMeta({
                 whole count, and letting go sends and charges nothing.
               -->
               <template v-else-if="stage === 'silent'">
+                <!-- While the button holds the pointer's capture, `pointerup`,
+                     `pointercancel` and `lostpointercapture` are the ends it
+                     gets; `pointerleave` is the one that still works when the
+                     browser refused the capture. All four are idempotent. -->
                 <UButton
                   block
                   icon="i-lucide-zap"
