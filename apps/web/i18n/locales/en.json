@@ -370,7 +370,9 @@
     "settled": {
       "title": "Paid",
       "description": "This invoice is settled — there is nothing left to do.",
-      "signature": "Signature {signature}",
+      "signatureLabel": "Signature",
+      "copySignature": "Copy signature",
+      "explorer": "View on explorer",
       "paidBy": "Paid by {wallet}"
     },
     "hold": {

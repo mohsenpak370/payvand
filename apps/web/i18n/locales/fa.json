@@ -370,7 +370,9 @@
     "settled": {
       "title": "پرداخت شد",
       "description": "این فاکتور تسویه شده است — کاری نمانده.",
-      "signature": "امضا {signature}",
+      "signatureLabel": "امضا",
+      "copySignature": "رونوشت امضا",
+      "explorer": "دیدن در کاوشگر",
       "paidBy": "پرداخت‌شده با {wallet}"
     },
     "hold": {

@@ -523,13 +523,20 @@ useSeoMeta({
                   {{ $t('checkout.referenceCode') }}
                   <span class="font-mono tracking-wider text-default">{{ refCode }}</span>
                 </p>
+                <SignatureProof
+                  v-if="signature"
+                  :signature="signature"
+                  :cluster="payload?.cluster ?? ''"
+                  :label="$t('checkout.settled.signatureLabel')"
+                  :copy-label="$t('checkout.settled.copySignature')"
+                  :copied-label="$t('common.copied')"
+                  :explorer-label="$t('checkout.settled.explorer')"
+                />
                 <p
-                  v-if="signature || record?.settled_by"
-                  class="overflow-hidden text-xs text-muted font-mono text-ellipsis"
+                  v-else-if="record?.settled_by"
+                  class="text-xs text-muted"
                 >
-                  {{ signature
-                    ? $t('checkout.settled.signature', { signature })
-                    : $t('checkout.settled.paidBy', { wallet: record?.settled_by ?? '' }) }}
+                  {{ $t('checkout.settled.paidBy', { wallet: record.settled_by }) }}
                 </p>
               </div>
 
@@ -556,12 +563,15 @@ useSeoMeta({
                 <!-- The chain already has this payment, so the signature is the
                      buyer's proof of it while the receipt is slow — the same
                      line the settled view keeps once the record arrives. -->
-                <p
+                <SignatureProof
                   v-if="signature"
-                  class="overflow-hidden text-xs text-muted font-mono text-ellipsis"
-                >
-                  {{ $t('checkout.settled.signature', { signature }) }}
-                </p>
+                  :signature="signature"
+                  :cluster="payload?.cluster ?? ''"
+                  :label="$t('checkout.settled.signatureLabel')"
+                  :copy-label="$t('checkout.settled.copySignature')"
+                  :copied-label="$t('common.copied')"
+                  :explorer-label="$t('checkout.settled.explorer')"
+                />
               </div>
 
               <!--

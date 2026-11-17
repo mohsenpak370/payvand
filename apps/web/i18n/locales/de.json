@@ -370,7 +370,9 @@
     "settled": {
       "title": "Bezahlt",
       "description": "Diese Rechnung ist beglichen — es bleibt nichts zu tun.",
-      "signature": "Signatur {signature}",
+      "signatureLabel": "Signatur",
+      "copySignature": "Signatur kopieren",
+      "explorer": "Im Explorer ansehen",
       "paidBy": "Bezahlt von {wallet}"
     },
     "hold": {

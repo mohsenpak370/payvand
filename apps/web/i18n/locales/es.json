@@ -370,7 +370,9 @@
     "settled": {
       "title": "Pagado",
       "description": "Esta factura está saldada — no queda nada por hacer.",
-      "signature": "Firma {signature}",
+      "signatureLabel": "Firma",
+      "copySignature": "Copiar firma",
+      "explorer": "Ver en el explorador",
       "paidBy": "Pagado por {wallet}"
     },
     "hold": {
