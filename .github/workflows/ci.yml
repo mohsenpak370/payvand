@@ -52,9 +52,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # The installer hands its own arguments to `agave-install-init`, which takes
+      # no `-y` and picks the release from the script only when it is given none —
+      # so the release is named here rather than left to the default.
       - name: Install Solana CLI ${{ env.SOLANA_VERSION }}
         run: |
-          curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" | sh -s -- -y
+          curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" \
+            | sh -s -- "v${SOLANA_VERSION}" --no-modify-path
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Verify the Solana CLI version
