@@ -1,0 +1,48 @@
+import { address } from '@vue-solana/nuxt/kit'
+import type { ComputedRef, Ref } from 'vue'
+import type { InvoiceCosts } from '~/utils/invoiceCost'
+import type { PaymentOption, PaymentQrPayload } from './usePaymentApi'
+
+/** The fee and rent this invoice costs, quoted from the on-chain policy. */
+export function useCheckoutCosts(
+  payload: Ref<PaymentQrPayload | null>,
+  selected: ComputedRef<PaymentOption>,
+  payableAmount: ComputedRef<number>
+) {
+  const { estimateInvoiceCosts } = useInvoiceCosts()
+
+  // `null` until the first read, and again if `Config` cannot be read: the
+  // checkout shows no total rather than one that assumes a zero fee.
+  const costs = ref<InvoiceCosts | null>(null)
+  const costsError = ref('')
+
+  async function refreshCosts(): Promise<InvoiceCosts | null> {
+    const option = selected.value
+    try {
+      const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
+        mint: option.mint || undefined,
+        seller: payload.value?.seller ? address(payload.value.seller) : undefined
+      })
+      costs.value = quote
+      costsError.value = ''
+      return quote
+    } catch (cause) {
+      costs.value = null
+      costsError.value = cause instanceof Error ? cause.message : appT('errors.feeConfigUnavailable')
+      return null
+    }
+  }
+
+  /**
+   * The fee's destination for this mint does not exist yet, so the program
+   * would reject the settle after the buyer signed. That account is the
+   * protocol's own setup — one call of `open_treasury_token_account` by the
+   * deployer — never something a buyer can pay or fix, so the page says what is
+   * missing and holds the button.
+   */
+  const treasuryTokenAccountMissing = computed(
+    () => costs.value?.treasuryTokenAccountMissing === true
+  )
+
+  return { costs, costsError, refreshCosts, treasuryTokenAccountMissing }
+}
