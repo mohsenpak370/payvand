@@ -1,8 +1,13 @@
 import { address } from '@vue-solana/nuxt/kit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoiceCosts, type InvoiceCosts } from '~/utils/invoiceCost'
+import type { PaymentOption } from './usePaymentApi'
 import { usePaymentCheckout } from './usePaymentCheckout'
-import { derivePaymentPda, derivePaymentReceiptPda } from './usePaymentProgram'
+import {
+  derivePaymentPda,
+  derivePaymentReceiptPda,
+  deriveTokenPaymentPda
+} from './usePaymentProgram'
 
 /**
  * `pay()` is the last thing between an invoice and a signature, and one of its
@@ -220,6 +225,8 @@ describe('a page that loads with the payment already on chain', () => {
    */
   let chainAccounts: string[] = []
   let chainReads = 0
+  /** Every account the node was asked for, at the moment it was asked. */
+  let chainAsked: string[] = []
 
   /** The buyer's node, holding exactly the accounts named. */
   function chainHolds(accounts: string[]) {
@@ -227,18 +234,24 @@ describe('a page that loads with the payment already on chain', () => {
     vi.stubGlobal('useSolanaClient', () => ({
       client: {
         rpc: {
-          getAccountInfo: (key: string) => ({
-            send: async () => {
-              chainReads += 1
-              return { value: chainAccounts.includes(key) ? { data: ['', 'base64'] } : null }
+          getAccountInfo: (key: string) => {
+            // Recorded when the read is asked for, not when it lands: the schedule
+            // decides at that moment, and a slow node must not look like a later
+            // read arriving.
+            chainAsked.push(key)
+            return {
+              send: async () => {
+                chainReads += 1
+                return { value: chainAccounts.includes(key) ? { data: ['', 'base64'] } : null }
+              }
             }
-          })
+          }
         }
       }
     }))
   }
 
-  async function loadInvoice(invoice: string) {
+  async function loadInvoice(invoice: string, options?: PaymentOption[]) {
     vi.stubGlobal('unwrapQrText', (text: string) => text)
     vi.stubGlobal('parseQrPayload', () => ({
       v: 1,
@@ -246,6 +259,7 @@ describe('a page that loads with the payment already on chain', () => {
       seller,
       reference,
       amount_lamports: amount,
+      ...(options ? { options } : {}),
       memo: '',
       name: 'Reloaded invoice',
       cluster: 'devnet',
@@ -274,6 +288,7 @@ describe('a page that loads with the payment already on chain', () => {
     apiSettled = false
     chainAccounts = []
     chainReads = 0
+    chainAsked = []
     // `load()` starts the record poll; the clock is faked so it never fires here.
     vi.useFakeTimers()
   })
@@ -320,13 +335,12 @@ describe('a page that loads with the payment already on chain', () => {
     expect(checkout.canPayWithWallet.value).toBe(true)
   })
 
-  it('settles the open page from the API alone, without reading the chain', async () => {
+  it('settles the open page from an API tick, and asks the chain nothing more', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([])
     const checkout = await loadInvoice(invoice)
     // Left open and unpaid: the buyer's own wallet is the action.
     expect(checkout.stage.value).toBe('wallet')
-    const readsAtLoad = chainReads
 
     // Paid from another wallet, or another device. The API reads the cluster at
     // `confirmed`, the level the send waited for, so the very next tick has it —
@@ -337,22 +351,86 @@ describe('a page that loads with the payment already on chain', () => {
 
     expect(checkout.canPayWithWallet.value).toBe(false)
     expect(checkout.canPayFromAllowance.value).toBe(false)
-    expect(chainReads).toBe(readsAtLoad)
+    // Nothing on the chain, so this settle is the API's own answer.
     expect(answered).toEqual(['pending', 'settled'])
   })
 
-  it('keeps an unpaid page to one chain read, however long it stays open', async () => {
+  it('keeps a chain-settled page off the chain while the API still lags', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([(await derivePaymentReceiptPda(invoice)).toString()])
+    const checkout = await loadInvoice(invoice)
+    // Settled from the chain alone, without a payer: the sheet says paid, and the
+    // poll keeps asking the API who paid.
+    expect(checkout.stage.value).toBe('settled')
+    expect(checkout.record.value?.settled_by).toBeNull()
+    const readsAtLoad = chainReads
+
+    // The API never catches up in this test, so the poll runs the whole minute —
+    // twelve more API ticks. The chain has already answered this page; asking it
+    // again every few ticks would buy nothing.
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(answered.length).toBe(13))
+    expect(chainReads).toBe(readsAtLoad)
+  })
+
+  it('reads the chain on a schedule that doubles, while the API keeps to every tick', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([])
     const checkout = await loadInvoice(invoice)
     expect(checkout.stage.value).toBe('wallet')
     const readsAtLoad = chainReads
+    const askedAtLoad = answered.length
 
-    // A minute of an unpaid page: twelve API ticks and not one chain read. The
-    // read at load is the only one, so a tab left open costs the RPC nothing.
+    // A minute of an unpaid page: twelve API ticks — the poll unchanged — and a
+    // chain read on the first, the third and the seventh of them, because the
+    // wait after each read doubles.
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(() => expect(answered.length).toBe(askedAtLoad + 12))
+    // A read asked for on the twelfth tick may still be landing; the schedule is
+    // what is being counted, not the node.
+    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(3))
+  })
+
+  it('tops the gap out at a minute, so a long-open page still asks now and then', async () => {
+    const invoice = await derivePaymentPda(seller, reference, amount)
+    chainHolds([])
+    await loadInvoice(invoice)
+    const readsAtLoad = chainReads
+    const askedAtLoad = answered.length
+
+    // Ten minutes: 120 API ticks, and a chain read at 5 s, 15 s and 35 s, then one
+    // a minute — twelve in all, rather than three every five seconds for an hour.
+    await vi.advanceTimersByTimeAsync(600_000)
+    await vi.waitFor(() => expect(answered.length).toBe(askedAtLoad + 120))
+    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(12))
+  })
+
+  it('starts the chain schedule over when the buyer switches currency', async () => {
+    const solPda = await derivePaymentPda(seller, reference, amount)
+    const tokenAmount = 1_500_000
+    const usdcPda = await deriveTokenPaymentPda(seller, reference, mint, tokenAmount)
+    chainHolds([])
+    const checkout = await loadInvoice(solPda, [
+      { currency: 'sol', mint: '', decimals: 9, amount, payment_pda: solPda },
+      { currency: 'usdc', mint, decimals: 6, amount: tokenAmount, payment_pda: usdcPda }
+    ])
+    expect(checkout.selectedCurrency.value).toBe('sol')
+
+    // A minute unpaid: the schedule has read three times and is waiting a minute.
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(answered.length).toBe(13))
-    expect(chainReads).toBe(readsAtLoad)
+
+    await checkout.selectCurrency('usdc')
+    const usdcReceipt = (await derivePaymentReceiptPda(usdcPda)).toString()
+    // The switch checks the address it moved to straight away.
+    await vi.waitFor(() => expect(chainAsked).toContain(usdcReceipt))
+    const askedAtSwitch = chainAsked.length
+
+    // The other currency is paid at a different address, so it is a new question:
+    // it is asked again on the next tick, not the minute the running schedule was
+    // already waiting.
+    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.waitFor(() => expect(chainAsked.length).toBeGreaterThan(askedAtSwitch))
   })
 
   it('stops reading a settled record, API and chain alike', async () => {

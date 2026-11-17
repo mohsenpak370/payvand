@@ -20,6 +20,7 @@ import {
 } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
 import type { BudgetState, TokenBudgetState } from './useBudget'
+import { chainReadGapAfter } from '~/utils/chainReadGap'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 
 /**
@@ -348,12 +349,13 @@ export function usePaymentCheckout() {
   }
 
   /**
-   * Records a payment the chain already holds as settled, for the one window the
-   * API cannot close: a reload that lands in the slot or two between the cluster
+   * Records a payment the chain already holds as settled, for the window the API
+   * cannot close: a reload that lands in the slot or two between the cluster
    * confirming a send and the API's node voting it `confirmed`. Reading at
    * `confirmed` narrowed that window from a dozen seconds to about one; this read
-   * closes the rest, and is the only chain read the page makes — the record poll
-   * takes its answers from the API alone.
+   * closes the rest. It runs at load, on a currency switch, and then beside the
+   * poll on the slower schedule `chainReadGapAfter` keeps — the poll's own answer
+   * still comes from the API, every tick.
    *
    * Every `settle_*` instruction closes its invoice in the same transaction, so
    * the receipt is the only account a settled invoice leaves behind. One read per
@@ -395,6 +397,9 @@ export function usePaymentCheckout() {
     await Promise.all([refreshCosts(), refreshBudget()])
     // The currency being switched to may be the one already paid.
     await settleFromChain([activePda.value])
+    // A different address is a new question: its reads start over at the first
+    // gap, so the currency just chosen is checked on the next tick.
+    restartChainReads()
   }
 
   async function refreshRecord() {
@@ -434,6 +439,40 @@ export function usePaymentCheckout() {
     } catch {
       // Keep the last known status; the next tick retries.
     }
+  }
+
+  /**
+   * The page's own reads of the chain, beside the poll's API read: how many it has
+   * made since the schedule started, and when the last one went out. Only the
+   * chain read is spaced by these — the API is asked on every tick as before, so
+   * the record still settles from the API alone.
+   */
+  let chainReads = 0
+  let lastChainReadAt = 0
+
+  /**
+   * A chain read when the schedule says one is due: the wait after the last read
+   * grows with every read, so an invoice nobody has paid costs the buyer's RPC a
+   * read a minute rather than one every tick. There is no settled check here —
+   * `settleFromChain` refuses a settled record, so a paid page costs nothing
+   * whichever tick the schedule reaches next.
+   */
+  async function readChainIfDue(): Promise<void> {
+    if (Date.now() - lastChainReadAt < chainReadGapAfter(chainReads)) return
+    lastChainReadAt = Date.now()
+    chainReads += 1
+    await settleFromChain(watchAddresses())
+  }
+
+  /**
+   * Starts the schedule over: no reads yet, and the first one already due — so the
+   * next poll tick reads, however far into a tick's worth of time this call lands.
+   * A currency switch arrives between ticks, and a wait measured from the switch
+   * would miss the tick after it by a few milliseconds.
+   */
+  function restartChainReads() {
+    chainReads = 0
+    lastChainReadAt = Date.now() - chainReadGapAfter(0)
   }
 
   let poll: ReturnType<typeof setInterval> | undefined
@@ -526,8 +565,11 @@ export function usePaymentCheckout() {
       // paid on is checked, so a payment in another currency counts too.
       await settleFromChain(watchAddresses())
 
+      restartChainReads()
+
       poll = setInterval(() => {
         void refreshRecord()
+        void readChainIfDue()
       }, STATUS_POLL_MS)
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : appT('errors.unreadableLink')

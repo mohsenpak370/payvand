@@ -36,7 +36,14 @@ does not run (a manual localnet, an `anchor test` pass), not missing code. 4.1,
 4.2 and 4.5 are done. Open work is grouped under **Remaining Work** below; the
 substance of it is Task 4.3 (program events), the un-actioned half of Task 4.4
 (no Token-2022 rejection, only `Config`'s size pinned), the boundary cases in 1.6
-and 3.1, one closure decision in 3.4, and 5.2–5.3.
+and 3.1, one closure decision in 3.4, and 5.2–5.3. Revision 11 (2026-11-17) puts
+a chain read back beside the poll, on a schedule of its own: the API's `confirmed`
+read closed the reload window the old per-tick read existed for, but a page whose
+buyer has just switched currency is answered by the chain first, and an open tab
+should not wait out a minute of API ticks to hear it. The schedule is
+`chainReadGapAfter` in `app/utils/chainReadGap.ts` — a pure function of the read
+count, tested like `holdSlop` — at most a minute apart, starting over on a
+currency switch, with the poll's API read left exactly as it was.
 
 ## Remaining Work
 
@@ -216,29 +223,39 @@ Revision 9 records the checkout's reload window (2026-11-17):
   catches up within a slot or two of the payment, the same level the checkout's
   own reads use and the wallet that sent it reports. `invoice_reads_use_confirmed_commitment`
   pins it, because the constructor's default is the bug.
-- That made the poll's chain read redundant and it is gone: the record is
-  `confirmed` now, so the next tick — five seconds at most — is where an invoice
-  paid on another device, or in another currency, shows up, and the page no
-  longer reads the buyer's RPC at all while polling. What remains is the load-time
-  read, for the slot or two between the cluster confirming a send and the API's
-  node voting it `confirmed`: one round trip per page load, and one per currency
-  switch, never one per tick. Both callers share `watchAddresses()`, so the
-  addresses watched on load and on a switch cannot drift.
+- That made the poll's own chain read redundant, and it is gone: the record is
+  `confirmed` now, so the next API tick — five seconds at most — is where an
+  invoice paid on another device shows up. The page does keep a chain read of its
+  own, by decision: a reload can still land in the slot or two between the cluster
+  confirming a send and the API's node voting it `confirmed`, and the chain is
+  where a currency the buyer has just switched to is answered first. It runs at
+  load, on a currency switch, and then beside the poll on the schedule in
+  `app/utils/chainReadGap.ts` — one tick behind the first poll, each gap doubling
+  until it is a minute — so an invoice nobody has paid costs the buyer's RPC a
+  read a minute instead of three every five seconds. `chainReadGapAfter` is a pure
+  function of the read count with its own tests, the switch resets the count, and
+  the poll's API read is untouched: the record still settles from the API alone.
+  Every caller shares `watchAddresses()`, so the addresses watched at load, on a
+  switch and on the schedule cannot drift.
 - A settled record the chain produced is not the end of the poll: it has no payer
   until the API's node catches up, and the sheet names the payer from that field
   alone. So the poll stops on a settled record *that names its payer*, takes only
   `settled_by` from a lagging answer — never its status, which must not unsettle an
   invoice the chain holds — and stops once the payer arrives. `stops reading a
   settled record, API and chain alike` advances six intervals on a paid page and
-  asserts neither count grows, and `keeps an unpaid page to one chain read,
-  however long it stays open` counts a minute of the poll (twelve API reads, the
-  load's single chain read) so the poll cannot quietly start reading the RPC
-  again.
+  asserts neither count grows; `keeps a chain-settled page off the chain while the
+  API still lags` holds a settled page to its load-time read across a minute of
+  polling; and `reads the chain on a schedule that doubles, while the API keeps to
+  every tick` plus `tops the gap out at a minute, so a long-open page still asks
+  now and then` count the schedule itself — three chain reads in a minute, twelve
+  in ten — so it cannot quietly become one per tick, and
+  `starts the chain schedule over when the buyer switches currency` fails if the
+  address just chosen waits behind the old schedule.
 - Pinned in `usePaymentCheckout.test.ts`, in `a page that loads with the payment
   already on chain`: `offers no button when the receipt exists and the record has
   not caught up` fails if the load-time read is removed, `settles the open page
-  from the API alone, without reading the chain` fails if the poll drops the API's
-  answer or reads the chain to get it, `names the payer once the API
+  from an API tick, and asks the chain nothing more` fails if the poll drops the
+  API's answer, `names the payer once the API
   catches up with a payment the chain already held` fails if the poll stops on any
   settled record, and `still offers the invoice when the chain holds nothing for
   it` keeps the fix from turning every load into a paid page. The window is a rule the checkout enforces, not a lucky read.
