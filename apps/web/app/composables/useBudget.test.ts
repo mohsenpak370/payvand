@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { address } from '@vue-solana/nuxt/kit'
 import { describe, expect, it } from 'vitest'
 import {
@@ -113,6 +115,35 @@ describe('the token float', () => {
  * these numbers are the program's: mainnet rent for `TOKEN_BUDGET_SPACE` (129
  * bytes), and the two floats from `constants.rs`.
  */
+/**
+ * The two floats live in the program, and this app cannot import them: they are
+ * copied into `useBudget.ts`. Raising one side without the other would quote a
+ * buyer a cost the program does not charge, so the copy is checked against the
+ * crate here rather than by convention.
+ */
+describe('the floats the client copies', () => {
+  const constants = readFileSync(
+    fileURLToPath(new URL('../../../contracts/programs/payvand/src/constants.rs', import.meta.url)),
+    'utf8'
+  )
+  const rustConst = (name: string) => {
+    const digits = new RegExp(`pub const ${name}: u64 = ([0-9_]+);`).exec(constants)?.[1]
+    if (!digits) {
+      throw new Error(`${name} is not in constants.rs`)
+    }
+    return Number(digits.replaceAll('_', ''))
+  }
+
+  it('are the floats constants.rs holds, read through the quote', () => {
+    // A brand-new budget and a key holding nothing quote the whole float, so the
+    // quote is the client's copy of both numbers.
+    const first = tokenOpenCost({ exists: true, held: 0, budgetRent: 0, sessionHeld: 0, fee: 0 })
+
+    expect(first.refundFloat).toBe(rustConst('TOKEN_BUDGET_FEE_FLOAT'))
+    expect(first.feeFloat).toBe(rustConst('SESSION_FEE_FLOAT'))
+  })
+})
+
 describe('tokenOpenCost', () => {
   const RENT = (129 + 128) * 3_480 * 2 // 1,788,720 lamports
   const REFUND_FLOAT = 18_000_000 // TOKEN_BUDGET_FEE_FLOAT

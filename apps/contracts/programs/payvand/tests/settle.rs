@@ -752,7 +752,8 @@ fn pay_from_budget_instruction(
 }
 
 /// One `pay_from_budget` with a fresh seller and reference, so each call gets
-/// its own invoice address and nothing is deduped or replayed.
+/// its own invoice address and nothing is deduped or replayed. The session key is
+/// the fee payer, as it is in the client: the float exists to cover these fees.
 async fn pay_from_budget(
     context: &mut ProgramTestContext,
     budget: Pubkey,
@@ -762,7 +763,7 @@ async fn pay_from_budget(
 ) -> Result<(), String> {
     let seller = Keypair::new().pubkey();
     let reference = Keypair::new().pubkey();
-    send(
+    send_with_fee_payer(
         context,
         &[pay_from_budget_instruction(
             session.pubkey(),
@@ -772,7 +773,7 @@ async fn pay_from_budget(
             amount,
             tag,
         )],
-        &[session],
+        session,
     )
     .await
 }
@@ -1169,7 +1170,8 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
         ],
         data: instruction_data("pay_from_budget", &amount_and_memo(amount, memo)),
     };
-    send(&mut context, &[pay], &[&session])
+    // The session key is the fee payer, as it is in the client.
+    send_with_fee_payer(&mut context, &[pay], &session)
         .await
         .expect("pay_from_budget failed");
 
@@ -1204,10 +1206,10 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
     assert_eq!(written.payer, session.pubkey());
     assert!(written.closed_at > 0);
 
-    // The session key advanced both rents and was refunded both, and the test
-    // payer covers the network fee, so its balance is untouched.
+    // The session key advanced both rents and was refunded both, so the only
+    // thing it is out is its signature's fee — the float is what covers that.
     let session_balance = lamports(&context, session.pubkey()).await;
-    assert_eq!(session_balance, LAMPORTS_PER_SOL);
+    assert_eq!(session_balance, LAMPORTS_PER_SOL - TX_FEE);
 }
 
 /// The limit is a ceiling, not a suggestion: once `spent` reaches it, the next
@@ -2457,6 +2459,39 @@ async fn pay_from_token_budget(
     .expect("pay_from_token_budget failed");
 }
 
+/// A fresh seller the floats cannot fund: the payment `pay_from_token_budget`
+/// sends, but expected to fail. Asserting the failure is what pins the floats'
+/// boundary instead of describing it.
+async fn refused_fresh_seller(
+    context: &mut ProgramTestContext,
+    world: &TokenWorld,
+    amount: u64,
+    tag: &str,
+) {
+    let error = send_with_fee_payer(
+        context,
+        &[pay_from_token_budget_instruction(
+            world,
+            world.mint,
+            world.vault,
+            Keypair::new().pubkey(),
+            Keypair::new().pubkey(),
+            amount,
+            tag,
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a fresh seller past the floats must be refused");
+    // `Custom(1)` is the system program refusing the session key's transfer: it
+    // lacks the lamports to advance the next payment's rents, which is the job
+    // of the float it was given.
+    assert!(
+        error.contains("Custom(1)"),
+        "expected the session key's transfer to fail for want of lamports, got {error}"
+    );
+}
+
 /// A second mint with `budget`'s own canonical vault for it, funded with
 /// `tokens`: everything a token path can be handed where only the budget's mint
 /// check should reject it.
@@ -2672,17 +2707,18 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
     let price = 200_000;
     open_token_budget(&mut context, &world, limit).await;
     assert_eq!(token_balance(&context, world.vault).await, limit);
-    assert_eq!(
-        lamports(&context, world.session.pubkey()).await,
-        SESSION_FEE_FLOAT
-    );
+    // `open_token_budget` puts the key's float on the session key and the
+    // records float on the budget, on top of its own rent.
     let session_before = lamports(&context, world.session.pubkey()).await;
     let budget_before = lamports(&context, world.budget).await;
-    // The budget's own account holds its rent plus the float it refunds the
-    // session's records from.
+    assert_eq!(
+        session_before, SESSION_FEE_FLOAT,
+        "the session key opens with its float"
+    );
     assert_eq!(
         budget_before,
-        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + TOKEN_BUDGET_FEE_FLOAT
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + TOKEN_BUDGET_FEE_FLOAT,
+        "the budget opens with its rent and the float it refunds records from"
     );
 
     // Three sellers who never held SOL or a token: the float pays for their
@@ -2716,33 +2752,27 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
         TEST_TOKEN_BALANCE - limit
     );
 
-    // A fourth fresh seller is past what the floats were sized for. It is
-    // refused for want of lamports and leaves the counter and the vault alone.
-    let fourth = Keypair::new().pubkey();
-    let reference = Keypair::new().pubkey();
-    let error = send_with_fee_payer(
-        &mut context,
-        &[pay_from_token_budget_instruction(
-            &world,
-            world.mint,
-            world.vault,
-            fourth,
-            reference,
-            price,
-            "fourth",
-        )],
-        &world.session,
-    )
-    .await
-    .expect_err("three payments spend the float; the fourth needs a top-up");
-    assert!(
-        error.contains("Custom(1)"),
-        "expected the session key's transfer to fail, got {error}"
-    );
+    // A fourth fresh seller is past what the floats were sized for: refused for
+    // want of lamports, and rolled back, so nothing it tried to move survives.
+    let session_after_three = lamports(&context, world.session.pubkey()).await;
+    let budget_after_three = lamports(&context, world.budget).await;
+    refused_fresh_seller(&mut context, &world, price, "fourth").await;
     assert_eq!(token_budget(&context, world.budget).await.spent, 3 * price);
     assert_eq!(
         token_balance(&context, world.vault).await,
         limit - 3 * price
+    );
+    // A failed transaction is rolled back, but the fee payer still pays its
+    // signature — the only lamports a refusal costs the float.
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        session_after_three - TX_FEE,
+        "a refused payment must cost the session key nothing but its fee"
+    );
+    assert_eq!(
+        lamports(&context, world.budget).await,
+        budget_after_three,
+        "a refused payment must not spend the budget's float"
     );
 }
 
@@ -2799,26 +2829,7 @@ async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
     }
 
     let fourth = Keypair::new().pubkey();
-    let reference = Keypair::new().pubkey();
-    let error = send_with_fee_payer(
-        &mut context,
-        &[pay_from_token_budget_instruction(
-            &world,
-            world.mint,
-            world.vault,
-            fourth,
-            reference,
-            price,
-            "fourth",
-        )],
-        &world.session,
-    )
-    .await
-    .expect_err("the spent float must refuse a fresh seller");
-    assert!(
-        error.contains("Custom(1)"),
-        "expected the session key's transfer to fail, got {error}"
-    );
+    refused_fresh_seller(&mut context, &world, price, "fourth").await;
 
     // One refill, and the same fourth seller goes through.
     top_up_token_floats(&mut context, &world).await;
