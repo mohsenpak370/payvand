@@ -2851,6 +2851,80 @@ async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
     assert_eq!(token_budget(&context, world.budget).await.spent, 5 * price);
 }
 
+/// Task 3.2's last criterion: the float can be topped up on its own. A refill is
+/// the buyer's plain transfers, so the limit, the counter, the vault and the
+/// buyer's token balance must be exactly what they were — only the two floats
+/// move — and the payment they could not fund has to go through afterwards.
+#[tokio::test]
+async fn a_float_top_up_needs_no_limit_change() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    let limit = TEST_TOKEN_BALANCE;
+    let price = 200_000;
+    open_token_budget(&mut context, &world, limit).await;
+
+    // Spend the float to the boundary the tests above measure: three fresh
+    // sellers fit, the fourth is refused for want of lamports.
+    for _ in 0..3 {
+        pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
+    }
+    let fourth = Keypair::new().pubkey();
+    refused_fresh_seller(&mut context, &world, price, "fourth").await;
+
+    let opened = token_budget(&context, world.budget).await;
+    let spent_before = opened.spent;
+    let vault_before = token_balance(&context, world.vault).await;
+    let buyer_tokens_before = token_balance(&context, world.buyer_token_account).await;
+
+    // The refill itself: the buyer's transfers alone, no `open_token_budget`, so
+    // no limit, no vault and no counter was touched.
+    top_up_token_floats(&mut context, &world).await;
+
+    // Each side now holds exactly one more payment's worth, and nothing else
+    // about the budget moved.
+    let records = token_invoice_rent() + receipt_rent();
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        records + token_account_rent() + TX_FEE,
+        "the session key should hold one more payment's advance"
+    );
+    assert_eq!(
+        lamports(&context, world.budget).await,
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + records,
+        "the budget should hold its rent and one more payment's records"
+    );
+    let after = token_budget(&context, world.budget).await;
+    assert_eq!(
+        after.monthly_limit, limit,
+        "a float top-up must not change the limit"
+    );
+    assert_eq!(
+        after.spent, spent_before,
+        "a float top-up must not change what was spent"
+    );
+    assert_eq!(after.month_index, opened.month_index);
+    assert_eq!(
+        token_balance(&context, world.vault).await,
+        vault_before,
+        "a float top-up must not move tokens"
+    );
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        buyer_tokens_before
+    );
+
+    // The seller the float could not fund now settles, and the counter follows.
+    pay_from_token_budget(&mut context, &world, fourth, price).await;
+    assert_eq!(
+        token_balance(&context, associated_token_address(fourth, world.mint)).await,
+        price
+    );
+    assert_eq!(
+        token_budget(&context, world.budget).await.spent,
+        spent_before + price
+    );
+}
+
 /// Task 3.3's positive case: the canonical vault is drained into the buyer's own
 /// account and closed, and both rents come back with it.
 #[tokio::test]

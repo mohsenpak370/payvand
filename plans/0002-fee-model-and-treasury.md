@@ -1202,7 +1202,17 @@ Verification:
       fee payer (`send_with_fee_payer`), as the client sends them. Before that the
       harness's default payer covered the 5,000-a-signature fee, so the float's
       measured cost was short by 5,000 a payment.
-- [ ] Anchor test: float top-up without a limit change.
+- [x] Anchor test: float top-up without a limit change.
+      `a_float_top_up_needs_no_limit_change` spends the float to the boundary the
+      two tests above measure (three payments, a fourth refused), refills it with
+      the buyer's plain transfers alone, and asserts the limit, `spent`,
+      `month_index`, the vault and the buyer's token balance are exactly what
+      they were while each float holds one more payment's worth — then pays the
+      refused seller and checks the counter follows. It fails when the refill's
+      session amount leaves out the payment fee (checked, 7,739,520 against
+      7,744,520), so it pins the amounts rather than only the success.
+      `Anchor.toml` runs `cargo test` for `anchor test`, so this is the same
+      suite as the rest of the file.
 - [x] `nuxt typecheck` clean (`./node_modules/.bin/nuxt typecheck`; the global
       `pnpm` shim on this machine is broken).
 
