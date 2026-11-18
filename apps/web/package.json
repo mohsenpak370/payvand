@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "postinstall": "nuxt prepare",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke:silent-payment": "node scripts/devnet-silent-payment-check.mjs"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.145",

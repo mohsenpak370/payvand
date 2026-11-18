@@ -1716,11 +1716,47 @@ Verification:
 - [x] `cargo fmt --all --check` and
       `cargo clippy -p payvand --all-targets -- -D warnings`.
 - [x] `vitest run` (123 tests), `nuxt typecheck`, `eslint .` in `apps/web`.
-- [ ] Devnet: `pnpm smoke:guards` (with the new accounts) and one real silent
+- [x] Devnet: `pnpm smoke:guards` (with the new accounts) and one real silent
       token payment through a budget, with the treasury's ATA gaining `fee_t`
-      and the seller's wallet holding no lamports.
+      and the seller's wallet holding no lamports. Both ran on 2026-11-18
+      against the upgraded program; the numbers and signatures are under
+      "Devnet verification" below and in Task 5.1.
 - [x] A revision note carries the measured float numbers and the new per-payment
       pool position (`fee_t - 2,985,840`): revision 13.
+
+**Devnet verification (2026-11-18).** The rebuild was deployed in place — same ID
+`4grKZpw6…`, same authority `Evmo7zn…`, slot 523581463, upgrade `2G3oygMr…`.
+ProgramData `8GQRqbdm…` starts with exactly the 522,496-byte artifact the harness
+tests, zero-padded to 525,312. Then, against that build:
+
+- `pnpm smoke:guards` passes: throwaway mint A `6PUKkiiQ…`, budget `5Yj4R7No…`,
+  `open_token_budget` `3UiogMcn…`. The floats it reports are revision 13's —
+  session 12,000,000 lamports, budget 0 — so the deployed program is the build
+  that no longer parks a records float. Refusals: `Custom(6008)` for the close
+  against the wrong mint (`4X7WwLr4…`), `Custom(2009)` for the decoy payout from
+  the budget (`5MS6XKkc…`) and for the decoy close (`4PDMt9hx…`); the vault kept
+  its 500,000, the decoy and seller stayed at 0, and the budget closed
+  (`Y8cdPWTx…`).
+  The script needed one fix to get there: `pay_from_token_budget` now requires
+  the treasury's account for the mint, so the smoke opens it with
+  `open_treasury_token_account` (`5AJpN7wq…`) the way a deployment does. Without
+  it the run stopped at `Custom(3012)` on `treasury_token_account` — the program
+  reports the missing fee destination before it reaches the vault's ATA check —
+  which is the new account being required, not the guard changing.
+- A real silent payment through a budget (`pnpm smoke:silent-payment`): policy
+  read from `Config` as 200 bps + 0, seller-paid. `open_treasury_token_account` `3aoN9Tyz…`,
+  `open_token_budget` `QkFNHpZD…`, `pay_from_token_budget` `4WRnj5eN…`. A
+  100,000-unit invoice paid by a session key that held only its float gave the
+  seller `FcNQoBUo…` 98,000 units and **0 lamports**, before and after; put
+  exactly 2,000 into the treasury's account `H5PxVHdJ…`; and raised `spent` to
+  100,000. The session key went 12,000,000 → 10,506,560, down 1,493,440: devnet's
+  1,488,440 seller-account rent plus the 5,000 signature, with both records
+  refunded by the pool in the same transaction. The budget closed on the way out
+  (`2rdxyKfdx…`). A second run produced the same numbers (`zS8z2TL…`), so the
+  check is repeatable rather than a lucky pass.
+- Three budgets the two failed runs above left open were closed afterwards
+  (`4Jb3g378…`, `4XAF64Zv…`, `4XPSaq2H…`), so the cluster holds none of this
+  run's.
 
 Files likely touched:
 
@@ -2011,6 +2047,20 @@ Verification:
 
 - [ ] `task verify`
 - [ ] `cd apps/contracts && anchor test`
+
+**Devnet verification of the deployed build (2026-11-18).** The revision-12
+program was upgraded in place (same ID, authority and ProgramData; slot
+523581463, upgrade `2G3oygMr…`) and the deployed artifact matches a fresh
+`cargo build-sbf` of the checked-in source byte for byte (522,496 bytes,
+zero-padded to the 525,312-byte ProgramData). Two checks ran against it:
+`pnpm smoke:guards` (`Custom(6008)` for the wrong mint, `Custom(2009)` twice for
+the decoy vault, session float 12,000,000 and budget float 0 as the new constants
+say), and one real silent token payment through a budget where the seller
+received 98,000 of a 100,000 invoice and no lamports, the treasury's account
+gained the 2,000 fee, and `spent` rose by the price. Details and signatures are
+under Task 3.5's "Devnet verification". What this does **not** cover: `task
+verify`, `anchor test`, the API tests and the localnet pass over all four settle
+paths, which stay unticked above.
 
 Files likely touched:
 

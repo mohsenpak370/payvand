@@ -349,6 +349,28 @@ async function main() {
     const budgetFloat = budgetLamports - (await rent(TOKEN_BUDGET_SPACE))
     console.log(`float     session ${sessionLamports}  budget ${budgetFloat}`)
 
+    // The policy and the pool, then the treasury's own account for mint A: since
+    // the budget path charges the fee, every mint it settles in needs that
+    // destination opened once, as a deployment does.
+    const [configPda] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.config() })
+    const [treasury] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.treasury() })
+    const treasuryAta = await ataFor(treasury, mintA)
+    if (!(await rpc.getAccountInfo(treasuryAta, { encoding: 'base64' }).send()).value) {
+      const opened = await must('opening the treasury account', admin, [
+        programInstruction(idl, 'open_treasury_token_account', {
+          admin: admin.address,
+          config: configPda,
+          treasury,
+          mint: mintA,
+          treasury_token_account: treasuryAta,
+          token_program: TOKEN_PROGRAM_ID,
+          associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
+          system_program: SYSTEM_PROGRAM_ID
+        })
+      ])
+      console.log(`signature open_treasury_token_account ${opened}`)
+    }
+
     // Another mint's canonical vault, so every ATA constraint holds and only the
     // budget's own mint can refuse the close.
     const vaultB = await ataFor(budget, mintB)
@@ -393,9 +415,6 @@ async function main() {
     const [receipt] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.receipt(payment) })
     // The policy, the pool that funds the records, and the fee's destination: the
     // three accounts revision 12 added to the silent path.
-    const [config] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.config() })
-    const [treasury] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.treasury() })
-    const treasuryAta = await ataFor(treasury, mintA)
     const pay = vault => programInstruction(idl, 'pay_from_token_budget', {
       session_key: session.address,
       budget,
@@ -406,7 +425,7 @@ async function main() {
       payment,
       receipt,
       reference,
-      config,
+      config: configPda,
       treasury,
       treasury_token_account: treasuryAta,
       token_program: TOKEN_PROGRAM_ID,
