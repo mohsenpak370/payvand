@@ -73,6 +73,22 @@ export function clearInvoiceAccountCache(): void {
   accountCache.clear()
 }
 
+/**
+ * What the cluster charges for one account size, and when that was read.
+ *
+ * The rents are the same two or three questions on every quote — the invoice, the
+ * receipt, and a token account when one has to be made — and a page that mounts
+ * a second `useInvoiceCosts` would otherwise ask them all over again for numbers
+ * that only move when the cluster's rent changes. They live here, beside the
+ * existence reads and for the same minute, so every instance shares one answer.
+ */
+const rentCache = new Map<number, { readAt: number, lamports: number }>()
+
+/** Drops the cached rents, so the next quote asks the cluster again. */
+export function clearInvoiceRentCache(): void {
+  rentCache.clear()
+}
+
 /** Reads the singleton fee policy, cached for `CACHE_TTL_MS`. */
 export function useFeeConfig() {
   const { client } = useSolanaClient()
@@ -124,15 +140,15 @@ export function useFeeConfig() {
 export function useInvoiceCosts() {
   const { client } = useSolanaClient()
   const feeConfig = useFeeConfig()
-  const rentCache = new Map<number, number>()
 
+  /** `getMinimumBalanceForRentExemption` as a question with a TTL, from `rentCache`. */
   async function rentFor(space: number): Promise<number> {
     const cached = rentCache.get(space)
-    if (cached !== undefined) return cached
+    if (cached && Date.now() - cached.readAt < CACHE_TTL_MS) return cached.lamports
     const lamports = Number(
       await client.rpc.getMinimumBalanceForRentExemption(BigInt(space)).send()
     )
-    rentCache.set(space, lamports)
+    rentCache.set(space, { readAt: Date.now(), lamports })
     return lamports
   }
 

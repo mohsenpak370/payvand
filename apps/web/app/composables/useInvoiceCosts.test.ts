@@ -1,6 +1,11 @@
 import { address } from '@vue-solana/nuxt/kit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearFeeConfigCache, clearInvoiceAccountCache, useInvoiceCosts } from './useFeeConfig'
+import {
+  clearFeeConfigCache,
+  clearInvoiceAccountCache,
+  clearInvoiceRentCache,
+  useInvoiceCosts
+} from './useFeeConfig'
 import {
   accountDiscriminator,
   deriveAssociatedTokenAddress,
@@ -48,6 +53,7 @@ async function configAccount(): Promise<string> {
 beforeEach(async () => {
   clearFeeConfigCache()
   clearInvoiceAccountCache()
+  clearInvoiceRentCache()
   asked = []
   rentReads = 0
 
@@ -115,6 +121,21 @@ describe('estimateInvoiceCosts account reads', () => {
 
     await usdcQuote()
     expect(asked).toHaveLength(afterUsdc)
+  })
+
+  it('hands a second composable instance the rents the first one read', async () => {
+    await usdcQuote()
+    expect(rentReads).toBe(2)
+
+    // Another page's `useInvoiceCosts`: the same invoice, quoted from the same
+    // module-level caches, so neither the rents nor the two accounts are asked
+    // for again.
+    const second = useInvoiceCosts()
+    const again = await second.estimateInvoiceCosts(1_500_000, 'usdc', { mint, seller })
+
+    expect(rentReads).toBe(2)
+    expect(asked).toHaveLength(3)
+    expect(again).toEqual(await usdcQuote())
   })
 
   it('asks again once the minute is up, so a new account is noticed', async () => {
