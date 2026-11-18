@@ -85,6 +85,9 @@ const INVALID_FEE_BPS: &str = "Custom(6012)";
 const TREASURY_UNDERFUNDED: &str = "Custom(6014)";
 /// `PaymentError::FeeModeUnsupported`.
 const FEE_MODE_UNSUPPORTED: &str = "Custom(6015)";
+/// `PaymentError::Token2022Unsupported`: a mint the SPL Token program does not
+/// own is refused by name rather than inside a token CPI.
+const TOKEN_2022_UNSUPPORTED: &str = "Custom(6017)";
 /// `PaymentError::BudgetExhausted`: the month's limit, not the pot.
 const BUDGET_EXHAUSTED: &str = "Custom(6005)";
 /// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
@@ -302,6 +305,27 @@ fn frozen_token_account(mint: Pubkey, authority: Pubkey) -> Account {
     account
 }
 
+/// Token-2022: the other token program on Solana, which this program does not
+/// support.
+fn token_2022_program() -> Pubkey {
+    address("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb")
+}
+
+/// A mint in the layout a Token-2022 mint with no extensions has, owned by
+/// Token-2022: exactly what a caller of a Token-2022 invoice passes.
+fn token_2022_mint_account(authority: Pubkey, decimals: u8) -> Account {
+    let mut account = spl_mint_account(authority, decimals);
+    account.owner = token_2022_program();
+    account
+}
+
+/// A token account owned by Token-2022.
+fn token_2022_token_account(mint: Pubkey, authority: Pubkey, amount: u64) -> Account {
+    let mut account = spl_token_account(mint, authority, amount);
+    account.owner = token_2022_program();
+    account
+}
+
 /// Borsh-encoded instruction data: discriminator, then the arguments.
 fn instruction_data(name: &str, args: &[u8]) -> Vec<u8> {
     let mut data = discriminator(name).to_vec();
@@ -354,10 +378,22 @@ fn token_budget_pda(buyer: &Pubkey, mint: &Pubkey) -> (Pubkey, u8) {
     )
 }
 
-/// The canonical associated token account for `wallet` and `mint`.
+/// The canonical associated token account for `wallet` and `mint` under the
+/// legacy token program.
 fn associated_token_address(wallet: Pubkey, mint: Pubkey) -> Pubkey {
+    associated_token_address_for_program(token_program(), wallet, mint)
+}
+
+/// The same derivation for a chosen token program: Token-2022 accounts live at
+/// `[wallet, token-2022 program, mint]`, which is what a Token-2022 attempt
+/// hands the program.
+fn associated_token_address_for_program(
+    token_program: Pubkey,
+    wallet: Pubkey,
+    mint: Pubkey,
+) -> Pubkey {
     Pubkey::find_program_address(
-        &[wallet.as_ref(), token_program().as_ref(), mint.as_ref()],
+        &[wallet.as_ref(), token_program.as_ref(), mint.as_ref()],
         &associated_token_program(),
     )
     .0
@@ -679,22 +715,46 @@ fn settle_token_payment_instruction(
     amount: u64,
     memo: &str,
 ) -> Instruction {
+    settle_token_payment_instruction_with_token_program(
+        token_program(),
+        payer,
+        seller,
+        reference,
+        mint,
+        amount,
+        memo,
+    )
+}
+
+/// The same instruction for a caller-chosen token program. A Token-2022 attempt
+/// is this call with the Token-2022 program and Token-2022 accounts, which is
+/// how the program's refusal is exercised.
+fn settle_token_payment_instruction_with_token_program(
+    token_program: Pubkey,
+    payer: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    mint: Pubkey,
+    amount: u64,
+    memo: &str,
+) -> Instruction {
     let invoice = token_payment_pda(&seller, &reference, &mint, amount);
+    let ata = |wallet: Pubkey| associated_token_address_for_program(token_program, wallet, mint);
     Instruction {
         program_id: payvand::id(),
         accounts: vec![
             AccountMeta::new(payer, true),
             AccountMeta::new(invoice, false),
             AccountMeta::new(seller, false),
-            AccountMeta::new(associated_token_address(seller, mint), false),
-            AccountMeta::new(associated_token_address(payer, mint), false),
+            AccountMeta::new(ata(seller), false),
+            AccountMeta::new(ata(payer), false),
             AccountMeta::new_readonly(mint, false),
             AccountMeta::new(receipt_pda(&invoice), false),
             AccountMeta::new_readonly(reference, false),
             AccountMeta::new_readonly(config_pda(), false),
             AccountMeta::new(treasury_pda(), false),
-            AccountMeta::new(associated_token_address(treasury_pda(), mint), false),
-            AccountMeta::new_readonly(token_program(), false),
+            AccountMeta::new(ata(treasury_pda()), false),
+            AccountMeta::new_readonly(token_program, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
         ],
         data: instruction_data("settle_token_payment", &amount_and_memo(amount, memo)),
@@ -2349,6 +2409,69 @@ async fn tests_run_the_built_sbf_program() {
     );
 }
 
+/// Task 4.4's Token-2022 decision, enforced: a mint the SPL Token program does
+/// not own is refused by name, before the program writes an invoice or CPIs into
+/// a token program — the attempt used to die inside the first CPI instead.
+#[tokio::test]
+async fn a_token_2022_mint_is_rejected_by_name() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // A Token-2022 mint with the buyer's, seller's and treasury's Token-2022
+    // accounts for it: what a Token-2022 client hands the program.
+    let mint = Keypair::new().pubkey();
+    context.set_account(
+        &mint,
+        &token_2022_mint_account(world.admin.pubkey(), 6).into(),
+    );
+    let seller = Keypair::new().pubkey();
+    let ata =
+        |wallet: Pubkey| associated_token_address_for_program(token_2022_program(), wallet, mint);
+    context.set_account(
+        &ata(seller),
+        &token_2022_token_account(mint, seller, 0).into(),
+    );
+    context.set_account(
+        &ata(world.buyer.pubkey()),
+        &token_2022_token_account(mint, world.buyer.pubkey(), TEST_TOKEN_BALANCE).into(),
+    );
+    context.set_account(
+        &ata(treasury_pda()),
+        &token_2022_token_account(mint, treasury_pda(), 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 100_000;
+    let error = send(
+        &mut context,
+        &[settle_token_payment_instruction_with_token_program(
+            token_2022_program(),
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            mint,
+            amount,
+            "token-2022",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect_err("a Token-2022 mint must be refused");
+    assert!(
+        error.contains(TOKEN_2022_UNSUPPORTED),
+        "expected {TOKEN_2022_UNSUPPORTED}, got {error}"
+    );
+
+    // Refused before anything was written: no invoice, no receipt, and the
+    // buyer still holds its balance.
+    let invoice = token_payment_pda(&seller, &reference, &mint, amount);
+    assert!(account(&context, invoice).await.is_none());
+    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
+    assert_eq!(
+        token_balance(&context, ata(world.buyer.pubkey())).await,
+        TEST_TOKEN_BALANCE
+    );
+}
+
 /// Borsh length of an account's fields, without Anchor's discriminator.
 fn borsh_len<T: anchor_lang::AnchorSerialize>(value: &T) -> usize {
     let mut bytes = Vec::new();
@@ -2420,6 +2543,17 @@ fn serialized_accounts_fit_their_space_constants() {
     };
     assert_eq!(borsh_len(&budget) + 8, BUDGET_SPACE);
 
+    let token_budget = TokenBudget {
+        buyer: Pubkey::from(key),
+        session_key: Pubkey::from(key),
+        mint: Pubkey::from(key),
+        monthly_limit: 1,
+        spent: 0,
+        month_index: 1,
+        bump: 255,
+    };
+    assert_eq!(borsh_len(&token_budget) + 8, TOKEN_BUDGET_SPACE);
+
     let config = Config {
         admin: Pubkey::from(key),
         fee_bps: 200,
@@ -2439,7 +2573,15 @@ fn serialized_accounts_fit_their_space_constants() {
 #[test]
 fn account_spaces_match_the_sizes_used_by_the_program() {
     assert_eq!(PAYMENT_SPACE, 230);
+    // buyer, session key, limit, spent, month index, bump.
+    assert_eq!(BUDGET_SPACE, 8 + 32 + 32 + 8 + 8 + 8 + 1);
     assert_eq!(BUDGET_SPACE, 97);
+
+    // seller, reference, mint, amount, memo, state, payer, two timestamps, bump.
+    assert_eq!(TOKEN_PAYMENT_SPACE, 262);
+    // buyer, session key, mint, limit, spent, month index, bump.
+    assert_eq!(TOKEN_BUDGET_SPACE, 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1);
+    assert_eq!(TOKEN_BUDGET_SPACE, 129);
 
     // One receipt type for both currencies: invoice, seller, reference, mint,
     // amount, memo, payer, three timestamps, bump. No `state` field — the

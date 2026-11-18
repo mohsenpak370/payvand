@@ -117,7 +117,10 @@
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "only to refuse a Token-2022 mint by name, as on the other token contexts."
+          ]
         },
         {
           "name": "vault",
@@ -219,8 +222,7 @@
           "writable": true
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "token_program"
         }
       ],
       "args": []
@@ -557,7 +559,10 @@
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "a Token-2022 mint by name, as on the other token contexts."
+          ]
         },
         {
           "name": "buyer_token_account",
@@ -668,8 +673,7 @@
           "writable": true
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "token_program"
         },
         {
           "name": "associated_token_program",
@@ -758,7 +762,11 @@
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "refuse a Token-2022 mint by name; the ATA program still proves it is a",
+            "mint when the account is created."
+          ]
         },
         {
           "name": "treasury_token_account",
@@ -855,8 +863,7 @@
           }
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "token_program"
         },
         {
           "name": "associated_token_program",
@@ -1230,7 +1237,10 @@
           }
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "the currency policy, and the rejection is named: `Token2022Unsupported`."
+          ]
         },
         {
           "name": "seller",
@@ -1464,8 +1474,7 @@
           "writable": true
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "token_program"
         },
         {
           "name": "associated_token_program",
@@ -1762,7 +1771,11 @@
           "writable": true
         },
         {
-          "name": "mint"
+          "name": "mint",
+          "docs": [
+            "policy's currency rule, and the rejection is named: `Token2022Unsupported`",
+            "rather than a failure inside a token CPI."
+          ]
         },
         {
           "name": "receipt",
@@ -1858,8 +1871,7 @@
           "writable": true
         },
         {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "token_program"
         },
         {
           "name": "system_program",
@@ -2226,6 +2238,11 @@
       "code": 6016,
       "name": "FeeOverflow",
       "msg": "The fee calculation overflowed"
+    },
+    {
+      "code": 6017,
+      "name": "Token2022Unsupported",
+      "msg": "Payvand settles only SPL Token mints; Token-2022 is not supported"
     }
   ],
   "types": [

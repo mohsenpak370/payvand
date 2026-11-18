@@ -59,6 +59,12 @@ pub const TREASURY_SEED: &[u8] = b"treasury";
 /// `8` (discriminator) + `32 + 32 + 8 + 4 + 96 + 1 + 32 + 8 + 8 + 1`.
 pub const PAYMENT_SPACE: usize = 8 + 32 + 32 + 8 + 4 + PAYMENT_MAX_MEMO + 1 + 32 + 8 + 8 + 1;
 
+/// The SPL Token mint layout: authority, supply, decimals, initialization flag
+/// and the optional freeze authority. Every mint the program accepts is exactly
+/// this long. A Token-2022 mint with extensions is longer, but its owner is
+/// refused first, so the named error comes from the program, not a length.
+pub const SPL_MINT_LEN: usize = 82;
+
 /// Seed prefix for an invoice paid in an SPL token. A separate prefix from
 /// `PAYMENT_SEED` on purpose: the account carries a mint, so its layout
 /// differs, and keeping it apart leaves every SOL invoice already on chain

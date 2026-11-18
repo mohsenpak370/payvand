@@ -64,11 +64,15 @@ line says where it stands, so a later pass does not have to re-derive it.
   `apps/web/app/assets/payvand.idl.json`, and six harness tests decode the
   emitted payloads. Close-path and treasury events are deliberately not built
   (see the task's note).
-- **Task 4.4 — Token-2022: decided, not enforced.** No program check rejects a
-  Token-2022 mint with a named error; a payment into one fails inside the SPL
-  CPI. The layout half is partly pinned: `CONFIG_SPACE` is asserted in the
-  harness inside `initialize_config_records_the_upgrade_authority`), `BUDGET_SPACE` and
-  `TOKEN_BUDGET_SPACE` are not.
+- **Task 4.4 — closed for code (2026-11-18).** Every token context refuses a mint
+  the SPL Token program does not own with `PaymentError::Token2022Unsupported`
+  (`Custom(6017)`), and the token contexts use `anchor-spl`'s interface account
+  types so that check is reached instead of Anchor's generic
+  `AccountOwnedByWrongProgram`. No instruction's account list or order changed.
+  `BUDGET_SPACE`, `TOKEN_PAYMENT_SPACE` and `TOKEN_BUDGET_SPACE` are pinned in the
+  harness beside `Config`'s and the payment layouts'. The docs half — supported
+  token programs in `README.md`/`DEV.md`, a linked `token_interface` follow-up —
+  is still open, and the migration itself stays deferred.
 - **Task 1.6 — closed (2026-11-18).** All three boundary cases now execute:
   `fee_floors_rather_than_rounds_at_ninety_nine_lamports`,
   `a_ten_thousand_bps_policy_admits_no_sol_invoice`, and
@@ -348,6 +352,32 @@ Revision 13 records Task 3.5's build (2026-11-18):
   `nuxt typecheck`, `eslint .` in `apps/web`. **Not verified:** the devnet smoke
   run and a real silent payment against a deployed build of this revision —
   both need the upgrade in Task 5.1.
+
+Revision 14 records Task 4.4's enforcement (2026-11-18):
+
+- **Token-2022 is refused by name, not inside a CPI.**
+  `PaymentError::Token2022Unsupported` sits after `FeeOverflow` (`Custom(6017)`),
+  so every existing code keeps its number, and every token context's `mint` is an
+  `UncheckedAccount` constrained to the SPL Token program and the 82-byte SPL
+  mint layout. The error a caller sees is
+  `AnchorError caused by account: mint … Error Number: 6017`.
+- **The account types moved to the interface; the policy did not.** Anchor parses
+  typed accounts before constraints, so a first attempt with the mint checked by
+  a constraint but the accounts left as `Account<TokenAccount>` still reported
+  `AccountOwnedByWrongProgram` (3007) on `seller_token_account` — measured, not
+  assumed. `InterfaceAccount<TokenAccount>` and `Interface<TokenInterface>` parse
+  both programs, which lets the mint's owner check be the rejection. No
+  instruction's account list or order changed, so the deployed interface, the
+  IDL and the clients match revision 13; `transfer_checked` and the extension
+  rules stay deferred.
+- **Layouts pinned.** `TokenBudget` joins the serialisation test, and
+  `BUDGET_SPACE = 97`, `TOKEN_PAYMENT_SPACE = 262` and
+  `TOKEN_BUDGET_SPACE = 129` are asserted.
+- **Verified:** `cargo build-sbf`, 52 harness tests, `cargo fmt --check`,
+  `cargo clippy --all-targets`, `anchor idl build` (IDL copied to
+  `apps/web`), and `vitest run` (124), `nuxt typecheck`, `eslint .` in
+  `apps/web`. **Not verified:** the docs half of the task; the devnet upgrade
+  and the smoke runs are recorded in the rollout notes.
 
 ## Linked Docs
 
@@ -2018,7 +2048,7 @@ Dependencies: Tasks 1.2, 1.3, and Phase 3.
 
 Estimated scope: Medium.
 
-#### Task 4.4: Token-2022 decision and `Config` layout test
+#### Task 4.4: Token-2022 decision and account layout tests
 
 Description: Document that the program uses `anchor_spl::token` and rejects
 Token-2022, link a follow-up plan for `token_interface` migration, and make sure
@@ -2026,23 +2056,68 @@ the UI/API do not offer Token-2022 mints. Add an `InitSpace` (or size-assert)
 test for `Config` and the budget accounts; the receipt and payment layouts keep
 their `0001` tests.
 
+The code half was built on 2026-11-18 (revision 14):
+
+- **The rejection is named.** `PaymentError::Token2022Unsupported` ("Payvand
+  settles only SPL Token mints; Token-2022 is not supported") is appended after
+  `FeeOverflow`, so it is `Custom(6017)` and no deployed code moves. Every token
+  context's `mint` is an `UncheckedAccount` constrained to
+  `mint.owner == anchor_spl::token::ID && mint.data_len() == SPL_MINT_LEN`
+  (`SPL_MINT_LEN = 82`, the SPL mint layout) with that error. A Token-2022
+  settle now fails with `AnchorError caused by account: mint … Error Number:
+  6017`.
+- **Why the interface types are involved.** Anchor parses typed accounts before
+  it evaluates constraints, so with `Account<TokenAccount>` the first
+  Token-2022-owned account failed on its own owner check with the generic
+  `AccountOwnedByWrongProgram` (3007) and the named check was never reached —
+  the test reported exactly that before the change. `instructions::token` now
+  types its token accounts as `InterfaceAccount<TokenAccount>` and its token
+  program as `Interface<TokenInterface>`, which parse either program and leave
+  the mint's owner as the rejection. The policy did not move: one program, named
+  by the mint check, and the `token_interface` CPI migration remains deferred.
+- **One size assertion per account.**
+  `serialized_accounts_fit_their_space_constants` now serialises `TokenBudget`
+  too (it already covered `Payment`, `TokenPayment`, `PaymentReceipt`, `Budget`
+  and `Config`), and `account_spaces_match_the_sizes_used_by_the_program` pins
+  `BUDGET_SPACE = 97`, `TOKEN_PAYMENT_SPACE = 262` and `TOKEN_BUDGET_SPACE = 129`
+  beside `PAYMENT_SPACE = 230`, `PAYMENT_RECEIPT_SPACE = 301` and
+  `CONFIG_SPACE = 62`.
+- **The harness test.** `a_token_2022_mint_is_rejected_by_name` builds a
+  Token-2022 mint, the buyer's, seller's and treasury's Token-2022 accounts and
+  the Token-2022 program, then asserts the settle reports `Custom(6017)`, leaves
+  no invoice and no receipt, and does not move the buyer's tokens.
+
+What is still open is the documentation half: neither `README.md` nor `DEV.md`
+states which token programs are supported, and no page links a `token_interface`
+follow-up plan. The UI/API mint allowlist is unchanged, and the migration's own
+work (`transfer_checked`, the extension rules) is not started.
+
 Acceptance criteria:
 
 - [ ] Product docs state supported token programs and link the follow-up.
-- [ ] A Token-2022 mint fails with a clear error.
-- [ ] `Config`, `Budget`, and `TokenBudget` sizes are asserted by a test.
+- [x] A Token-2022 mint fails with a clear error.
+- [x] `Config`, `Budget`, and `TokenBudget` sizes are asserted by a test.
 
 Verification:
 
 - [ ] Doc review.
-- [ ] `cargo test -p payvand`
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml --test settle`
+      (2026-11-18: 52 tests, after `cargo build-sbf` rebuilt the artifact).
+- [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (clean
+      apart from the third-party future-incompat note), `anchor idl build` with
+      the IDL copied to `apps/web/app/assets/payvand.idl.json`, and in
+      `apps/web`: `vitest run` (124), `nuxt typecheck`, `eslint .` (only the
+      pre-existing `v-html` warning).
 
 Files likely touched:
 
 - `README.md`
 - `DEV.md`
-- `apps/contracts/programs/payvand/src/state.rs`
+- `apps/contracts/programs/payvand/src/instructions/token.rs`
+- `apps/contracts/programs/payvand/src/errors.rs`
 - `apps/contracts/programs/payvand/src/constants.rs`
+- `apps/contracts/programs/payvand/tests/settle.rs`
+- `apps/web/app/assets/payvand.idl.json`
 
 Dependencies: Phase 1.
 

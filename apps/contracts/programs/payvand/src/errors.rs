@@ -38,4 +38,6 @@ pub enum PaymentError {
     FeeModeUnsupported,
     #[msg("The fee calculation overflowed")]
     FeeOverflow,
+    #[msg("Payvand settles only SPL Token mints; Token-2022 is not supported")]
+    Token2022Unsupported,
 }

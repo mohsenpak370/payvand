@@ -3,11 +3,25 @@
 //! Settlement mirrors the SOL paths: the invoice account is created, settled
 //! and closed in the settle transaction, a receipt keyed by the invoice address
 //! keeps the record, and the receipt's `settled_at` is the replay guard.
+//!
+//! The contexts below use `anchor_spl`'s *interface* account types for the token
+//! accounts and the token program: those parse an account owned by either token
+//! program, which is what makes the mint's owner check the rejection a
+//! Token-2022 caller sees. The policy is still one program — `mint.owner` must
+//! be the SPL Token program, and anything else fails with
+//! `Token2022Unsupported` before a transfer is attempted. With the concrete
+//! `Account<TokenAccount>` types, Anchor's own owner check would fail first with
+//! the generic `AccountOwnedByWrongProgram` and the name would never be reached.
 
 use anchor_lang::prelude::*;
 use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer as TokenTransfer};
+use anchor_spl::token::{self, Transfer as TokenTransfer};
+// The interface types accept either token program at parse time, which is what
+// lets the mint's owner constraint below (SPL Token only) be the error a
+// Token-2022 caller sees. Anchor's `Account<TokenAccount>` would fail its own
+// owner check first with the generic `AccountOwnedByWrongProgram`.
+use anchor_spl::token_interface::{TokenAccount, TokenInterface};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
@@ -49,12 +63,20 @@ pub struct SettleTokenPayment<'info> {
     /// seller's setup step — like having a wallet at all — and never a line on
     /// the buyer's bill.
     #[account(mut, token::mint = mint, token::authority = seller)]
-    pub seller_token_account: Box<Account<'info, TokenAccount>>,
+    pub seller_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(mut, token::mint = mint, token::authority = payer)]
-    pub payer_token_account: Box<Account<'info, TokenAccount>>,
+    pub payer_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    pub mint: Box<Account<'info, Mint>>,
+    /// CHECK: The SPL Token mint this invoice is priced in. Its owner is the fee
+    /// policy's currency rule, and the rejection is named: `Token2022Unsupported`
+    /// rather than a failure inside a token CPI.
+    #[account(
+        constraint = mint.owner == &anchor_spl::token::ID
+            && mint.data_len() == SPL_MINT_LEN
+            @ PaymentError::Token2022Unsupported
+    )]
+    pub mint: UncheckedAccount<'info>,
 
     #[account(
         init_if_needed,
@@ -82,9 +104,9 @@ pub struct SettleTokenPayment<'info> {
     /// the treasury; the contract cannot create it without paying rent to a
     /// seller's account, which is the faucet this avoids.
     #[account(mut, token::mint = mint, token::authority = treasury)]
-    pub treasury_token_account: Box<Account<'info, TokenAccount>>,
+    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
@@ -111,7 +133,15 @@ pub struct OpenTreasuryTokenAccount<'info> {
     #[account(seeds = [TREASURY_SEED], bump = config.treasury_bump)]
     pub treasury: SystemAccount<'info>,
 
-    pub mint: Account<'info, Mint>,
+    /// CHECK: The mint to open the treasury's account for. Unchecked only to
+    /// refuse a Token-2022 mint by name; the ATA program still proves it is a
+    /// mint when the account is created.
+    #[account(
+        constraint = mint.owner == &anchor_spl::token::ID
+            && mint.data_len() == SPL_MINT_LEN
+            @ PaymentError::Token2022Unsupported
+    )]
+    pub mint: UncheckedAccount<'info>,
 
     /// The fee's destination in this mint: the treasury's own account, created
     /// here when it is missing and left alone when it is not.
@@ -121,9 +151,9 @@ pub struct OpenTreasuryTokenAccount<'info> {
         associated_token::mint = mint,
         associated_token::authority = treasury
     )]
-    pub treasury_token_account: Account<'info, TokenAccount>,
+    pub treasury_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -142,11 +172,18 @@ pub struct OpenTokenBudget<'info> {
     )]
     pub budget: Account<'info, TokenBudget>,
 
-    pub mint: Account<'info, Mint>,
+    /// CHECK: The mint this budget is denominated in. Unchecked only to refuse
+    /// a Token-2022 mint by name, as on the other token contexts.
+    #[account(
+        constraint = mint.owner == &anchor_spl::token::ID
+            && mint.data_len() == SPL_MINT_LEN
+            @ PaymentError::Token2022Unsupported
+    )]
+    pub mint: UncheckedAccount<'info>,
 
     /// Where the budget's tokens come from — the buyer's own account.
     #[account(mut, token::mint = mint, token::authority = buyer)]
-    pub buyer_token_account: Account<'info, TokenAccount>,
+    pub buyer_token_account: InterfaceAccount<'info, TokenAccount>,
 
     /// The pot itself: a token account owned by the budget PDA, so only this
     /// program can ever move what is inside it.
@@ -156,14 +193,14 @@ pub struct OpenTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = budget
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
 
     /// CHECK: App-generated session key. Receives the fee float here, and is
     /// the only key allowed to spend from this budget afterwards.
     #[account(mut)]
     pub session_key: UncheckedAccount<'info>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -192,9 +229,16 @@ pub struct PayFromTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = budget
     )]
-    pub vault: Box<Account<'info, TokenAccount>>,
+    pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    pub mint: Box<Account<'info, Mint>>,
+    /// CHECK: The budget's mint, compared against the budget below. Its owner is
+    /// the currency policy, and the rejection is named: `Token2022Unsupported`.
+    #[account(
+        constraint = mint.owner == &anchor_spl::token::ID
+            && mint.data_len() == SPL_MINT_LEN
+            @ PaymentError::Token2022Unsupported
+    )]
+    pub mint: UncheckedAccount<'info>,
 
     /// CHECK: The address the QR code names as the payee. It receives the price
     /// less the fee in tokens and no lamports — the invoice's rent goes back to
@@ -208,7 +252,7 @@ pub struct PayFromTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = seller
     )]
-    pub seller_token_account: Box<Account<'info, TokenAccount>>,
+    pub seller_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         init,
@@ -251,9 +295,9 @@ pub struct PayFromTokenBudget<'info> {
     /// The fee's destination in this mint, opened once per mint by whoever runs
     /// the treasury — the same account `settle_token_payment` pays.
     #[account(mut, token::mint = mint, token::authority = treasury)]
-    pub treasury_token_account: Box<Account<'info, TokenAccount>>,
+    pub treasury_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
@@ -271,7 +315,14 @@ pub struct CloseTokenBudget<'info> {
     )]
     pub budget: Account<'info, TokenBudget>,
 
-    pub mint: Account<'info, Mint>,
+    /// CHECK: The budget's mint, compared against the budget below. Unchecked
+    /// only to refuse a Token-2022 mint by name, as on the other token contexts.
+    #[account(
+        constraint = mint.owner == &anchor_spl::token::ID
+            && mint.data_len() == SPL_MINT_LEN
+            @ PaymentError::Token2022Unsupported
+    )]
+    pub mint: UncheckedAccount<'info>,
 
     /// The canonical vault, as in `pay_from_token_budget`, so a decoy account
     /// that shares the mint and the budget's authority cannot be drained in its
@@ -281,12 +332,12 @@ pub struct CloseTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = budget
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: InterfaceAccount<'info, TokenAccount>,
 
     #[account(mut, token::mint = mint, token::authority = buyer)]
-    pub buyer_token_account: Account<'info, TokenAccount>,
+    pub buyer_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 pub fn settle_token_payment_handler<'info, 'ctx>(
