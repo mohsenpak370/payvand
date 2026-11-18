@@ -53,6 +53,26 @@ export function clearFeeConfigCache(): void {
   cache = null
 }
 
+/**
+ * Whether an account exists, and when that answer was read.
+ *
+ * The two existence checks a token quote makes — the seller's account for the
+ * price's mint, and the treasury's own account for it — answer the same question
+ * on every quote, and a currency toggle asks them again within a click. They are
+ * held for the same minute as the fee policy, so a toggle costs rent reads at
+ * worst rather than two account reads on top of them.
+ *
+ * A missing account is held for that minute too, which is the trade the policy
+ * cache already makes: the treasury's account is opened by the deployer and the
+ * seller's by the seller, and both show up on the next quote within the minute.
+ */
+const accountCache = new Map<string, { readAt: number, exists: boolean }>()
+
+/** Drops the cached existence reads, so the next quote asks the cluster again. */
+export function clearInvoiceAccountCache(): void {
+  accountCache.clear()
+}
+
 /** Reads the singleton fee policy, cached for `CACHE_TTL_MS`. */
 export function useFeeConfig() {
   const { client } = useSolanaClient()
@@ -116,6 +136,18 @@ export function useInvoiceCosts() {
     return lamports
   }
 
+  /** `getAccountInfo` as a question with a TTL, answered from `accountCache`. */
+  async function accountExists(account: Address): Promise<boolean> {
+    const cached = accountCache.get(account)
+    if (cached && Date.now() - cached.readAt < CACHE_TTL_MS) return cached.exists
+    const info = await client.rpc
+      .getAccountInfo(account, { commitment: 'confirmed', encoding: 'base64' })
+      .send()
+    const exists = Boolean(info.value)
+    accountCache.set(account, { readAt: Date.now(), exists })
+    return exists
+  }
+
   /**
    * Costs for paying `amount` in `currency`. `mint` and `seller` are optional
    * and only used to tell whether a token payment would have to create the
@@ -138,10 +170,7 @@ export function useInvoiceCosts() {
     let sellerTokenAccountRent = 0
     if (isToken && options.mint && options.seller) {
       const account = await deriveAssociatedTokenAddress(options.seller, address(options.mint))
-      const info = await client.rpc
-        .getAccountInfo(account, { commitment: 'confirmed', encoding: 'base64' })
-        .send()
-      if (!info.value) sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE)
+      if (!(await accountExists(account))) sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE)
     }
 
     // The fee leaves for the treasury's own account, which only the deployer
@@ -151,10 +180,7 @@ export function useInvoiceCosts() {
     let treasuryTokenAccountMissing = false
     if (isToken && options.mint) {
       const feeAccount = await deriveTreasuryTokenAccount(address(options.mint))
-      const info = await client.rpc
-        .getAccountInfo(feeAccount, { commitment: 'confirmed', encoding: 'base64' })
-        .send()
-      treasuryTokenAccountMissing = !info.value
+      treasuryTokenAccountMissing = !(await accountExists(feeAccount))
     }
 
     return invoiceCosts({
