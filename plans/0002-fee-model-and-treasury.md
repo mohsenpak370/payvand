@@ -62,8 +62,9 @@ line says where it stands, so a later pass does not have to re-derive it.
   lines on all four settle paths, both budget opens and `update_config`. The
   IDL's `events` section was regenerated and copied to
   `apps/web/app/assets/payvand.idl.json`, and six harness tests decode the
-  emitted payloads. Close-path and treasury events are deliberately not built
-  (see the task's note).
+  emitted payloads. Close-path and treasury events are deliberately not built,
+  and no API or web consumer is planned: the task's note records why (the splits
+  in the app are quotes, and a log-fed history costs more than the receipt scan).
 - **Task 4.4 — closed for code (2026-11-18).** Every token context refuses a mint
   the SPL Token program does not own with `PaymentError::Token2022Unsupported`
   (`Custom(6017)`), and the token contexts use `anchor-spl`'s interface account
@@ -2033,6 +2034,26 @@ Not built, deliberately:
   no indexer of proceeds needs it. Add it when a treasury ledger exists.
 - `initialize_config` emits nothing: it is a one-time bootstrap by the upgrade
   authority, not a policy change an indexer has to catch up with.
+
+**No event consumer, deliberately (2026-11-18).** Nothing in `apps/api` or
+`apps/web` re-derives a *settled* split that an event could replace. The API's
+feed (`src/payments.rs`) reads `PaymentReceipt`/`Payment` accounts and reports
+the invoice's price, with no fee field and no `Config` reader in production code
+— the only `Config` decoder there is a test fixture. The web's split arithmetic
+(`feeOn`/`invoiceCosts` in `utils/invoiceCost.ts`) is quote-only, rendered by
+`InvoiceSplitNote` on the sell form and the shop page *before a payment exists*:
+an event cannot answer that question, and the fee quoted has to be the policy in
+force when the buyer signs, not one a past block recorded. The settled views
+(the checkout receipt, `ProfileTransactionsCard`, `AdminPaymentsCard`) show the
+receipt's price and never claim a split, so there is no Config-derived number to
+correct. Taking the feed from events would also cost more than it saves:
+`getSignaturesForAddress` plus one `getTransaction` per payment to read its
+`Program data:` line, against today's single program scan, and only as far back
+as the RPC keeps transactions. The narrow version worth adding when a seller's
+settled screen has to show what they kept is one event read for one invoice (the
+receipt's creation signature, then that transaction) — not a feed — and it
+should say "price − fee" with the rent noted beside it, the way
+`InvoiceSplitNote` already frames a quote.
 
 Acceptance criteria:
 
