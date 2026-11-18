@@ -5,8 +5,10 @@
  * network fee. The rows come from `useBudget`'s `open*BudgetCost`, which reads
  * the float from `Config`.
  */
+import type { BudgetOpenCost } from '~/composables/useBudgetQuote'
+
 const props = defineProps<{
-  cost: { rows: { key: string, lamports: number }[], total: number } | null
+  cost: BudgetOpenCost | null
 }>()
 
 const rows = computed(() => (props.cost?.rows ?? []).filter(row => row.lamports > 0))
