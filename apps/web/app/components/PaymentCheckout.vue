@@ -160,7 +160,7 @@ interface DetailRow {
 }
 
 const detailRows = computed<DetailRow[]>(() => [
-  { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true },
+  { label: t('checkout.details.seller'), value: String(payload.value?.seller ?? ''), mono: true, wrap: true },
   { label: t('checkout.details.network'), value: networkLabel(payload.value?.cluster || ''), mono: false },
   ...(record.value
     ? [{ label: t('checkout.details.status'), value: statusLabel(record.value.status), mono: false }]
