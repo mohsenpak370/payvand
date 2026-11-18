@@ -65,15 +65,17 @@ line says where it stands, so a later pass does not have to re-derive it.
   emitted payloads. Close-path and treasury events are deliberately not built,
   and no API or web consumer is planned: the task's note records why (the splits
   in the app are quotes, and a log-fed history costs more than the receipt scan).
-- **Task 4.4 — closed for code (2026-11-18).** Every token context refuses a mint
+- **Task 4.4 — closed (2026-11-18).** Every token context refuses a mint
   the SPL Token program does not own with `PaymentError::Token2022Unsupported`
   (`Custom(6017)`), and the token contexts use `anchor-spl`'s interface account
   types so that check is reached instead of Anchor's generic
   `AccountOwnedByWrongProgram`. No instruction's account list or order changed.
   `BUDGET_SPACE`, `TOKEN_PAYMENT_SPACE` and `TOKEN_BUDGET_SPACE` are pinned in the
-  harness beside `Config`'s and the payment layouts'. The docs half — supported
-  token programs in `README.md`/`DEV.md`, a linked `token_interface` follow-up —
-  is still open, and the migration itself stays deferred.
+  harness beside `Config`'s and the payment layouts'. The docs half closed too
+  (2026-11-18): `README.md`'s *Token programs* section and `DEV.md`'s token block
+  name SPL Token as the only supported program, quote the `Custom(6017)` refusal
+  and link `plans/0003-token-interface-migration.md`, which carries the
+  `token_interface` migration.
 - **Task 1.6 — closed (2026-11-18).** All three boundary cases now execute:
   `fee_floors_rather_than_rounds_at_ninety_nine_lamports`,
   `a_ten_thousand_bps_policy_admits_no_sol_invoice`, and
@@ -118,8 +120,9 @@ line says where it stands, so a later pass does not have to re-derive it.
   `BuyerPays` with `FeeModeUnsupported` (`sol.rs`, `token.rs`), so the mode exists
   in `Config` and charges nothing. The charging half was never built and no
   product asks for it.
-- Token-2022 migration (`token_interface`), and merging the two float constants
-  onto `Config::session_fee_float` (revision 8).
+- Token-2022 migration (`token_interface`) — written out in
+  [0003-token-interface-migration.md](0003-token-interface-migration.md) — and
+  merging the two float constants onto `Config::session_fee_float` (revision 8).
 
 ### Archival
 
@@ -387,7 +390,8 @@ Revision 14 records Task 4.4's enforcement (2026-11-18):
 - **Verified:** `cargo build-sbf`, 53 harness tests, `cargo fmt --check`,
   `cargo clippy --all-targets`, `anchor idl build` (IDL copied to
   `apps/web`), and `vitest run` (124), `nuxt typecheck`, `eslint .` in
-  `apps/web`. **Not verified:** the docs half of the task.
+  `apps/web`. **Not verified at that revision:** the docs half of the task, which
+  Revision 16 closes.
 
 Revision 15 pins Task 3.1's zero-fee rule on the SOL wallet path (2026-11-18):
 
@@ -409,9 +413,35 @@ Revision 15 pins Task 3.1's zero-fee rule on the SOL wallet path (2026-11-18):
 - **Verified:** `cargo build-sbf`, 53 harness tests, `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`.
 
+Revision 16 closes Task 4.4's documentation half (2026-11-18):
+
+- **`README.md` says which token programs it settles.** A *Token programs*
+  section states SPL Token mints only, the owner-and-82-byte-layout check, the
+  named refusal `PaymentError::Token2022Unsupported` (`Custom(6017)`) with its
+  message, why the interface account types are there (otherwise
+  `AccountOwnedByWrongProgram` answers first), that the transfers themselves are
+  still SPL Token's, and that `CURRENCY_MINTS` offers only SPL Token mints.
+- **`DEV.md` says the same where the token treasury step lives** — the exact
+  error a caller sees, that the refusal happens before any CPI so nothing moves,
+  and that a Token-2022 mint added today would only buy a `6017`.
+- **A follow-up to link, not a placeholder.**
+  `plans/0003-token-interface-migration.md` (Draft) records what exists and the
+  work the migration actually needs: a `Config` mint/extension policy, interface
+  CPIs with a truthful `seller_proceeds` under transfer fees, per-program ATA
+  derivation, a treasury account per mint and program, the mint list, and the
+  test that flips `a_token_2022_mint_is_rejected_by_name` into the positive
+  case. `plans/README.md` lists it, and `0002`'s out-of-scope line and
+  deferred-work bullet point at it.
+- **Verified:** doc review against the source — the
+  `mint.owner == anchor_spl::token::ID && mint.data_len() == SPL_MINT_LEN`
+  constraint in `instructions/token.rs`, `Token2022Unsupported` last in
+  `PaymentError`, and `CURRENCY_MINTS` in `apps/web` — with no code changed.
+
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
+- `plans/0003-token-interface-migration.md` — the deferred Token-2022 migration
+  this plan's Task 4.4 hands over.
 - `plans/archive/0001-contract-security-hardening.md` — prerequisite: receipt-backed
   settlement, auto-close, and the status model. This plan assumes `0001` is
   merged and deployed.
@@ -489,7 +519,8 @@ Out of scope:
 - Anything in `0001` (close removal, receipt creation, status model).
 - Payer-side gasless/relayer support: the payer still needs SOL for the network
   fee and the temporary invoice rent on token invoices until a sponsor exists.
-- Token-2022 migration (documented as unsupported, tracked separately).
+- Token-2022 migration (documented as unsupported, tracked in
+  [0003-token-interface-migration.md](0003-token-interface-migration.md)).
 - Mainnet deployment, per-shop fee overrides, discounts, a full event indexer.
 
 ## Dependencies
@@ -2151,20 +2182,31 @@ The code half was built on 2026-11-18 (revision 14):
   the Token-2022 program, then asserts the settle reports `Custom(6017)`, leaves
   no invoice and no receipt, and does not move the buyer's tokens.
 
-What is still open is the documentation half: neither `README.md` nor `DEV.md`
-states which token programs are supported, and no page links a `token_interface`
-follow-up plan. The UI/API mint allowlist is unchanged, and the migration's own
-work (`transfer_checked`, the extension rules) is not started.
+The documentation half landed on 2026-11-18: `README.md` has a *Token programs*
+section and `DEV.md` a token block, both naming SPL Token as the only supported
+program, quoting the `Custom(6017)` refusal and its message, and linking
+`plans/0003-token-interface-migration.md` for the migration. The UI/API mint
+allowlist is unchanged, and the migration's own work (`transfer_checked`, the
+extension rules) is not started — `0003` carries it.
 
 Acceptance criteria:
 
-- [ ] Product docs state supported token programs and link the follow-up.
+- [x] Product docs state supported token programs and link the follow-up
+      (2026-11-18: README's *Token programs* section and `DEV.md` name SPL Token
+      as the only supported program, quote `Custom(6017)` and link
+      `plans/0003-token-interface-migration.md`).
 - [x] A Token-2022 mint fails with a clear error.
 - [x] `Config`, `Budget`, and `TokenBudget` sizes are asserted by a test.
 
 Verification:
 
-- [ ] Doc review.
+- [x] Doc review (2026-11-18): every claim in the new README section and the
+      `DEV.md` block was checked against the source — the
+      `mint.owner == anchor_spl::token::ID && data_len() == SPL_MINT_LEN`
+      constraint and `InterfaceAccount`/`Interface` types in
+      `instructions/token.rs`, `Token2022Unsupported` as the last error
+      (`Custom(6017)`), and `CURRENCY_MINTS` in `apps/web` listing only SPL
+      Token mints on both clusters.
 - [x] `cargo test --manifest-path apps/contracts/Cargo.toml --test settle`
       (2026-11-18: 53 tests, after `cargo build-sbf` rebuilt the artifact).
 - [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (clean

@@ -268,6 +268,33 @@ Rent is read from the cluster (`Rent::minimum_balance`), never from a constant,
 so these figures follow it. The addresses, the current `Config` values, and the
 commands that change the policy or top the treasury up are in `DEV.md`.
 
+### Token programs
+
+Payvand settles **SPL Token mints only**. Every token context checks that the
+mint is owned by the SPL Token program and carries the 82-byte SPL mint layout
+before it moves anything, so a Token-2022 mint is refused at the account check
+rather than failing somewhere inside a transfer. The refusal has a name:
+`PaymentError::Token2022Unsupported`, `Custom(6017)` — "Payvand settles only SPL
+Token mints; Token-2022 is not supported" — which is what a Token-2022 settle
+returns. Owner and layout are the whole currency rule: the mints the app offers
+(SOL, USDC and EURC in `CURRENCY_MINTS`) are SPL Token mints on both clusters,
+and the treasury needs its own account per mint (`pnpm treasury:open --mint
+<mint>`) before an invoice in that mint can settle.
+
+The token accounts and the token program are typed with `anchor-spl`'s interface
+types (`InterfaceAccount<TokenAccount>`, `Interface<TokenInterface>`), which
+parse either program, so the mint's owner is what does the refusing — the error
+names the mint instead of surfacing Anchor's generic
+`AccountOwnedByWrongProgram` (3007). The transfers themselves are still SPL
+Token's.
+
+Supporting Token-2022 — interface CPIs, `transfer_checked_with_fee`, the rules
+for extensions such as transfer fees and permanent delegates, ATA derivation per
+token program, and a treasury account per mint *and* program — is a follow-up of
+its own: [plans/0003-token-interface-migration.md](plans/0003-token-interface-migration.md).
+Until it lands, no Token-2022 invoice can be paid: the app offers no such mint,
+and the program would refuse one.
+
 ### Checks
 
 ```bash

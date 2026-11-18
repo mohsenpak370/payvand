@@ -63,6 +63,7 @@ sequential filename. Templates live in `plans/templates/`.
 | ID | Plan | Status |
 | ---- | ---- | -------- |
 | 0002 | [Fee Model, Treasury, and Budget Accounting](0002-fee-model-and-treasury.md) | Draft |
+| 0003 | [Token-2022 migration (`token_interface`)](0003-token-interface-migration.md) | Draft |
 
 The 2026-11-09 contract review originally lived in one plan. It was split on
 2026-11-12: `0001` ships the theft, replay, and status fixes, and `0002` builds
