@@ -17,6 +17,7 @@ import {
 } from './budgetTransactions'
 import { createSolBudgetOps } from './budgetSolOps'
 import { createTokenBudgetOps } from './budgetTokenOps'
+import { rentMinimum as sharedRentMinimum } from './rents'
 
 export {
   BUDGET_SPACE,
@@ -42,16 +43,7 @@ export function useBudget() {
   // the quote reads the same account the program will.
   const feeConfig = useFeeConfig()
 
-  const rentCache = new Map<number, number>()
-  async function rentMinimum(space: number): Promise<number> {
-    const hit = rentCache.get(space)
-    if (hit !== undefined) return hit
-    const lamports = Number(
-      await client.rpc.getMinimumBalanceForRentExemption(BigInt(space)).send()
-    )
-    rentCache.set(space, lamports)
-    return lamports
-  }
+  const rentMinimum = (space: number) => sharedRentMinimum(client, space)
 
   const loadBudget = (buyer: Address, options: { force?: boolean } = {}) =>
     loadBudgetAccount(client, buyer, options)

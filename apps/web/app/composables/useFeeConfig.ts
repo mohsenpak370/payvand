@@ -14,6 +14,7 @@ import {
   deriveConfigPda,
   deriveTreasuryTokenAccount
 } from './usePaymentProgram'
+import { clearRentCache, rentMinimum } from './rents'
 
 /**
  * The fee policy the program reads at settlement time.
@@ -73,20 +74,9 @@ export function clearInvoiceAccountCache(): void {
   accountCache.clear()
 }
 
-/**
- * What the cluster charges for one account size, and when that was read.
- *
- * The rents are the same two or three questions on every quote — the invoice, the
- * receipt, and a token account when one has to be made — and a page that mounts
- * a second `useInvoiceCosts` would otherwise ask them all over again for numbers
- * that only move when the cluster's rent changes. They live here, beside the
- * existence reads and for the same minute, so every instance shares one answer.
- */
-const rentCache = new Map<number, { readAt: number, lamports: number }>()
-
 /** Drops the cached rents, so the next quote asks the cluster again. */
 export function clearInvoiceRentCache(): void {
-  rentCache.clear()
+  clearRentCache()
 }
 
 /** Reads the singleton fee policy, cached for `CACHE_TTL_MS`. */
@@ -141,16 +131,12 @@ export function useInvoiceCosts() {
   const { client } = useSolanaClient()
   const feeConfig = useFeeConfig()
 
-  /** `getMinimumBalanceForRentExemption` as a question with a TTL, from `rentCache`. */
-  async function rentFor(space: number): Promise<number> {
-    const cached = rentCache.get(space)
-    if (cached && Date.now() - cached.readAt < CACHE_TTL_MS) return cached.lamports
-    const lamports = Number(
-      await client.rpc.getMinimumBalanceForRentExemption(BigInt(space)).send()
-    )
-    rentCache.set(space, { readAt: Date.now(), lamports })
-    return lamports
-  }
+  /**
+   * `getMinimumBalanceForRentExemption` as a question with a TTL, from the shared
+   * `rents.ts` cache — the same answers the allowance page's quotes use, so the
+   * two never ask the cluster the same size twice in a minute.
+   */
+  const rentFor = (space: number) => rentMinimum(client, space)
 
   /** `getAccountInfo` as a question with a TTL, answered from `accountCache`. */
   async function accountExists(account: Address): Promise<boolean> {
