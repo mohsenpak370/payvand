@@ -43,7 +43,12 @@ buyer has just switched currency is answered by the chain first, and an open tab
 should not wait out a minute of API ticks to hear it. The schedule is
 `chainReadGapAfter` in `app/utils/chainReadGap.ts` — a pure function of the read
 count, tested like `holdSlop` — at most a minute apart, starting over on a
-currency switch, with the poll's API read left exactly as it was.
+currency switch, with the poll's API read left exactly as it was. Revision 12
+(2026-11-18) takes the closure decision Task 3.4 was waiting on: the payment
+account closes to the pool that funds it, never to the seller, and
+`pay_from_token_budget` gains the treasury accounts and the same fee split
+`settle_token_payment` already has. The program change that implies is not
+built.
 
 ## Remaining Work
 
@@ -67,10 +72,19 @@ line says where it stands, so a later pass does not have to re-derive it.
   withdrawal cap itself is tested.
 - **Task 3.1 — the token fee's floor and cap are unexercised**, and the
   zero-fee transfer skip is not pinned. The split test covers 2% only.
-- **Task 3.4 — one criterion contradicts the program.** It asks the payment
-  account to close to the rent payer; `pay_from_token_budget` refunds both rents
-  to the session key and closes the invoice to the seller. One of the two has to
-  change, and that decision was never taken.
+- **Task 3.4 — the close decision is taken (revision 12); the handler is not
+  changed.** The payment account closes to the pool that funds it, not to the
+  seller, whose proceeds are `amount - fee_t` and nothing else. That means
+  `pay_from_token_budget` takes `config`, `treasury` and
+  `treasury_token_account`, splits the amount, refunds the session key's rents
+  out of the pool and closes the invoice to the treasury — the shape
+  `settle_token_payment` already has. Left to build: the handler, a program
+  rebuild and the IDL copy in `apps/web/app/assets/payvand.idl.json` (the
+  harness tests the committed SBF artifact, so the source alone proves
+  nothing), the `useBudget.ts` builder, the `settle.rs` assertion that leaves a
+  seller holding `token_invoice_rent()` (`the_float_carries_three_payments_to_fresh_sellers`,
+  line 2734) and Task 3.2's float arithmetic, which the change makes moot on the
+  budget side.
 
 ### Verification this repo does not run
 
@@ -259,6 +273,44 @@ Revision 9 records the checkout's reload window (2026-11-17):
   catches up with a payment the chain already held` fails if the poll stops on any
   settled record, and `still offers the invoice when the chain holds nothing for
   it` keeps the fix from turning every load into a paid page. The window is a rule the checkout enforces, not a lucky read.
+
+Revision 12 records the closure decision Task 3.4 was waiting on (2026-11-18):
+
+- The product rule, as the buyer states it: the payer pays exactly the price the
+  seller named, in whatever currency the invoice is in; every fee comes out of
+  that amount; SOL-denominated costs come out of the treasury's SOL pool; the
+  token fee taken from the amount lands in an address we hold, so it can be
+  swapped for SOL and put back into that pool; the seller receives the amount
+  less the fee; and the rent of a closed account goes back to whoever paid it.
+- That makes the criterion right and the handler wrong. Task 3.4 asked for the
+  payment account to close to the rent payer; `pay_from_token_budget` closes it
+  to the seller, who advanced nothing, so a fresh seller walked away with
+  `amount` plus 2,714,400 of the buyer's lamports. A seller is owed
+  `amount - fee_t`, and the invoice rent is not part of it.
+- The shape the rule forces is the one `settle_token_payment` already has: the
+  pool funds the records and receives the closed invoice. `pay_from_token_budget`
+  gains `config`, `treasury` and `treasury_token_account`, moves `amount - fee_t`
+  from the vault to the seller and `fee_t` to the treasury's account for the
+  mint, refunds the session key's advanced invoice and receipt rents out of the
+  pool through `pay_from_treasury` (a CPI, so before the direct lamport moves),
+  and closes the invoice to the treasury. Both token paths then charge the same
+  fee and carry the same rent. The budget's own refund float has nothing left to
+  do: Task 3.2's `TOKEN_BUDGET_FEE_FLOAT` paid a job the pool now does, and its
+  boundary needs re-measuring with it.
+- What this restores is the plan's own invariant rather than inventing one: the
+  pot pays exactly `amount`. The SOL budget path already holds that; the token
+  one drains `invoice + receipt` on top of the price. With the pool funding the
+  records, the pool's position per payment is one receipt rent out and `fee_t`
+  in — the same 2,985,840 break-even the SOL path carries, which at 2% is a
+  149,292,000-base-unit price whatever the mint's decimals — and the invoice rent
+  comes back through the close.
+- What it does not move: the ATA rent of a seller that has none is still
+  advanced by the session key (Task 3.2 sized for it), which is the one cost of a
+  fresh seller the pool does not carry.
+- Not built, and nothing about the deployed program changes yet. The account
+  list is the IDL and the client's builder, and the harness executes the
+  committed SBF artifact, so the source change only counts once the program is
+  rebuilt and the IDL copied; see Remaining Work.
 
 ## Linked Docs
 
@@ -1221,7 +1273,9 @@ Acceptance criteria:
       pays 700,000 and checks 686,000 into the seller's account and 14,000 into
       the treasury's account for the mint. `pay_from_token_budget` carries no
       treasury account in its interface and moves the whole amount, so this
-      holds for one path, not both (revision 6).
+      holds for one path, not both (revision 6). Revision 12 makes it hold on
+      both, by giving `pay_from_token_budget` the treasury accounts and the same
+      split; not built.
 - [ ] `fee_t = min(amount * fee_bps / 10_000, amount - 1)`;
       `require!(amount > fee_t)` so a seller never receives zero. No token-path
       test yet: the SOL suite's cap and floor tests do not exercise this
@@ -1240,7 +1294,8 @@ Acceptance criteria:
       the invoice rent back in.
 - [x] The seller needs no SOL before or after the payment: both token tests pay
       a seller that holds no lamports and assert it stays at zero until the
-      auto-close hands it the invoice rent.
+      auto-close hands it the invoice rent. Revision 12 moves that close to the
+      pool, so the seller stays at zero for good; not built.
 
 Verification:
 
@@ -1312,7 +1367,11 @@ Verification:
       refuses a fourth with `Custom(1)` and asserts the counter and the vault did
       not move. At the old 10,000,000/10,000,000 sizing the same test fails on the
       third payment (checked by restoring it), so it pins the numbers rather than
-      describing them.
+      describing them. **Revision 12 changes what it measures**, not that it
+      measures it: with the pool funding the records and taking the closed
+      invoice, the seller receives the price alone and the budget pays the price
+      alone, so the invoice rent disappears from both sides of this test and from
+      the 18,000,000 it sized. Re-measure when the handler changes.
 - [x] Rust harness: `a_top_up_lets_the_float_carry_more_fresh_sellers` starts at
       that boundary: three payments fit, the fourth is refused, one top-up pays
       it, and a second top-up pays a fifth, so the refill is a rule and not a
@@ -1432,11 +1491,14 @@ Acceptance criteria:
 - [x] Treasury ATA receives `fee_t` and its rent is not charged to the payer:
       the payer's token account moves by the price alone (1,000,000 → 300,000)
       while the treasury's account gains 14,000 and the admin paid its rent.
-- [ ] Payment account closed to the rent payer, not the seller. Not what the
-      program does: `pay_from_token_budget` refunds both rents to the session key
-      and then closes the invoice to the seller, so a fresh seller ends up
-      holding the invoice rent (2,714,400 at the bank's rent). Either this
-      criterion or the handler has to change; neither was decided here.
+- [ ] Payment account closed to the rent payer, not the seller. Decided
+      2026-11-18 (revision 12): the criterion stands and the handler changes.
+      The invoice closes to the pool that funds it, the seller keeps
+      `amount - fee_t` alone, and the pot pays exactly `amount`. Not built: the
+      wait is the program change, the rebuild and the client's account list.
+      Today `pay_from_token_budget` refunds both rents to the session key and
+      closes the invoice to the seller, so a fresh seller ends up holding the
+      invoice rent (2,714,400 at the bank's rent).
 - [x] A settled token invoice cannot be replayed (2026-11-16):
       `settle_token_payment_replay_is_rejected_as_already_settled` settles an
       invoice, then sends the same one again with a fresh blockhash and gets
@@ -2103,5 +2165,7 @@ Estimated scope: Small.
   `withdraw_treasury`) move to a multisig before mainnet? The treasury itself
   stays a PDA; only the authority over it would change.
 - Should token invoices ever close rent to the seller again (a deliberate SOL
-  onboarding rebate), or is the payer/session-key close final?
+  onboarding rebate), or is the payer/session-key close final? Decided
+  2026-11-18 (revision 12): the close goes to the pool that funded it, so a
+  seller's proceeds are `amount - fee_t` and no rebate is planned.
 - Payer-side gasless support remains a separate plan; confirm it is deferred.
