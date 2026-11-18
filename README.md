@@ -35,8 +35,8 @@ apps/web/            Nuxt app (run `pnpm dev` from the repo root)
   app/pages/pay.vue      Buyer: the shared, printable payment page (name, price, QR)
   app/pages/scan.vue     Buyer: scan a QR in the app and pay from this device
   app/pages/budget.vue   Buyer: a monthly allowance a session key spends from
-  app/pages/signin.vue   Email + password sign-in
-  app/pages/signup.vue   Create an account
+  app/pages/(auth)/signin.vue   Email + password sign-in
+  app/pages/(auth)/signup.vue   Create an account
   app/assets/payvand.idl.json   Copy of the Anchor IDL used by the client
 apps/api/            Axum API (also the Vercel Rust function)
 apps/contracts/      Anchor program + workspace Cargo.toml/Anchor.toml
