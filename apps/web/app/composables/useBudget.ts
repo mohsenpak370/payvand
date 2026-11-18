@@ -23,6 +23,7 @@ import {
   deriveConfigPda,
   derivePaymentReceiptPda,
   deriveTreasuryPda,
+  deriveTreasuryTokenAccount,
   describeProgramErrorCode
 } from './usePaymentProgram'
 import type { compileWireTransaction } from './usePaymentProgram'
@@ -43,8 +44,6 @@ const BUDGET_SPACE = 97
 const TOKEN_SESSION_FEE_FLOAT = 12_000_000
 /** Mirrors `TOKEN_BUDGET_SPACE`: 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1. */
 const TOKEN_BUDGET_SPACE = 129
-/** Lamports a token budget keeps to refund the invoice rent it advances. */
-const TOKEN_BUDGET_FEE_FLOAT = 18_000_000
 
 export interface TokenOpenCostInput {
   /** A budget account is already there for this buyer and mint. */
@@ -63,46 +62,36 @@ export interface TokenOpenCostInput {
  * One `open_token_budget` signature, priced from what was read: what it costs on
  * top of the tokens it moves.
  *
- * The handler brings the budget account to its rent plus the refund float on
- * every call — `wanted - held` — and the account hands that float back to the
- * session key as it settles invoices. So a first open pays the account's rent
- * and the whole float, a refill pays only the gap its payments spent, and one
- * that still holds its float pays nothing. Pricing a refill at zero is what made
- * the page understate it.
+ * The handler brings the budget account to its own rent on every call and takes
+ * nothing more than that: since revision 12 the pool refunds the records a
+ * session key advances, so the budget no longer carries a float for them. The
+ * signature pays the rent the account is short — the whole rent for a first open,
+ * the gap after a rent change, nothing for one already at its rent — plus the
+ * session key's float.
  */
 export function tokenOpenCost(
   input: TokenOpenCostInput
-): { rent: number, refundFloat: number, feeFloat: number, fee: number, total: number } {
-  const rent = input.exists ? 0 : input.budgetRent
-  const budgetTopUp = Math.max(
-    0,
-    input.budgetRent + TOKEN_BUDGET_FEE_FLOAT - (input.exists ? input.held : 0)
-  )
-  // A first open's top-up includes the account's rent; only the rest is float.
-  const refundFloat = budgetTopUp - rent
+): { rent: number, feeFloat: number, fee: number, total: number } {
+  const rent = Math.max(0, input.budgetRent - (input.exists ? input.held : 0))
   const feeFloat = Math.max(0, TOKEN_SESSION_FEE_FLOAT - input.sessionHeld)
-  return {
-    rent,
-    refundFloat,
-    feeFloat,
-    fee: input.fee,
-    total: rent + refundFloat + feeFloat + input.fee
-  }
+  return { rent, feeFloat, fee: input.fee, total: rent + feeFloat + input.fee }
 }
 
 /**
- * What one payment to a seller with no token account needs from the two floats.
- * The session key advances the seller's account and both records before the
- * handler runs — it never gets the account back, and the budget hands the
- * records back out of its own float — so it has to hold all three plus the fee
- * it signs its transaction with, while the budget only needs the records.
+ * What one payment to a seller with no token account needs from the floats.
+ *
+ * The session key advances both records, the seller's account and the signature
+ * before the handler runs, and gets the two records back from the pool in the
+ * same transaction; the seller's account is the one thing nobody refunds. So the
+ * session side is that whole peak, and the budget side is nothing: since revision
+ * 12 the pool funds the records, not a float parked on the budget.
  */
 export function tokenFloatNeed(
   rents: { invoice: number, receipt: number, account: number },
   fee: number
 ): { budget: number, session: number } {
   const records = rents.invoice + rents.receipt
-  return { budget: records, session: records + rents.account + fee }
+  return { budget: 0, session: records + rents.account + fee }
 }
 
 /**
@@ -643,7 +632,10 @@ export function useBudget() {
         seller_token_account: await deriveAssociatedTokenAddress(params.seller, params.mint),
         payment: params.payment,
         receipt: await derivePaymentReceiptPda(params.payment),
-        reference: params.reference
+        reference: params.reference,
+        config: await deriveConfigPda(),
+        treasury: await deriveTreasuryPda(),
+        treasury_token_account: await deriveTreasuryTokenAccount(params.mint)
       }
     )
 
@@ -659,7 +651,7 @@ export function useBudget() {
     buyer: Address,
     mint: Address,
     sessionAddress?: Address
-  ): Promise<{ rent: number, feeFloat: number, refundFloat: number, fee: number, total: number }> {
+  ): Promise<{ rent: number, feeFloat: number, fee: number, total: number }> {
     const [existing, budgetRent, sessionLamports] = await Promise.all([
       loadTokenBudget(buyer, mint),
       rentMinimum(TOKEN_BUDGET_SPACE),

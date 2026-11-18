@@ -332,7 +332,6 @@
       "topUp": "Al bote del presupuesto",
       "feeFloat": "En la clave de sesión (flotante de comisiones)",
       "rent": "Alquiler de la cuenta",
-      "refundFloat": "Flotante para el alquiler de facturas",
       "fee": "Comisión de red",
       "total": "Total",
       "note": "El flotante es lo que el programa deja en la clave de sesión para pagar sin aprobación.",

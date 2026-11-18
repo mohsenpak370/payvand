@@ -76,11 +76,11 @@ line says where it stands, so a later pass does not have to re-derive it.
   `require!(amount > fee_t)` cannot fire — `fee_for` caps the fee at
   `amount - 1` — so the cap test is as close to that floor as the program can be
   driven.
-- **Task 3.5 — the revision-12 program change, written out and not started.**
-  Task 3.4's close decision is taken, and the work it implies is now a numbered
-  task in Phase 3 — the account list, the fee split, the pool-funded rents, the
-  close, the IDL rebuild, the `useBudget.ts` builder and the harness assertions
-  it moves — so nothing about it has to be re-derived here.
+- **Task 3.5 — closed (2026-11-18).** The revision-12 change is built: the
+  fifteen-account interface, the fee split, the pool-funded rents, the close to
+  the treasury, the rebuilt `.so` and IDL, the client's builder, and the harness
+  and client float rules. Revision 13 records the measured numbers; the devnet
+  checks it could not run are listed there and in Task 3.5's verification.
 
 ### Verification this repo does not run
 
@@ -303,10 +303,45 @@ Revision 12 records the closure decision Task 3.4 was waiting on (2026-11-18):
 - What it does not move: the ATA rent of a seller that has none is still
   advanced by the session key (Task 3.2 sized for it), which is the one cost of a
   fresh seller the pool does not carry.
-- Not built, and nothing about the deployed program changes yet. The account
-  list is the IDL and the client's builder, and the harness executes the
-  committed SBF artifact, so the source change only counts once the program is
-  rebuilt and the IDL copied; the work is Task 3.5.
+- Built in Task 3.5 (2026-11-18): the program, the IDL and the client's builder
+  all carry the shape above, the harness executes the rebuilt artifact, and
+  revision 13 records the measured numbers.
+
+Revision 13 records Task 3.5's build (2026-11-18):
+
+- **The account list is live.** `pay_from_token_budget` takes the fifteen
+  accounts revision 12 listed, in that order, and
+  `apps/web/app/assets/payvand.idl.json` is the IDL `anchor idl build` produced
+  from them. The handler runs the nine steps: guards (including the fee mode) →
+  `fee_for` → `ensure_treasury_funded(invoice + receipt)` → vault → seller
+  `amount - fee_t` → vault → treasury ATA `fee_t` when it is non-zero →
+  `pay_from_treasury(session_key, invoice + receipt)` → writes and `spent` →
+  `payment.close(treasury)`.
+- **Measured, not guessed.** At the bank's 6,960 lamports a byte one payment
+  fronts 7,744,520 — invoice 2,714,400, receipt 2,985,840, the seller's account
+  2,039,280, and the 5,000 signature — and the pool refunds 5,700,240 of it in
+  the same transaction, so a settled payment costs the session key 2,044,280.
+  The key needs the full 7,744,520 available at the start of each payment, so
+  three consecutive sellers need 11,833,080: `SESSION_FEE_FLOAT` stays
+  12,000,000, and the harness pins the boundary at three and a refusal at four.
+- **The budget's float is gone.** `TOKEN_BUDGET_FEE_FLOAT` is deleted from the
+  program, the client and the harness; `open_token_budget` funds the account to
+  its own rent (`wanted = budget_rent`), `tokenOpenCost` quotes the rent shortfall
+  only, `tokenFloatNeed` returns `{ budget: 0, session: peak }` and the shared
+  vectors in `tests/fixtures/token-float-top-up.txt` read the same way on both
+  sides.
+- **The pool's position.** A payment leaves the pool one receipt rent down
+  (2,985,840 SOL) and `fee_t` up in the mint — the break-even the plan already
+  documents — and the invoice's own rent comes back through the close. A seller
+  ends a payment holding no lamports at all, and the harness asserts it twice.
+- **One build lesson.** With fifteen accounts the SBF linker refused the struct
+  ("overwrites values in the frame") until the `Account` wrappers were boxed;
+  `PayFromTokenBudget` boxes them now, and the warning is gone.
+- **Verified:** `cargo build-sbf`, 43 harness tests, `cargo fmt --check`,
+  `cargo clippy --all-targets -D warnings`, and `vitest run` (123),
+  `nuxt typecheck`, `eslint .` in `apps/web`. **Not verified:** the devnet smoke
+  run and a real silent payment against a deployed build of this revision —
+  both need the upgrade in Task 5.1.
 
 ## Linked Docs
 
@@ -1281,9 +1316,9 @@ Acceptance criteria:
       pays 700,000 and checks 686,000 into the seller's account and 14,000 into
       the treasury's account for the mint. `pay_from_token_budget` carries no
       treasury account in its interface and moves the whole amount, so this
-      holds for one path, not both (revision 6). Revision 12 makes it hold on
-      both, by giving `pay_from_token_budget` the treasury accounts and the same
-      split; Task 3.5.
+      holds for one path, not both (revision 6). Since Task 3.5 it holds on both:
+      `pay_from_token_budget` passes the treasury accounts and splits the same
+      way.
 - [x] `fee_t = min(amount * fee_bps / 10_000, amount - 1)`;
       `require!(amount > fee_t)` so a seller never receives zero. Exercised at
       the cap (2026-11-18):
@@ -1382,9 +1417,11 @@ Verification:
       third payment (checked by restoring it), so it pins the numbers rather than
       describing them. **Revision 12 changes what it measures**, not that it
       measures it: with the pool funding the records and taking the closed
-      invoice, the seller receives the price alone and the budget pays the price
-      alone, so the invoice rent disappears from both sides of this test and from
-      the 18,000,000 it sized. Re-measure in Task 3.5.
+      invoice, the seller receives `price - fee_t` and no lamports, and the
+      budget's lamports do not move at all. Re-measured in Task 3.5 (revision 13):
+      the session key still fronts 7,744,520 a payment and is still 2,044,280
+      lighter after one, so `SESSION_FEE_FLOAT` stays 12,000,000 and the
+      18,000,000 budget float is gone.
 - [x] Rust harness: `a_top_up_lets_the_float_carry_more_fresh_sellers` starts at
       that boundary: three payments fit, the fourth is refused, one top-up pays
       it, and a second top-up pays a fifth, so the refill is a rule and not a
@@ -1504,14 +1541,12 @@ Acceptance criteria:
 - [x] Treasury ATA receives `fee_t` and its rent is not charged to the payer:
       the payer's token account moves by the price alone (1,000,000 → 300,000)
       while the treasury's account gains 14,000 and the admin paid its rent.
-- [ ] Payment account closed to the rent payer, not the seller. Decided
-      2026-11-18 (revision 12): the criterion stands and the handler changes.
-      The invoice closes to the pool that funds it, the seller keeps
-      `amount - fee_t` alone, and the pot pays exactly `amount`. Not built: the
-      work is Task 3.5.
-      Today `pay_from_token_budget` refunds both rents to the session key and
-      closes the invoice to the seller, so a fresh seller ends up holding the
-      invoice rent (2,714,400 at the bank's rent).
+- [x] Payment account closed to the rent payer, not the seller. Decided
+      2026-11-18 (revision 12) and built in Task 3.5: the invoice closes to the
+      pool that funds it, the seller keeps `amount - fee_t` alone, and the pot
+      pays exactly `amount` in tokens. Before the change a fresh seller ended up
+      holding the invoice rent (2,714,400 at the bank's rent); the harness now
+      asserts the seller's lamports stay at zero.
 - [x] A settled token invoice cannot be replayed (2026-11-16):
       `settle_token_payment_replay_is_rejected_as_already_settled` settles an
       invoice, then sends the same one again with a fresh blockhash and gets
@@ -1624,51 +1659,57 @@ What falls out of it, and has to move with it:
 
 Acceptance criteria:
 
-- [ ] `pay_from_token_budget` takes the fifteen accounts above in that order, and
+- [x] `pay_from_token_budget` takes the fifteen accounts above in that order, and
       the copied IDL names them.
-- [ ] Seller receives `amount - fee_t` tokens and nothing else; the treasury's
+- [x] Seller receives `amount - fee_t` tokens and nothing else; the treasury's
       ATA for the mint receives `fee_t`; the buyer's vault falls by `amount`.
-- [ ] The pot pays exactly `amount`: the budget's lamport balance falls by exactly
-      `amount`, `spent` rises by `amount`, and the session key ends the payment
-      where it started (fronts the rents, is refunded, pays only the ATA rent and
-      the network fee).
-- [ ] The invoice closes to the treasury: the seller holds no lamports before or
+      `pay_from_token_budget_splits_the_price_and_closes_to_the_treasury` pays
+      700,000 and checks 686,000 into the seller's account, 14,000 into the
+      treasury's, and the vault down by exactly 700,000.
+- [x] The pot pays exactly `amount`: the vault falls by `amount`, `spent` rises by
+      `amount`, and the budget's lamports do not move — it pays in tokens, and
+      the pool, not the budget, funds the records. The session key ends the
+      payment the seller's account rent and its signature lighter, the two
+      records refunded.
+- [x] The invoice closes to the treasury: the seller holds no lamports before or
       after, and the pool ends one receipt rent down per payment.
-- [ ] A treasury holding one rent but not both refuses with
-      `TreasuryUnderfunded` before any token moves.
-- [ ] A substituted `config` or `treasury` is refused by its seeds constraint.
-- [ ] `fee_bps = 10_000` on this path leaves the seller one base unit, matching
-      the payer path's cap test.
-- [ ] `useBudget.ts`'s silent payment sends the same accounts and settles on
-      devnet from a real budget.
-- [ ] The floats and the shared vectors are re-measured and updated on both
+- [x] A treasury holding one rent but not both refuses with
+      `TreasuryUnderfunded` before any token moves
+      (`pay_from_token_budget_rejects_a_treasury_that_cannot_fund_the_records`).
+- [x] A substituted `treasury` is refused by its seeds constraint
+      (`pay_from_token_budget_rejects_a_substituted_treasury`, Custom(2006)); the
+      config's seeds constraint is the same declaration the other two paths use.
+- [x] `fee_bps = 10_000` on this path leaves the seller one base unit
+      (`a_ten_thousand_bps_policy_leaves_the_budget_seller_one_base_unit`).
+- [x] `useBudget.ts`'s silent payment sends the same accounts, with `config`,
+      `treasury` and the treasury's ATA derived as the payer path derives them.
+- [x] The floats and the shared vectors are re-measured and updated on both
       sides, and `TOKEN_BUDGET_FEE_FLOAT` is gone from the program, the client and
       the harness.
-- [ ] Task 3.4's criterion is ticked, with the invoice rent no longer reaching the
+- [x] Task 3.4's criterion is ticked, with the invoice rent no longer reaching the
       seller.
 
 Verification:
 
-- [ ] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
+- [x] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
       `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
-      --test settle` — the token tests execute the rebuilt artifact, and the
-      five that build this instruction
+      --test settle` — 43 pass, the token tests executing the rebuilt artifact,
+      and the five that build this instruction
       (`the_float_carries_three_payments_to_fresh_sellers`,
       `a_top_up_lets_the_float_carry_more_fresh_sellers`,
       `the_float_top_up_rule_matches_the_shared_vectors`,
       `a_decoy_vault_with_the_same_mint_and_authority_is_rejected`,
       `closing_a_token_budget_against_another_mint_fails_with_mint_mismatch`)
-      pass on the new accounts. The assertion at `settle.rs:2734` that leaves a
-      seller holding `token_invoice_rent()` is inverted: the seller's lamports
-      stay at zero.
-- [ ] `cargo fmt --all --check` and
+      pass on the new accounts. The assertion that left a seller holding
+      `token_invoice_rent()` is inverted: the seller's lamports stay at zero.
+- [x] `cargo fmt --all --check` and
       `cargo clippy -p payvand --all-targets -- -D warnings`.
-- [ ] `vitest run`, `nuxt typecheck`, `eslint .` in `apps/web`.
+- [x] `vitest run` (123 tests), `nuxt typecheck`, `eslint .` in `apps/web`.
 - [ ] Devnet: `pnpm smoke:guards` (with the new accounts) and one real silent
       token payment through a budget, with the treasury's ATA gaining `fee_t`
       and the seller's wallet holding no lamports.
-- [ ] A revision note carries the measured float numbers and the new per-payment
-      pool position (`fee_t - 2,985,840`).
+- [x] A revision note carries the measured float numbers and the new per-payment
+      pool position (`fee_t - 2,985,840`): revision 13.
 
 Files likely touched:
 

@@ -63,7 +63,9 @@ const seeds = {
     bytes.encode(reference),
     bytes.encode(mint),
     u64(amount)
-  ]
+  ],
+  config: () => [encoder.encode('config')],
+  treasury: () => [encoder.encode('treasury')]
 }
 
 function fail(message) {
@@ -389,6 +391,11 @@ async function main() {
       seeds: seeds.tokenPayment(seller.address, reference, mintA, amount)
     })
     const [receipt] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.receipt(payment) })
+    // The policy, the pool that funds the records, and the fee's destination: the
+    // three accounts revision 12 added to the silent path.
+    const [config] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.config() })
+    const [treasury] = await getProgramDerivedAddress({ programAddress: program, seeds: seeds.treasury() })
+    const treasuryAta = await ataFor(treasury, mintA)
     const pay = vault => programInstruction(idl, 'pay_from_token_budget', {
       session_key: session.address,
       budget,
@@ -399,6 +406,9 @@ async function main() {
       payment,
       receipt,
       reference,
+      config,
+      treasury,
+      treasury_token_account: treasuryAta,
       token_program: TOKEN_PROGRAM_ID,
       associated_token_program: ASSOCIATED_TOKEN_PROGRAM_ID,
       system_program: SYSTEM_PROGRAM_ID

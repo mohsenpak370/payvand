@@ -332,7 +332,6 @@
       "topUp": "Vers la réserve du budget",
       "feeFloat": "Sur la clé de session (marge de frais)",
       "rent": "Loyer du compte",
-      "refundFloat": "Marge pour le loyer des factures",
       "fee": "Frais de réseau",
       "total": "Total",
       "note": "La marge est ce que le programme dépose sur la clé de session pour payer sans approbation.",

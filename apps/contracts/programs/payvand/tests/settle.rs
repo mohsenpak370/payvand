@@ -39,8 +39,8 @@ use payvand::constants::{
     PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
 };
 use payvand::constants::{
-    SESSION_FEE_FLOAT, TOKEN_BUDGET_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE,
-    TOKEN_PAYMENT_SEED, TOKEN_PAYMENT_SPACE,
+    SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
+    TOKEN_PAYMENT_SPACE,
 };
 use payvand::helpers::fee_for;
 use payvand::state::{
@@ -602,6 +602,9 @@ fn pay_from_token_budget_instruction(
             AccountMeta::new(invoice, false),
             AccountMeta::new(receipt_pda(&invoice), false),
             AccountMeta::new_readonly(reference, false),
+            AccountMeta::new_readonly(config_pda(), false),
+            AccountMeta::new(treasury_pda(), false),
+            AccountMeta::new(associated_token_address(treasury_pda(), mint), false),
             AccountMeta::new_readonly(token_program(), false),
             AccountMeta::new_readonly(associated_token_program(), false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
@@ -2551,6 +2554,19 @@ impl TokenWorld {
         .await
         .expect("initialize_config failed");
 
+        // The treasury's own account for the mint: the fee's destination on both
+        // token paths, opened once by the admin.
+        send(
+            &mut context,
+            &[open_treasury_token_account_instruction(
+                admin.pubkey(),
+                mint,
+            )],
+            &[&admin],
+        )
+        .await
+        .expect("open_treasury_token_account failed");
+
         (
             context,
             TokenWorld {
@@ -2911,16 +2927,21 @@ async fn settle_token_payment_replay_is_rejected_as_already_settled() {
 }
 
 /// Task 3.2's criterion, with sellers that hold neither SOL nor a token account:
-/// three consecutive payments fit inside the floats the budget opens with, the
-/// budget handing back both records each time and the session key paying for the
-/// account nobody refunds.
+/// three consecutive payments fit inside the float the session key opens with.
 ///
-/// The sizing is the point. At the bank's 6,960 lamports a byte one payment
-/// advances 7,744,520 (both records, the seller's account, the fee) and gets
-/// 5,700,240 back, so a session float of 12,000,000 starts the third with
-/// 11,833,080 to front and a budget float of 18,000,000 covers its refunds. A
-/// fourth is beyond that and is refused, which is the boundary the refill test
-/// beside this one picks up.
+/// The sizing is the peak, and revision 12 moved who pays it. One payment fronts
+/// 7,744,520 at the bank's 6,960 lamports a byte — both records, the seller's
+/// account when it must be made, and the signature — and the pool refunds
+/// 5,700,240 of it in the same transaction, so each settled payment costs the key
+/// 2,044,280. `SESSION_FEE_FLOAT` is 8,000,000: it covers any one payment's peak
+/// and carries three consecutive fresh sellers. A fourth is beyond what the key
+/// still holds and is refused, which is the boundary the refill test beside this
+/// one picks up.
+///
+/// The budget's lamports never move. It pays the price in tokens only, and the
+/// pool funds the records: it refunds both per payment and takes each invoice's
+/// rent back when the invoice closes, so it ends one receipt rent down a payment
+/// while its token account holds the fees.
 #[tokio::test]
 async fn the_float_carries_three_payments_to_fresh_sellers() {
     let (mut context, world) = TokenWorld::start().await;
@@ -2932,37 +2953,39 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
     // not for the month.
     let limit = TEST_TOKEN_BALANCE;
     let price = 200_000;
+    let fee_t = fee(price);
     open_token_budget(&mut context, &world, limit).await;
     assert_eq!(token_balance(&context, world.vault).await, limit);
-    // `open_token_budget` puts the key's float on the session key and the
-    // records float on the budget, on top of its own rent.
+    // `open_token_budget` puts the key's float on the session key, and nothing
+    // on the budget beyond its own rent.
     let session_before = lamports(&context, world.session.pubkey()).await;
     let budget_before = lamports(&context, world.budget).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
     assert_eq!(
         session_before, SESSION_FEE_FLOAT,
         "the session key opens with its float"
     );
     assert_eq!(
         budget_before,
-        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + TOKEN_BUDGET_FEE_FLOAT,
-        "the budget opens with its rent and the float it refunds records from"
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE),
+        "the budget holds its rent, and the pool funds the records"
     );
 
     // Three sellers who never held SOL or a token: the float pays for their
-    // accounts, the budget hands back both records, and the auto-close hands
-    // each seller the invoice rent.
+    // accounts, the pool funds both records, and the seller receives the price
+    // less the fee with no lamports at all.
     for _ in 0..3 {
         let seller = Keypair::new().pubkey();
         pay_from_token_budget(&mut context, &world, seller, price).await;
         assert_eq!(
             token_balance(&context, associated_token_address(seller, world.mint)).await,
-            price
+            price - fee_t
         );
-        assert_eq!(lamports(&context, seller).await, token_invoice_rent());
+        assert_eq!(lamports(&context, seller).await, 0);
     }
 
     // The float paid for what is nobody's to refund — three seller accounts and
-    // the three signatures — and the budget's float for the three record pairs.
+    // the three signatures — and nothing else.
     assert_eq!(
         lamports(&context, world.session.pubkey()).await,
         session_before - 3 * (token_account_rent() + TX_FEE),
@@ -2970,8 +2993,22 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
     );
     assert_eq!(
         lamports(&context, world.budget).await,
-        budget_before - 3 * (token_invoice_rent() + receipt_rent()),
-        "the budget's float pays for both records of every payment"
+        budget_before,
+        "the budget's lamports do not move: it pays in tokens"
+    );
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - 3 * receipt_rent(),
+        "the pool funds one permanent receipt a payment"
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        3 * fee_t,
+        "every fee lands in the treasury's own account for the mint"
     );
     assert_eq!(token_budget(&context, world.budget).await.spent, 3 * price);
     assert_eq!(
@@ -2979,7 +3016,7 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
         TEST_TOKEN_BALANCE - limit
     );
 
-    // A fourth fresh seller is past what the floats were sized for: refused for
+    // A fourth fresh seller is past what the float was sized for: refused for
     // want of lamports, and rolled back, so nothing it tried to move survives.
     let session_after_three = lamports(&context, world.session.pubkey()).await;
     let budget_after_three = lamports(&context, world.budget).await;
@@ -2999,7 +3036,7 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
     assert_eq!(
         lamports(&context, world.budget).await,
         budget_after_three,
-        "a refused payment must not spend the budget's float"
+        "a refused payment must not touch the budget"
     );
 }
 
@@ -3016,12 +3053,14 @@ fn token_float_top_up(
     receipt_rent: u64,
     account_rent: u64,
     fee: u64,
-    budget_held: u64,
+    _budget_held: u64,
     session_held: u64,
 ) -> (u64, u64) {
     let records = invoice_rent + receipt_rent;
+    // Since revision 12 the pool refunds both records, so the budget holds its own
+    // rent and is never refilled: `to_budget` is zero whatever it holds.
     (
-        records.saturating_sub(budget_held),
+        0,
         (records + account_rent + fee).saturating_sub(session_held),
     )
 }
@@ -3123,7 +3162,7 @@ async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
     pay_from_token_budget(&mut context, &world, fourth, price).await;
     assert_eq!(
         token_balance(&context, associated_token_address(fourth, world.mint)).await,
-        price
+        price - fee(price)
     );
 
     // The refill is a rule, not a one-off: the next fresh seller needs its own,
@@ -3133,7 +3172,7 @@ async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
     pay_from_token_budget(&mut context, &world, fifth, price).await;
     assert_eq!(
         token_balance(&context, associated_token_address(fifth, world.mint)).await,
-        price
+        price - fee(price)
     );
     assert_eq!(token_budget(&context, world.budget).await.spent, 5 * price);
 }
@@ -3177,8 +3216,8 @@ async fn a_float_top_up_needs_no_limit_change() {
     );
     assert_eq!(
         lamports(&context, world.budget).await,
-        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE) + records,
-        "the budget should hold its rent and one more payment's records"
+        Rent::default().minimum_balance(TOKEN_BUDGET_SPACE),
+        "the budget holds its rent and nothing more: the pool funds the records"
     );
     let after = token_budget(&context, world.budget).await;
     assert_eq!(
@@ -3204,11 +3243,229 @@ async fn a_float_top_up_needs_no_limit_change() {
     pay_from_token_budget(&mut context, &world, fourth, price).await;
     assert_eq!(
         token_balance(&context, associated_token_address(fourth, world.mint)).await,
-        price
+        price - fee(price)
     );
     assert_eq!(
         token_budget(&context, world.budget).await.spent,
         spent_before + price
+    );
+}
+
+/// Task 3.5's split on the silent path: the price pays everything. The seller
+/// receives the price less the fee in tokens and no lamports at all, the fee lands
+/// in the treasury's own account for the mint, the pool refunds the two records the
+/// session key advanced and takes the closed invoice's rent back, and the vault
+/// falls by exactly the price.
+#[tokio::test]
+async fn pay_from_token_budget_splits_the_price_and_closes_to_the_treasury() {
+    let (mut context, world) = TokenWorld::start().await;
+    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let fee_t = fee(amount);
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+
+    let session_before = lamports(&context, world.session.pubkey()).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+    let vault_before = token_balance(&context, world.vault).await;
+
+    send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            reference,
+            amount,
+            "split",
+        )],
+        &world.session,
+    )
+    .await
+    .expect("pay_from_token_budget failed");
+
+    // The split, and the vault down by exactly the price.
+    assert_eq!(
+        token_balance(&context, seller_token_account).await,
+        amount - fee_t
+    );
+    assert_eq!(token_balance(&context, treasury_token_account).await, fee_t);
+    assert_eq!(
+        token_balance(&context, world.vault).await,
+        vault_before - amount
+    );
+    // The seller's proceeds are the price less the fee, and no lamports.
+    assert_eq!(lamports(&context, seller).await, 0);
+
+    // The session key got both rents back and paid only the account nobody
+    // refunds plus its own signature.
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        session_before - token_account_rent() - TX_FEE
+    );
+
+    // The invoice closed to the pool, which keeps its rent and pays the receipt's;
+    // the receipt is the record that stays, and the session key is its payer.
+    assert_eq!(lamports(&context, invoice).await, 0);
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - receipt_rent()
+    );
+    let kept = receipt(&context, receipt_pda(&invoice)).await;
+    assert_eq!(kept.invoice, invoice);
+    assert_eq!(kept.amount, amount);
+    assert_eq!(kept.payer, world.session.pubkey());
+    assert!(kept.settled_at > 0);
+    assert_eq!(token_budget(&context, world.budget).await.spent, amount);
+}
+
+/// Task 3.5's funding guard: the pool advances both records, so a pool that cannot
+/// is refused before a base unit moves — the same rule `settle_payment` applies to
+/// the receipt, now on the silent path.
+#[tokio::test]
+async fn pay_from_token_budget_rejects_a_treasury_that_cannot_fund_the_records() {
+    let (mut context, world) = TokenWorld::start().await;
+    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
+
+    // Drain the pool to exactly the invoice rent: enough for the invoice, one
+    // receipt short of the pair.
+    let funded = lamports(&context, treasury_pda()).await;
+    let keep = token_invoice_rent();
+    send(
+        &mut context,
+        &[withdraw_treasury_instruction(
+            world.admin.pubkey(),
+            funded - keep,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("withdraw_treasury failed");
+    assert_eq!(lamports(&context, treasury_pda()).await, keep);
+
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let vault_before = token_balance(&context, world.vault).await;
+    let error = send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            reference,
+            amount,
+            "poor pool",
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a pool that cannot fund the records must refuse the payment");
+    assert!(
+        error.to_string().contains(TREASURY_UNDERFUNDED),
+        "expected {TREASURY_UNDERFUNDED}, got {error}"
+    );
+
+    // Nothing moved: no seller account, no tokens, no invoice, no receipt, no spend.
+    assert_eq!(token_balance(&context, world.vault).await, vault_before);
+    assert!(
+        account(&context, associated_token_address(seller, world.mint))
+            .await
+            .is_none(),
+        "a refused payment must not open the seller's token account"
+    );
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+    assert_eq!(lamports(&context, invoice).await, 0);
+    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
+}
+
+/// The pool is the canonical one: a treasury with the right owner but the wrong
+/// seeds is refused before it can fund anything, and with it the treasury's token
+/// account, which is checked against the treasury it was passed with.
+#[tokio::test]
+async fn pay_from_token_budget_rejects_a_substituted_treasury() {
+    let (mut context, world) = TokenWorld::start().await;
+    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
+
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let mut instruction = pay_from_token_budget_instruction(
+        &world,
+        world.mint,
+        world.vault,
+        seller,
+        reference,
+        amount,
+        "pool",
+    );
+
+    // The treasury's slot, swapped for a system account the program never derives.
+    let stand_in = Keypair::new().pubkey();
+    instruction.accounts[10].pubkey = stand_in;
+
+    let error = send_with_fee_payer(&mut context, &[instruction], &world.session)
+        .await
+        .expect_err("a treasury that is not the pool must be refused");
+    // Custom(2006) is Anchor's `ConstraintSeeds`.
+    assert!(
+        error.to_string().contains("Custom(2006)"),
+        "expected Custom(2006), got {error}"
+    );
+
+    // Nothing moved: the vault still holds the price it did, and the budget is
+    // unspent.
+    assert_eq!(
+        token_balance(&context, world.vault).await,
+        TEST_TOKEN_BALANCE
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
+}
+
+/// A `fee_bps` of 10,000 on the silent path: `fee_for`'s `amount - 1` cap leaves the
+/// seller one base unit, exactly as on the payer's path.
+#[tokio::test]
+async fn a_ten_thousand_bps_policy_leaves_the_budget_seller_one_base_unit() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // Set the way an admin changes it, so this is a live `Config`.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            10_000,
+            0,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
+    let seller = Keypair::new().pubkey();
+    let amount = 700_000;
+    pay_from_token_budget(&mut context, &world, seller, amount).await;
+
+    assert_eq!(
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        1
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        amount - 1
     );
 }
 
@@ -3302,6 +3559,18 @@ async fn paying_from_another_mints_vault_fails_with_mint_mismatch() {
     open_token_budget(&mut context, &world, 500_000).await;
 
     let (other_mint, other_vault) = seed_other_mint(&mut context, &world, 400_000);
+    // The treasury's account for that mint too, so every account resolves and the
+    // only thing left to reject is the budget's own mint.
+    send(
+        &mut context,
+        &[open_treasury_token_account_instruction(
+            world.admin.pubkey(),
+            other_mint,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("open_treasury_token_account failed");
 
     let error = send(
         &mut context,

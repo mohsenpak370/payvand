@@ -10,8 +10,11 @@
     {
       "name": "close_budget",
       "docs": [
-        "Reclaim whatever is left in the budget and retire the session key.",
-        "One wallet signature — the buyer gets every lamport back."
+        "Reclaim whatever is left in the budget and retire it. One wallet",
+        "signature: the pot and the account's rent go back to the buyer, less the",
+        "network fee. The session key's fee float is not this account's money — a",
+        "PDA cannot move lamports off a plain keypair — so the client sweeps it",
+        "from the device that holds the key."
       ],
       "discriminator": [
         205,
@@ -59,7 +62,9 @@
       "name": "close_token_budget",
       "docs": [
         "Drain the token vault back to the buyer and retire the budget. One",
-        "wallet signature; every token and lamport comes back."
+        "wallet signature: the tokens come back, and so do the vault's rent and",
+        "the budget account's rent. The session key's float is swept by the",
+        "client, as in `close_budget`."
       ],
       "discriminator": [
         169,
@@ -116,7 +121,98 @@
         },
         {
           "name": "vault",
-          "writable": true
+          "docs": [
+            "The canonical vault, as in `pay_from_token_budget`, so a decoy account",
+            "that shares the mint and the budget's authority cannot be drained in its",
+            "place."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "budget"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
         },
         {
           "name": "buyer_token_account",
@@ -974,7 +1070,13 @@
         "Silent token payment: the session key settles a token invoice out of",
         "the buyer's vault, with no wallet popup. The monthly cap, the vault",
         "balance and the amount in the invoice seeds are all enforced here, and",
-        "only the session key registered at open time may spend."
+        "only the session key registered at open time may spend.",
+        "",
+        "The price pays everything: the seller receives it less the fee, the fee",
+        "lands in the treasury's own account for the mint, and the pool refunds the",
+        "two rents the session key advanced and takes the closed invoice's rent",
+        "back. The vault therefore falls by exactly the price, and the seller",
+        "receives no lamports at all."
       ],
       "discriminator": [
         126,
@@ -990,8 +1092,8 @@
         {
           "name": "session_key",
           "docs": [
-            "Session key: fee payer and rent payer (refunded from the budget's float",
-            "in this same transaction). Never the buyer's wallet."
+            "Session key: fee payer and rent payer (refunded from the pool in this",
+            "same transaction). Never the buyer's wallet."
           ],
           "writable": true,
           "signer": true
@@ -1033,7 +1135,99 @@
         },
         {
           "name": "vault",
-          "writable": true
+          "docs": [
+            "The canonical vault and the only accepted one: the budget's associated",
+            "token account for this mint. A token account that merely shares the mint",
+            "and the budget's authority is a place to strand a budget's tokens, so it",
+            "is not a vault."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "budget"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
         },
         {
           "name": "mint"
@@ -1041,7 +1235,8 @@
         {
           "name": "seller",
           "docs": [
-            "of the invoice account's close."
+            "less the fee in tokens and no lamports — the invoice's rent goes back to",
+            "the pool that advanced it."
           ],
           "writable": true
         },
@@ -1211,6 +1406,62 @@
         },
         {
           "name": "reference"
+        },
+        {
+          "name": "config",
+          "docs": [
+            "The fee policy: the rate this payment pays and the treasury's bump.",
+            "Read-only here, as on the other two settle paths."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The SOL pool: it refunds the rents the session key advanced and receives",
+            "the invoice rent back when the invoice closes, so the pot pays the price",
+            "and the seller keeps the price less the fee."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_token_account",
+          "docs": [
+            "The fee's destination in this mint, opened once per mint by whoever runs",
+            "the treasury — the same account `settle_token_payment` pays."
+          ],
+          "writable": true
         },
         {
           "name": "token_program",

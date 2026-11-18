@@ -5,7 +5,7 @@
 //! keeps the record, and the receipt's `settled_at` is the replay guard.
 
 use anchor_lang::prelude::*;
-use anchor_lang::{AccountsClose, Lamports};
+use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer as TokenTransfer};
 
@@ -170,8 +170,8 @@ pub struct OpenTokenBudget<'info> {
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct PayFromTokenBudget<'info> {
-    /// Session key: fee payer and rent payer (refunded from the budget's float
-    /// in this same transaction). Never the buyer's wallet.
+    /// Session key: fee payer and rent payer (refunded from the pool in this
+    /// same transaction). Never the buyer's wallet.
     #[account(mut)]
     pub session_key: Signer<'info>,
 
@@ -180,7 +180,7 @@ pub struct PayFromTokenBudget<'info> {
         seeds = [TOKEN_BUDGET_SEED, budget.buyer.as_ref(), budget.mint.as_ref()],
         bump = budget.bump
     )]
-    pub budget: Account<'info, TokenBudget>,
+    pub budget: Box<Account<'info, TokenBudget>>,
 
     /// The canonical vault and the only accepted one: the budget's associated
     /// token account for this mint. A token account that merely shares the mint
@@ -191,12 +191,13 @@ pub struct PayFromTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = budget
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
-    pub mint: Account<'info, Mint>,
+    pub mint: Box<Account<'info, Mint>>,
 
-    /// CHECK: The address the QR code names as the payee; also the destination
-    /// of the invoice account's close.
+    /// CHECK: The address the QR code names as the payee. It receives the price
+    /// less the fee in tokens and no lamports — the invoice's rent goes back to
+    /// the pool that advanced it.
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
@@ -206,7 +207,7 @@ pub struct PayFromTokenBudget<'info> {
         associated_token::mint = mint,
         associated_token::authority = seller
     )]
-    pub seller_token_account: Account<'info, TokenAccount>,
+    pub seller_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         init,
@@ -221,7 +222,7 @@ pub struct PayFromTokenBudget<'info> {
         ],
         bump
     )]
-    pub payment: Account<'info, TokenPayment>,
+    pub payment: Box<Account<'info, TokenPayment>>,
 
     #[account(
         init_if_needed,
@@ -230,10 +231,26 @@ pub struct PayFromTokenBudget<'info> {
         seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
         bump
     )]
-    pub receipt: Account<'info, PaymentReceipt>,
+    pub receipt: Box<Account<'info, PaymentReceipt>>,
 
     /// CHECK: Arbitrary 32-byte value chosen when the QR was made.
     pub reference: UncheckedAccount<'info>,
+
+    /// The fee policy: the rate this payment pays and the treasury's bump.
+    /// Read-only here, as on the other two settle paths.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    /// The SOL pool: it refunds the rents the session key advanced and receives
+    /// the invoice rent back when the invoice closes, so the pot pays the price
+    /// and the seller keeps the price less the fee.
+    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
+    /// The fee's destination in this mint, opened once per mint by whoever runs
+    /// the treasury — the same account `settle_token_payment` pays.
+    #[account(mut, token::mint = mint, token::authority = treasury)]
+    pub treasury_token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -424,10 +441,10 @@ pub fn open_token_budget_handler<'info, 'ctx>(
         )?;
     }
 
-    // The budget account itself refunds the invoice rent its session key
-    // advances, so it holds a float on top of its own rent.
+    // The budget holds its own rent and nothing more: the pool refunds the
+    // records its session key advances.
     let budget_rent = Rent::get()?.minimum_balance(TOKEN_BUDGET_SPACE);
-    let wanted = budget_rent.saturating_add(TOKEN_BUDGET_FEE_FLOAT);
+    let wanted = budget_rent;
     let held = ctx.accounts.budget.to_account_info().lamports();
     if wanted > held {
         anchor_lang::system_program::transfer(
@@ -503,6 +520,18 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         PaymentError::AlreadySettled
     );
 
+    // Same policy as the other two settle paths: the price pays the fee, and
+    // nothing but `SellerPays` is settled.
+    let config = &ctx.accounts.config;
+    require!(
+        config.fee_mode == FeeMode::SellerPays,
+        PaymentError::FeeModeUnsupported
+    );
+    let fee = fee_for(config, amount)?;
+    // The seller must still receive something. The `amount - 1` cap in `fee_for`
+    // makes this hold at any `fee_bps`; the guard says so out loud.
+    require!(amount > fee, PaymentError::InvoiceTooSmall);
+
     let now = current_month_index()?;
     let (monthly_limit, mut spent, month_index) = {
         let b = &ctx.accounts.budget;
@@ -520,7 +549,17 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         PaymentError::InsufficientBudget
     );
 
-    // Vault → seller, signed by the budget PDA.
+    // The session key advanced the invoice and receipt rents to open these
+    // records; the pool refunds both, so the pot pays the price and the records
+    // come out of the fee. Checked before any transfer, so a pool that cannot
+    // refund cannot start a settlement.
+    let invoice_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    let refund = invoice_rent.saturating_add(receipt_rent);
+    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
+
+    // The split, signed by the budget PDA: the price less the fee to the seller,
+    // the fee to the treasury's own account for this mint.
     let buyer = ctx.accounts.budget.buyer;
     let mint = ctx.accounts.budget.mint;
     let bump = ctx.accounts.budget.bump;
@@ -535,7 +574,31 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
             },
             &[seeds],
         ),
-        amount,
+        amount - fee,
+    )?;
+    if fee > 0 {
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                TokenTransfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.treasury_token_account.to_account_info(),
+                    authority: ctx.accounts.budget.to_account_info(),
+                },
+                &[seeds],
+            ),
+            fee,
+        )?;
+    }
+
+    // Hand back the two rents the session key advanced. A CPI, so it runs while no
+    // lamport delta is outstanding; the invoice's close below does the direct
+    // move.
+    pay_from_treasury(
+        &ctx.accounts.treasury.to_account_info(),
+        &ctx.accounts.session_key.to_account_info(),
+        refund,
+        ctx.accounts.config.treasury_bump,
     )?;
 
     let now_ts = Clock::get()?.unix_timestamp;
@@ -573,40 +636,21 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         receipt.bump = ctx.bumps.receipt;
     }
 
-    // Refund the invoice and receipt rent the session key just advanced, out
-    // of the float the budget keeps for exactly this.
-    let invoice_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
-    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
-    let budget_rent = Rent::get()?.minimum_balance(TOKEN_BUDGET_SPACE);
-    let spare = ctx
-        .accounts
-        .budget
-        .to_account_info()
-        .lamports()
-        .saturating_sub(budget_rent);
-    let refund = invoice_rent.saturating_add(receipt_rent).min(spare);
-    if refund > 0 {
-        ctx.accounts.budget.to_account_info().sub_lamports(refund)?;
-        ctx.accounts
-            .session_key
-            .to_account_info()
-            .add_lamports(refund)?;
-    }
-
     let budget = &mut ctx.accounts.budget;
     budget.spent = spent.saturating_add(amount);
     budget.month_index = now;
 
-    // Auto-close: the invoice rent is already reimbursed above, and the
-    // account's own rent now follows it to the seller.
+    // The invoice rent follows the pool that funded it, not the seller: a
+    // seller's proceeds are the price less the fee, and nothing else.
     ctx.accounts
         .payment
-        .close(ctx.accounts.seller.to_account_info())?;
+        .close(ctx.accounts.treasury.to_account_info())?;
 
     msg!(
-        "token payment settled from budget: {} of {}, session {}",
+        "token payment settled from budget: {} of {}, fee {} to the treasury, session {}",
         amount,
         mint,
+        fee,
         ctx.accounts.session_key.key()
     );
     Ok(())

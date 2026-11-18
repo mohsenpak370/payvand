@@ -332,7 +332,6 @@
       "topUp": "Into the budget pot",
       "feeFloat": "On the session key (fee float)",
       "rent": "Account rent",
-      "refundFloat": "Invoice-rent float",
       "fee": "Network fee",
       "total": "Total",
       "note": "The float is what the program parks on the session key so payments need no approval.",

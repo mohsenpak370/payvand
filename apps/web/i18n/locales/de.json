@@ -332,7 +332,6 @@
       "topUp": "In den Budgettopf",
       "feeFloat": "Auf dem Sitzungsschlüssel (Gebührenpuffer)",
       "rent": "Kontomiete",
-      "refundFloat": "Puffer für Rechnungsmiete",
       "fee": "Netzwerkgebühr",
       "total": "Gesamt",
       "note": "Der Puffer ist, was das Programm auf dem Sitzungsschlüssel hinterlegt, damit Zahlungen ohne Freigabe laufen.",

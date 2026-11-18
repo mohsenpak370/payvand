@@ -158,6 +158,12 @@ pub mod payvand {
     /// the buyer's vault, with no wallet popup. The monthly cap, the vault
     /// balance and the amount in the invoice seeds are all enforced here, and
     /// only the session key registered at open time may spend.
+    ///
+    /// The price pays everything: the seller receives it less the fee, the fee
+    /// lands in the treasury's own account for the mint, and the pool refunds the
+    /// two rents the session key advanced and takes the closed invoice's rent
+    /// back. The vault therefore falls by exactly the price, and the seller
+    /// receives no lamports at all.
     pub fn pay_from_token_budget(
         ctx: Context<PayFromTokenBudget>,
         amount: u64,
@@ -167,9 +173,9 @@ pub mod payvand {
     }
 
     /// Drain the token vault back to the buyer and retire the budget. One
-    /// wallet signature: the tokens come back, and so do the vault's rent, the
-    /// budget account's rent and the lamports it kept to refund invoice rents.
-    /// The session key's float is swept by the client, as in `close_budget`.
+    /// wallet signature: the tokens come back, and so do the vault's rent and
+    /// the budget account's rent. The session key's float is swept by the
+    /// client, as in `close_budget`.
     pub fn close_token_budget(ctx: Context<CloseTokenBudget>) -> Result<()> {
         instructions::token::close_token_budget_handler(ctx)
     }

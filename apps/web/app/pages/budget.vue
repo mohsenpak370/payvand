@@ -136,7 +136,6 @@ async function refreshOpenCost() {
         rows: [
           { key: 'feeFloat', lamports: cost.feeFloat },
           { key: 'rent', lamports: cost.rent },
-          { key: 'refundFloat', lamports: cost.refundFloat },
           { key: 'fee', lamports: cost.fee }
         ],
         total: cost.total
