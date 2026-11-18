@@ -373,11 +373,17 @@ Revision 14 records Task 4.4's enforcement (2026-11-18):
 - **Layouts pinned.** `TokenBudget` joins the serialisation test, and
   `BUDGET_SPACE = 97`, `TOKEN_PAYMENT_SPACE = 262` and
   `TOKEN_BUDGET_SPACE = 129` are asserted.
+- **On devnet.** The rebuilt artifact was deployed in place at slot 523617551 —
+  529,320 bytes fit the existing 545,792-byte `ProgramData`, so no
+  `solana program extend` — and the deployed bytes hash to `b8b0fc7a…`, matching
+  `target/deploy/payvand.so`. `pnpm smoke:silent-payment` and
+  `pnpm smoke:guards` both pass against it (the split, the wrong-mint and decoy
+  guards, the close path), the interface account types included; the first
+  attempts failed only on the public RPC's 429s.
 - **Verified:** `cargo build-sbf`, 52 harness tests, `cargo fmt --check`,
   `cargo clippy --all-targets`, `anchor idl build` (IDL copied to
   `apps/web`), and `vitest run` (124), `nuxt typecheck`, `eslint .` in
-  `apps/web`. **Not verified:** the docs half of the task; the devnet upgrade
-  and the smoke runs are recorded in the rollout notes.
+  `apps/web`. **Not verified:** the docs half of the task.
 
 ## Linked Docs
 
