@@ -70,9 +70,12 @@ line says where it stands, so a later pass does not have to re-derive it.
   `fee_floors_rather_than_rounds_at_ninety_nine_lamports`,
   `a_ten_thousand_bps_policy_admits_no_sol_invoice`, and
   `withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle`.
-- **Task 3.1 — the token cap is exercised (2026-11-18)**, by
-  `a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit`. What is
-  left is the zero-fee transfer skip, which nothing pins. The handler's
+- **Task 3.1 — closed (2026-11-18).** The token cap is exercised by
+  `a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit`, and the
+  zero-fee skip is executed rather than described by
+  `a_zero_fee_settle_token_payment_sends_no_fee_transfer` and
+  `a_zero_fee_budget_payment_sends_no_fee_transfer`, which freeze the treasury's
+  account so a sent zero transfer would fail. The handler's
   `require!(amount > fee_t)` cannot fire — `fee_for` caps the fee at
   `amount - 1` — so the cap test is as close to that floor as the program can be
   driven.
@@ -1335,15 +1338,23 @@ Acceptance criteria:
       session float pays its rent, and the treasury's account is opened by the
       admin through `open_treasury_token_account` (2026-11-15 note above). The
       behaviour that does exist is covered under Task 3.4.
-- [ ] Zero-value transfers are skipped rather than sent: the handler skips a
-      zero fee, but nothing pins it.
+- [x] Zero-value transfers are skipped rather than sent. Pinned on both token
+      paths (2026-11-18): `a_zero_fee_settle_token_payment_sends_no_fee_transfer`
+      and `a_zero_fee_budget_payment_sends_no_fee_transfer` freeze the treasury's
+      account for the mint and settle a 0% invoice. A zero `transfer` is still a
+      CPI and the token program refuses one into a frozen account, so a
+      settlement that succeeds is one that skipped the fee CPI; each test then
+      switches the policy back to 2% and checks the same frozen account refuses
+      the payment with `Custom(17)` (`AccountFrozen`), which is what makes the
+      freeze a real refusal rather than a no-op. With the two `if fee > 0`
+      guards replaced by `if true`, both tests fail and the rest of the suite
+      still passes — the skip is what they pin.
 - [x] The treasury refunds `R_tr` to the payer or session key: the executed
       settle ends with the pool exactly one receipt rent down — the refund out,
       the invoice rent back in.
 - [x] The seller needs no SOL before or after the payment: both token tests pay
-      a seller that holds no lamports and assert it stays at zero until the
-      auto-close hands it the invoice rent. Revision 12 moves that close to the
-      pool, so the seller stays at zero for good; not built.
+      a seller that holds no lamports and assert it stays at zero, and since Task
+      3.5 closes the invoice to the pool the seller stays at zero for good.
 
 Verification:
 

@@ -287,6 +287,15 @@ fn spl_token_account(mint: Pubkey, authority: Pubkey, amount: u64) -> Account {
     }
 }
 
+/// The same account frozen: `AccountState::Frozen` in the SPL layout's state
+/// byte, which is what the mint's freeze authority would write. Every transfer
+/// into or out of it is refused, a zero one included.
+fn frozen_token_account(mint: Pubkey, authority: Pubkey) -> Account {
+    let mut account = spl_token_account(mint, authority, 0);
+    account.data[108] = 2;
+    account
+}
+
 /// Borsh-encoded instruction data: discriminator, then the arguments.
 fn instruction_data(name: &str, args: &[u8]) -> Vec<u8> {
     let mut data = discriminator(name).to_vec();
@@ -3660,4 +3669,208 @@ async fn a_decoy_vault_with_the_same_mint_and_authority_is_rejected() {
     assert_eq!(token_balance(&context, decoy).await, 1_000_000);
     assert_eq!(token_budget(&context, world.budget).await.mint, world.mint);
     assert_eq!(token_balance(&context, world.vault).await, 500_000);
+}
+
+/// Task 3.1's zero-fee case on the payer's token path, proved rather than
+/// described: a zero `transfer` is still a CPI, and the token program refuses a
+/// transfer into a frozen account even when it moves nothing. The treasury's
+/// account for the mint is frozen here, so a settlement that succeeds is one that
+/// skipped the fee transfer — and the control at the end shows the freeze is a
+/// real refusal and not a no-op.
+#[tokio::test]
+async fn a_zero_fee_settle_token_payment_sends_no_fee_transfer() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // A 0% policy with no fixed fee, set the way an admin changes one.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            0,
+            0,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    // The fee's destination, frozen: a transfer of any amount into it fails.
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    context.set_account(
+        &treasury_token_account,
+        &frozen_token_account(world.mint, treasury_pda()).into(),
+    );
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+    let amount = 700_000;
+
+    send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            Keypair::new().pubkey(),
+            world.mint,
+            amount,
+            "no fee",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("a zero-fee payment must settle without touching the fee account");
+
+    // The seller has the whole price and the fee's account is untouched.
+    assert_eq!(token_balance(&context, seller_token_account).await, amount);
+    assert_eq!(token_balance(&context, treasury_token_account).await, 0);
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        TEST_TOKEN_BALANCE - amount
+    );
+
+    // The control: the same frozen account, now with a fee to send, refuses the
+    // payment — so the settlement above skipped a transfer that would have
+    // failed.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+    let refused_seller = Keypair::new().pubkey();
+    let refused_token_account = associated_token_address(refused_seller, world.mint);
+    context.set_account(
+        &refused_token_account,
+        &spl_token_account(world.mint, refused_seller, 0).into(),
+    );
+    // Smaller than the first invoice: the buyer paid that one already, and this
+    // control is about the frozen account, not the balance.
+    let control_amount = 100_000;
+    let error = send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            refused_seller,
+            Keypair::new().pubkey(),
+            world.mint,
+            control_amount,
+            "fee",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect_err("a fee into a frozen account must be refused");
+    // Custom(17) is the token program's `AccountFrozen`.
+    assert!(
+        error.contains("Custom(17)"),
+        "expected the token program's AccountFrozen, got {error}"
+    );
+    // Nothing moved on the refused payment.
+    assert_eq!(token_balance(&context, refused_token_account).await, 0);
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        TEST_TOKEN_BALANCE - amount
+    );
+}
+
+/// The same proof on the silent path: a zero fee means no fee CPI at all, so the
+/// budget pays a seller with the treasury's account frozen, and the control shows
+/// the frozen account would have refused a fee.
+#[tokio::test]
+async fn a_zero_fee_budget_payment_sends_no_fee_transfer() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            0,
+            0,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    context.set_account(
+        &treasury_token_account,
+        &frozen_token_account(world.mint, treasury_pda()).into(),
+    );
+
+    let limit = TEST_TOKEN_BALANCE;
+    let price = 200_000;
+    open_token_budget(&mut context, &world, limit).await;
+    let seller = Keypair::new().pubkey();
+    pay_from_token_budget(&mut context, &world, seller, price).await;
+
+    assert_eq!(
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        price,
+        "with no fee the seller receives the whole price"
+    );
+    assert_eq!(token_balance(&context, treasury_token_account).await, 0);
+    assert_eq!(token_budget(&context, world.budget).await.spent, price);
+
+    // The control: 2% into the same frozen account refuses the payment, and the
+    // budget, the vault and the seller are as they were.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+    let refused_seller = Keypair::new().pubkey();
+    let error = send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            refused_seller,
+            Keypair::new().pubkey(),
+            price,
+            "fee",
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a fee into a frozen account must be refused");
+    assert!(
+        error.to_string().contains("Custom(17)"),
+        "expected the token program's AccountFrozen, got {error}"
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, price);
+    assert_eq!(token_balance(&context, world.vault).await, limit - price);
+    assert!(
+        account(
+            &context,
+            associated_token_address(refused_seller, world.mint)
+        )
+        .await
+        .is_none(),
+        "the refused payment must not leave a seller account behind"
+    );
 }
