@@ -267,15 +267,24 @@ describe('a page that loads with the payment already on chain', () => {
 
     await checkout.selectCurrency('usdc')
     const usdcReceipt = (await derivePaymentReceiptPda(usdcPda)).toString()
+    // Counted by address, not in total: a switch also re-quotes the page's costs,
+    // and those reads of `Config` and the token accounts are not this schedule's.
+    const readsOf = (address: string) => chainAsked.filter(asked => asked === address).length
+
     // The switch checks the address it moved to straight away.
-    await vi.waitFor(() => expect(chainAsked).toContain(usdcReceipt))
-    const askedAtSwitch = chainAsked.length
+    await vi.waitFor(() => expect(readsOf(usdcReceipt)).toBeGreaterThan(0))
+    const readsAtSwitch = readsOf(usdcReceipt)
 
     // The other currency is paid at a different address, so it is a new question:
     // it is asked again on the next tick, not the minute the running schedule was
     // already waiting.
     await vi.advanceTimersByTimeAsync(5_000)
-    await vi.waitFor(() => expect(chainAsked.length).toBeGreaterThan(askedAtSwitch))
+    // Bounded, so the read has to be this tick's: an unbounded wait would sit
+    // out the rest of the old schedule — another half minute — and pass even if
+    // the switch changed nothing.
+    await vi.waitFor(() => expect(readsOf(usdcReceipt)).toBeGreaterThan(readsAtSwitch), {
+      timeout: 1_000
+    })
   })
 
   it('stops reading a settled record, API and chain alike', async () => {

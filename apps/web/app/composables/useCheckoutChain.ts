@@ -101,36 +101,42 @@ export function useCheckoutChain(deps: {
 
   /**
    * The page's own reads of the chain, beside the poll's API read: how many it has
-   * made since the schedule started, and when the last one went out. Only the
-   * chain read is spaced by these — the API is asked on every tick as before, so
-   * the record still settles from the API alone.
+   * made since the schedule started, when the last one went out, and whether one
+   * is owed whatever the gap says. Only the chain read is spaced by these — the
+   * API is asked on every tick as before, so the record still settles from the
+   * API alone.
    */
   let chainReads = 0
   let lastChainReadAt = 0
+  let chainReadPending = true
 
   /**
    * A chain read when the schedule says one is due: the wait after the last read
    * grows with every read, so an invoice nobody has paid costs the buyer's RPC a
-   * read a minute rather than one every tick. There is no settled check here —
-   * `settleFromChain` refuses a settled record, so a paid page costs nothing
-   * whichever tick the schedule reaches next.
+   * read a minute rather than one every tick. A pending read owes one now, which
+   * is how a restarted schedule reaches the tick after it. There is no settled
+   * check here — `settleFromChain` refuses a settled record, so a paid page costs
+   * nothing whichever tick the schedule reaches next.
    */
   async function readChainIfDue(): Promise<void> {
-    if (Date.now() - lastChainReadAt < chainReadGapAfter(chainReads)) return
+    if (!chainReadPending && Date.now() - lastChainReadAt < chainReadGapAfter(chainReads)) {
+      return
+    }
+    chainReadPending = false
     lastChainReadAt = Date.now()
     chainReads += 1
     await settleFromChain(watchAddresses())
   }
 
   /**
-   * Starts the schedule over: no reads yet, and the first one already due — so the
-   * next poll tick reads, however far into a tick's worth of time this call lands.
-   * A currency switch arrives between ticks, and a wait measured from the switch
+   * Starts the schedule over: no reads yet, and the first one owed, so the next
+   * poll tick reads however far into a tick's worth of time this call lands. A
+   * currency switch arrives between ticks, and a wait measured from the switch
    * would miss the tick after it by a few milliseconds.
    */
   function restartChainReads() {
     chainReads = 0
-    lastChainReadAt = Date.now() - chainReadGapAfter(0)
+    chainReadPending = true
   }
 
   let poll: ReturnType<typeof setInterval> | undefined
