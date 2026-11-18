@@ -1993,6 +1993,19 @@ Verification:
 - `BuyerPays` is not asserted on a settle because no settle path accepts it
   (`FeeModeUnsupported`); the mode is pinned by the `ConfigUpdated` test instead.
 
+Devnet (2026-11-18): the program was upgraded in place at slot 523592277 under
+the same ID and `ProgramData` (`8GQRqbdm…`). The binary grew past its allocated
+space, so `solana program extend <id> 20480` ran first — the loader only extends
+in 10,240-byte steps, and a plain deploy of the 3,152-bytes-larger ELF fails with
+`ExtendProgram requires a minimum of 10240 additional bytes`. `ProgramData` now
+holds 545,792 bytes (0x85400); the deployed bytes match the artifact.
+`pnpm smoke:silent-payment` passed against the new program, and its
+`pay_from_token_budget` transaction (`4wKtjFru…`) carries one
+`Program data: 9eb6984c6917e887…` line — the IDL's `PaymentSettled`
+discriminator — decoding to amount 100,000, fee 2,000, seller proceeds 98,000,
+session key as `payer`, and the invoice's mint and reference, beside the `msg!`
+line in the same log.
+
 Files likely touched:
 
 - `apps/contracts/programs/payvand/src/events.rs` (new)
