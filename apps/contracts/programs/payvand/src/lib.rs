@@ -8,6 +8,7 @@
 //! - `state` — the accounts the program owns
 //! - `constants` — seeds, account sizes, lamport floats
 //! - `errors` — every message a wallet can be shown
+//! - `events` — the structured events emitted beside the `msg!` logs
 //! - `helpers` — the calendar month, and token invoice bookkeeping
 //! - `instructions::sol` — SOL invoices and the SOL allowance
 //! - `instructions::token` — SPL token invoices and per-mint allowances
@@ -16,12 +17,14 @@ use anchor_lang::prelude::*;
 
 pub mod constants;
 pub mod errors;
+pub mod events;
 pub mod helpers;
 pub mod instructions;
 pub mod state;
 
 pub use constants::*;
 pub use errors::PaymentError;
+pub use events::*;
 pub use state::*;
 
 // The account contexts and the `__client_accounts_*` modules Anchor generates

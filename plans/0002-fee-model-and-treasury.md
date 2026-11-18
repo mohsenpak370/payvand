@@ -57,10 +57,13 @@ line says where it stands, so a later pass does not have to re-derive it.
 
 ### Code
 
-- **Task 4.3 — program events: not started.** The program logs with `msg!` only:
-  no `#[event]`, no `emit!`, and `target/idl/payvand.json` has no `events`
-  section. What it needs is unchanged: a settle event carrying the split, a
-  `ConfigUpdated` event, and the IDL regenerated and copied.
+- **Task 4.3 — closed (2026-11-18).** `src/events.rs` declares
+  `PaymentSettled`, `ConfigUpdated` and `BudgetOpened`, emitted beside the `msg!`
+  lines on all four settle paths, both budget opens and `update_config`. The
+  IDL's `events` section was regenerated and copied to
+  `apps/web/app/assets/payvand.idl.json`, and six harness tests decode the
+  emitted payloads. Close-path and treasury events are deliberately not built
+  (see the task's note).
 - **Task 4.4 — Token-2022: decided, not enforced.** No program check rejects a
   Token-2022 mint with a named error; a payment into one fails inside the SPL
   CPI. The layout half is partly pinned: `CONFIG_SPACE` is asserted in the
@@ -704,7 +707,7 @@ Instructions:
   document that the program stays upgradeable until `Config` exists.
 - `update_config(...)` — admin only; validates `fee_bps <= 10_000`,
   `fee_mode` is a valid variant, and `session_fee_float` is above the configured
-  floor. The `ConfigUpdated` event is added in Task 4.3.
+  floor. It emits `ConfigUpdated` beside its `msg!`.
 - `withdraw_treasury(amount)` — admin only; moves surplus SOL out of the
   treasury while leaving its rent-exempt minimum. There is no user-facing path
   that touches the treasury.
@@ -1930,33 +1933,65 @@ Estimated scope: Small.
 
 #### Task 4.3: Program events
 
-**Status (2026-11-17): not started.** The program logs with `msg!` only — no
-`#[event]`, no `emit!`, and the generated IDL has no `events` section.
+**Status (2026-11-18): done** (`src/events.rs`). Three event types, emitted
+beside the existing `msg!` lines, in the IDL's new `events` section:
 
-Description: Emit events for every state change, with the fee/rent split so an
-indexer can reconstruct proceeds without re-deriving `Config`. This task owns
-the settle events that Tasks 1.2 and 1.3 deliberately left as `msg!` logs, so
-the fee math could land and be verified before any event surface was added:
+- `PaymentSettled` — `amount`, `fee`, `seller_proceeds` (`amount - fee`),
+  `payer`, `seller`, `mint`, `reference`. **One type for all four settle paths**
+  (`settle_payment`, `pay_from_budget`, `settle_token_payment`,
+  `pay_from_token_budget`): like `PaymentReceipt`, the mint carries the currency
+  (`Pubkey::default()` for SOL) and `payer` is whoever signed — wallet or
+  session key. That replaces the plan's `PaymentSettled` / `TokenPaymentSettled`
+  pair, so an indexer subscribes to one event instead of guessing currency.
+  The rents stay out of it: they are the pool's business, and the split an
+  indexer needs is `fee` and `seller_proceeds`.
+- `ConfigUpdated` — `admin`, `fee_bps`, `fixed_fee_lamports`, `fee_mode`,
+  `session_fee_float`; emitted by `update_config`, so a settlement can be priced
+  with the policy in force at its block.
+- `BudgetOpened` — `buyer`, `session_key`, `mint`, `monthly_limit`; emitted by
+  both `open_budget` and `open_token_budget` (again one type, empty mint for
+  SOL). It covers refills too, since that is the same instruction.
 
-- `PaymentSettled` / `TokenPaymentSettled` — amount, fee, seller proceeds,
-  receipt rent, rent returned, payer, receipt, mint (token), timestamp.
-- `ConfigUpdated`, `BudgetOpened`, `BudgetClosed`, `TokenBudgetOpened`,
-  `TokenBudgetClosed`, `TreasuryWithdrawn`.
+Not built, deliberately:
+
+- `BudgetClosed` / `TokenBudgetClosed` — the close handlers change no split and
+  the accounts going away is itself the record; an event would only restate
+  them. The plan's own "no event describes a close path" criterion says as much.
+- `TreasuryWithdrawn` — an admin operation, visible as a treasury lamport move;
+  no indexer of proceeds needs it. Add it when a treasury ledger exists.
+- `initialize_config` emits nothing: it is a one-time bootstrap by the upgrade
+  authority, not a policy change an indexer has to catch up with.
 
 Acceptance criteria:
 
-- [ ] Events exist for each state change and are in the IDL.
-- [ ] Settle events carry the split.
-- [ ] No event describes a close path; none exists.
-- [ ] `msg!` logs remain for human-readable explorers.
-- [ ] The settle events replace the interim logs from Tasks 1.2 and 1.3, with
-      no duplicate emission.
+- [x] Events exist for each state change and are in the IDL.
+- [x] Settle events carry the split.
+- [x] No event describes a close path; none exists.
+- [x] `msg!` logs remain for human-readable explorers (they run first, then the
+      event beside them); each settle emits exactly one `PaymentSettled`.
+- [x] No duplicate emission: the event is the structured form next to the log,
+      not a second copy of it.
 
 Verification:
 
-- [ ] Anchor test asserts event payloads, including the `SellerPays` and
-      `BuyerPays` splits.
-- [ ] `anchor build` regenerates the IDL with the events.
+- [x] Harness tests decode the emitted payloads and assert the fields:
+      `settle_payment_emits_the_split_it_paid`,
+      `settle_token_payment_emits_the_mint_beside_the_split`,
+      `pay_from_token_budget_emits_the_session_key_as_the_payer`,
+      `update_config_emits_the_policy_it_installed`,
+      `open_budget_emits_the_limit_and_the_session_key`,
+      `open_token_budget_emits_the_mint_and_the_limit`. They simulate the
+      instruction (`process_transaction` returns no logs), base64-decode each
+      `Program data:` line, match the type's 8-byte event discriminator and
+      borsh-decode the body. `cargo test … --test settle`: 51 passed.
+- [x] `anchor idl build -o target/idl/payvand.json` regenerated the IDL with
+      `events: [BudgetOpened, ConfigUpdated, PaymentSettled]` and their types;
+      copied to `apps/web/app/assets/payvand.idl.json`. (`anchor build` is not
+      the tool here — Anchor 1.2.1 emits eBPF arch v1, which the harness cannot
+      execute; `cargo build-sbf` builds the artifact, `anchor idl build` the
+      IDL.)
+- `BuyerPays` is not asserted on a settle because no settle path accepts it
+  (`FeeModeUnsupported`); the mode is pinned by the `ConfigUpdated` test instead.
 
 Files likely touched:
 

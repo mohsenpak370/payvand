@@ -10,6 +10,7 @@ use anchor_lang::solana_program::bpf_loader_upgradeable::{self, UpgradeableLoade
 
 use crate::constants::*;
 use crate::errors::PaymentError;
+use crate::events::ConfigUpdated;
 use crate::helpers::{pay_from_treasury, validate_fee_policy};
 use crate::state::{Config, FeeMode};
 
@@ -174,6 +175,13 @@ pub fn update_config_handler(
         fee_mode,
         session_fee_float
     );
+    emit!(ConfigUpdated {
+        admin: config.admin,
+        fee_bps,
+        fixed_fee_lamports,
+        fee_mode,
+        session_fee_float,
+    });
     Ok(())
 }
 

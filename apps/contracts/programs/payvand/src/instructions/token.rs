@@ -11,6 +11,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer as TokenTransf
 
 use crate::constants::*;
 use crate::errors::PaymentError;
+use crate::events::{BudgetOpened, PaymentSettled};
 use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
 use crate::state::{Config, FeeMode, PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
 
@@ -409,6 +410,15 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         mint,
         fee
     );
+    emit!(PaymentSettled {
+        amount,
+        fee,
+        seller_proceeds: amount - fee,
+        payer,
+        seller,
+        mint,
+        reference,
+    });
     Ok(())
 }
 
@@ -490,6 +500,19 @@ pub fn open_token_budget_handler<'info, 'ctx>(
         budget.month_index = now;
     }
     budget.bump = ctx.bumps.budget;
+
+    msg!(
+        "token budget opened: {} of {} for session {}",
+        monthly_limit,
+        ctx.accounts.mint.key(),
+        session
+    );
+    emit!(BudgetOpened {
+        buyer: ctx.accounts.buyer.key(),
+        session_key: session,
+        mint: ctx.accounts.mint.key(),
+        monthly_limit,
+    });
     Ok(())
 }
 
@@ -653,6 +676,15 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         fee,
         ctx.accounts.session_key.key()
     );
+    emit!(PaymentSettled {
+        amount,
+        fee,
+        seller_proceeds: amount - fee,
+        payer,
+        seller,
+        mint,
+        reference,
+    });
     Ok(())
 }
 

@@ -2100,6 +2100,47 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "BudgetOpened",
+      "discriminator": [
+        125,
+        180,
+        107,
+        188,
+        187,
+        28,
+        32,
+        153
+      ]
+    },
+    {
+      "name": "ConfigUpdated",
+      "discriminator": [
+        40,
+        241,
+        230,
+        122,
+        11,
+        19,
+        198,
+        194
+      ]
+    },
+    {
+      "name": "PaymentSettled",
+      "discriminator": [
+        158,
+        182,
+        152,
+        76,
+        105,
+        23,
+        232,
+        135
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -2242,6 +2283,38 @@
       }
     },
     {
+      "name": "BudgetOpened",
+      "docs": [
+        "A buyer opened or refilled an allowance. Same type for the SOL pot and a",
+        "token vault, with `mint` carrying the difference: `monthly_limit` is the",
+        "ceiling that now applies, and `session_key` is who may spend it."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "session_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "`Pubkey::default()` for the SOL budget."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "monthly_limit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
         "The program's singleton fee policy and treasury pointers.",
@@ -2306,6 +2379,42 @@
           {
             "name": "version",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdated",
+      "docs": [
+        "The fee policy as the admin just wrote it, so an indexer prices a settlement",
+        "with the policy in force rather than today's."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "fixed_fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "fee_mode",
+            "type": {
+              "defined": {
+                "name": "FeeMode"
+              }
+            }
+          },
+          {
+            "name": "session_fee_float",
+            "type": "u64"
           }
         ]
       }
@@ -2460,6 +2569,71 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentSettled",
+      "docs": [
+        "One settled invoice — from the wallet path or an allowance, in SOL or a",
+        "token.",
+        "",
+        "All four settle instructions emit this same type, deliberately: like",
+        "`PaymentReceipt`, `mint` carries the currency (`Pubkey::default()` for SOL)",
+        "and `payer` is whoever signed, wallet or session key. The split is the point",
+        "of the event: `amount` is the price the QR showed, `fee` went to the",
+        "treasury, and `seller_proceeds = amount - fee` is what the seller keeps —",
+        "rents are the pool's business, not the seller's."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "The invoice price, in lamports or the mint's base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "docs": [
+              "The seller-side fee that went to the treasury."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seller_proceeds",
+            "docs": [
+              "`amount - fee`: what the seller keeps of the price."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Wallet or session key that settled."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "`Pubkey::default()` for a SOL invoice."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reference",
+            "docs": [
+              "The invoice's lookup key, as carried in its seeds."
+            ],
+            "type": "pubkey"
           }
         ]
       }

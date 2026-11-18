@@ -11,6 +11,7 @@ use anchor_lang::{AccountsClose, Lamports};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
+use crate::events::{BudgetOpened, PaymentSettled};
 use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
 use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState};
 
@@ -294,6 +295,15 @@ pub fn settle_payment_handler<'info, 'ctx>(
         payer,
         fee
     );
+    emit!(PaymentSettled {
+        amount,
+        fee,
+        seller_proceeds: amount - fee,
+        payer,
+        seller,
+        mint: Pubkey::default(),
+        reference,
+    });
     Ok(())
 }
 
@@ -367,6 +377,18 @@ pub fn open_budget_handler<'info, 'ctx>(
     // close_budget validates `bump = budget.bump`; without this the
     // stored bump stays 0 and closing can never pass its seeds check.
     budget.bump = ctx.bumps.budget;
+
+    msg!(
+        "budget opened: {} lamports a month for session {}",
+        monthly_limit,
+        session
+    );
+    emit!(BudgetOpened {
+        buyer: ctx.accounts.buyer.key(),
+        session_key: session,
+        mint: Pubkey::default(),
+        monthly_limit,
+    });
     Ok(())
 }
 
@@ -532,6 +554,15 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         fee,
         ctx.accounts.session_key.key()
     );
+    emit!(PaymentSettled {
+        amount,
+        fee,
+        seller_proceeds: amount - fee,
+        payer,
+        seller,
+        mint: Pubkey::default(),
+        reference,
+    });
     Ok(())
 }
 

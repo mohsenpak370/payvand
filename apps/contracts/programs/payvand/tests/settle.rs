@@ -33,7 +33,12 @@
 #![allow(deprecated)]
 
 use anchor_lang::prelude::Rent;
-use anchor_lang::{system_program::ID as SYSTEM_PROGRAM_ID, AccountDeserialize, AnchorSerialize};
+use anchor_lang::{
+    system_program::ID as SYSTEM_PROGRAM_ID, AccountDeserialize, AnchorDeserialize,
+    AnchorSerialize, Discriminator,
+};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use payvand::constants::{
     BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
     PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
@@ -42,6 +47,7 @@ use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
     TOKEN_PAYMENT_SPACE,
 };
+use payvand::events::{BudgetOpened, ConfigUpdated, PaymentSettled};
 use payvand::helpers::fee_for;
 use payvand::state::{
     Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenBudget, TokenPayment,
@@ -3873,4 +3879,285 @@ async fn a_zero_fee_budget_payment_sends_no_fee_transfer() {
         .is_none(),
         "the refused payment must not leave a seller account behind"
     );
+}
+
+// ---------------------------------------------------------------------------
+// events
+// ---------------------------------------------------------------------------
+
+/// The raw payloads of the events a simulated transaction emits.
+///
+/// `process_transaction` reports only success, and `emit!` writes through
+/// `sol_log_data`, which the runtime logs as `Program data: <base64>`. So the
+/// events are read from a simulation of the same transaction: the instruction
+/// runs for real, nothing is committed, and the log lines are ours to decode.
+async fn simulated_events(
+    context: &mut ProgramTestContext,
+    instructions: &[Instruction],
+    signers: &[&Keypair],
+) -> Vec<Vec<u8>> {
+    let blockhash = context.last_blockhash;
+    let payer = context.payer.pubkey();
+    let mut all_signers: Vec<&Keypair> = vec![&context.payer];
+    all_signers.extend_from_slice(signers);
+    let tx =
+        Transaction::new_signed_with_payer(instructions, Some(&payer), &all_signers, blockhash);
+    let simulation = context
+        .banks_client
+        .simulate_transaction(tx)
+        .await
+        .expect("simulation failed");
+    let logs = simulation
+        .simulation_details
+        .expect("the simulation returned no logs")
+        .logs;
+    let payloads: Vec<Vec<u8>> = logs
+        .iter()
+        .filter_map(|log| log.strip_prefix("Program data: "))
+        .map(|encoded| {
+            STANDARD
+                .decode(encoded)
+                .expect("a program data log is base64")
+        })
+        .collect();
+    assert!(
+        !payloads.is_empty(),
+        "the simulated instruction logged no program data: {logs:?}"
+    );
+    payloads
+}
+
+/// The payloads that are events of type `T`, decoded. An event is the type's
+/// 8-byte discriminator followed by its borsh body, so the fields below are
+/// read exactly as the program wrote them.
+fn events_of<T>(payloads: &[Vec<u8>]) -> Vec<T>
+where
+    T: AnchorDeserialize + Discriminator,
+{
+    let width = T::DISCRIMINATOR.len();
+    payloads
+        .iter()
+        .filter_map(|payload| {
+            let (discriminator, body) = payload.split_at(width);
+            if discriminator != T::DISCRIMINATOR {
+                return None;
+            }
+            Some(T::deserialize(&mut &body[..]).expect("the event payload did not decode"))
+        })
+        .collect()
+}
+
+/// The settle event is the split, not a restatement of the receipt: the price,
+/// the fee that went to the treasury, what the seller keeps, and who paid.
+#[tokio::test]
+async fn settle_payment_emits_the_split_it_paid() {
+    let mut context = started().await;
+    let payer = context.payer.pubkey();
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = LAMPORTS_PER_SOL / 10;
+
+    let payloads = simulated_events(
+        &mut context,
+        &[settle_instruction(
+            payer, seller, reference, amount, "coffee",
+        )],
+        &[],
+    )
+    .await;
+
+    let settled: Vec<PaymentSettled> = events_of(&payloads);
+    assert_eq!(settled.len(), 1, "one event per settlement, no duplicates");
+    let event = &settled[0];
+    assert_eq!(event.amount, amount);
+    assert_eq!(event.fee, fee(amount));
+    assert_eq!(
+        event.seller_proceeds,
+        amount - fee(amount),
+        "the seller keeps the price less the fee"
+    );
+    assert_eq!(event.payer, payer);
+    assert_eq!(event.seller, seller);
+    assert_eq!(
+        event.mint,
+        Pubkey::default(),
+        "a SOL invoice is the empty mint, as on the receipt"
+    );
+    assert_eq!(event.reference, reference);
+}
+
+/// The token path emits the same shape with the mint set, so an indexer reads
+/// one event type for both currencies.
+#[tokio::test]
+async fn settle_token_payment_emits_the_mint_beside_the_split() {
+    let (mut context, world) = TokenWorld::start().await;
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    // The seller's account is their own setup step, not part of the payment.
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+
+    let payloads = simulated_events(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "spl",
+        )],
+        &[&world.buyer],
+    )
+    .await;
+
+    let settled: Vec<PaymentSettled> = events_of(&payloads);
+    assert_eq!(settled.len(), 1);
+    let event = &settled[0];
+    assert_eq!(event.amount, amount);
+    assert_eq!(event.fee, fee(amount));
+    assert_eq!(event.seller_proceeds, amount - fee(amount));
+    assert_eq!(event.payer, world.buyer.pubkey());
+    assert_eq!(event.seller, seller);
+    assert_eq!(event.mint, world.mint);
+    assert_eq!(event.reference, reference);
+}
+
+/// The allowance path pays from the session key, and the event says so: `payer`
+/// is the session key, not the wallet that funded the pot.
+#[tokio::test]
+async fn pay_from_token_budget_emits_the_session_key_as_the_payer() {
+    let (mut context, world) = TokenWorld::start().await;
+    let amount = 250_000;
+    open_token_budget(&mut context, &world, 1_000_000).await;
+
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let payloads = simulated_events(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            reference,
+            amount,
+            "silent",
+        )],
+        &[&world.session],
+    )
+    .await;
+
+    let settled: Vec<PaymentSettled> = events_of(&payloads);
+    assert_eq!(settled.len(), 1);
+    let event = &settled[0];
+    assert_eq!(event.amount, amount);
+    assert_eq!(event.fee, fee(amount));
+    assert_eq!(event.seller_proceeds, amount - fee(amount));
+    assert_eq!(event.payer, world.session.pubkey());
+    assert_eq!(event.seller, seller);
+    assert_eq!(event.mint, world.mint);
+    assert_eq!(event.reference, reference);
+}
+
+/// The policy event carries what the admin installed, so a payment can be
+/// priced at the block it settled in rather than with today's rate.
+#[tokio::test]
+async fn update_config_emits_the_policy_it_installed() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+
+    let payloads = simulated_events(
+        &mut context,
+        &[update_config_instruction(
+            admin.pubkey(),
+            350,
+            1_000,
+            FeeMode::BuyerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&admin],
+    )
+    .await;
+
+    let updates: Vec<ConfigUpdated> = events_of(&payloads);
+    assert_eq!(updates.len(), 1);
+    let event = &updates[0];
+    assert_eq!(event.admin, admin.pubkey());
+    assert_eq!(event.fee_bps, 350);
+    assert_eq!(event.fixed_fee_lamports, 1_000);
+    assert_eq!(event.fee_mode, FeeMode::BuyerPays);
+    assert_eq!(event.session_fee_float, TEST_SESSION_FLOAT);
+}
+
+/// Opening the SOL allowance says who may spend it and how much: the event is
+/// the refill's own record, since `open_budget` also tops a returning buyer up.
+#[tokio::test]
+async fn open_budget_emits_the_limit_and_the_session_key() {
+    let mut context = started().await;
+    let buyer = Keypair::new();
+    let session = Keypair::new();
+    context.set_account(&buyer.pubkey(), &system_account(LAMPORTS_PER_SOL).into());
+    let limit = LAMPORTS_PER_SOL / 20;
+
+    let payloads = simulated_events(
+        &mut context,
+        &[open_budget_instruction(
+            buyer.pubkey(),
+            session.pubkey(),
+            limit,
+        )],
+        &[&buyer],
+    )
+    .await;
+
+    let opened: Vec<BudgetOpened> = events_of(&payloads);
+    assert_eq!(opened.len(), 1);
+    let event = &opened[0];
+    assert_eq!(event.buyer, buyer.pubkey());
+    assert_eq!(event.session_key, session.pubkey());
+    assert_eq!(event.mint, Pubkey::default());
+    assert_eq!(event.monthly_limit, limit);
+}
+
+/// The token allowance is the same event with the mint set, so one subscription
+/// covers both budgets.
+#[tokio::test]
+async fn open_token_budget_emits_the_mint_and_the_limit() {
+    let (mut context, world) = TokenWorld::start().await;
+    let limit = 250_000;
+
+    let payloads = simulated_events(
+        &mut context,
+        &[open_token_budget_instruction(
+            world.buyer.pubkey(),
+            world.budget,
+            world.mint,
+            world.buyer_token_account,
+            world.vault,
+            world.session.pubkey(),
+            limit,
+        )],
+        &[&world.buyer],
+    )
+    .await;
+
+    let opened: Vec<BudgetOpened> = events_of(&payloads);
+    assert_eq!(opened.len(), 1);
+    let event = &opened[0];
+    assert_eq!(event.buyer, world.buyer.pubkey());
+    assert_eq!(event.session_key, world.session.pubkey());
+    assert_eq!(event.mint, world.mint);
+    assert_eq!(event.monthly_limit, limit);
 }
