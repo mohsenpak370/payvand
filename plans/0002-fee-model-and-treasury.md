@@ -82,7 +82,10 @@ line says where it stands, so a later pass does not have to re-derive it.
   zero-fee skip is executed rather than described by
   `a_zero_fee_settle_token_payment_sends_no_fee_transfer` and
   `a_zero_fee_budget_payment_sends_no_fee_transfer`, which freeze the treasury's
-  account so a sent zero transfer would fail. The handler's
+  account so a sent zero transfer would fail, and on the SOL wallet path by
+  `a_zero_fee_settle_payment_sends_no_fee_transfer`, which compares what ran: a
+  0% settlement makes one system-program invocation fewer than the same
+  settlement at 2%, and that one is the fee transfer. The handler's
   `require!(amount > fee_t)` cannot fire — `fee_for` caps the fee at
   `amount - 1` — so the cap test is as close to that floor as the program can be
   driven.
@@ -380,10 +383,30 @@ Revision 14 records Task 4.4's enforcement (2026-11-18):
   `pnpm smoke:guards` both pass against it (the split, the wrong-mint and decoy
   guards, the close path), the interface account types included; the first
   attempts failed only on the public RPC's 429s.
-- **Verified:** `cargo build-sbf`, 52 harness tests, `cargo fmt --check`,
+- **Verified:** `cargo build-sbf`, 53 harness tests, `cargo fmt --check`,
   `cargo clippy --all-targets`, `anchor idl build` (IDL copied to
   `apps/web`), and `vitest run` (124), `nuxt typecheck`, `eslint .` in
   `apps/web`. **Not verified:** the docs half of the task.
+
+Revision 15 pins Task 3.1's zero-fee rule on the SOL wallet path (2026-11-18):
+
+- **Pinned by what ran, not by balances.** `settle_payment`'s `if fee > 0` guards
+  a `system_program::transfer` to the treasury, and a zero lamport transfer would
+  succeed, so no balance tells a skip from a send.
+  `a_zero_fee_settle_payment_sends_no_fee_transfer` settles the same
+  100,000,000-lamport invoice at 0% and at 2% and asserts the 2% transaction made
+  exactly one more system-program invocation — the fee transfer. A new
+  `send_with_logs` helper returns `process_transaction_with_metadata`'s log,
+  because `process_transaction` returns none.
+- **The test pins the guard.** With `if fee > 0` replaced by `if true` and the
+  artifact rebuilt, the test fails (5 invocations at 0%, the same as at 2%) while
+  the rest of the suite still passes; the guard is restored and the artifact
+  rebuilt before the suite run that counts.
+- **The SOL budget path has nothing observable to pin.** Its `if fee > 0` guards
+  a direct `add_lamports` to the treasury, a no-op at zero even when executed; the
+  token paths' frozen-account tests are what pin the CPI shape there.
+- **Verified:** `cargo build-sbf`, 53 harness tests, `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`.
 
 ## Linked Docs
 
@@ -1111,7 +1134,7 @@ Acceptance criteria:
 Verification:
 
 - [x] `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
-      --test settle` (the suite `Anchor.toml` runs for `anchor test`) — 52 tests,
+      --test settle` (the suite `Anchor.toml` runs for `anchor test`) — 53 tests,
       the three above among them (2026-11-18).
 
 Files likely touched:
@@ -1298,7 +1321,7 @@ Acceptance criteria:
 
 Verification:
 
-- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 52 tests (the
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 53 tests (the
       `settle` harness; `Anchor.toml` runs the same suite for `anchor test`).
 
 **Follow-up found while writing these, and fixed the same day (2026-11-15):**
@@ -1389,6 +1412,15 @@ Acceptance criteria:
       freeze a real refusal rather than a no-op. With the two `if fee > 0`
       guards replaced by `if true`, both tests fail and the rest of the suite
       still passes — the skip is what they pin.
+      The SOL wallet path is pinned the same day by what actually ran, because a
+      zero lamport system transfer succeeds and leaves no balance to read:
+      `a_zero_fee_settle_payment_sends_no_fee_transfer` settles the same
+      100,000,000-lamport invoice at 0% and at 2% and asserts the 2% transaction
+      made exactly one more system-program invocation than the 0% one — the fee
+      `system_program::transfer` — while the 0% treasury's delta is the receipt
+      refund alone and the seller receives the whole price. The SOL budget path
+      has nothing observable to pin: its `if fee > 0` guards a direct
+      `add_lamports`, which at zero is a no-op even when executed.
 - [x] The treasury refunds `R_tr` to the payer or session key: the executed
       settle ends with the pool exactly one receipt rent down — the refund out,
       the invoice rent back in.
@@ -1616,7 +1648,7 @@ Acceptance criteria:
 Verification:
 
 - [x] `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
-      --test settle` — 52 tests, the token ones executing against the committed
+      --test settle` — 53 tests, the token ones executing against the committed
       SPL fixtures; `cargo fmt --all --check` and
       `cargo clippy -p payvand --all-targets -- -D warnings` clean.
 
@@ -1745,8 +1777,8 @@ Verification:
 
 - [x] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
       `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
-      --test settle` — 52 pass (43 at the Task 3.5 build; the zero-fee,
-      events and Token-2022 work added nine more), the token tests executing
+      --test settle` — 53 pass (43 at the Task 3.5 build; the zero-fee,
+      events, Token-2022 and SOL zero-fee work added ten more), the token tests executing
       the rebuilt artifact, and the five that build this instruction
       (`the_float_carries_three_payments_to_fresh_sellers`,
       `a_top_up_lets_the_float_carry_more_fresh_sellers`,
@@ -2024,7 +2056,7 @@ Verification:
       instruction (`process_transaction` returns no logs), base64-decode each
       `Program data:` line, match the type's 8-byte event discriminator and
       borsh-decode the body. `cargo test --manifest-path
-      apps/contracts/programs/payvand/Cargo.toml --test settle`: 52 passed.
+      apps/contracts/programs/payvand/Cargo.toml --test settle`: 53 passed.
 - [x] `anchor idl build -o target/idl/payvand.json` regenerated the IDL with
       `events: [BudgetOpened, ConfigUpdated, PaymentSettled]` and their types;
       copied to `apps/web/app/assets/payvand.idl.json`. (`anchor build` is not
@@ -2113,7 +2145,7 @@ Verification:
 
 - [ ] Doc review.
 - [x] `cargo test --manifest-path apps/contracts/Cargo.toml --test settle`
-      (2026-11-18: 52 tests, after `cargo build-sbf` rebuilt the artifact).
+      (2026-11-18: 53 tests, after `cargo build-sbf` rebuilt the artifact).
 - [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (clean
       apart from the third-party future-incompat note), `anchor idl build` with
       the IDL copied to `apps/web/app/assets/payvand.idl.json`, and in

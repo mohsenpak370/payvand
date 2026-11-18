@@ -886,6 +886,38 @@ async fn send(
         .map_err(|error| format!("{error:?}"))
 }
 
+/// `send`, plus the runtime's log for the transaction: what the program actually
+/// ran, so a test can pin a CPI that must not happen rather than only balances
+/// that look the same either way.
+async fn send_with_logs(
+    context: &mut ProgramTestContext,
+    instructions: &[Instruction],
+    signers: &[&Keypair],
+) -> Result<Vec<String>, String> {
+    let blockhash = context.last_blockhash;
+    let payer = context.payer.pubkey();
+    let mut all_signers: Vec<&Keypair> = vec![&context.payer];
+    all_signers.extend_from_slice(signers);
+    let tx =
+        Transaction::new_signed_with_payer(instructions, Some(&payer), &all_signers, blockhash);
+    let outcome = context
+        .banks_client
+        .process_transaction_with_metadata(tx)
+        .await
+        .map_err(|error| format!("{error:?}"))?;
+    outcome.result.map_err(|error| format!("{error:?}"))?;
+    Ok(outcome.metadata.map(|m| m.log_messages).unwrap_or_default())
+}
+
+/// How many times a transaction's log shows the system program being invoked.
+/// Every CPI into it appears this way — the two account creations, the price
+/// transfer, the fee transfer and the treasury's refund — so a settlement that
+/// skipped one invocation definitely skipped that transfer.
+fn system_program_invocations(log: &[String]) -> usize {
+    const INVOKE: &str = "Program 11111111111111111111111111111111 invoke";
+    log.iter().filter(|line| line.contains(INVOKE)).count()
+}
+
 /// Like `send`, but with the given key paying the fee — which is what the client
 /// does for an allowance payment: the session key is its fee payer and only
 /// signer, and the float exists to cover these fees.
@@ -1123,6 +1155,73 @@ async fn settle_payment_writes_a_receipt_and_closes_the_invoice() {
     // The treasury keeps the fee and loses the receipt rent it refunded.
     let treasury_delta = lamports(&context, treasury_pda()).await as i128 - treasury_before as i128;
     assert_eq!(treasury_delta, fee(amount) as i128 - receipt_rent() as i128);
+}
+
+/// Task 3.1's zero-fee rule on the SOL wallet path: at 0% the settlement runs one
+/// system-program invocation fewer than the same settlement at 2%, because the
+/// `if fee > 0` guard skips the fee transfer instead of sending one for zero.
+/// (The token paths pin the same rule by freezing the treasury's account; a zero
+/// lamport transfer would succeed, so this path is pinned by what ran.)
+#[tokio::test]
+async fn a_zero_fee_settle_payment_sends_no_fee_transfer() {
+    let amount = LAMPORTS_PER_SOL / 10;
+
+    // The same settlement twice, differing only in the policy: the bank charges
+    // the policy `initialize_config` installs, so each case gets its own context.
+    let mut free = started_with_policy(None, 0, 0, FeeMode::SellerPays, TREASURY_LAMPORTS, &[])
+        .await
+        .0;
+    let treasury_before = lamports(&free, treasury_pda()).await;
+    let payer = free.payer.pubkey();
+    let payer_before = lamports(&free, payer).await;
+    let free_seller = Keypair::new().pubkey();
+    let zero_fee_logs = send_with_logs(
+        &mut free,
+        &[settle_instruction(
+            payer,
+            free_seller,
+            Keypair::new().pubkey(),
+            amount,
+            "no fee",
+        )],
+        &[],
+    )
+    .await
+    .expect("a zero-fee settlement must succeed");
+
+    // Nothing was sent to the treasury, and the seller absorbed no fee.
+    assert_eq!(lamports(&free, free_seller).await, amount);
+    assert_eq!(
+        lamports(&free, treasury_pda()).await as i128 - treasury_before as i128,
+        -(receipt_rent() as i128),
+        "a 0% settlement only refunds the receipt rent"
+    );
+    assert_eq!(payer_before - lamports(&free, payer).await, amount + TX_FEE);
+
+    // The control at 2%: the same shape, plus the fee transfer to the treasury.
+    let mut charged = started().await;
+    let fee_payer = charged.payer.pubkey();
+    let fee_seller = Keypair::new().pubkey();
+    let fee_logs = send_with_logs(
+        &mut charged,
+        &[settle_instruction(
+            fee_payer,
+            fee_seller,
+            Keypair::new().pubkey(),
+            amount,
+            "fee",
+        )],
+        &[],
+    )
+    .await
+    .expect("the 2% settlement must succeed");
+
+    assert_eq!(
+        system_program_invocations(&fee_logs),
+        system_program_invocations(&zero_fee_logs) + 1,
+        "the 2% settlement should make exactly one system invocation the 0% one \
+         does not: the fee transfer to the treasury (0% log: {zero_fee_logs:?})"
+    );
 }
 
 #[tokio::test]
