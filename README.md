@@ -244,12 +244,12 @@ to let anyone sign before it exists.
 A budget payment is the same ledger with the pot in place of the wallet: the pot
 pays exactly the price, and a float fronts the temporary rents and is reimbursed
 inside the same transaction. In SOL the session key carries the whole 30,000,000
-lamports (`Config::session_fee_float`). In a token the same 0.03 SOL is split, so
-the budget account refunds the invoice and receipt rents
-(`TOKEN_BUDGET_FEE_FLOAT`, 18,000,000) while the session key fronts the seller's
-token account and the fee (`SESSION_FEE_FLOAT`, 12,000,000) — between them, three
-payments to sellers who hold neither SOL nor a token before either side needs a
-top-up.
+lamports (`Config::session_fee_float`). In a token the budget account holds its
+own rent and nothing more: the session key fronts the invoice and receipt rents,
+the fee, and a fresh seller's token-account rent out of `SESSION_FEE_FLOAT`
+(12,000,000), and the treasury pool refunds the two records in the same
+transaction — enough for three payments to sellers who hold neither SOL nor a
+token before the key needs a top-up.
 
 **Break-even.** The treasury's delta per settlement is `fee − receipt rent`, so
 an invoice starts paying for its own record once
