@@ -66,12 +66,16 @@ line says where it stands, so a later pass does not have to re-derive it.
   CPI. The layout half is partly pinned: `CONFIG_SPACE` is asserted in the
   harness inside `initialize_config_records_the_upgrade_authority`), `BUDGET_SPACE` and
   `TOKEN_BUDGET_SPACE` are not.
-- **Task 1.6 — three boundary cases missing.** The rounding floor (`99` at 2% →
-  fee 1, seller 98), the `fee_bps = 10_000` cap, and the
-  withdrawal-then-undersized-settle sequence (`TreasuryUnderfunded`). The
-  withdrawal cap itself is tested.
-- **Task 3.1 — the token fee's floor and cap are unexercised**, and the
-  zero-fee transfer skip is not pinned. The split test covers 2% only.
+- **Task 1.6 — closed (2026-11-18).** All three boundary cases now execute:
+  `fee_floors_rather_than_rounds_at_ninety_nine_lamports`,
+  `a_ten_thousand_bps_policy_admits_no_sol_invoice`, and
+  `withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle`.
+- **Task 3.1 — the token cap is exercised (2026-11-18)**, by
+  `a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit`. What is
+  left is the zero-fee transfer skip, which nothing pins. The handler's
+  `require!(amount > fee_t)` cannot fire — `fee_for` caps the fee at
+  `amount - 1` — so the cap test is as close to that floor as the program can be
+  driven.
 - **Task 3.4 — the close decision is taken (revision 12); the handler is not
   changed.** The payment account closes to the pool that funds it, not to the
   seller, whose proceeds are `amount - fee_t` and nothing else. That means
@@ -1015,18 +1019,30 @@ Acceptance criteria:
 - [x] Direct SOL: payer delta `amount`, seller delta `amount - fee`, treasury
       delta `fee - R_r`, receipt holds `R_r`.
 - [x] Budget SOL: pot delta `amount`, `spent += amount`, session key unchanged.
-- [ ] Fee rounding floors: `amount = 99` at 2% gives `fee = 1`, seller gets 98.
-- [ ] `fee_bps = 10_000` behaves as documented (`amount - 1` cap; `fee_bps = 0`
-      is covered).
-- [ ] `withdraw_treasury` cannot empty the treasury; a settle after a withdrawal
+- [x] Fee rounding floors: `amount = 99` at 2% gives `fee = 1`, seller gets 98.
+      `fee_floors_rather_than_rounds_at_ninety_nine_lamports` calls `fee_for`
+      where it lives, because a 99-lamport price can never settle: the invoice
+      rent alone is millions. It also pins 199 → 3 and 100 → 2, so the floor is
+      a floor and not a lucky case. Breaking the division to round up fails it
+      with `left: 2, right: 1` (checked).
+- [x] `fee_bps = 10_000` behaves as documented (`amount - 1` cap; `fee_bps = 0`
+      is covered). At the cap the underflow guard reduces to
+      `1 > invoice_rent`, so `a_ten_thousand_bps_policy_admits_no_sol_invoice`
+      gets `InvoiceTooSmall` on a 0.1 SOL invoice and checks the seller, the
+      treasury, the invoice account and the receipt were all left untouched.
+      `10_001` is refused by `update_config` (the admin test).
+- [x] `withdraw_treasury` cannot empty the treasury; a settle after a withdrawal
       that drops it below `R_r + 890,880` fails with `TreasuryUnderfunded`.
-      (The withdrawal cap is tested; the withdrawal-then-settle sequence is
-      not.)
+      `withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle` withdraws
+      the whole surplus, pins the treasury at exactly its rent, then gets
+      `TreasuryUnderfunded` on the next settle — and asserts the invoice and
+      receipt the failed transaction had already created are rolled back.
 - [x] Passing a wallet instead of the treasury PDA is rejected.
 
 Verification:
 
-- [ ] `cd apps/contracts && anchor test`
+- [x] `cargo test --test settle` (what `Anchor.toml` runs for `anchor test`) —
+      39 tests, the three above among them (2026-11-18).
 
 Files likely touched:
 
@@ -1276,10 +1292,15 @@ Acceptance criteria:
       holds for one path, not both (revision 6). Revision 12 makes it hold on
       both, by giving `pay_from_token_budget` the treasury accounts and the same
       split; not built.
-- [ ] `fee_t = min(amount * fee_bps / 10_000, amount - 1)`;
-      `require!(amount > fee_t)` so a seller never receives zero. No token-path
-      test yet: the SOL suite's cap and floor tests do not exercise this
-      handler's copy of the rule.
+- [x] `fee_t = min(amount * fee_bps / 10_000, amount - 1)`;
+      `require!(amount > fee_t)` so a seller never receives zero. Exercised at
+      the cap (2026-11-18):
+      `a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit` sets
+      `fee_bps = 10_000` through `update_config`, pays a 700,000-unit invoice,
+      and checks one base unit reaches the seller while 699,999 reach the
+      treasury's account. The guard's failing side is unreachable by design —
+      the cap keeps `fee_t <= amount - 1` — so that is as close as the program
+      can be driven to it.
 - [ ] A fresh seller ATA is created and paid for by the payer; a fresh treasury
       ATA is created and paid for by the treasury. Neither holds as written: the
       payer path requires the seller's account to exist already (the seller

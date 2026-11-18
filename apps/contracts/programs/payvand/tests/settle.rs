@@ -42,6 +42,7 @@ use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE,
     TOKEN_PAYMENT_SEED, TOKEN_PAYMENT_SPACE,
 };
+use payvand::helpers::fee_for;
 use payvand::state::{
     Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenBudget, TokenPayment,
 };
@@ -896,6 +897,21 @@ fn budget_rent() -> u64 {
 fn fee(amount: u64) -> u64 {
     let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
     (proportional + TEST_FIXED_FEE).min(amount - 1)
+}
+
+/// A `Config` with the layout `initialize_config` writes and the given rate, for
+/// the fee arithmetic that has no account to read a policy from.
+fn test_policy(fee_bps: u16, fixed_fee_lamports: u64) -> Config {
+    Config {
+        admin: Pubkey::default(),
+        fee_bps,
+        fixed_fee_lamports,
+        fee_mode: FeeMode::SellerPays,
+        session_fee_float: TEST_SESSION_FLOAT,
+        bump: 255,
+        treasury_bump: 254,
+        version: 1,
+    }
 }
 
 /// The smallest amount the policy accepts: the first one above
@@ -1982,6 +1998,73 @@ async fn zero_fee_policy_charges_no_fee() {
     );
 }
 
+/// Task 1.6's rounding floor. 2% of 99 lamports is 1.98, and the program floors
+/// the proportional fee to whole lamports rather than rounding it up: the seller
+/// keeps 98 and the protocol takes 1. A price this small can never settle — the
+/// invoice rent alone is millions of lamports — so the arithmetic is pinned where
+/// it lives (`fee_for`) instead of through a transaction that would be refused
+/// for an unrelated reason.
+#[test]
+fn fee_floors_rather_than_rounds_at_ninety_nine_lamports() {
+    let policy = test_policy(TEST_FEE_BPS, 0);
+    let fee = fee_for(&policy, 99).expect("the fee fits in a u64");
+
+    assert_eq!(fee, 1, "2% of 99 floored is one lamport, not two");
+    assert_eq!(99 - fee, 98);
+
+    // A floor, not a rounding: 2% of 199 is 3.98 and still 3. The first amount
+    // whose rate is a whole lamport is 100.
+    assert_eq!(fee_for(&policy, 199).expect("the fee fits"), 3);
+    assert_eq!(fee_for(&policy, 100).expect("the fee fits"), 2);
+}
+
+/// Task 1.6's cap on the SOL path. `fee_bps = 10_000` is accepted (`10_001` is
+/// refused, in `update_config_requires_the_admin_and_a_valid_policy`), and
+/// `fee_for` then caps the fee at `amount - 1`, so the underflow guard has
+/// nothing left to work with: `amount > invoice_rent + fee` becomes
+/// `1 > invoice_rent`, which no invoice can satisfy. A 100% policy therefore
+/// admits no SOL invoice at all — the cap fails closed rather than letting the
+/// seller receive nothing.
+#[tokio::test]
+async fn a_ten_thousand_bps_policy_admits_no_sol_invoice() {
+    let mut context =
+        started_with_policy(None, 10_000, 0, FeeMode::SellerPays, TREASURY_LAMPORTS, &[])
+            .await
+            .0;
+    let payer = context.payer.pubkey();
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = LAMPORTS_PER_SOL / 10;
+    let invoice = payment_pda(&seller, &reference, amount);
+    let treasury_before = lamports(&context, treasury_pda()).await;
+
+    // The policy is what the program stored, not what the test asked for.
+    assert_eq!(config(&context, config_pda()).await.fee_bps, 10_000);
+
+    let attempt = send(
+        &mut context,
+        &[settle_instruction(
+            payer, seller, reference, amount, "all fee",
+        )],
+        &[],
+    )
+    .await;
+    let error = attempt.expect_err("a 100% fee leaves the seller nothing to receive");
+    assert!(
+        error.contains(INVOICE_TOO_SMALL),
+        "expected {INVOICE_TOO_SMALL}, got {error}"
+    );
+
+    // Refused before anything moved or was created.
+    assert_eq!(lamports(&context, seller).await, 0);
+    assert_eq!(lamports(&context, treasury_pda()).await, treasury_before);
+    assert!(
+        account(&context, invoice).await.is_none(),
+        "a refused settle must not leave the invoice behind"
+    );
+    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
+}
+
 #[tokio::test]
 async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
     let (mut context, admin_keypair) = started_with_policy(
@@ -2040,6 +2123,76 @@ async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
     assert_eq!(lamports(&context, treasury).await, treasury_rent());
     // The test payer covers the network fee, not the admin.
     assert_eq!(lamports(&context, admin).await, payer_before + surplus);
+}
+
+/// Task 1.6's sequence, in the order an operator can cause it: the admin
+/// withdraws the treasury down to its rent-exempt minimum, and the next settle
+/// is refused for want of the receipt rent. That separates the guard from the
+/// empty-treasury case next door — a treasury that has paid out is underfunded
+/// too, and the refusal comes from the same check.
+///
+/// The guard runs inside the handler, after Anchor has already created the
+/// invoice and receipt accounts, so this also pins that the failed transaction
+/// rolls both of them back rather than leaving a half-made invoice behind.
+#[tokio::test]
+async fn withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle() {
+    let (mut context, admin_keypair) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let admin = admin_keypair.pubkey();
+    let treasury = treasury_pda();
+    let surplus = lamports(&context, treasury).await - treasury_rent();
+
+    send(
+        &mut context,
+        &[withdraw_treasury_instruction(admin, surplus)],
+        &[&admin_keypair],
+    )
+    .await
+    .expect("withdrawing the surplus failed");
+    assert_eq!(lamports(&context, treasury).await, treasury_rent());
+    assert!(
+        treasury_rent() < receipt_rent(),
+        "the rent of an empty account has to be short of a receipt's for this test to mean anything"
+    );
+
+    let payer = context.payer.pubkey();
+    let seller = Keypair::new().pubkey();
+    let reference = Keypair::new().pubkey();
+    let amount = LAMPORTS_PER_SOL / 10;
+    let invoice = payment_pda(&seller, &reference, amount);
+
+    let attempt = send(
+        &mut context,
+        &[settle_instruction(
+            payer,
+            seller,
+            reference,
+            amount,
+            "after the withdrawal",
+        )],
+        &[],
+    )
+    .await;
+    let error = attempt.expect_err("a treasury at its rent cannot fund the receipt");
+    assert!(
+        error.contains(TREASURY_UNDERFUNDED),
+        "expected {TREASURY_UNDERFUNDED}, got {error}"
+    );
+
+    assert_eq!(lamports(&context, seller).await, 0);
+    assert_eq!(lamports(&context, treasury).await, treasury_rent());
+    assert!(
+        account(&context, invoice).await.is_none(),
+        "a refused settle must not leave the invoice behind"
+    );
+    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
 }
 
 #[tokio::test]
@@ -2587,6 +2740,80 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
     assert_eq!(
         lamports(&context, treasury_pda()).await,
         treasury_before - receipt_rent()
+    );
+}
+
+/// Task 3.1's cap on the token path, where there is no invoice rent to subtract:
+/// `settle_token_payment` guards `amount > fee_t` alone, so the `amount - 1` cap
+/// in `fee_for` is what keeps the seller's side non-zero. At `fee_bps = 10_000`
+/// a 700,000-unit invoice therefore pays the seller one base unit and the
+/// treasury's account the other 699,999 — rather than a seller receiving zero.
+#[tokio::test]
+async fn a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // Set the way an admin changes it, so this is a live `Config` and not a
+    // hand-built one.
+    send(
+        &mut context,
+        &[update_config_instruction(
+            world.admin.pubkey(),
+            10_000,
+            0,
+            FeeMode::SellerPays,
+            TEST_SESSION_FLOAT,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+    assert_eq!(config(&context, config_pda()).await.fee_bps, 10_000);
+
+    let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
+    send(
+        &mut context,
+        &[open_treasury_token_account_instruction(
+            world.admin.pubkey(),
+            world.mint,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("open_treasury_token_account failed");
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+
+    send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "all fee",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("a capped 100% token fee must still settle");
+
+    assert_eq!(token_balance(&context, seller_token_account).await, 1);
+    assert_eq!(
+        token_balance(&context, treasury_token_account).await,
+        amount - 1
+    );
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        TEST_TOKEN_BALANCE - amount
     );
 }
 
