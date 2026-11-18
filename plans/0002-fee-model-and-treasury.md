@@ -923,7 +923,7 @@ Files likely touched:
 
 - `apps/contracts/programs/payvand/src/instructions/sol.rs`
 - `apps/contracts/programs/payvand/src/errors.rs`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 - `apps/web/app/composables/useFeeConfig.ts`
 
 Dependencies: Task 1.2.
@@ -1110,12 +1110,13 @@ Acceptance criteria:
 
 Verification:
 
-- [x] `cargo test --test settle` (what `Anchor.toml` runs for `anchor test`) —
-      39 tests, the three above among them (2026-11-18).
+- [x] `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
+      --test settle` (the suite `Anchor.toml` runs for `anchor test`) — 52 tests,
+      the three above among them (2026-11-18).
 
 Files likely touched:
 
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 1.1–1.3.
 
@@ -1160,7 +1161,7 @@ Files likely touched:
 - `apps/contracts/programs/payvand/src/instructions/sol.rs`
 - `apps/contracts/programs/payvand/src/instructions/token.rs`
 - `apps/web/app/composables/useBudget.ts`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Phase 1.
 
@@ -1200,8 +1201,9 @@ by harness tests that run in `cargo test`:
 `open_budget_keeps_spent_until_the_month_changes` (spend, refill, then a clock
 warp into the next month) and
 `open_token_budget_keeps_spent_until_the_month_changes` (the
-same rule on the token account; the harness has no SPL runtime, so the counter
-is written into the account between opens to stand in for a payment).
+same rule on the token account; the harness now runs the token flows against the
+committed SPL fixtures, but the counter is written into the account between
+opens to keep the test about the refill rule rather than a payment).
 
 The program was upgraded in place on devnet for it (`4k8QbJ4n…`, slot
 522521670, same ID and authority). The account needed a 10,240-byte
@@ -1219,7 +1221,6 @@ Files likely touched:
 - `apps/contracts/programs/payvand/src/instructions/token.rs`
 - `apps/web/app/pages/budget.vue`
 - `apps/web/app/composables/useBudget.ts`
-- `apps/contracts/tests/payvand.ts`
 - `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Task 2.1.
@@ -1283,9 +1284,11 @@ Acceptance criteria:
       `open_budget_keeps_spent_until_the_month_changes` (Task 2.2).
 - [x] Pot and vault balances match the documented deltas — the pot in
       `pay_from_budget_settles_the_invoice_and_records_the_spend`
-      (`pot_before - pot_after == amount`) and in the devnet smoke test. **The
-      vault is still untested**: the token path needs an SPL runtime the harness
-      does not carry (Task 3.4).
+      (`pot_before - pot_after == amount`) and in the devnet smoke test, and the
+      token vault in
+      `pay_from_token_budget_splits_the_price_and_closes_to_the_treasury`, which
+      runs against the committed SPL fixtures (revision 6) and pins the vault
+      down by exactly the invoice amount.
 - [x] A compromised session key cannot exceed the pot balance:
       `pay_from_budget_cannot_spend_more_than_the_pot` leaves the pot holding
       half a price inside a four-invoice limit and gets `InsufficientBudget`
@@ -1295,9 +1298,8 @@ Acceptance criteria:
 
 Verification:
 
-- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 25 tests. The
-      Anchor suite (`anchor test`) still needs a Devnet cluster and is not run
-      in this repo.
+- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 52 tests (the
+      `settle` harness; `Anchor.toml` runs the same suite for `anchor test`).
 
 **Follow-up found while writing these, and fixed the same day (2026-11-15):**
 the pot check ran before `pay_from_treasury` refunds the receipt rent, so a
@@ -1328,7 +1330,6 @@ what the local teeth check showed.
 
 Files likely touched:
 
-- `apps/contracts/tests/payvand.ts`
 - `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 2.1–2.3.
@@ -1399,8 +1400,8 @@ Verification:
 
 - [x] Rust harness, not Anchor: a seller with no token account and no SOL
       receives its tokens on the budget path, its account created and paid for
-      by the float
-      (`the_float_carries_two_payments_to_fresh_sellers_then_runs_out`).
+      by the float (`the_float_carries_three_payments_to_fresh_sellers`, which
+      also refuses a fourth fresh seller for want of lamports).
 - [ ] Treasury ATA created on first use of a mint; second payment reuses it.
       Proved on devnet (2026-11-15) and by `open_treasury_token_account` being
       idempotent; the harness opens it once, so reuse is not tested.
@@ -1412,7 +1413,7 @@ Files likely touched:
 
 - `apps/contracts/programs/payvand/src/instructions/token.rs`
 - `apps/contracts/programs/payvand/src/constants.rs`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Phase 1.
 
@@ -1518,7 +1519,7 @@ Files likely touched:
 - `apps/contracts/programs/payvand/src/instructions/config.rs`
 - `apps/web/app/composables/useBudget.ts`
 - `apps/web/app/pages/budget.vue`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 3.1, 1.1.
 
@@ -1573,7 +1574,7 @@ was still open, so nothing was stranded; the run then closed it (`fSrvNdKA…`).
 Files likely touched:
 
 - `apps/contracts/programs/payvand/src/instructions/token.rs`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Task 3.2.
 
@@ -1608,19 +1609,20 @@ Acceptance criteria:
 - [x] Token monthly limit enforced and preserved across a same-month top-up:
       `open_token_budget_keeps_spent_until_the_month_changes` (2026-11-15), which
       writes the counter into the budget account between opens. Since
-      2026-11-16 the settle side runs too: two paid invoices from one budget are
-      counted in
-      `the_float_carries_two_payments_to_fresh_sellers_then_runs_out`.
+      2026-11-16 the settle side runs too: three paid invoices from one budget
+      are counted in `the_float_carries_three_payments_to_fresh_sellers`, and a
+      fourth is refused for lamports rather than the limit.
 
 Verification:
 
-- [x] `cargo test --manifest-path apps/contracts/Cargo.toml` — 33 tests, the
-      token ones executing against the deployed SPL programs; `cargo fmt --all
-      --check` and `cargo clippy -p payvand --all-targets -- -D warnings` clean.
+- [x] `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
+      --test settle` — 52 tests, the token ones executing against the committed
+      SPL fixtures; `cargo fmt --all --check` and
+      `cargo clippy -p payvand --all-targets -- -D warnings` clean.
 
 Files likely touched:
 
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 3.1–3.3.
 
@@ -1743,8 +1745,9 @@ Verification:
 
 - [x] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
       `cargo test --manifest-path apps/contracts/programs/payvand/Cargo.toml
-      --test settle` — 43 pass, the token tests executing the rebuilt artifact,
-      and the five that build this instruction
+      --test settle` — 52 pass (43 at the Task 3.5 build; the zero-fee,
+      events and Token-2022 work added nine more), the token tests executing
+      the rebuilt artifact, and the five that build this instruction
       (`the_float_carries_three_payments_to_fresh_sellers`,
       `a_top_up_lets_the_float_carry_more_fresh_sellers`,
       `the_float_top_up_rule_matches_the_shared_vectors`,
@@ -1754,7 +1757,8 @@ Verification:
       `token_invoice_rent()` is inverted: the seller's lamports stay at zero.
 - [x] `cargo fmt --all --check` and
       `cargo clippy -p payvand --all-targets -- -D warnings`.
-- [x] `vitest run` (123 tests), `nuxt typecheck`, `eslint .` in `apps/web`.
+- [x] `vitest run` (134 tests as of 2026-11-18; 123 at the Task 3.5 build),
+      `nuxt typecheck`, `eslint .` in `apps/web`.
 - [x] Devnet: `pnpm smoke:guards` (with the new accounts) and one real silent
       token payment through a budget, with the treasury's ATA gaining `fee_t`
       and the seller's wallet holding no lamports. Both ran on 2026-11-18
@@ -2019,7 +2023,8 @@ Verification:
       `open_token_budget_emits_the_mint_and_the_limit`. They simulate the
       instruction (`process_transaction` returns no logs), base64-decode each
       `Program data:` line, match the type's 8-byte event discriminator and
-      borsh-decode the body. `cargo test … --test settle`: 51 passed.
+      borsh-decode the body. `cargo test --manifest-path
+      apps/contracts/programs/payvand/Cargo.toml --test settle`: 52 passed.
 - [x] `anchor idl build -o target/idl/payvand.json` regenerated the IDL with
       `events: [BudgetOpened, ConfigUpdated, PaymentSettled]` and their types;
       copied to `apps/web/app/assets/payvand.idl.json`. (`anchor build` is not
@@ -2048,7 +2053,7 @@ Files likely touched:
 - `apps/contracts/programs/payvand/src/instructions/*.rs`
 - `apps/contracts/programs/payvand/src/lib.rs`
 - `apps/web/app/assets/payvand.idl.json`
-- `apps/contracts/tests/payvand.ts`
+- `apps/contracts/programs/payvand/tests/settle.rs`
 
 Dependencies: Tasks 1.2, 1.3, and Phase 3.
 
@@ -2112,8 +2117,9 @@ Verification:
 - [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (clean
       apart from the third-party future-incompat note), `anchor idl build` with
       the IDL copied to `apps/web/app/assets/payvand.idl.json`, and in
-      `apps/web`: `vitest run` (124), `nuxt typecheck`, `eslint .` (only the
-      pre-existing `v-html` warning).
+      `apps/web`: `vitest run` (134 as of 2026-11-18; 124 at the Task 4.4
+      build), `nuxt typecheck`, `eslint .` (only the pre-existing `v-html`
+      warning).
 
 Files likely touched:
 
@@ -2177,19 +2183,22 @@ Verification:
 - [ ] `task verify`
 - [ ] `cd apps/contracts && anchor test`
 
-**Devnet verification of the deployed build (2026-11-18).** The revision-12
+**Devnet verification of the revision-12 build (2026-11-18).** The revision-12
 program was upgraded in place (same ID, authority and ProgramData; slot
-523581463, upgrade `2G3oygMr…`) and the deployed artifact matches a fresh
-`cargo build-sbf` of the checked-in source byte for byte (522,496 bytes,
+523581463, upgrade `2G3oygMr…`) and the deployed artifact matched a fresh
+`cargo build-sbf` of that revision's source byte for byte (522,496 bytes,
 zero-padded to the 525,312-byte ProgramData). Two checks ran against it:
 `pnpm smoke:guards` (`Custom(6008)` for the wrong mint, `Custom(2009)` twice for
 the decoy vault, session float 12,000,000 and budget float 0 as the new constants
 say), and one real silent token payment through a budget where the seller
 received 98,000 of a 100,000 invoice and no lamports, the treasury's account
 gained the 2,000 fee, and `spent` rose by the price. Details and signatures are
-under Task 3.5's "Devnet verification". What this does **not** cover: `task
-verify`, `anchor test`, the API tests and the localnet pass over all four settle
-paths, which stay unticked above.
+under Task 3.5's "Devnet verification". The later Token-2022 build (revision 14)
+was upgraded in place at slot 523617551 — 529,320 bytes in the existing
+545,792-byte `ProgramData`, no `extend` — and both smoke scripts passed against
+that build too. What this does **not** cover: `task verify`, `anchor test`, the
+API tests and the localnet pass over all four settle paths, which stay unticked
+above.
 
 Files likely touched:
 
