@@ -767,6 +767,7 @@ mod tests {
             settled_by: settled_by.map(str::to_string),
             created_at_unix: created,
             settled_at_unix: settled,
+            receipt_rent_lamports: if settled > 0 { 2_179_320 } else { 0 },
         }
     }
 

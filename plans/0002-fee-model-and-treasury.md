@@ -491,6 +491,28 @@ plan for (2026-11-19):
   follow-up box is annotated but still unticked: archiving this plan is its own
   step.
 
+Revision 19 covers Task 5.1's two untested criteria (2026-11-19):
+
+- **The API reports rent, and deliberately no fee.** `PaymentRecord` gains
+  `receipt_rent_lamports` from the receipt account's own lamports — read, never
+  assumed, because the rent rate moves between clusters — threaded through
+  `fetch_payment`, `fetch_many` and the program scan. Two tests pin it:
+  `a_settled_record_reports_the_rent_its_receipt_holds` (2,179,320 for a
+  301-byte receipt at devnet's rate) and `a_settled_record_claims_no_split`,
+  which asserts the serialised record carries no `fee_lamports` or
+  `seller_proceeds` — the absence is revision 15's decision, not an oversight,
+  and a test keeps it from reappearing without the event read that would make
+  it provable.
+- **The quote is held to the program's arithmetic.** `useInvoiceCosts.test.ts`
+  now exercises `estimateInvoiceCosts` against `fee_for` and the
+  `InvoiceTooSmall` guard at a rent the stub can state (1,000 lamports a byte),
+  and `invoiceCost.test.ts` gains a break-even table that searches for the
+  smallest amount whose fee covers the receipt rent and checks both sides of it.
+  The per-invoice subsidy this plan documents shows up as the gap between the
+  floor (2,542,531 lamports on mainnet) and break-even (149,292,000).
+- **Still open in Task 5.1:** `task verify`, `anchor test` (not run in this
+  repo), and the localnet pass over all four settlement paths.
+
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
@@ -2336,9 +2358,30 @@ Acceptance criteria:
 - [x] The IDL is regenerated and copied to
       `apps/web/app/assets/payvand.idl.json` (regenerated for the revision-14
       build and copied, 2026-11-18).
-- [ ] API tests cover the receipt rent and fee fields.
-- [ ] `estimateInvoiceCosts` is tested against the program's math, including the
-      minimum amount and the break-even point.
+- [x] API tests cover the receipt rent and fee fields (2026-11-19). The
+      settled record now reports `receipt_rent_lamports`, read from the receipt
+      account's lamports rather than assumed: a rent-exempt 301-byte receipt
+      holds exactly its rent, which is 2,179,320 at devnet's 5,080 per byte.
+      `a_settled_record_reports_the_rent_its_receipt_holds` pins it, and
+      `a_settled_record_claims_no_split` pins the other half of the criterion —
+      there is **no fee field**, by revision 15's decision: the API reads no
+      events and today's `Config` is not the policy a past settlement used, so
+      the record reports the price and the rent and nothing it would have to
+      guess. 70 API tests pass, and the field is threaded through the live reads
+      and the fixtures in `payments.rs`, `admin.rs` and `wallet.rs`.
+- [x] `estimateInvoiceCosts` is tested against the program's math, including the
+      minimum amount and the break-even point (2026-11-19).
+      `useInvoiceCosts.test.ts` quotes a 1.5 USDC and a 0.01 SOL invoice from a
+      stub cluster and holds the answer to `fee_for` and the `InvoiceTooSmall`
+      guard: 30,000 of fee on 1,500,000 base units, a 234,694-lamport floor at a
+      230,000-lamport invoice rent (refused at 234,693), and the token floor at
+      1 because a token settle refunds its rents. `invoiceCost.test.ts` adds the
+      break-even table: 149,292,000 lamports at 2% against mainnet's 2,985,840
+      receipt rent, 298,584,000 at 1%, 108,966,000 on devnet's 2,179,320, and
+      99,292,000 with a 0.001 SOL fixed fee — each asserted from both sides (the
+      fee covers the rent at that amount and falls short one lamport below) and
+      against the `fee_bps × amount ≥ receipt rent` rule this plan records.
+      42 tests across the two files.
 - [ ] Localnet smoke test of all four settlement paths.
 
 Verification:

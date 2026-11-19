@@ -236,3 +236,70 @@ describe('invoiceCosts', () => {
     expect(costs.sellerReceives).toBe(97_000_000)
   })
 })
+
+describe('break-even against the receipt rent', () => {
+  /**
+   * The smallest amount whose fee covers the receipt rent the treasury funds —
+   * `0002`'s break-even rule, `fee_bps × amount ≥ receipt rent`. Searched with
+   * `feeOn`, so the answer is the program's arithmetic at the lamport, not a
+   * closed form that could drift from the floor and the cap.
+   */
+  const breakEven = (policy: FeePolicy, receiptRent: number): number => {
+    if (policy.feeBps <= 0 && policy.fixedFeeLamports <= 0) return Number.POSITIVE_INFINITY
+    let low = 1
+    // A basis point of the price is always enough to cover any rent this small.
+    let high = receiptRent * 10_000
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2)
+      if (feeOn(policy, mid) >= receiptRent) high = mid
+      else low = mid + 1
+    }
+    return low
+  }
+
+  it.each([
+    // Receipt rents from `0002`'s table: 301 bytes at each cluster's rate.
+    ['2% on mainnet', sellerPays(200), RECEIPT_RENT, 149_292_000],
+    ['2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, DEVNET), 108_966_000],
+    ['1% on mainnet', sellerPays(100), RECEIPT_RENT, 298_584_000],
+    // The fixed fee covers the first 1,000,000 lamports of rent by itself.
+    ['2% plus a 0.001 SOL fixed fee', sellerPays(200, 1_000_000), RECEIPT_RENT, 99_292_000]
+  ])('breaks even at %s', (_name, policy, rent, expected) => {
+    const amount = breakEven(policy, rent)
+    expect(amount).toBe(expected)
+
+    // The two sides of the rule, as the program applies it at the lamport.
+    expect(feeOn(policy, amount)).toBeGreaterThanOrEqual(rent)
+    expect(feeOn(policy, amount - 1)).toBeLessThan(rent)
+    // And the durable statement `0002` records, in whole lamports: the rate
+    // plus the fixed fee on one side, the receipt rent on the other. The fixed
+    // fee is counted once, which is why it is scaled rather than multiplied by
+    // the amount.
+    expect(policy.feeBps * amount + policy.fixedFeeLamports * 10_000)
+      .toBeGreaterThanOrEqual(rent * 10_000)
+    expect(policy.feeBps * (amount - 1) + policy.fixedFeeLamports * 10_000)
+      .toBeLessThan(rent * 10_000)
+  })
+
+  it('never breaks even on a free policy, so the treasury pays every receipt', () => {
+    expect(breakEven(sellerPays(0), RECEIPT_RENT)).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('is the amount a quote calls zero-profit, not the minimum payable', () => {
+    const policy = sellerPays(200)
+    const amount = breakEven(policy, RECEIPT_RENT)
+    const costs = invoiceCosts({
+      policy,
+      currency: 'sol',
+      amount,
+      invoiceRent: SOL_RENT,
+      receiptRent: RECEIPT_RENT
+    })
+
+    expect(costs.fee).toBe(RECEIPT_RENT)
+    expect(costs.minPayable).toBe(2_542_531)
+    // Payable long before it is profitable: that gap is `0002`'s documented
+    // per-invoice subsidy, and the floor is what the seller feels first.
+    expect(costs.minPayable).toBeLessThan(amount)
+  })
+})

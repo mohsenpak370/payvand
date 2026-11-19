@@ -12,6 +12,7 @@ import {
   deriveConfigPda,
   deriveTreasuryTokenAccount
 } from './usePaymentProgram'
+import { feeOn } from '../utils/invoiceCost'
 
 /**
  * A token quote asks the cluster two questions besides the fee policy: does the
@@ -149,5 +150,59 @@ describe('estimateInvoiceCosts account reads', () => {
     // The policy, the seller's account and the treasury's, all re-read — the
     // cache is a minute's answer, not a permanent one.
     expect(asked).toEqual([configPda, sellerAta, treasuryAta, configPda, sellerAta, treasuryAta])
+  })
+})
+
+/**
+ * The quote a screen renders is the program's arithmetic, not a nearby copy of
+ * it: `fee_for` (`helpers.rs`) floors `amount * fee_bps / 10_000` and caps it at
+ * `amount - 1`, and `settle_payment` refuses while `amount <= invoice_rent +
+ * fee` (`InvoiceTooSmall`). The cluster below answers every rent read with
+ * 1,000 lamports per byte, so the expected numbers are the program's rule at a
+ * rent a test can state.
+ */
+describe('estimateInvoiceCosts against the program math', () => {
+  const policy = { feeBps: 200, fixedFeeLamports: 0, feeMode: 'seller' as const }
+
+  it('quotes the split the program would settle, in the mint base units', async () => {
+    const token = await quote.estimateInvoiceCosts(1_500_000, 'usdc', { mint, seller })
+
+    expect(token.fee).toBe(30_000)
+    expect(token.sellerReceives).toBe(1_470_000)
+    // Seller-pays: the buyer is charged the price and nothing else.
+    expect(token.payerPays).toBe(1_500_000)
+    // 262 and 301 bytes at the stub's 1,000 lamports per byte.
+    expect(token.invoiceRent).toBe(262_000)
+    expect(token.receiptRent).toBe(301_000)
+    // A token settle refunds the rents and asks only `amount > fee`.
+    expect(token.minPayable).toBe(1)
+  })
+
+  it('quotes the SOL floor from `amount > invoice rent + fee`', async () => {
+    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol')
+
+    expect(sol.invoiceRent).toBe(230_000)
+    expect(sol.receiptRent).toBe(301_000)
+    expect(sol.fee).toBe(200_000)
+    // The smallest amount that clears the program's `InvoiceTooSmall` guard at
+    // a 230,000 lamport invoice rent: 234,694, one more than the sum at 693.
+    expect(sol.minPayable).toBe(234_694)
+
+    const settles = (amount: number) => amount > sol.invoiceRent + feeOn(policy, amount)
+    expect(settles(sol.minPayable)).toBe(true)
+    expect(settles(sol.minPayable - 1)).toBe(false)
+    expect(settles(10_000_000)).toBe(true)
+    expect(sol.sellerReceives).toBe(9_800_000)
+    expect(sol.payerPays).toBe(10_000_000)
+  })
+
+  it('quotes a price the program will actually settle', async () => {
+    // At the floor the program's own numbers are tight: 4,693 of fee leaves
+    // the seller 230,001 against a 230,000 invoice rent.
+    const sol = await quote.estimateInvoiceCosts(234_694, 'sol')
+
+    expect(sol.minPayable).toBeLessThanOrEqual(sol.amount)
+    expect(sol.fee).toBe(4_693)
+    expect(sol.sellerReceives).toBe(230_001)
   })
 })
