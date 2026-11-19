@@ -14,8 +14,8 @@
 //   node scripts/devnet-token-guard-smoke.mjs --cluster devnet --keypair ~/.config/solana/id.json
 //
 // Needs the `spl-token` CLI for mints and token accounts, and a funded keypair
-// (devnet only, by default) — it pays for everything it creates and leaves no
-// budget open.
+// (devnet only, by default) — it pays for everything it creates, sweeps the
+// session key's float back to the wallet, and leaves no budget open.
 //
 // The program's accounts come from the checked-in IDL, so an instruction change
 // that the IDL follows cannot leave this script sending an old account list.
@@ -50,6 +50,8 @@ const NOT_ASSOCIATED_TOKEN_ACCOUNT = 2009
 /** 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1, and a token account's size. */
 const TOKEN_BUDGET_SPACE = 129
 const TOKEN_ACCOUNT_SPACE = 165
+/** One signature's base fee: what a session key keeps to sweep its own float. */
+const SESSION_SIGNATURE_FEE = 5_000
 
 const encoder = new TextEncoder()
 /** Addresses are base58 strings; as a seed they are their bytes, not their text. */
@@ -462,6 +464,21 @@ async function main() {
     const after = Number((await rpc.getBalance(admin.address).send()).value)
     console.log(`intact    vault ${vaultBalance}  decoy ${decoyBalance}  seller ${sellerBalance}  budget open`)
     console.log(`setup cost this wallet paid: ${before - after} lamports`)
+
+    // The session key's float goes home before the budget closes. Closing
+    // returns the budget's own lamports to the buyer, but the float parked on
+    // the session key is only reachable with that key's signature — and this is
+    // the last moment this script holds it. The key pays its own signature, as
+    // the app's `sweepSessionFloat` does, so it is emptied rather than left
+    // holding 30,000,000 lamports the run then discards.
+    const sessionFloat = Number((await rpc.getBalance(session.address, { commitment: 'confirmed' }).send()).value)
+    const swept = sessionFloat - SESSION_SIGNATURE_FEE
+    if (swept > 0) {
+      const sweep = await must('sweeping the session float', session, [
+        transfer(session.address, admin.address, swept)
+      ])
+      console.log(`signature sweep_session_float    ${sweep}  (${swept} lamports home)`)
+    }
 
     // Closed on the way out, so the run leaves no budget behind.
     const close = await must('closing the budget', admin, [

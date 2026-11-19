@@ -11,7 +11,8 @@
 // Needs the `spl-token` CLI for the mint and the buyer's account, and a funded
 // keypair (devnet only, by default). The policy is read from the on-chain
 // `Config`, so the fee it checks is the fee the deployed program charges. The
-// budget is closed on the way out and nothing it created is left open.
+// session key's float is swept home and the budget is closed on the way out, so
+// nothing it created is left open and no session key keeps its float.
 import { execFileSync } from 'node:child_process'
 import { readFile, mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -35,6 +36,8 @@ import {
 const TOKEN_PROGRAM_ID = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 const ASSOCIATED_TOKEN_PROGRAM_ID = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const SYSTEM_PROGRAM_ID = address('11111111111111111111111111111111')
+/** One signature's base fee: what a session key keeps to sweep its own float. */
+const SESSION_SIGNATURE_FEE = 5_000
 
 const encoder = new TextEncoder()
 const bytes = getAddressEncoder()
@@ -76,6 +79,22 @@ function concat(...parts) {
     at += part.length
   }
   return out
+}
+
+/** `system_program::transfer`, built by hand: the system program is not in the IDL. */
+function transfer(from, to, lamports) {
+  const data = new Uint8Array(12)
+  const view = new DataView(data.buffer)
+  view.setUint32(0, 2, true)
+  view.setBigUint64(4, BigInt(lamports), true)
+  return {
+    programAddress: SYSTEM_PROGRAM_ID,
+    accounts: [
+      { address: from, role: 3 },
+      { address: to, role: 1 }
+    ],
+    data
+  }
 }
 
 function describe(rejection) {
@@ -327,6 +346,19 @@ async function main() {
       fail(`the seller should hold no lamports, holds ${sellerLamportsAfter}`)
     }
     if (spent !== amount) fail(`the budget should have spent ${amount}, spent ${spent}`)
+
+    // The session key's float goes home before the budget closes: closing
+    // returns the budget's own lamports to the buyer, but the float on the
+    // session key needs that key's signature, and this is the last moment the
+    // script holds it. The key pays its own signature, as the app's
+    // `sweepSessionFloat` does, so nothing is left on a key about to be
+    // discarded.
+    const sessionFloat = await lamports(session.address)
+    const swept = sessionFloat - SESSION_SIGNATURE_FEE
+    if (swept > 0) {
+      const sweep = await send(session, [transfer(session.address, admin.address, swept)])
+      console.log(`signature sweep_session_float ${sweep}  (${swept} lamports home)`)
+    }
 
     // Closed on the way out, so the run leaves no budget behind.
     const closed = await send(admin, [
