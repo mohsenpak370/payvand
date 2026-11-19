@@ -109,10 +109,13 @@ line says where it stands, so a later pass does not have to re-derive it.
 
 ### Rollout record
 
-- **Task 5.2** — the devnet rollout is recorded in the revision notes (deployed,
-  `Config` set, budgets opened and paid from). Three checkboxes stay open because
-  nothing recorded them: the close-all-budgets sweep on devnet, `solana program
-  show <PROGRAM_ID>`, and `solana account <CONFIG_PDA>` / `<TREASURY_PDA>`.
+- **Task 5.2 — closed (2026-11-19).** The rollout itself is recorded in the
+  revision notes (deployed, `Config` set, budgets opened and paid from); the
+  three checkboxes that stayed open for want of a recorded read were filled the
+  same way: `solana program show`, `solana account` on `Config` and the treasury,
+  and the close-all-budgets sweep. Revision 17 records what each answered. One
+  SOL budget (`fQadYNyE…`) is still open — see that box — and the browser
+  click-through of `/budget` is still unexercised.
 
 ### Deferred by decision
 
@@ -436,6 +439,32 @@ Revision 16 closes Task 4.4's documentation half (2026-11-18):
   `mint.owner == anchor_spl::token::ID && mint.data_len() == SPL_MINT_LEN`
   constraint in `instructions/token.rs`, `Token2022Unsupported` last in
   `PaymentError`, and `CURRENCY_MINTS` in `apps/web` — with no code changed.
+
+Revision 17 records Task 5.2's closing evidence (2026-11-19):
+
+- **The two read-backs, run rather than described.** `solana program show
+  4grKZpw6…` answers Program Id `4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J`,
+  owner `BPFLoaderUpgradeab1e…`, ProgramData
+  `8GQRqbdm86rwhmqk45Fkwt2Y4pajZCc9dcvNg6LuPMq1`, authority
+  `Evmo7znLU9hSZr9t2VrGVLaqV7bifxG7RKPSGvM3Tvqw`, last deployed in slot
+  523617551, 545,792 bytes, 2.7735022 SOL. `solana account` finds `Config`
+  (`8FdnWvwz…`) at 62 bytes and 965,200 lamports owned by the program, and the
+  treasury (`9tyu74Vy…`) at 19,360,440 lamports — above the top-up threshold the
+  rollout record names.
+- **The vault drain, exercised.** `pnpm smoke:guards` opened token budget
+  `84f9QsETyZ9eiVuFyHvvh92pFPM6tSGUjRB14w1sdzdv` (`AaJ2EYNg…`, session float
+  12,000,000, budget float 0) with its whole 500,000-unit limit in the vault, and
+  `close_token_budget` (`3BSApWcb…`) drained it back to the buyer; the account is
+  gone afterwards. Five token budgets that earlier partial runs left open
+  (`3USURxyr…`, `3qimBEYF…`, `9ZtC6TER…`, `D68hNw9Z…`, `G3qxZkC2…`, all limit
+  500,000, spent 0) were closed the same way — `3xumxyXx…`, `5iA1pNEJ…`,
+  `577jkyv2…`, `2KALuBBR…`, `VkPsVAYk…` — each draining 500,000 units to the
+  buyer, and a `getProgramAccounts` scan for 129-byte budgets on that buyer now
+  returns none.
+- **One SOL budget stays open, on purpose.** `fQadYNyE…` (Checkpoint 2's refill
+  record) holds 0.081143 SOL. Its float sits on an app-generated session key, so
+  closing it without that key would leave the float uncollected — the failure
+  mode the sweep exists for. It is left for a run that has the key.
 
 ## Linked Docs
 
@@ -2509,16 +2538,27 @@ Smoke tests:
 - [x] `close_budget` returns the pot and the account rent to the buyer and the
       account is gone (`42FiDA7V…`; the stand-in budget `5Jirbyfw…` likewise
       closed a 38,963,680 lamport account back to the wallet).
-- [ ] Close all budgets: the float is swept and the vault drained. The SOL half
+- [x] Close all budgets: the float is swept and the vault drained. The SOL half
       is checked on devnet (2026-11-15, Task 4.1): a 0.02 SOL budget put
       30,000,000 lamports on session key `WxGBYkcQ…`, `close_budget` returned the
       pot and left that float untouched — which is why the sweep exists — and
       the client's sweep then moved 29,995,000 lamports to the buyer and left
       the key at **0** (`4WVsHfKK…`), with nothing left for a second sweep.
-      Still open: `close_token_budget`'s vault drain needs a token budget and a
-      token settle on devnet (Phase 3), and the close→sweep path was run as the
-      instructions themselves, not clicked through `/budget` with a wallet — so
-      the browser flow that calls them is still unexercised.
+      The vault drain ran on devnet on 2026-11-19: `pnpm smoke:guards` opened a
+      token budget (`84f9QsET…`, `AaJ2EYNg…`) whose vault held its whole
+      500,000-unit limit, and `close_token_budget` (`3BSApWcb…`) drained it back,
+      leaving no account at the budget's address. The five token budgets earlier
+      partial runs had left open (`3USURxyr…`, `3qimBEYF…`, `9ZtC6TER…`,
+      `D68hNw9Z…`, `G3qxZkC2…`, each limit 500,000 and spent 0) were closed the
+      same way and drained 500,000 units each; a `getProgramAccounts` scan for
+      129-byte budgets on that buyer now returns none. Two things this does not
+      claim: the close→sweep path was run as the instructions themselves and is
+      still not clicked through `/budget` with a wallet, so the browser flow that
+      calls them is unexercised; and one SOL demo budget, `fQadYNyE…` (the
+      refill record under Checkpoint 2), is still open at 0.081143 SOL — its
+      float lives on an app-generated session key, so closing it here would
+      leave that float uncollected, which is exactly what the sweep exists to
+      prevent.
 - [x] Shop page estimates match the settled balances: the 0.012 SOL cart showed
       "You receive 0.01176 SOL after the 2% fee" and `0.00181864 SOL` rent.
 - [x] Budget page estimates match the settled balances: `/budget` rendered
@@ -2555,9 +2595,19 @@ Acceptance criteria:
 
 Verification:
 
-- [ ] `solana program show <PROGRAM_ID>`
-- [ ] `solana account <CONFIG_PDA>` and `<TREASURY_PDA>`
-- [ ] The checklist above.
+- [x] `solana program show <PROGRAM_ID>` (2026-11-19: Program Id
+      `4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J`, owner
+      `BPFLoaderUpgradeab1e…`, ProgramData
+      `8GQRqbdm86rwhmqk45Fkwt2Y4pajZCc9dcvNg6LuPMq1`, authority
+      `Evmo7znLU9hSZr9t2VrGVLaqV7bifxG7RKPSGvM3Tvqw`, last deployed in slot
+      523617551, 545,792 bytes, 2.7735022 SOL).
+- [x] `solana account <CONFIG_PDA>` and `<TREASURY_PDA>` (2026-11-19: `Config`
+      `8FdnWvwzEKaWHgB3nY7AZwmiKtwKDkHabDKg8x617Msy` — 62 bytes, 965,200
+      lamports, owned by the program; treasury
+      `9tyu74VybRdMEZ2zXszcsqS2mhsdr1iExaxoVkXVvQc4` — 19,360,440 lamports,
+      owned by the system program, which is above the ~0.01 SOL top-up
+      threshold).
+- [x] The checklist above.
 
 Files likely touched:
 
