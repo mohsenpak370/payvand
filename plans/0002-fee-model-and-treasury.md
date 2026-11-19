@@ -2373,14 +2373,15 @@ Acceptance criteria:
 - [x] The IDL is regenerated and copied to
       `apps/web/app/assets/payvand.idl.json` (regenerated for the revision-14
       build and copied, 2026-11-18).
-- [x] API tests cover the receipt rent and fee fields (2026-11-19). The
-      settled record now reports `receipt_rent_lamports`, read from the receipt
-      account's lamports rather than assumed: a rent-exempt 301-byte receipt
-      holds exactly its rent, which is 2,179,320 at devnet's 5,080 per byte.
-      `a_settled_record_reports_the_rent_its_receipt_holds` pins it, and
-      `a_settled_record_claims_no_split` pins the other half of the criterion —
-      there is **no fee field**, by revision 15's decision: the API reads no
-      events and today's `Config` is not the policy a past settlement used, so
+- [x] API tests cover the receipt rent the API reports, and the settled split
+      it deliberately does not claim (2026-11-19). `PaymentRecord` reports
+      `receipt_rent_lamports`, read from the receipt account's lamports rather
+      than assumed — a rent-exempt 301-byte receipt holds exactly its rent,
+      2,179,320 at devnet's 5,080 per byte — and
+      `a_settled_record_reports_the_rent_its_receipt_holds` pins it.
+      `a_settled_record_claims_no_split` pins the other half: there is no fee
+      field, and that is revision 15's decision, not a gap — the API reads no
+      events, and today's `Config` is not the policy a past settlement used, so
       the record reports the price and the rent and nothing it would have to
       guess. 70 API tests pass, and the field is threaded through the live reads
       and the fixtures in `payments.rs`, `admin.rs` and `wallet.rs`.
@@ -2417,9 +2418,9 @@ gained the 2,000 fee, and `spent` rose by the price. Details and signatures are
 under Task 3.5's "Devnet verification". The later Token-2022 build (revision 14)
 was upgraded in place at slot 523617551 — 529,320 bytes in the existing
 545,792-byte `ProgramData`, no `extend` — and both smoke scripts passed against
-that build too. What this does **not** cover: `task verify`, `anchor test`, the
-API tests and the localnet pass over all four settle paths, which stay unticked
-above.
+that build too. What this does **not** cover: `task verify`, `anchor test` and
+the localnet pass over all four settle paths, which stay unticked above. (The
+API and quote tests this note also used to list are written: revision 19.)
 
 Files likely touched:
 
