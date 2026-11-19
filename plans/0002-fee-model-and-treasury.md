@@ -495,16 +495,18 @@ plan for (2026-11-19):
 
 Revision 19 covers Task 5.1's two untested criteria (2026-11-19):
 
-- **The API reports rent, and deliberately no fee.** `PaymentRecord` gains
-  `receipt_rent_lamports` from the receipt account's own lamports — read, never
-  assumed, because the rent rate moves between clusters — threaded through
-  `fetch_payment`, `fetch_many` and the program scan. Two tests pin it:
-  `a_settled_record_reports_the_rent_its_receipt_holds` (2,179,320 for a
-  301-byte receipt at devnet's rate) and `a_settled_record_claims_no_split`,
-  which asserts the serialised record carries no `fee_lamports` or
-  `seller_proceeds` — the absence is revision 15's decision, not an oversight,
-  and a test keeps it from reappearing without the event read that would make
-  it provable.
+- **The API reports the record it promises, and no split.**
+  `a_settled_record_claims_no_split` serialises a settled record and fails if a
+  `fee`, `fee_lamports`, `seller_proceeds` or `receipt_rent_lamports` field
+  appears, while pinning what the payload does promise — the amount, the status
+  and `settled_by` — beside the decoder tests that already cover both currencies
+  and the receipt-wins-over-an-invoice rule. The absent split is revision 15's
+  decision, not an oversight: the API reads no events and today's `Config` is
+  not the policy a past settlement used. A rent field was tried and removed the
+  same day: nothing in `apps/api` or `apps/web` reads a receipt's rent, so it
+  would have been a payload field with no consumer, added only to satisfy a
+  checklist line. The test now forbids it coming back without one, and the API
+  suite is 69 tests: the one that pinned the field left with it.
 - **The quote is held to the program's arithmetic.** `useInvoiceCosts.test.ts`
   now exercises `estimateInvoiceCosts` against `fee_for` and the
   `InvoiceTooSmall` guard at a rent the stub can state (1,000 lamports a byte),
@@ -2373,18 +2375,18 @@ Acceptance criteria:
 - [x] The IDL is regenerated and copied to
       `apps/web/app/assets/payvand.idl.json` (regenerated for the revision-14
       build and copied, 2026-11-18).
-- [x] API tests cover the receipt rent the API reports, and the settled split
-      it deliberately does not claim (2026-11-19). `PaymentRecord` reports
-      `receipt_rent_lamports`, read from the receipt account's lamports rather
-      than assumed — a rent-exempt 301-byte receipt holds exactly its rent,
-      2,179,320 at devnet's 5,080 per byte — and
-      `a_settled_record_reports_the_rent_its_receipt_holds` pins it.
-      `a_settled_record_claims_no_split` pins the other half: there is no fee
-      field, and that is revision 15's decision, not a gap — the API reads no
-      events, and today's `Config` is not the policy a past settlement used, so
-      the record reports the price and the rent and nothing it would have to
-      guess. 70 API tests pass, and the field is threaded through the live reads
-      and the fixtures in `payments.rs`, `admin.rs` and `wallet.rs`.
+- [x] API tests cover the settled record the API promises — its price, status
+      and signer, and no split (2026-11-19). `a_settled_record_claims_no_split`
+      serialises a settled record and fails if a `fee`, `fee_lamports`,
+      `seller_proceeds` or `receipt_rent_lamports` field appears, while pinning
+      the amount, the status and `settled_by`; the decoder tests beside it cover
+      both currencies and the receipt-wins-over-a-leftover-invoice rule. Neither
+      a fee nor a rent is reported, and both absences are deliberate: a settled
+      split is revision 15's decision (the API reads no events, and today's
+      `Config` is not the policy a past settlement used), and a receipt's rent
+      has no reader in `apps/api` or `apps/web`, so a field for it would be
+      payload with no consumer. 69 API tests pass (the rent test went with the
+      field).
 - [x] `estimateInvoiceCosts` is tested against the program's math, including the
       minimum amount and the break-even point (2026-11-19).
       `useInvoiceCosts.test.ts` quotes a 1.5 USDC and a 0.01 SOL invoice from a

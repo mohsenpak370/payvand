@@ -230,17 +230,6 @@ pub struct PaymentRecord {
     pub settled_by: Option<String>,
     pub created_at_unix: i64,
     pub settled_at_unix: i64,
-    /// Lamports the receipt account holds: the rent the treasury funded for the
-    /// permanent record. Read from the account rather than assumed, because the
-    /// rent rate moves and a devnet receipt is not a mainnet one. Zero whenever
-    /// no receipt was read — a pending invoice, a created record, or an invoice
-    /// account that still exists.
-    ///
-    /// There is deliberately no fee field beside it: `0002` revision 15 records
-    /// why a settled split is not re-derived here (no event read, and `Config`
-    /// at read time is not the policy the settlement used).
-    #[serde(default)]
-    pub receipt_rent_lamports: u64,
 }
 
 impl PaymentRecord {
@@ -423,7 +412,6 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         settled_by: None,
         created_at_unix: 0,
         settled_at_unix: 0,
-        receipt_rent_lamports: 0,
     })
 }
 
@@ -619,19 +607,13 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
         .first()
         .and_then(|account| account.as_ref())
         .map(|account| account.data.as_slice());
-    let receipt_account = accounts.get(1).and_then(|account| account.as_ref());
-    let receipt_data = receipt_account.map(|account| account.data.as_slice());
-    // A receipt is rent-exempt and nothing is ever added to it, so its lamports
-    // are the rent the treasury paid for the record.
-    let receipt_rent_lamports = receipt_account.map(|account| account.lamports).unwrap_or(0);
+    let receipt_data = accounts
+        .get(1)
+        .and_then(|account| account.as_ref())
+        .map(|account| account.data.as_slice());
 
     if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
-        return Ok(receipt_record(
-            receipt,
-            receipt_rent_lamports,
-            cluster,
-            endpoint,
-        ));
+        return Ok(receipt_record(receipt, cluster, endpoint));
     }
 
     match invoice_data.and_then(|data| record_for(pubkey, data, cluster.clone(), endpoint.clone()))
@@ -661,13 +643,11 @@ fn record_for_invoice(
     invoice: Pubkey,
     invoice_data: Option<&[u8]>,
     receipt_data: Option<&[u8]>,
-    // The receipt account's lamports, or 0 when there is no receipt.
-    receipt_rent_lamports: u64,
     cluster: String,
     endpoint: String,
 ) -> PaymentRecord {
     if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
-        return receipt_record(receipt, receipt_rent_lamports, cluster, endpoint);
+        return receipt_record(receipt, cluster, endpoint);
     }
     match invoice_data.and_then(|data| record_for(invoice, data, cluster.clone(), endpoint.clone()))
     {
@@ -717,7 +697,6 @@ fn pending_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentR
         settled_by: None,
         created_at_unix: 0,
         settled_at_unix: 0,
-        receipt_rent_lamports: 0,
     }
 }
 
@@ -758,8 +737,6 @@ fn record_from_chain(
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
         created_at_unix: payment.created_at,
         settled_at_unix: payment.settled_at,
-        // An invoice account, not a receipt: no permanent record to price.
-        receipt_rent_lamports: 0,
     }
 }
 
@@ -839,11 +816,6 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
                 *invoice,
                 invoice_data,
                 receipt_data,
-                accounts
-                    .get(index * 2 + 1)
-                    .and_then(|account| account.as_ref())
-                    .map(|account| account.lamports)
-                    .unwrap_or(0),
                 cluster.clone(),
                 endpoint.clone(),
             ));
@@ -905,13 +877,7 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     let mut payments = Vec::new();
     let mut budgets = Vec::new();
     for (pubkey, account) in accounts {
-        match classify_program_account(
-            pubkey,
-            &account.data,
-            account.lamports,
-            cluster.clone(),
-            endpoint.clone(),
-        ) {
+        match classify_program_account(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
             Some(ScannedAccount::Payment(record)) => payments.push(*record),
             Some(ScannedAccount::Budget(budget)) => budgets.push(budget),
             None => {}
@@ -943,8 +909,6 @@ enum ScannedAccount {
 fn classify_program_account(
     pubkey: Pubkey,
     data: &[u8],
-    // The account's lamports: a receipt's rent travels with its record.
-    lamports: u64,
     cluster: String,
     endpoint: String,
 ) -> Option<ScannedAccount> {
@@ -955,7 +919,7 @@ fn classify_program_account(
         // A settled invoice only exists as its receipt; `receipt.invoice` is
         // what the seller's screens and the admin feed address it by.
         return Some(ScannedAccount::Payment(Box::new(receipt_record(
-            receipt, lamports, cluster, endpoint,
+            receipt, cluster, endpoint,
         ))));
     }
     decode_budget(data).map(ScannedAccount::Budget)
@@ -1148,13 +1112,7 @@ fn decode_payment_receipt(data: &[u8]) -> Option<OnchainReceipt> {
 
 /// The record for a settled invoice, built from its receipt. The receipt
 /// outlives the invoice account, so this is what a watcher sees after payment.
-fn receipt_record(
-    receipt: OnchainReceipt,
-    // The account's lamports, which for a rent-exempt receipt is its rent.
-    receipt_rent_lamports: u64,
-    cluster: String,
-    endpoint: String,
-) -> PaymentRecord {
+fn receipt_record(receipt: OnchainReceipt, cluster: String, endpoint: String) -> PaymentRecord {
     let invoice = receipt.invoice.to_string();
     let (currency, mint, decimals, amount_lamports) = if receipt.mint == Pubkey::default() {
         (
@@ -1199,7 +1157,6 @@ fn receipt_record(
         settled_by: (receipt.payer != Pubkey::default()).then(|| receipt.payer.to_string()),
         created_at_unix: receipt.created_at,
         settled_at_unix: receipt.settled_at,
-        receipt_rent_lamports,
     }
 }
 
@@ -1242,8 +1199,6 @@ fn token_record_from_chain(
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
         created_at_unix: payment.created_at,
         settled_at_unix: payment.settled_at,
-        // An invoice account, not a receipt: no permanent record to price.
-        receipt_rent_lamports: 0,
     }
 }
 
@@ -1733,7 +1688,6 @@ mod tests {
         let classified = classify_program_account(
             Pubkey::from([8u8; 32]),
             &data,
-            965_200,
             "devnet".into(),
             "https://api.devnet.solana.com".into(),
         );
@@ -1751,7 +1705,6 @@ mod tests {
         let receipt = classify_program_account(
             receipt_pda(&Pubkey::from_str(PAYVAND_PROGRAM_ID).unwrap(), &invoice),
             &receipt_data(invoice, Pubkey::default(), 42, "tip"),
-            2_179_320,
             "devnet".into(),
             "https://example".into(),
         );
@@ -1767,7 +1720,6 @@ mod tests {
         let classified = classify_program_account(
             Pubkey::from([3u8; 32]),
             &budget,
-            1_143_000,
             "devnet".into(),
             "https://example".into(),
         );
@@ -1827,12 +1779,7 @@ mod tests {
         assert_eq!(receipt.memo, "tip");
         assert_eq!(receipt.settled_at, 200);
 
-        let record = receipt_record(
-            receipt,
-            2_179_320,
-            "devnet".into(),
-            "https://example".into(),
-        );
+        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
         assert_eq!(record.status, PaymentStatus::Settled);
         // The invoice address is the identity, not the receipt's own address.
         assert_eq!(record.id, invoice.to_string());
@@ -1851,12 +1798,7 @@ mod tests {
         let data = receipt_data(invoice, usdc, 5_000_000, "flat white");
 
         let receipt = decode_payment_receipt(&data).expect("decodes");
-        let record = receipt_record(
-            receipt,
-            2_179_320,
-            "devnet".into(),
-            "https://example".into(),
-        );
+        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
         assert_eq!(record.status, PaymentStatus::Settled);
         assert_eq!(record.amount_lamports, 0);
         assert_eq!(record.options[0].currency, "usdc");
@@ -1872,12 +1814,10 @@ mod tests {
             invoice,
             None,
             None,
-            0,
             "devnet".into(),
             "https://example".into(),
         );
         assert_eq!(record.status, PaymentStatus::Pending);
-        assert_eq!(record.receipt_rent_lamports, 0);
         assert_eq!(record.payment_pda, invoice.to_string());
         assert_eq!(record.amount_lamports, 0);
         assert!(record.settled_by.is_none());
@@ -1903,40 +1843,11 @@ mod tests {
             invoice,
             Some(&stale),
             Some(&receipt_data(invoice, Pubkey::default(), 42, "tip")),
-            2_179_320,
             "devnet".into(),
             "https://example".into(),
         );
         assert_eq!(record.status, PaymentStatus::Settled);
         assert_eq!(record.settled_at_unix, 200);
-        assert_eq!(record.receipt_rent_lamports, 2_179_320);
-    }
-
-    /// The rent is read from the account, not assumed: a receipt is rent-exempt
-    /// and nothing is ever added to it, so its lamports are exactly the rent the
-    /// treasury funded for the record. Devnet charges 5,080 per byte, so a
-    /// 301-byte receipt holds (301 + 128) × 5,080 = 2,179,320.
-    #[test]
-    fn a_settled_record_reports_the_rent_its_receipt_holds() {
-        const RECEIPT_RENT: u64 = (301 + 128) * 2_540 * 2;
-        assert_eq!(RECEIPT_RENT, 2_179_320, "devnet rent for 301 bytes");
-
-        let invoice = Pubkey::from([4u8; 32]);
-        let data = receipt_data(invoice, Pubkey::default(), 42, "tip");
-        let receipt = decode_payment_receipt(&data).expect("decodes");
-
-        let record = receipt_record(
-            receipt,
-            RECEIPT_RENT,
-            "devnet".into(),
-            "https://example".into(),
-        );
-
-        assert_eq!(record.receipt_rent_lamports, RECEIPT_RENT);
-        // The rent is the treasury's cost, never part of what the buyer paid:
-        // the record still reports the receipt's price and nothing else.
-        assert_eq!(record.amount_lamports, 42);
-        assert_eq!(record.options[0].amount, 42);
     }
 
     /// A settled record reports no split, and that is a contract, not an
@@ -1944,26 +1855,31 @@ mod tests {
     /// need the settle transaction's `PaymentSettled` event (the API reads no
     /// events) or today's `Config`, which is not the policy the settlement used.
     /// A field added without that read would be a number nobody can prove, so a
-    /// test forbids it appearing by accident.
+    /// test forbids it appearing by accident — and pins the fields the record
+    /// does promise.
     #[test]
     fn a_settled_record_claims_no_split() {
         let invoice = Pubkey::from([4u8; 32]);
         let data = receipt_data(invoice, Pubkey::default(), 100_000_000, "tip");
         let receipt = decode_payment_receipt(&data).expect("decodes");
-        let record = receipt_record(
-            receipt,
-            2_179_320,
-            "devnet".into(),
-            "https://example".into(),
-        );
+        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
 
         let json = serde_json::to_value(&record).expect("serializes");
-        assert!(json.get("fee_lamports").is_none());
-        assert!(json.get("seller_proceeds").is_none());
-        // What it does report: the price it was settled at and the rent its
-        // receipt holds.
+        for absent in [
+            "fee",
+            "fee_lamports",
+            "seller_proceeds",
+            "receipt_rent_lamports",
+        ] {
+            assert!(
+                json.get(absent).is_none(),
+                "a settled record must not report {absent}"
+            );
+        }
+        // What it does promise: the price it was settled at, and who signed.
         assert_eq!(json["amount_lamports"], 100_000_000);
-        assert_eq!(json["receipt_rent_lamports"], 2_179_320);
+        assert_eq!(json["status"], "settled");
+        assert_eq!(json["settled_by"], Pubkey::from([5u8; 32]).to_string());
     }
 
     #[test]
