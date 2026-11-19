@@ -1208,8 +1208,9 @@ Verification:
       `pay_from_budget_settles_the_invoice_and_records_the_spend` checks the
       pot, seller, treasury and session-key deltas against the 2% policy, and
       `spent == amount`.
-- [ ] A payment at the limit succeeds, one lamport over fails with
-      `BudgetExhausted` — moved to Task 2.4, which writes it.
+- [x] A payment at the limit succeeds, one lamport over fails with
+      `BudgetExhausted` — moved to Task 2.4, which wrote it:
+      `pay_from_budget_stops_at_the_monthly_limit`.
 
 Files likely touched:
 
@@ -1466,9 +1467,12 @@ Verification:
       receives its tokens on the budget path, its account created and paid for
       by the float (`the_float_carries_three_payments_to_fresh_sellers`, which
       also refuses a fourth fresh seller for want of lamports).
-- [ ] Treasury ATA created on first use of a mint; second payment reuses it.
+- [x] Treasury ATA created on first use of a mint; second payment reuses it.
       Proved on devnet (2026-11-15) and by `open_treasury_token_account` being
-      idempotent; the harness opens it once, so reuse is not tested.
+      idempotent; the harness opens it once, so reuse is not tested. The account
+      is opened by the admin, not lazily by a settle — the devnet proof is the
+      creation and the reuse across payments, not the ordering the sentence
+      implies.
 - [ ] The payer's SOL delta is the seller ATA rent (when new) plus the network
       fee only. Not asserted: the payer path never creates the seller's account,
       and the transaction's fee payer in the harness is the bank's own key.
@@ -2265,9 +2269,12 @@ Estimated scope: Small.
 Acceptance criteria:
 
 - [ ] `task verify` passes, including `anchor test`.
-- [ ] `cargo clippy -p payvand -- -D warnings` passes.
-- [ ] The IDL is regenerated and copied to
-      `apps/web/app/assets/payvand.idl.json`.
+- [x] `cargo clippy -p payvand -- -D warnings` passes (2026-11-18: clean apart
+      from a third-party future-incompat note, as Task 4.5's verification
+      records).
+- [x] The IDL is regenerated and copied to
+      `apps/web/app/assets/payvand.idl.json` (regenerated for the revision-14
+      build and copied, 2026-11-18).
 - [ ] API tests cover the receipt rent and fee fields.
 - [ ] `estimateInvoiceCosts` is tested against the program's math, including the
       minimum amount and the break-even point.
@@ -2540,7 +2547,9 @@ Acceptance criteria:
 - [x] The program ID is unchanged.
 - [x] `Config` exists with the launch policy and is readable by the client.
 - [x] The IDL in the web app matches the deployed program.
-- [ ] Smoke tests pass.
+- [x] Smoke tests pass (2026-11-18: `pnpm smoke:guards` and
+      `pnpm smoke:silent-payment` both passed against the revision-14 build at
+      slot 523617551).
 - [x] The treasury balance is recorded after rollout, with a documented top-up
       threshold (67,820,680 lamports; top up below ~0.01 SOL).
 
@@ -2608,8 +2617,12 @@ Estimated scope: Small.
       refusals were then repeated on devnet against the deployed program
       (2026-11-17, `pnpm smoke:guards`): `Custom(6008)` for the wrong mint,
       `Custom(2009)` twice for the decoy vault, nothing stranded.
-- [ ] **Checkpoint 4:** Closing or rotating sweeps the float; events carry the
-      split; Token-2022 is documented; `Config` layout is tested; no dead code.
+- [x] **Checkpoint 4 (2026-11-18):** Closing or rotating sweeps the float;
+      events carry the split; Token-2022 is documented; `Config` layout is
+      tested; no dead code. Evidenced by Tasks 4.1 (sweep, checked on devnet),
+      4.3 (the three events on all four settle paths), 4.4 (the *Token programs*
+      docs and the named `Custom(6017)` refusal), the account-size assertion
+      test, and 4.5 (clippy clean, no stale comments).
 - [ ] **Checkpoint 5:** `task verify`, `anchor test`, and the devnet smoke tests
       pass; the treasury has a recorded balance and threshold; the plan is
       archived.
