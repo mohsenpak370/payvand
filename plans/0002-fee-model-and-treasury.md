@@ -514,8 +514,8 @@ Revision 19 covers Task 5.1's two untested criteria (2026-11-19):
   smallest amount whose fee covers the receipt rent and checks both sides of it.
   The per-invoice subsidy this plan documents shows up as the gap between the
   floor (2,542,531 lamports on mainnet) and break-even (149,292,000).
-- **Still open in Task 5.1:** `task verify`, `anchor test` (not run in this
-  repo), and the localnet pass over all four settlement paths.
+- **Still open in Task 5.1:** `task verify` and `anchor test` (not run in this
+  repo). The localnet pass over all four settlement paths is revision 21.
 
 Revision 20 attempts Task 5.2's last caveat in the browser and records why it
 cannot be met (2026-11-19). `/budget` loads on devnet at
@@ -529,6 +529,21 @@ Closing the budget would strand 0.03 SOL, which is the failure the sweep exists
 to prevent, so `fQadYNyE…` stays open and the orphaned float is written down as
 the cost of script-run budget demos. The browser click-through is therefore
 still open — it has now been attempted, and the plan says what blocks it.
+
+Revision 21 runs Task 5.1's localnet pass and ticks it (2026-11-19). A
+`solana-test-validator` 3.1.10 validator with a temporary ledger, the
+revision-14 build (529,320 bytes) deployed to the same program ID, a 200-bps
+config and a treasury seeded 100,000,000 lamports: all four settlement paths
+settled, and every balance delta matched the fee model. Direct SOL and direct
+USDC paid the seller the price less the 2% fee while the treasury lost the
+receipt rent on SOL and gained the fee on USDC; both budget paths moved the pot
+by exactly the price and left the session key at its float less the network
+fee, with its rents reimbursed. The run also showed the treasury must be seeded
+before the first SOL settle — `initialize_config` leaves it at its own rent and
+`settle_payment` fails `TreasuryUnderfunded` until the rollout's funding step
+runs. The per-path signatures and deltas are under Task 5.1. Afterwards the
+validator was stopped and its ledger and driver deleted, so no local chain
+state is left on this machine; `task verify` and `anchor test` remain open.
 
 ## Linked Docs
 
@@ -550,7 +565,7 @@ still open — it has now been attempted, and the plan says what blocks it.
   and budgets.
 - `apps/contracts/programs/payvand/src/lib.rs` — entrypoints and documented
   guarantees.
-- `apps/api/src/payments.rs` — on-chain decoders, rent fields.
+- `apps/api/src/payments.rs` — on-chain decoders.
 - `apps/web/app/composables/useBudget.ts` — builders, rent reads, UI checks.
 - `apps/web/app/composables/usePaymentCheckout.ts` — direct settle builder.
 - `apps/web/app/composables/useSessionKey.ts` — session-key storage and
@@ -2400,7 +2415,38 @@ Acceptance criteria:
       fee covers the rent at that amount and falls short one lamport below) and
       against the `fee_bps × amount ≥ receipt rent` rule this plan records.
       42 tests across the two files.
-- [ ] Localnet smoke test of all four settlement paths.
+- [x] Localnet smoke test of all four settlement paths (2026-11-19). A
+      `solana-test-validator` 3.1.10 local validator, the revision-14 build from
+      `apps/contracts/target/deploy/payvand.so` (529,320 bytes) deployed to the
+      same program ID, a config at 200 bps with a 12,000,000-lamport session
+      float, and a treasury seeded with 100,000,000. Localnet's rent is 3,480
+      lamports a byte-year: a 230-byte payment holds 2,491,680, a 262-byte token
+      payment 2,714,400 and a 301-byte receipt 2,985,840. Each path was driven
+      through the checked-in IDL and its balance deltas checked:
+  - **`settle_payment`, 100,000,000 lamports:** the seller received 98,000,000
+    and the treasury fell 985,840 — the 2,000,000 fee less the receipt rent it
+    now owns. `3XT1b1iU…a55JXK`.
+  - **`pay_from_budget`, 100,000,000 lamports:** `open_budget` (`33gSPZru…`)`,
+    then the session key settled — the seller received 98,000,000, the pot fell
+    exactly 100,000,000, the session key ended at 11,995,000 (its 12,000,000
+    float less the 5,000 network fee it paid; its rents were reimbursed), and the
+    treasury fell 985,840 as above. `3yaTzxFq…`.
+  - **`settle_token_payment`, 50.000000 USDC:** the seller's account gained
+    49,000,000, the treasury's account gained the 1,000,000 fee, and the payer's
+    account fell 50,000,000. `2S3pAZwi…`.
+  - **`pay_from_token_budget`, 50.000000 USDC:** `open_token_budget`
+    (`4KW9coma…`), then the session key settled — the seller gained 49,000,000,
+    the vault fell 50,000,000, the treasury gained 1,000,000, and the session key
+    ended at 11,995,000 for the same reason. `4QCeufWH…`.
+
+      Afterwards the program held exactly four 301-byte receipts and one budget
+      of each kind (97 and 129 bytes). One thing the run taught that the plan
+      did not say: `initialize_config` leaves the treasury at its own rent, so
+      the first `settle_payment` fails `TreasuryUnderfunded` (6014) until it is
+      seeded — the funding step the rollout describes, now observed rather than
+      assumed. The driver was a temporary script against the IDL, not the
+      browser app; the validator, its ledger and the script were removed after
+      the run.
 
 Verification:
 
@@ -2420,9 +2466,9 @@ gained the 2,000 fee, and `spent` rose by the price. Details and signatures are
 under Task 3.5's "Devnet verification". The later Token-2022 build (revision 14)
 was upgraded in place at slot 523617551 — 529,320 bytes in the existing
 545,792-byte `ProgramData`, no `extend` — and both smoke scripts passed against
-that build too. What this does **not** cover: `task verify`, `anchor test` and
-the localnet pass over all four settle paths, which stay unticked above. (The
-API and quote tests this note also used to list are written: revision 19.)
+that build too. What this does **not** cover: `task verify` and `anchor test`,
+which stay unticked above. The localnet pass over all four settle paths is
+revision 21, and the API and quote tests this note once listed are revision 19.
 
 Files likely touched:
 
