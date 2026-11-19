@@ -126,6 +126,10 @@ line says where it stands, so a later pass does not have to re-derive it.
 - Token-2022 migration (`token_interface`) — written out in
   [0003-token-interface-migration.md](0003-token-interface-migration.md) — and
   merging the two float constants onto `Config::session_fee_float` (revision 8).
+- Payer-side gasless/relayer support —
+  [0004-relayer-sponsored-fees.md](0004-relayer-sponsored-fees.md) — and
+  per-shop fee overrides — [0005-per-shop-fees.md](0005-per-shop-fees.md). Both
+  are drafts, and both wait on this plan's global policy being deployed.
 
 ### Archival
 
@@ -466,11 +470,35 @@ Revision 17 records Task 5.2's closing evidence (2026-11-19):
   closing it without that key would leave the float uncollected — the failure
   mode the sweep exists for. It is left for a run that has the key.
 
+Revision 18 writes out the two follow-ups Task 5.3 named but the repo had no
+plan for (2026-11-19):
+
+- **`0004` — relayer and sponsored fees.** Records why the payer still needs
+  SOL (it is its own fee payer and rent payer on every settle path), the
+  lamport arithmetic that makes a naive sponsor a faucet — 2,179,320 of receipt
+  rent coming back against 1,818,640 of payment rent going to the seller, so a
+  sponsored token settle would net the payer +355,680 lamports — and the
+  decisions to make before code: in-house sponsor or Kora, whether the sponsor
+  funds only the fee or also the rents, and whether the program routes the
+  refund to the sponsor.
+- **`0005` — per-shop fee overrides.** Records that a shop is an API row while
+  the fee is a program-wide `Config`, that a seller may keep several shops so a
+  seller-keyed policy is not per shop, and that the shop therefore has to
+  arrive as an optional account with `Config`'s rate as the fallback, because
+  invoice seeds cannot grow without invalidating printed QRs.
+- **Both are `Draft`, listed in `plans/README.md`, and linked from this plan's
+  out-of-scope lines, deferred-work bullet and Linked Docs.** Task 5.3's
+  follow-up box is annotated but still unticked: archiving this plan is its own
+  step.
+
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
 - `plans/0003-token-interface-migration.md` — the deferred Token-2022 migration
   this plan's Task 4.4 hands over.
+- `plans/0004-relayer-sponsored-fees.md` — the sponsor the payer's SOL gap needs.
+- `plans/0005-per-shop-fees.md` — the per-shop override this plan's global
+  policy leaves out.
 - `plans/archive/0001-contract-security-hardening.md` — prerequisite: receipt-backed
   settlement, auto-close, and the status model. This plan assumes `0001` is
   merged and deployed.
@@ -547,10 +575,14 @@ Out of scope:
 
 - Anything in `0001` (close removal, receipt creation, status model).
 - Payer-side gasless/relayer support: the payer still needs SOL for the network
-  fee and the temporary invoice rent on token invoices until a sponsor exists.
+  fee and the temporary invoice rent on token invoices until a sponsor exists —
+  designed in
+  [0004-relayer-sponsored-fees.md](0004-relayer-sponsored-fees.md).
 - Token-2022 migration (documented as unsupported, tracked in
   [0003-token-interface-migration.md](0003-token-interface-migration.md)).
-- Mainnet deployment, per-shop fee overrides, discounts, a full event indexer.
+- Mainnet deployment, discounts, a full event indexer.
+- Per-shop fee overrides — designed in
+  [0005-per-shop-fees.md](0005-per-shop-fees.md). One global policy ships here.
 
 ## Dependencies
 
@@ -2627,7 +2659,12 @@ Acceptance criteria:
 - [ ] `plans/README.md` lists this plan as completed and archived.
 - [ ] The plan file moves to `plans/archive/`.
 - [ ] Follow-ups (Token-2022, relayer/sponsor, per-shop fees) are captured as
-      issues or new plans.
+      issues or new plans. All three are plans as of 2026-11-19:
+      [0003](0003-token-interface-migration.md),
+      [0004](0004-relayer-sponsored-fees.md) and
+      [0005](0005-per-shop-fees.md), each listed in `plans/README.md`; only the
+      `plans/README.md` status change and the move to `plans/archive/` remain in
+      this criterion.
 
 Verification:
 

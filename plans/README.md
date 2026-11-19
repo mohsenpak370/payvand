@@ -64,6 +64,8 @@ sequential filename. Templates live in `plans/templates/`.
 | ---- | ---- | -------- |
 | 0002 | [Fee Model, Treasury, and Budget Accounting](0002-fee-model-and-treasury.md) | In Progress |
 | 0003 | [Token-2022 migration (`token_interface`)](0003-token-interface-migration.md) | Draft |
+| 0004 | [Relayer and sponsored fees (gasless payments)](0004-relayer-sponsored-fees.md) | Draft |
+| 0005 | [Per-shop fee overrides](0005-per-shop-fees.md) | Draft |
 
 The 2026-11-09 contract review originally lived in one plan. It was split on
 2026-11-12: `0001` ships the theft, replay, and status fixes, and `0002` builds
