@@ -115,7 +115,9 @@ line says where it stands, so a later pass does not have to re-derive it.
   same way: `solana program show`, `solana account` on `Config` and the treasury,
   and the close-all-budgets sweep. Revision 17 records what each answered. One
   SOL budget (`fQadYNyE…`) is still open — see that box — and the browser
-  click-through of `/budget` is still unexercised.
+  click-through of `/budget` is still unexercised: it was attempted on
+  2026-11-19 and blocked by the missing wallet and the missing session key, both
+  recorded in that box.
 
 ### Deferred by decision
 
@@ -512,6 +514,19 @@ Revision 19 covers Task 5.1's two untested criteria (2026-11-19):
   floor (2,542,531 lamports on mainnet) and break-even (149,292,000).
 - **Still open in Task 5.1:** `task verify`, `anchor test` (not run in this
   repo), and the localnet pass over all four settlement paths.
+
+Revision 20 attempts Task 5.2's last caveat in the browser and records why it
+cannot be met (2026-11-19). `/budget` loads on devnet at
+`https://localhost:3001` and reports "No wallet detected": the preview
+Chromium has no wallet-standard wallet, and `close_budget` needs the buyer's
+signature. More decisively, the budget's float — 30,000,000 lamports on session
+key `8nnbn9Wu…` — cannot be swept from anywhere: the app's `payvand.session`
+IndexedDB store at that origin is empty, no keypair file answers to that
+address, and the 2026-11-15 run passed an ephemeral key that its script deleted.
+Closing the budget would strand 0.03 SOL, which is the failure the sweep exists
+to prevent, so `fQadYNyE…` stays open and the orphaned float is written down as
+the cost of script-run budget demos. The browser click-through is therefore
+still open — it has now been attempted, and the plan says what blocks it.
 
 ## Linked Docs
 
@@ -2630,10 +2645,29 @@ Smoke tests:
       claim: the close→sweep path was run as the instructions themselves and is
       still not clicked through `/budget` with a wallet, so the browser flow that
       calls them is unexercised; and one SOL demo budget, `fQadYNyE…` (the
-      refill record under Checkpoint 2), is still open at 0.081143 SOL — its
-      float lives on an app-generated session key, so closing it here would
-      leave that float uncollected, which is exactly what the sweep exists to
-      prevent.
+      refill record under Checkpoint 2), is still open at 0.081143 SOL.
+
+      **The `/budget` attempt, 2026-11-19: attempted and blocked, twice over.**
+      The app was run (`pnpm dev`, devnet) and `/budget` opened at
+      `https://localhost:3001`, the origin `nuxt.config.ts` documents. The page
+      renders and answers "No wallet detected. Install a Solana wallet extension
+      and reload." — this Chromium profile has no wallet-standard wallet, and
+      `close_budget` is the buyer's signature, so no close can be sent from
+      here as `Evmo7zn…`. The sweep is blocked for a reason that no wallet would
+      fix: the budget's float is 30,000,000 lamports on session key
+      `8nnbn9Wu9dnYcyWVp8TEmhkRw1uDwpfotthLeojVA6QA`, and that key is not on this
+      device. The `payvand.session` IndexedDB database at that origin holds its
+      `keys` store and **no entries**; no keypair file in the workspace or
+      `/tmp` answers to that address; and the 2026-11-15 run that opened the
+      budget passed an ephemeral session key (`open_budget` `66vW41yu…`) whose
+      temp keypair the script removed with its workdir. Closing `fQadYNyE…`
+      here would take the pot and the rent home and leave the 0.03 SOL float
+      unspendable — the outcome the sweep exists to prevent — so the budget stays
+      open. The float is orphaned, and that is the real cost of running budget
+      demos from scripts instead of from the app, where the key would still be
+      held. Closing the loop needs a browser that can sign as the buyer (a
+      wallet extension) and a budget re-opened from the app, so the key being
+      swept is one the device actually holds.
 - [x] Shop page estimates match the settled balances: the 0.012 SOL cart showed
       "You receive 0.01176 SOL after the 2% fee" and `0.00181864 SOL` rent.
 - [x] Budget page estimates match the settled balances: `/budget` rendered
