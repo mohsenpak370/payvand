@@ -514,8 +514,9 @@ Revision 19 covers Task 5.1's two untested criteria (2026-11-19):
   smallest amount whose fee covers the receipt rent and checks both sides of it.
   The per-invoice subsidy this plan documents shows up as the gap between the
   floor (2,542,531 lamports on mainnet) and break-even (149,292,000).
-- **Still open in Task 5.1:** `task verify` and `anchor test` (not run in this
-  repo). The localnet pass over all four settlement paths is revision 21.
+- **Task 5.1's verification at revision 19:** the localnet pass over all four
+  settlement paths is revision 21; `task verify` and `anchor test` are
+  revision 22.
 
 Revision 20 attempts Task 5.2's last caveat in the browser and records why it
 cannot be met (2026-11-19). `/budget` loads on devnet at
@@ -543,7 +544,22 @@ before the first SOL settle — `initialize_config` leaves it at its own rent an
 `settle_payment` fails `TreasuryUnderfunded` until the rollout's funding step
 runs. The per-path signatures and deltas are under Task 5.1. Afterwards the
 validator was stopped and its ledger and driver deleted, so no local chain
-state is left on this machine; `task verify` and `anchor test` remain open.
+state is left on this machine. `task verify` and `anchor test` were still open
+then; revision 22 runs them.
+
+Revision 22 runs Task 5.1's two remaining checks and records what each one is
+(2026-11-19). `task verify` exits 0 — lint, typecheck, 148 web tests, 69 API
+tests, and a fresh SBF build with the 53 settle-harness tests — so the box is
+ticked; its only blemish is the `v-html` warning on `PaymentQr.vue`, which has
+never been an error. `anchor test` is a different kind of open: `Anchor.toml`'s
+`[scripts] test = "cargo test"`, so its test phase is the suite this repo
+already runs, and `anchor test --skip-build --skip-deploy` passes all 53 through
+the Anchor CLI without touching a cluster. The full command also builds and
+deploys to the provider cluster — Devnet — which would upgrade the live program
+to prove what the in-process harness proves against the same artifact, so that
+box stays unticked with the reason written beside it. Nothing in Task 5.1 now
+needs a validator, a browser or a deploy; the only open item is a check whose
+full form costs a devnet upgrade and buys no new evidence.
 
 ## Linked Docs
 
@@ -2383,7 +2399,19 @@ Estimated scope: Small.
 
 Acceptance criteria:
 
-- [ ] `task verify` passes, including `anchor test`.
+- [x] `task verify` passes (2026-11-19). It exits 0 over all five steps it
+      runs: `pnpm lint` (one warning, no errors — the `v-html` notice on
+      `PaymentQr.vue:81`, which the QR drawing has always carried), `pnpm
+      typecheck` clean, vitest 148 tests in 20 files, `cargo test` for the API
+      69 tests, and `test:contracts` — a fresh `cargo build-sbf` of the revision
+      14 source plus 53 settle-harness tests against the built artifact. The
+      task does not run `anchor test`; `Anchor.toml`'s test script is plain
+      `cargo test`, and running it through the Anchor CLI
+      (`anchor test --skip-build --skip-deploy`) passes the same 53 tests. The
+      full `anchor test` — build, then deploy to the provider cluster, `Devnet`
+      in `Anchor.toml` — is deliberately not run: it would upgrade the live
+      program to prove what the in-process harness already proves against the
+      same artifact.
 - [x] `cargo clippy -p payvand -- -D warnings` passes (2026-11-18: clean apart
       from a third-party future-incompat note, as Task 4.5's verification
       records).
@@ -2450,8 +2478,17 @@ Acceptance criteria:
 
 Verification:
 
-- [ ] `task verify`
-- [ ] `cd apps/contracts && anchor test`
+- [x] `task verify` — exits 0; the five steps and their counts are in the first
+      criterion above.
+- [ ] `cd apps/contracts && anchor test` — its configured test script runs
+      (2026-11-19): `anchor test --skip-build --skip-deploy` runs
+      `[scripts] test = "cargo test"` from `Anchor.toml` and passes 53 tests
+      without contacting a cluster. The full command stays open because
+      `anchor test` also builds and deploys to `Anchor.toml`'s provider cluster,
+      which is Devnet: that would upgrade the live program to re-prove what the
+      in-process harness proves against the same `.so`, so it is left to a run
+      that is actually about deploying. `task anchor:test` is the deployment-free
+      equivalent (Anchor build, SBF rebuild, same suite).
 
 **Devnet verification of the revision-12 build (2026-11-18).** The revision-12
 program was upgraded in place (same ID, authority and ProgramData; slot
@@ -2466,9 +2503,10 @@ gained the 2,000 fee, and `spent` rose by the price. Details and signatures are
 under Task 3.5's "Devnet verification". The later Token-2022 build (revision 14)
 was upgraded in place at slot 523617551 — 529,320 bytes in the existing
 545,792-byte `ProgramData`, no `extend` — and both smoke scripts passed against
-that build too. What this does **not** cover: `task verify` and `anchor test`,
-which stay unticked above. The localnet pass over all four settle paths is
-revision 21, and the API and quote tests this note once listed are revision 19.
+that build too. `task verify` and the localnet pass over all four settle paths
+were open when this note was written; they are revisions 22 and 21, and the API
+and quote tests this note once listed are revision 19. The one box above still
+unticked is the full `anchor test` with its Devnet deploy.
 
 Files likely touched:
 
