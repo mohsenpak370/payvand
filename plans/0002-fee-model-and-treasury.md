@@ -2399,19 +2399,21 @@ Estimated scope: Small.
 
 Acceptance criteria:
 
-- [x] `task verify` passes (2026-11-19). It exits 0 over all five steps it
-      runs: `pnpm lint` (one warning, no errors — the `v-html` notice on
+- [x] `task verify` is green and `anchor test`'s configured test phase passes
+      (2026-11-19). The `task verify` claim is its five steps and nothing else:
+      `pnpm lint` (one warning, no errors — the `v-html` notice on
       `PaymentQr.vue:81`, which the QR drawing has always carried), `pnpm
       typecheck` clean, vitest 148 tests in 20 files, `cargo test` for the API
       69 tests, and `test:contracts` — a fresh `cargo build-sbf` of the revision
       14 source plus 53 settle-harness tests against the built artifact. The
-      task does not run `anchor test`; `Anchor.toml`'s test script is plain
-      `cargo test`, and running it through the Anchor CLI
-      (`anchor test --skip-build --skip-deploy`) passes the same 53 tests. The
-      full `anchor test` — build, then deploy to the provider cluster, `Devnet`
-      in `Anchor.toml` — is deliberately not run: it would upgrade the live
-      program to prove what the in-process harness already proves against the
-      same artifact.
+      task does not run `anchor test`, so the `anchor test` claim is only its
+      test script: `Anchor.toml` sets `[scripts] test = "cargo test"`, and
+      `anchor test --skip-build --skip-deploy` runs it to the same 53 passes
+      without contacting a cluster. The full `anchor test` also builds and
+      deploys to `Anchor.toml`'s provider cluster, which is `Devnet`; that half
+      did not run, because it would upgrade the live program to re-prove what
+      the in-process harness proves against the same artifact. It is the single
+      open item under Verification below.
 - [x] `cargo clippy -p payvand -- -D warnings` passes (2026-11-18: clean apart
       from a third-party future-incompat note, as Task 4.5's verification
       records).
@@ -2480,15 +2482,17 @@ Verification:
 
 - [x] `task verify` — exits 0; the five steps and their counts are in the first
       criterion above.
-- [ ] `cd apps/contracts && anchor test` — its configured test script runs
-      (2026-11-19): `anchor test --skip-build --skip-deploy` runs
-      `[scripts] test = "cargo test"` from `Anchor.toml` and passes 53 tests
-      without contacting a cluster. The full command stays open because
-      `anchor test` also builds and deploys to `Anchor.toml`'s provider cluster,
-      which is Devnet: that would upgrade the live program to re-prove what the
-      in-process harness proves against the same `.so`, so it is left to a run
-      that is actually about deploying. `task anchor:test` is the deployment-free
-      equivalent (Anchor build, SBF rebuild, same suite).
+- [x] `anchor test`'s configured test phase (2026-11-19) —
+      `anchor test --skip-build --skip-deploy` runs `[scripts] test = "cargo
+      test"` from `Anchor.toml` and passes 53 tests without contacting a
+      cluster.
+- [ ] The Devnet deploy half of `cd apps/contracts && anchor test` — the full
+      command also builds and deploys to `Anchor.toml`'s provider cluster, which
+      is Devnet, and has not run: it would upgrade the live program to re-prove
+      what the in-process harness proves against the same `.so`, so it is left
+      to a run that is actually about deploying. `task anchor:test` is the
+      deployment-free equivalent (Anchor build, SBF rebuild, same suite). This
+      is the only open item in Task 5.1.
 
 **Devnet verification of the revision-12 build (2026-11-18).** The revision-12
 program was upgraded in place (same ID, authority and ProgramData; slot
