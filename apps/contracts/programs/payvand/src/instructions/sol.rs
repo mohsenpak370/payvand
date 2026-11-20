@@ -1,10 +1,11 @@
 //! SOL invoices and the SOL monthly allowance.
 //!
-//! Settlement is single-use and leaves a permanent record: the invoice account
+//! Settlement is single-use and leaves a permanent marker: the invoice account
 //! is created, settled and closed inside the settle transaction, and a receipt
-//! keyed by the invoice address survives it. The receipt's `settled_at` is the
+//! keyed by the invoice address survives it. The marker's `settled_at` is the
 //! replay guard, which is why the invoice account can be `init` rather than
-//! `init_if_needed`.
+//! `init_if_needed`. The payment's own facts are in the `PaymentSettled` event
+//! the same transaction logs.
 
 use anchor_lang::prelude::*;
 use anchor_lang::{AccountsClose, Lamports};
@@ -12,7 +13,7 @@ use anchor_lang::{AccountsClose, Lamports};
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::{BudgetOpened, PaymentSettled};
-use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
+use crate::helpers::{current_month_index, fee_for};
 use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState};
 
 #[derive(Accounts)]
@@ -43,8 +44,10 @@ pub struct SettlePayment<'info> {
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
-    /// The permanent record. `settled_at != 0` means this invoice is done, so
-    /// the same invoice can never be settled twice.
+    /// The permanent marker. `settled_at != 0` means this invoice is done, so
+    /// the same invoice can never be settled twice. The payer fronts its rent
+    /// and is made whole through the seller's reduced proceeds, so the seller
+    /// is the one who ends up paying for the record.
     #[account(
         init_if_needed,
         payer = payer,
@@ -63,7 +66,7 @@ pub struct SettlePayment<'info> {
     pub config: Account<'info, Config>,
 
     /// The fee destination, pinned by seed so the payer cannot name another
-    /// account. It also refunds the receipt rent the payer just advanced.
+    /// account. Nothing else about a SOL settlement touches it.
     #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
     pub treasury: SystemAccount<'info>,
 
@@ -131,6 +134,9 @@ pub struct PayFromBudget<'info> {
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
+    /// The permanent marker; `settled_at` is the replay guard. The session key
+    /// advances its rent and the pot reimburses it, so the seller carries the
+    /// cost through the reduced proceeds.
     #[account(
         init_if_needed,
         payer = session_key,
@@ -148,7 +154,7 @@ pub struct PayFromBudget<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
 
-    /// The fee destination and the refund source, pinned by seed.
+    /// The fee destination, pinned by seed.
     #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
     pub treasury: SystemAccount<'info>,
 
@@ -193,8 +199,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
     );
 
     // Seller-pays is the only mode this release settles: the payer pays the
-    // price, the seller absorbs the fee, and the treasury hands the receipt
-    // rent back so the payer is charged exactly what the QR showed.
+    // price, and the seller absorbs the fee plus the permanent marker's rent.
     let config = &ctx.accounts.config;
     require!(
         config.fee_mode == FeeMode::SellerPays,
@@ -204,15 +209,18 @@ pub fn settle_payment_handler<'info, 'ctx>(
     let fee = fee_for(config, amount)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
-    // The seller receives `amount - rent - fee` now, plus the rent when the
-    // invoice account closes, so this subtraction must not underflow.
+    // The seller receives `amount - rent - receipt rent - fee` now, plus the
+    // invoice rent when the account closes, so this subtraction must not
+    // underflow. The payer advances the marker's rent at `init` below; paying
+    // the seller less by exactly that amount is what hands it to the seller,
+    // and it keeps the payer's own cost at the price the QR showed.
     require!(
-        amount > payment_rent.saturating_add(fee),
+        amount
+            > payment_rent
+                .saturating_add(receipt_rent)
+                .saturating_add(fee),
         PaymentError::InvoiceTooSmall
     );
-    // Checked before any transfer: a settlement must not start moving lamports
-    // it cannot finish refunding.
-    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), receipt_rent)?;
 
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -222,7 +230,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
                 to: ctx.accounts.seller.to_account_info(),
             },
         ),
-        amount - payment_rent - fee,
+        amount - payment_rent - receipt_rent - fee,
     )?;
 
     if fee > 0 {
@@ -260,34 +268,15 @@ pub fn settle_payment_handler<'info, 'ctx>(
     {
         let receipt = &mut ctx.accounts.receipt;
         receipt.invoice = invoice;
-        receipt.seller = seller;
-        receipt.reference = reference;
-        receipt.mint = Pubkey::default();
-        receipt.amount = amount;
-        receipt.memo = memo;
-        receipt.payer = payer;
-        receipt.created_at = now;
         receipt.settled_at = now;
-        receipt.closed_at = now;
-        receipt.bump = ctx.bumps.receipt;
     }
 
-    // Auto-close. The record now lives in the receipt, so the invoice account
-    // and its rent go to the seller inside the settle transaction — there is
-    // no separate seller close step left for anyone to race or misuse.
+    // Auto-close. The invoice account and its rent go to the seller inside the
+    // settle transaction — there is no separate seller close step left for
+    // anyone to race or misuse.
     ctx.accounts
         .payment
         .close(ctx.accounts.seller.to_account_info())?;
-
-    // The receipt is permanent, so the payer does not keep its rent: the
-    // treasury funds the record and pays the payer back in the same
-    // transaction.
-    pay_from_treasury(
-        &ctx.accounts.treasury.to_account_info(),
-        &ctx.accounts.payer.to_account_info(),
-        receipt_rent,
-        ctx.accounts.config.treasury_bump,
-    )?;
 
     msg!(
         "payment settled: {} lamports from {}, fee {} to treasury",
@@ -298,11 +287,13 @@ pub fn settle_payment_handler<'info, 'ctx>(
     emit!(PaymentSettled {
         amount,
         fee,
-        seller_proceeds: amount - fee,
+        seller_proceeds: amount - fee - receipt_rent,
         payer,
         seller,
         mint: Pubkey::default(),
         reference,
+        invoice,
+        memo,
     });
     Ok(())
 }
@@ -434,11 +425,13 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::BudgetExhausted
     );
 
-    // The session key advances both rents; the pot reimburses both, pays the
-    // seller the price less the invoice rent and the fee, sends the fee to the
-    // treasury, and the invoice account's close returns that rent to the seller.
-    // The treasury then refunds the receipt rent to the pot, so the pot pays
-    // exactly the invoice amount.
+    // The session key advances both rents and the pot reimburses both. The
+    // seller is paid the price less the invoice rent, the marker's rent and the
+    // fee; the invoice account's close then returns the invoice rent to the
+    // seller, and the marker's rent stays with the marker — which is how the
+    // seller, and not the treasury, ends up paying for the permanent record.
+    // The two reimbursements and the seller's reduction cancel out, so the pot
+    // pays exactly the invoice amount.
     let config = &ctx.accounts.config;
     require!(
         config.fee_mode == FeeMode::SellerPays,
@@ -450,10 +443,12 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);
     require!(
-        amount > payment_rent.saturating_add(fee),
+        amount
+            > payment_rent
+                .saturating_add(receipt_rent)
+                .saturating_add(fee),
         PaymentError::InvoiceTooSmall
     );
-    ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), receipt_rent)?;
 
     let pot = ctx
         .accounts
@@ -461,30 +456,13 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .to_account_info()
         .lamports()
         .saturating_sub(budget_rent);
-    let to_seller = amount - payment_rent - fee;
+    let to_seller = amount - payment_rent - receipt_rent - fee;
     let to_session = payment_rent.saturating_add(receipt_rent);
+    // `to_seller + fee + to_session` is exactly `amount`, so the pot is asked
+    // for the price and nothing more — the seller's share already carries the
+    // two rents the session key gets back.
     let outflow = to_seller.saturating_add(fee).saturating_add(to_session);
-    // The treasury refunds the receipt rent into the pot just below, before the
-    // pot is debited, so that refund is already part of what the pot can pay:
-    // the pot only has to hold the price itself. Checking the raw pot against
-    // `outflow` made the last receipt rent of every limit unspendable, and the
-    // client's preflight, which quotes the pot against the price, would then be
-    // right while the settle still failed.
-    require!(
-        pot.saturating_add(receipt_rent) >= outflow,
-        PaymentError::InsufficientBudget
-    );
-
-    // The treasury funds the permanent receipt, refunding the pot so it pays
-    // exactly the invoice amount. This is a CPI and must run before the direct
-    // lamport moves below: the runtime refuses to start a CPI while the current
-    // instruction frame has an outstanding lamport delta.
-    pay_from_treasury(
-        &ctx.accounts.treasury.to_account_info(),
-        &ctx.accounts.budget.to_account_info(),
-        receipt_rent,
-        ctx.accounts.config.treasury_bump,
-    )?;
+    require!(pot >= outflow, PaymentError::InsufficientBudget);
 
     ctx.accounts
         .budget
@@ -524,16 +502,7 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     {
         let receipt = &mut ctx.accounts.receipt;
         receipt.invoice = invoice;
-        receipt.seller = seller;
-        receipt.reference = reference;
-        receipt.mint = Pubkey::default();
-        receipt.amount = amount;
-        receipt.memo = memo;
-        receipt.payer = payer;
-        receipt.created_at = now_ts;
         receipt.settled_at = now_ts;
-        receipt.closed_at = now_ts;
-        receipt.bump = ctx.bumps.receipt;
     }
 
     {
@@ -542,8 +511,9 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         budget.month_index = now;
     }
 
-    // Same auto-close as the wallet path: the rent the pot fronted comes back
-    // to the seller, and the receipt is the only surviving record.
+    // Same auto-close as the wallet path: the invoice rent the session key
+    // fronted comes back to the seller, and the marker is the only surviving
+    // account.
     ctx.accounts
         .payment
         .close(ctx.accounts.seller.to_account_info())?;
@@ -557,11 +527,13 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
     emit!(PaymentSettled {
         amount,
         fee,
-        seller_proceeds: amount - fee,
+        seller_proceeds: amount - fee - receipt_rent,
         payer,
         seller,
         mint: Pubkey::default(),
         reference,
+        invoice,
+        memo,
     });
     Ok(())
 }

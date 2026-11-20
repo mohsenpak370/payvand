@@ -437,16 +437,7 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
     {
         let receipt = &mut ctx.accounts.receipt;
         receipt.invoice = invoice;
-        receipt.seller = seller;
-        receipt.reference = reference;
-        receipt.mint = mint;
-        receipt.amount = amount;
-        receipt.memo = memo;
-        receipt.payer = payer;
-        receipt.created_at = now;
         receipt.settled_at = now;
-        receipt.closed_at = now;
-        receipt.bump = ctx.bumps.receipt;
     }
 
     // The invoice's rent returns to the pool that advanced it, leaving the
@@ -464,11 +455,17 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
     emit!(PaymentSettled {
         amount,
         fee,
+        // A token seller is charged no lamports: the treasury keeps funding the
+        // marker's SOL rent here, because a seller who never signs cannot be
+        // made to pay SOL and a token amount cannot be priced in it without an
+        // oracle.
         seller_proceeds: amount - fee,
         payer,
         seller,
         mint,
         reference,
+        invoice,
+        memo,
     });
     Ok(())
 }
@@ -698,16 +695,7 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     {
         let receipt = &mut ctx.accounts.receipt;
         receipt.invoice = invoice;
-        receipt.seller = seller;
-        receipt.reference = reference;
-        receipt.mint = mint;
-        receipt.amount = amount;
-        receipt.memo = memo;
-        receipt.payer = payer;
-        receipt.created_at = now_ts;
         receipt.settled_at = now_ts;
-        receipt.closed_at = now_ts;
-        receipt.bump = ctx.bumps.receipt;
     }
 
     let budget = &mut ctx.accounts.budget;
@@ -730,11 +718,16 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     emit!(PaymentSettled {
         amount,
         fee,
+        // As on the wallet path: a token settlement cannot charge its seller
+        // SOL, so the treasury carries the marker's rent and the event says so
+        // by leaving the proceeds at `amount - fee`.
         seller_proceeds: amount - fee,
         payer,
         seller,
         mint,
         reference,
+        invoice,
+        memo,
     });
     Ok(())
 }

@@ -1,10 +1,15 @@
 //! Payment request validation, QR payload formatting and on-chain status reads.
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
+use solana_rpc_client_api::config::{RpcTransactionConfig, UiTransactionEncoding};
+use solana_signature::Signature;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -612,17 +617,7 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
         .and_then(|account| account.as_ref())
         .map(|account| account.data.as_slice());
 
-    if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
-        return Ok(receipt_record(receipt, cluster, endpoint));
-    }
-
-    match invoice_data.and_then(|data| record_for(pubkey, data, cluster.clone(), endpoint.clone()))
-    {
-        Some(record) => Ok(record),
-        // No receipt and no invoice account: the QR is simply unpaid. That is
-        // the normal state of an invoice nobody has scanned yet.
-        None => Ok(pending_record(pubkey, cluster, endpoint)),
-    }
+    Ok(record_for_invoice(&rpc, pubkey, invoice_data, receipt_data, cluster, endpoint).await)
 }
 
 /// The client every invoice read goes through.
@@ -636,18 +631,27 @@ fn payment_rpc(endpoint: String) -> RpcClient {
     RpcClient::new_with_commitment(endpoint, CommitmentConfig::confirmed())
 }
 
-/// The best record for one invoice address: its receipt if it was settled, the
-/// invoice account itself if it still exists, and otherwise the placeholder a
-/// watcher reads as "not paid yet".
-fn record_for_invoice(
+/// The best record for one invoice address: the settlement behind its marker if
+/// it was paid, the invoice account itself if it still exists, and otherwise the
+/// placeholder a watcher reads as "not paid yet".
+///
+/// A marker alone no longer describes a payment, so the settled case costs a
+/// history read. When that read fails the marker's own answer (settled, and
+/// which invoice it closed) is still returned: the cluster settled it, and a
+/// flaky node must not turn that back into "pending".
+async fn record_for_invoice(
+    rpc: &RpcClient,
     invoice: Pubkey,
     invoice_data: Option<&[u8]>,
     receipt_data: Option<&[u8]>,
     cluster: String,
     endpoint: String,
 ) -> PaymentRecord {
-    if let Some(receipt) = receipt_data.and_then(decode_payment_receipt) {
-        return receipt_record(receipt, cluster, endpoint);
+    if let Some(marker) = receipt_data.and_then(decode_receipt_marker) {
+        return match settled_from_history(rpc, marker.invoice).await {
+            Some(settled) => receipt_record(settled, cluster, endpoint),
+            None => marker_record(marker, cluster, endpoint),
+        };
     }
     match invoice_data.and_then(|data| record_for(invoice, data, cluster.clone(), endpoint.clone()))
     {
@@ -812,13 +816,17 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
                 .get(index * 2 + 1)
                 .and_then(|account| account.as_ref())
                 .map(|account| account.data.as_slice());
-            records.push(record_for_invoice(
-                *invoice,
-                invoice_data,
-                receipt_data,
-                cluster.clone(),
-                endpoint.clone(),
-            ));
+            records.push(
+                record_for_invoice(
+                    &rpc,
+                    *invoice,
+                    invoice_data,
+                    receipt_data,
+                    cluster.clone(),
+                    endpoint.clone(),
+                )
+                .await,
+            );
         }
     }
 
@@ -879,6 +887,19 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
     for (pubkey, account) in accounts {
         match classify_program_account(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
             Some(ScannedAccount::Payment(record)) => payments.push(*record),
+            Some(ScannedAccount::Settled(invoice)) => {
+                payments.push(match settled_from_history(&rpc, invoice).await {
+                    Some(settled) => receipt_record(settled, cluster.clone(), endpoint.clone()),
+                    None => marker_record(
+                        ReceiptMarker {
+                            invoice,
+                            settled_at: 0,
+                        },
+                        cluster.clone(),
+                        endpoint.clone(),
+                    ),
+                })
+            }
             Some(ScannedAccount::Budget(budget)) => budgets.push(budget),
             None => {}
         }
@@ -897,6 +918,9 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
 /// invoice, and the scan builds one enum value per account.
 enum ScannedAccount {
     Payment(Box<PaymentRecord>),
+    /// A settlement's marker. Resolving it into a record is the scan's job, not
+    /// this function's: it needs the cluster, and this is a pure decoder.
+    Settled(Pubkey),
     Budget(BudgetAccount),
 }
 
@@ -912,15 +936,14 @@ fn classify_program_account(
     cluster: String,
     endpoint: String,
 ) -> Option<ScannedAccount> {
-    if let Some(record) = record_for(pubkey, data, cluster.clone(), endpoint.clone()) {
+    if let Some(record) = record_for(pubkey, data, cluster, endpoint) {
         return Some(ScannedAccount::Payment(Box::new(record)));
     }
-    if let Some(receipt) = decode_payment_receipt(data) {
-        // A settled invoice only exists as its receipt; `receipt.invoice` is
-        // what the seller's screens and the admin feed address it by.
-        return Some(ScannedAccount::Payment(Box::new(receipt_record(
-            receipt, cluster, endpoint,
-        ))));
+    if let Some(marker) = decode_receipt_marker(data) {
+        // A settled invoice only exists as its marker, and the marker names the
+        // invoice the scan addresses it by. Its payment facts are in the settle
+        // transaction, which `fetch_program_scan` reads for this variant.
+        return Some(ScannedAccount::Settled(marker.invoice));
     }
     decode_budget(data).map(ScannedAccount::Budget)
 }
@@ -1074,6 +1097,19 @@ fn decode_token_payment(data: &[u8]) -> Option<OnchainTokenPayment> {
     })
 }
 
+/// The permanent `PaymentReceipt` account as it now exists: the invoice it
+/// closed and the `settled_at` replay guard, nothing more. The payment's own
+/// fields are in the `PaymentSettled` event the settle transaction logged, and
+/// `settled_from_history` reads them from there.
+struct ReceiptMarker {
+    invoice: Pubkey,
+    settled_at: i64,
+}
+
+/// One settlement, assembled from its event. The field names are the
+/// `PaymentReceipt` account's old ones on purpose: every consumer of a settled
+/// invoice below already speaks this shape, and where the facts live is the
+/// only thing that changed.
 struct OnchainReceipt {
     invoice: Pubkey,
     seller: Pubkey,
@@ -1087,31 +1123,157 @@ struct OnchainReceipt {
     settled_at: i64,
 }
 
-/// Borsh layout of the `PaymentReceipt` account: discriminator, then invoice,
-/// seller, reference, mint, amount, memo, payer and the timestamps. `closed_at`
-/// and `bump` are on chain but not needed for a status record.
-fn decode_payment_receipt(data: &[u8]) -> Option<OnchainReceipt> {
+/// Borsh layout of the `PaymentReceipt` account since revision 23:
+/// discriminator, the invoice, and `settled_at`. It is a marker, not a record.
+fn decode_receipt_marker(data: &[u8]) -> Option<ReceiptMarker> {
     let mut reader = Reader::new(data);
 
     if reader.take(8)? != discriminator_for("PaymentReceipt") {
         return None;
     }
 
-    Some(OnchainReceipt {
+    Some(ReceiptMarker {
         invoice: reader.pubkey()?,
-        seller: reader.pubkey()?,
-        reference: reader.pubkey()?,
-        mint: reader.pubkey()?,
-        amount: reader.u64()?,
-        memo: reader.string()?,
-        payer: reader.pubkey()?,
-        created_at: reader.i64()?,
         settled_at: reader.i64()?,
     })
 }
 
-/// The record for a settled invoice, built from its receipt. The receipt
-/// outlives the invoice account, so this is what a watcher sees after payment.
+/// Borsh body of the `PaymentSettled` event, as the program emits it:
+/// `amount, fee, seller_proceeds, payer, seller, mint, reference, invoice, memo`.
+fn decode_payment_settled(data: &[u8]) -> Option<OnchainReceipt> {
+    let mut reader = Reader::new(data);
+
+    if reader.take(8)? != discriminator_for("PaymentSettled") {
+        return None;
+    }
+
+    let amount = reader.u64()?;
+    reader.u64()?; // fee: the treasury's share, not part of a status record
+    reader.u64()?; // seller_proceeds: what the seller keeps after the fee
+    let payer = reader.pubkey()?;
+    let seller = reader.pubkey()?;
+    let mint = reader.pubkey()?;
+    let reference = reader.pubkey()?;
+    let invoice = reader.pubkey()?;
+    let memo = reader.string()?;
+
+    Some(OnchainReceipt {
+        invoice,
+        seller,
+        reference,
+        mint,
+        amount,
+        memo,
+        payer,
+        // Filled from the transaction's own block time by the caller.
+        created_at: 0,
+        settled_at: 0,
+    })
+}
+
+/// One log line, if it is this program's `PaymentSettled` event. An event is a
+/// single `Program data: <base64>` line; another program's logs and the
+/// program's own `msg!` lines sit beside it.
+fn settled_event_in_log(line: &str) -> Option<OnchainReceipt> {
+    let body = line.strip_prefix("Program data: ")?;
+    let bytes = STANDARD.decode(body).ok()?;
+    decode_payment_settled(&bytes)
+}
+
+/// The settlement behind a receipt marker, read from the settle transaction's
+/// own logs.
+///
+/// A program cannot read history, which is why the replay guard is an account.
+/// The API can: the marker names the invoice, the invoice appears in the one
+/// transaction that settled it, and that transaction logged `PaymentSettled`.
+/// One `getSignaturesForAddress` and at most a few `getTransaction` calls per
+/// settled invoice — the price of keeping the payment's 2,094,960 lamports of
+/// rent off chain. `None` means the history was unreadable, and the caller falls
+/// back to what the marker itself says.
+async fn settled_from_history(rpc: &RpcClient, invoice: Pubkey) -> Option<OnchainReceipt> {
+    let signatures = rpc
+        .get_signatures_for_address_with_config(
+            &invoice,
+            GetConfirmedSignaturesForAddress2Config {
+                commitment: Some(CommitmentConfig::confirmed()),
+                limit: Some(5),
+                ..Default::default()
+            },
+        )
+        .await
+        .ok()?;
+
+    for entry in signatures {
+        let Ok(signature) = entry.signature.parse::<Signature>() else {
+            continue;
+        };
+        let Ok(transaction) = rpc
+            .get_transaction_with_config(
+                &signature,
+                RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Json),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await
+        else {
+            continue;
+        };
+
+        let logs = transaction
+            .transaction
+            .meta
+            .and_then(|meta| Option::<Vec<String>>::from(meta.log_messages))
+            .unwrap_or_default();
+        for line in logs {
+            let Some(settled) = settled_event_in_log(&line) else {
+                continue;
+            };
+            if settled.invoice != invoice {
+                continue;
+            }
+            let at = transaction.block_time.unwrap_or(0);
+            return Some(OnchainReceipt {
+                created_at: at,
+                settled_at: at,
+                ..settled
+            });
+        }
+    }
+
+    None
+}
+
+/// The record for a settled invoice whose settlement could not be read back:
+/// the marker says "settled" and who it belongs to, which is the part the
+/// cluster cannot lose. A status read still answers, it just cannot name the
+/// payer or the price until the next attempt.
+fn marker_record(marker: ReceiptMarker, cluster: String, endpoint: String) -> PaymentRecord {
+    PaymentRecord {
+        id: marker.invoice.to_string(),
+        status: PaymentStatus::Settled,
+        payment_pda: marker.invoice.to_string(),
+        seller: String::new(),
+        seller_user: None,
+        reference: String::new(),
+        amount_lamports: 0,
+        options: Vec::new(),
+        memo: String::new(),
+        name: String::new(),
+        description: String::new(),
+        items: Vec::new(),
+        discount: None,
+        cluster,
+        endpoint,
+        settled_by: None,
+        created_at_unix: 0,
+        settled_at_unix: marker.settled_at,
+    }
+}
+
+/// The record for a settled invoice, built from its event. The marker outlives
+/// the invoice account, so this is what a watcher sees after payment.
 fn receipt_record(receipt: OnchainReceipt, cluster: String, endpoint: String) -> PaymentRecord {
     let invoice = receipt.invoice.to_string();
     let (currency, mint, decimals, amount_lamports) = if receipt.mint == Pubkey::default() {
@@ -1681,7 +1843,7 @@ mod tests {
         // No decoder mistakes it for something the scan keeps.
         assert!(decode_payment(&data).is_none());
         assert!(decode_token_payment(&data).is_none());
-        assert!(decode_payment_receipt(&data).is_none());
+        assert!(decode_receipt_marker(&data).is_none());
         assert!(decode_budget(&data).is_none());
 
         // And classification returns “nothing to keep” rather than panicking.
@@ -1697,18 +1859,21 @@ mod tests {
         );
     }
 
-    /// The skip is not a blanket “ignore everything”: receipts and budgets in
+    /// The skip is not a blanket “ignore everything”: markers and budgets in
     /// the same scan still classify.
     #[test]
     fn the_program_scan_still_classifies_receipts_and_budgets() {
         let invoice = Pubkey::from([4u8; 32]);
-        let receipt = classify_program_account(
+        let marker = classify_program_account(
             receipt_pda(&Pubkey::from_str(PAYVAND_PROGRAM_ID).unwrap(), &invoice),
-            &receipt_data(invoice, Pubkey::default(), 42, "tip"),
+            &receipt_data(invoice, 200),
             "devnet".into(),
             "https://example".into(),
         );
-        assert!(matches!(receipt, Some(ScannedAccount::Payment(_))));
+        assert!(
+            matches!(marker, Some(ScannedAccount::Settled(found)) if found == invoice),
+            "a marker must classify as a settlement of the invoice it names"
+        );
 
         let mut budget = discriminator_for("Budget").to_vec();
         budget.extend_from_slice(&[1u8; 32]); // buyer
@@ -1749,56 +1914,78 @@ mod tests {
         assert!(decode_payment(&data).is_none());
     }
 
-    /// A receipt is the only record a settled invoice leaves behind, so the
-    /// status read has to decode it exactly as the program writes it.
-    fn receipt_data(invoice: Pubkey, mint: Pubkey, amount: u64, memo: &str) -> Vec<u8> {
+    /// The marker as the program writes it: discriminator, invoice, `settled_at`.
+    fn receipt_data(invoice: Pubkey, settled_at: i64) -> Vec<u8> {
         let mut data = discriminator_for("PaymentReceipt").to_vec();
         data.extend_from_slice(invoice.as_ref());
-        data.extend_from_slice(&[7u8; 32]); // seller
-        data.extend_from_slice(&[9u8; 32]); // reference
-        data.extend_from_slice(mint.as_ref());
-        data.extend_from_slice(&amount.to_le_bytes());
-        data.extend_from_slice(&(memo.len() as u32).to_le_bytes());
-        data.extend_from_slice(memo.as_bytes());
-        data.extend_from_slice(&[5u8; 32]); // payer
-        data.extend_from_slice(&100i64.to_le_bytes()); // created_at
-        data.extend_from_slice(&200i64.to_le_bytes()); // settled_at
-        data.extend_from_slice(&200i64.to_le_bytes()); // closed_at
-        data.push(255); // bump
+        data.extend_from_slice(&settled_at.to_le_bytes());
         data
     }
 
+    /// The `PaymentSettled` log line a settle transaction carries, built in the
+    /// program's field order: amount, fee, seller_proceeds, payer, seller, mint,
+    /// reference, invoice, memo.
+    fn settled_log_line(invoice: Pubkey, mint: Pubkey, amount: u64, memo: &str) -> String {
+        let mut body = discriminator_for("PaymentSettled").to_vec();
+        body.extend_from_slice(&amount.to_le_bytes());
+        body.extend_from_slice(&10u64.to_le_bytes()); // fee
+        body.extend_from_slice(&(amount - 10).to_le_bytes()); // seller_proceeds
+        body.extend_from_slice(&[5u8; 32]); // payer
+        body.extend_from_slice(&[7u8; 32]); // seller
+        body.extend_from_slice(mint.as_ref());
+        body.extend_from_slice(&[9u8; 32]); // reference
+        body.extend_from_slice(invoice.as_ref());
+        body.extend_from_slice(&(memo.len() as u32).to_le_bytes());
+        body.extend_from_slice(memo.as_bytes());
+        format!("Program data: {}", STANDARD.encode(body))
+    }
+
     #[test]
-    fn a_sol_receipt_reads_back_as_a_settled_invoice() {
+    fn the_marker_is_only_the_guard_and_the_invoice() {
         let invoice = Pubkey::from([4u8; 32]);
-        let data = receipt_data(invoice, Pubkey::default(), 42, "tip");
+        let data = receipt_data(invoice, 200);
 
-        let receipt = decode_payment_receipt(&data).expect("decodes");
-        assert_eq!(receipt.invoice, invoice);
-        assert_eq!(receipt.amount, 42);
-        assert_eq!(receipt.memo, "tip");
-        assert_eq!(receipt.settled_at, 200);
+        // 48 bytes is the whole account: the program's `PAYMENT_RECEIPT_SPACE`.
+        assert_eq!(data.len(), 48);
+        let marker = decode_receipt_marker(&data).expect("decodes");
+        assert_eq!(marker.invoice, invoice);
+        assert_eq!(marker.settled_at, 200);
 
-        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
+        // The guard has to be able to say "already settled" on its own, because
+        // that is the fallback when the history read fails.
+        let record = marker_record(marker, "devnet".into(), "https://example".into());
         assert_eq!(record.status, PaymentStatus::Settled);
-        // The invoice address is the identity, not the receipt's own address.
+        assert_eq!(record.id, invoice.to_string());
+        assert_eq!(record.settled_at_unix, 200);
+        assert!(record.settled_by.is_none());
+    }
+
+    #[test]
+    fn a_sol_settle_event_reads_back_as_a_settled_invoice() {
+        let invoice = Pubkey::from([4u8; 32]);
+        let line = settled_log_line(invoice, Pubkey::default(), 42, "tip");
+
+        let settled = settled_event_in_log(&line).expect("decodes");
+        let record = receipt_record(settled, "devnet".into(), "https://example".into());
+        assert_eq!(record.status, PaymentStatus::Settled);
+        // The invoice address is the identity, not the marker's own address.
         assert_eq!(record.id, invoice.to_string());
         assert_eq!(record.amount_lamports, 42);
         assert_eq!(record.options[0].currency, "sol");
         assert!(record.options[0].mint.is_empty());
         assert_eq!(record.options[0].amount, 42);
-        assert_eq!(record.settled_at_unix, 200);
+        assert_eq!(record.memo, "tip");
         assert_eq!(record.settled_by, Some(Pubkey::from([5u8; 32]).to_string()));
     }
 
     #[test]
-    fn a_token_receipt_reads_back_in_its_mint() {
+    fn a_token_settle_event_reads_back_in_its_mint() {
         let invoice = Pubkey::from([4u8; 32]);
         let usdc = mint_for("usdc", "devnet").expect("usdc on devnet");
-        let data = receipt_data(invoice, usdc, 5_000_000, "flat white");
+        let line = settled_log_line(invoice, usdc, 5_000_000, "flat white");
 
-        let receipt = decode_payment_receipt(&data).expect("decodes");
-        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
+        let settled = settled_event_in_log(&line).expect("decodes");
+        let record = receipt_record(settled, "devnet".into(), "https://example".into());
         assert_eq!(record.status, PaymentStatus::Settled);
         assert_eq!(record.amount_lamports, 0);
         assert_eq!(record.options[0].currency, "usdc");
@@ -1807,16 +1994,19 @@ mod tests {
         assert_eq!(record.options[0].mint, usdc.to_string());
     }
 
-    #[test]
-    fn an_unpaid_invoice_is_pending_not_missing() {
+    #[tokio::test]
+    async fn an_unpaid_invoice_is_pending_not_missing() {
         let invoice = Pubkey::from([4u8; 32]);
+        let rpc = RpcClient::new("https://example.invalid".into());
         let record = record_for_invoice(
+            &rpc,
             invoice,
             None,
             None,
             "devnet".into(),
             "https://example".into(),
-        );
+        )
+        .await;
         assert_eq!(record.status, PaymentStatus::Pending);
         assert_eq!(record.payment_pda, invoice.to_string());
         assert_eq!(record.amount_lamports, 0);
@@ -1824,10 +2014,12 @@ mod tests {
     }
 
     #[test]
-    fn a_receipt_wins_over_a_leftover_invoice_account() {
+    fn a_marker_wins_over_a_leftover_invoice_account() {
         let invoice = Pubkey::from([4u8; 32]);
 
-        // An old-program invoice account still sitting on chain, settled.
+        // An old-program invoice account still sitting on chain. A marker in the
+        // same read is the answer, whichever transaction left the invoice there:
+        // the read branches on the marker before it looks at invoice data.
         let mut stale = account_discriminator().to_vec();
         stale.extend_from_slice(&[7u8; 32]); // seller
         stale.extend_from_slice(&[9u8; 32]); // reference
@@ -1838,31 +2030,26 @@ mod tests {
         stale.extend_from_slice(&[0u8; 32]); // payer
         stale.extend_from_slice(&100i64.to_le_bytes());
         stale.extend_from_slice(&0i64.to_le_bytes());
+        assert!(record_for(invoice, &stale, "devnet".into(), "https://example".into()).is_some());
 
-        let record = record_for_invoice(
-            invoice,
-            Some(&stale),
-            Some(&receipt_data(invoice, Pubkey::default(), 42, "tip")),
-            "devnet".into(),
-            "https://example".into(),
-        );
+        let marker = decode_receipt_marker(&receipt_data(invoice, 200)).expect("decodes");
+        let record = marker_record(marker, "devnet".into(), "https://example".into());
         assert_eq!(record.status, PaymentStatus::Settled);
         assert_eq!(record.settled_at_unix, 200);
     }
 
     /// A settled record reports no split, and that is a contract, not an
-    /// omission: `0002` revision 15 records why. Re-deriving a fee here would
-    /// need the settle transaction's `PaymentSettled` event (the API reads no
-    /// events) or today's `Config`, which is not the policy the settlement used.
-    /// A field added without that read would be a number nobody can prove, so a
-    /// test forbids it appearing by accident — and pins the fields the record
-    /// does promise.
+    /// omission: `0002` revision 15 records why. The event now read here carries
+    /// `fee` and `seller_proceeds`, but publishing them would be a new field with
+    /// a new meaning for every consumer of this record — a decision of its own,
+    /// not a side effect of where the settlement is stored. A test forbids them
+    /// appearing by accident, and pins the fields the record does promise.
     #[test]
     fn a_settled_record_claims_no_split() {
         let invoice = Pubkey::from([4u8; 32]);
-        let data = receipt_data(invoice, Pubkey::default(), 100_000_000, "tip");
-        let receipt = decode_payment_receipt(&data).expect("decodes");
-        let record = receipt_record(receipt, "devnet".into(), "https://example".into());
+        let line = settled_log_line(invoice, Pubkey::default(), 100_000_000, "tip");
+        let settled = settled_event_in_log(&line).expect("decodes");
+        let record = receipt_record(settled, "devnet".into(), "https://example".into());
 
         let json = serde_json::to_value(&record).expect("serializes");
         for absent in [
@@ -1884,10 +2071,13 @@ mod tests {
 
     #[test]
     fn refuses_to_read_a_receipt_out_of_a_foreign_account() {
-        assert!(decode_payment_receipt(&[0u8; 301]).is_none());
+        assert!(decode_receipt_marker(&[0u8; 48]).is_none());
         // An invoice account is not a receipt either.
         let mut invoice = account_discriminator().to_vec();
-        invoice.extend_from_slice(&[0u8; 301]);
-        assert!(decode_payment_receipt(&invoice).is_none());
+        invoice.extend_from_slice(&[0u8; 48]);
+        assert!(decode_receipt_marker(&invoice).is_none());
+        // A 301-byte receipt from the old program does not decode as a marker,
+        // and a truncated one does not panic.
+        assert!(decode_receipt_marker(&receipt_data(Pubkey::from([4u8; 32]), 1)[..20]).is_none());
     }
 }

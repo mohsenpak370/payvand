@@ -981,8 +981,9 @@ async fn config(context: &ProgramTestContext, address: Pubkey) -> Config {
     Config::try_deserialize(&mut account.data.as_slice()).expect("config did not decode")
 }
 
-/// What `init` puts in a receipt account; the payer fronts it and the treasury
-/// refunds it.
+/// What `init` puts in a receipt account. The payer fronts it and the seller
+/// ends up paying for it: the seller's proceeds are reduced by exactly this, so
+/// the payer is made whole without the treasury moving a lamport.
 fn receipt_rent() -> u64 {
     Rent::default().minimum_balance(PAYMENT_RECEIPT_SPACE)
 }
@@ -1025,11 +1026,11 @@ fn test_policy(fee_bps: u16, fixed_fee_lamports: u64) -> Config {
 }
 
 /// The smallest amount the policy accepts: the first one above
-/// `invoice_rent + fee`.
+/// `invoice_rent + receipt_rent + fee`.
 fn min_payable() -> u64 {
-    let mut amount = invoice_rent();
+    let mut amount = invoice_rent() + receipt_rent();
     loop {
-        if amount > invoice_rent() + fee(amount) {
+        if amount > invoice_rent() + receipt_rent() + fee(amount) {
             return amount;
         }
         amount += 1;
@@ -1119,9 +1120,12 @@ async fn settle_payment_writes_a_receipt_and_closes_the_invoice() {
     .await
     .expect("settle failed");
 
-    // The seller absorbs the fee: `amount - rent - fee` now and the invoice rent
-    // when the account closes.
-    assert_eq!(lamports(&context, seller).await, amount - fee(amount));
+    // The seller absorbs the fee and the permanent marker's rent: `amount - rent
+    // - receipt rent - fee` now and the invoice rent when the account closes.
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - fee(amount) - receipt_rent()
+    );
 
     // The invoice account is gone — settled invoices do not linger on chain.
     assert!(
@@ -1129,32 +1133,25 @@ async fn settle_payment_writes_a_receipt_and_closes_the_invoice() {
         "the invoice account should be closed by the settle transaction"
     );
 
-    // The receipt survives it, carries the invoice facts, and is exactly the
-    // layout the program allocates.
+    // The marker survives the invoice and is exactly the layout the program
+    // allocates: the guard, and the pointer back to the invoice it closed.
     let written = receipt(&context, receipt_address).await;
     assert_eq!(written.invoice, invoice);
-    assert_eq!(written.seller, seller);
-    assert_eq!(written.reference, reference);
-    assert_eq!(written.mint, Pubkey::default());
-    assert_eq!(written.amount, amount);
-    assert_eq!(written.memo, memo);
-    assert_eq!(written.payer, payer);
-    assert!(written.created_at > 0);
-    assert_eq!(written.settled_at, written.created_at);
-    assert_eq!(written.closed_at, written.settled_at);
+    assert!(written.settled_at > 0, "the guard must be stamped");
     let receipt_account = account(&context, receipt_address)
         .await
         .expect("receipt account missing");
     assert_eq!(receipt_account.data.len(), PAYMENT_RECEIPT_SPACE);
 
-    // The payer paid exactly the price (the treasury refunded the receipt rent
-    // the payer fronted) plus the network fee.
+    // The payer paid exactly the price plus the network fee. It advanced the
+    // marker's rent at `init`, and that came back out of the seller's proceeds.
     let paid = payer_before - lamports(&context, payer).await;
     assert_eq!(paid, amount + TX_FEE);
 
-    // The treasury keeps the fee and loses the receipt rent it refunded.
+    // The treasury is unchanged but for the fee: the SOL path no longer funds
+    // the receipt.
     let treasury_delta = lamports(&context, treasury_pda()).await as i128 - treasury_before as i128;
-    assert_eq!(treasury_delta, fee(amount) as i128 - receipt_rent() as i128);
+    assert_eq!(treasury_delta, fee(amount) as i128);
 }
 
 /// Task 3.1's zero-fee rule on the SOL wallet path: at 0% the settlement runs one
@@ -1189,12 +1186,13 @@ async fn a_zero_fee_settle_payment_sends_no_fee_transfer() {
     .await
     .expect("a zero-fee settlement must succeed");
 
-    // Nothing was sent to the treasury, and the seller absorbed no fee.
-    assert_eq!(lamports(&free, free_seller).await, amount);
+    // Nothing was sent to the treasury, and the seller absorbed no fee — only
+    // the permanent marker's rent, which no policy waives.
+    assert_eq!(lamports(&free, free_seller).await, amount - receipt_rent());
     assert_eq!(
         lamports(&free, treasury_pda()).await as i128 - treasury_before as i128,
-        -(receipt_rent() as i128),
-        "a 0% settlement only refunds the receipt rent"
+        0,
+        "a 0% settlement moves nothing in or out of the treasury"
     );
     assert_eq!(payer_before - lamports(&free, payer).await, amount + TX_FEE);
 
@@ -1291,7 +1289,10 @@ async fn settle_payment_rejects_an_amount_that_cannot_cover_the_rent() {
     )
     .await
     .expect("the smallest valid invoice must settle");
-    assert_eq!(lamports(&context, seller).await, floor - fee(floor));
+    assert_eq!(
+        lamports(&context, seller).await,
+        floor - fee(floor) - receipt_rent()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1368,22 +1369,25 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
         .await
         .expect("pay_from_budget failed");
 
-    // The seller absorbs the fee, and the budget records exactly what it spent
-    // on the invoice.
-    assert_eq!(lamports(&context, seller).await, amount - fee(amount));
+    // The seller absorbs the fee and the marker's rent, and the budget records
+    // exactly what it spent on the invoice.
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - fee(amount) - receipt_rent()
+    );
     let spent = budget(&context, budget_address).await;
     assert_eq!(spent.spent, amount);
     assert_eq!(spent.monthly_limit, monthly_limit);
 
-    // The pot pays exactly the price: the treasury refunds the receipt rent the
-    // session key fronted, and the invoice rent comes back through the close.
+    // The pot pays exactly the price: the session key is refunded both rents and
+    // the seller's share already carries them.
     let pot_after = lamports(&context, budget_address).await;
     assert_eq!(pot_before - pot_after, amount);
 
-    // The treasury keeps the fee and loses the receipt rent it refunded.
+    // The treasury keeps the fee and funds nothing.
     let treasury_delta =
         lamports(&context, treasury_pda()).await as i128 - TREASURY_LAMPORTS as i128;
-    assert_eq!(treasury_delta, fee(amount) as i128 - receipt_rent() as i128);
+    assert_eq!(treasury_delta, fee(amount) as i128);
 
     // The invoice is closed and the receipt records the session key as payer.
     assert!(
@@ -1392,12 +1396,7 @@ async fn pay_from_budget_settles_the_invoice_and_records_the_spend() {
     );
     let written = receipt(&context, receipt_address).await;
     assert_eq!(written.invoice, invoice);
-    assert_eq!(written.seller, seller);
-    assert_eq!(written.amount, amount);
-    assert_eq!(written.memo, memo);
-    assert_eq!(written.mint, Pubkey::default());
-    assert_eq!(written.payer, session.pubkey());
-    assert!(written.closed_at > 0);
+    assert!(written.settled_at > 0);
 
     // The session key advanced both rents and was refunded both, so the only
     // thing it is out is its signature's fee — the float is what covers that.
@@ -1819,8 +1818,11 @@ async fn initialize_config_rejects_a_signer_that_is_not_the_upgrade_authority() 
     );
 }
 
+/// The SOL path asks the treasury for nothing since the seller started carrying
+/// the marker's rent: a treasury holding one lamport settles as well as a funded
+/// one, and the only lamports it sees are the fee arriving.
 #[tokio::test]
-async fn settle_payment_rejects_a_treasury_that_cannot_fund_the_receipt() {
+async fn settle_payment_needs_nothing_of_the_treasury() {
     let mut context = started_with_policy(
         None,
         TEST_FEE_BPS,
@@ -1836,23 +1838,24 @@ async fn settle_payment_rejects_a_treasury_that_cannot_fund_the_receipt() {
     let reference = Keypair::new().pubkey();
     let amount = LAMPORTS_PER_SOL / 10;
 
-    let attempt = send(
+    send(
         &mut context,
         &[settle_instruction(
             payer, seller, reference, amount, "coffee",
         )],
         &[],
     )
-    .await;
-    let error = attempt.expect_err("an empty treasury must refuse the settlement");
-    assert!(
-        error.contains(TREASURY_UNDERFUNDED),
-        "expected {TREASURY_UNDERFUNDED}, got {error}"
-    );
+    .await
+    .expect("an unfunded treasury must not block a SOL settlement");
+
     assert_eq!(
         lamports(&context, seller).await,
-        0,
-        "a refused settlement must not pay the seller"
+        amount - fee(amount) - receipt_rent()
+    );
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        1 + fee(amount),
+        "the treasury only receives the fee"
     );
 }
 
@@ -1942,7 +1945,10 @@ async fn fixed_fee_is_charged_on_top_of_the_rate() {
     .await
     .expect("settle with a fixed fee failed");
 
-    assert_eq!(lamports(&context, seller).await, amount - expected_fee);
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - expected_fee - receipt_rent()
+    );
 }
 
 #[tokio::test]
@@ -2167,12 +2173,9 @@ async fn zero_fee_policy_charges_no_fee() {
     .await
     .expect("a fee-less pilot settle failed");
 
-    assert_eq!(lamports(&context, seller).await, amount);
-    // The treasury still funds the receipt rent, so it only goes down.
-    assert_eq!(
-        lamports(&context, treasury_pda()).await,
-        treasury_before - receipt_rent()
-    );
+    assert_eq!(lamports(&context, seller).await, amount - receipt_rent());
+    // A zero fee leaves the treasury alone: the seller funds the marker.
+    assert_eq!(lamports(&context, treasury_pda()).await, treasury_before);
 }
 
 /// Task 1.6's rounding floor. 2% of 99 lamports is 1.98, and the program floors
@@ -2304,15 +2307,14 @@ async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
 
 /// Task 1.6's sequence, in the order an operator can cause it: the admin
 /// withdraws the treasury down to its rent-exempt minimum, and the next settle
-/// is refused for want of the receipt rent. That separates the guard from the
-/// empty-treasury case next door — a treasury that has paid out is underfunded
-/// too, and the refusal comes from the same check.
+/// goes through anyway — the seller pays for the marker, so a drained treasury
+/// is not a settlement the protocol cannot finish.
 ///
-/// The guard runs inside the handler, after Anchor has already created the
-/// invoice and receipt accounts, so this also pins that the failed transaction
-/// rolls both of them back rather than leaving a half-made invoice behind.
+/// This used to be the underfunding guard's second case. It survives the move
+/// as the opposite assertion: what a withdrawal must not do is take the
+/// protocol's ability to settle with it.
 #[tokio::test]
-async fn withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle() {
+async fn withdrawing_the_treasury_to_its_rent_does_not_block_the_next_settle() {
     let (mut context, admin_keypair) = started_with_policy(
         None,
         TEST_FEE_BPS,
@@ -2345,7 +2347,7 @@ async fn withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle() {
     let amount = LAMPORTS_PER_SOL / 10;
     let invoice = payment_pda(&seller, &reference, amount);
 
-    let attempt = send(
+    send(
         &mut context,
         &[settle_instruction(
             payer,
@@ -2356,20 +2358,23 @@ async fn withdrawing_the_treasury_to_its_rent_underfunds_the_next_settle() {
         )],
         &[],
     )
-    .await;
-    let error = attempt.expect_err("a treasury at its rent cannot fund the receipt");
-    assert!(
-        error.contains(TREASURY_UNDERFUNDED),
-        "expected {TREASURY_UNDERFUNDED}, got {error}"
-    );
+    .await
+    .expect("a treasury at its rent must not block the settle");
 
-    assert_eq!(lamports(&context, seller).await, 0);
-    assert_eq!(lamports(&context, treasury).await, treasury_rent());
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - fee(amount) - receipt_rent()
+    );
     assert!(
         account(&context, invoice).await.is_none(),
-        "a refused settle must not leave the invoice behind"
+        "the settle must close the invoice"
     );
-    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
+    assert!(account(&context, receipt_pda(&invoice)).await.is_some());
+    assert_eq!(
+        lamports(&context, treasury).await,
+        treasury_rent() + fee(amount),
+        "the fee is the only lamport the treasury gains"
+    );
 }
 
 #[tokio::test]
@@ -2619,16 +2624,7 @@ fn serialized_accounts_fit_their_space_constants() {
 
     let receipt = PaymentReceipt {
         invoice: Pubkey::from(key),
-        seller: Pubkey::from(key),
-        reference: Pubkey::from(key),
-        mint: Pubkey::from(key),
-        amount: 1,
-        memo: memo.clone(),
-        payer: Pubkey::from(key),
-        created_at: 1,
         settled_at: 2,
-        closed_at: 2,
-        bump: 255,
     };
     assert_eq!(borsh_len(&receipt) + 8, PAYMENT_RECEIPT_SPACE);
 
@@ -2682,12 +2678,13 @@ fn account_spaces_match_the_sizes_used_by_the_program() {
     assert_eq!(TOKEN_BUDGET_SPACE, 8 + 32 + 32 + 32 + 8 + 8 + 8 + 1);
     assert_eq!(TOKEN_BUDGET_SPACE, 129);
 
-    // One receipt type for both currencies: invoice, seller, reference, mint,
-    // amount, memo, payer, three timestamps, bump. No `state` field — the
-    // account's existence is the state.
-    let receipt = 8 + 32 + 32 + 32 + 32 + 8 + 4 + PAYMENT_MAX_MEMO + 32 + 8 + 8 + 8 + 1;
+    // One marker for both currencies: the invoice it points at and the
+    // `settled_at` replay guard. The payment's own fields live in the
+    // `PaymentSettled` event, which is what keeps this at 48 bytes instead of
+    // 301.
+    let receipt = 8 + 32 + 8;
     assert_eq!(PAYMENT_RECEIPT_SPACE, receipt);
-    assert_eq!(PAYMENT_RECEIPT_SPACE, 301);
+    assert_eq!(PAYMENT_RECEIPT_SPACE, 48);
 
     // admin, fee_bps, fixed_fee_lamports, fee_mode, session_fee_float, bump,
     // treasury_bump, version.
@@ -3004,8 +3001,6 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
     assert_eq!(lamports(&context, invoice).await, 0);
     let kept = receipt(&context, receipt_pda(&invoice)).await;
     assert_eq!(kept.invoice, invoice);
-    assert_eq!(kept.amount, amount);
-    assert_eq!(kept.payer, world.buyer.pubkey());
     assert!(kept.settled_at > 0);
     // The pool advanced both rents back to the payer and took the invoice's
     // back when it closed, so it is one receipt rent down for the record.
@@ -3178,8 +3173,7 @@ async fn settle_token_payment_replay_is_rejected_as_already_settled() {
         receipt_after_replay.settled_at,
         receipt_after_first.settled_at
     );
-    assert_eq!(receipt_after_replay.payer, receipt_after_first.payer);
-    assert_eq!(receipt_after_replay.amount, receipt_after_first.amount);
+    assert_eq!(receipt_after_replay.invoice, receipt_after_first.invoice);
 }
 
 /// Task 3.2's criterion, with sellers that hold neither SOL nor a token account:
@@ -3574,8 +3568,6 @@ async fn pay_from_token_budget_splits_the_price_and_closes_to_the_treasury() {
     );
     let kept = receipt(&context, receipt_pda(&invoice)).await;
     assert_eq!(kept.invoice, invoice);
-    assert_eq!(kept.amount, amount);
-    assert_eq!(kept.payer, world.session.pubkey());
     assert!(kept.settled_at > 0);
     assert_eq!(token_budget(&context, world.budget).await.spent, amount);
 }
@@ -4188,8 +4180,9 @@ where
         .collect()
 }
 
-/// The settle event is the split, not a restatement of the receipt: the price,
-/// the fee that went to the treasury, what the seller keeps, and who paid.
+/// The settle event is now the record: the price, the fee that went to the
+/// treasury, what the seller keeps, who paid — and the two facts the marker no
+/// longer stores, the invoice it closed and the note.
 #[tokio::test]
 async fn settle_payment_emits_the_split_it_paid() {
     let mut context = started().await;
@@ -4214,17 +4207,23 @@ async fn settle_payment_emits_the_split_it_paid() {
     assert_eq!(event.fee, fee(amount));
     assert_eq!(
         event.seller_proceeds,
-        amount - fee(amount),
-        "the seller keeps the price less the fee"
+        amount - fee(amount) - receipt_rent(),
+        "the seller keeps the price less the fee and the marker's rent"
     );
     assert_eq!(event.payer, payer);
     assert_eq!(event.seller, seller);
     assert_eq!(
         event.mint,
         Pubkey::default(),
-        "a SOL invoice is the empty mint, as on the receipt"
+        "a SOL invoice is the empty mint"
     );
     assert_eq!(event.reference, reference);
+    assert_eq!(
+        event.invoice,
+        payment_pda(&seller, &reference, amount),
+        "the event names the invoice the QR carried"
+    );
+    assert_eq!(event.memo, "coffee", "the note moved here from the receipt");
 }
 
 /// The token path emits the same shape with the mint set, so an indexer reads

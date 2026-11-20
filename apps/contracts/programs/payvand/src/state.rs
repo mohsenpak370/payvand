@@ -62,38 +62,38 @@ pub struct TokenPayment {
     pub bump: u8,
 }
 
-/// The permanent record of a settled invoice — SOL or token.
+/// The permanent marker of a settled invoice — SOL or token.
 ///
 /// The temporary `Payment`/`TokenPayment` account is created, settled and
-/// closed inside one transaction; this receipt is what survives. Its address is
-/// derived from the invoice address (`["payment-receipt", invoice]`), and
-/// `settled_at` doubles as the replay guard: a second settlement of the same
-/// invoice finds a receipt with `settled_at != 0`.
+/// closed inside one transaction; this marker is what survives, and it is
+/// deliberately not a copy of the payment. Everything the payment was — the
+/// split, the payer, the memo, the reference and the mint — is in the
+/// `PaymentSettled` event that the same transaction logs, and the price and
+/// memo are in the instruction data that produced it. Storing that again here
+/// would cost the seller ~2.3 times the rent for a second copy of facts the
+/// cluster already keeps.
 ///
-/// One type for both currencies, with the mint carrying the difference
-/// (`Pubkey::default()` for SOL): a watcher holding only an invoice address can
-/// then find its receipt with one derivation instead of guessing whether the
-/// invoice was priced in SOL or a token.
+/// What cannot move off chain is what only the runtime can answer:
+///
+/// - `settled_at` is the replay guard. A second settlement of the same invoice
+///   finds this account already written and is refused with `AlreadySettled`,
+///   atomically with the transfer rather than as a check made before it.
+/// - `invoice` lets a program-wide scan (`get_program_accounts`) name the
+///   invoice a marker belongs to. A PDA cannot be inverted, so without this a
+///   scan sees an address and no way to say which payment it belongs to.
+///
+/// Its address is derived from the invoice address
+/// (`["payment-receipt", invoice]`), so a watcher holding only the QR still
+/// finds it with one derivation.
 #[account]
 #[derive(Debug)]
 pub struct PaymentReceipt {
-    /// The invoice PDA this receipt belongs to, so a program-wide scan can name
-    /// the invoice without re-deriving it.
+    /// The invoice PDA this marker belongs to, so a program-wide scan can name
+    /// the invoice without a history read.
     pub invoice: Pubkey,
-    pub seller: Pubkey,
-    pub reference: Pubkey,
-    /// `Pubkey::default()` for a SOL invoice.
-    pub mint: Pubkey,
-    pub amount: u64,
-    pub memo: String,
-    /// Wallet or session key that signed the settlement.
-    pub payer: Pubkey,
-    pub created_at: i64,
+    /// Equal to the settle transaction's timestamp. Non-zero means this invoice
+    /// is done; zero is what `init_if_needed` leaves in a fresh account.
     pub settled_at: i64,
-    /// Equal to `settled_at`: the invoice account closes in the settle
-    /// transaction, so the record is complete the moment it is written.
-    pub closed_at: i64,
-    pub bump: u8,
 }
 
 /// A buyer's monthly spending pot for one token: the vault holds the tokens

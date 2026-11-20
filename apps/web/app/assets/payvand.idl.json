@@ -1574,8 +1574,10 @@
         {
           "name": "receipt",
           "docs": [
-            "The permanent record. `settled_at != 0` means this invoice is done, so",
-            "the same invoice can never be settled twice."
+            "The permanent marker. `settled_at != 0` means this invoice is done, so",
+            "the same invoice can never be settled twice. The payer fronts its rent",
+            "and is made whole through the seller's reduced proceeds, so the seller",
+            "is the one who ends up paying for the record."
           ],
           "writable": true,
           "pda": {
@@ -1638,7 +1640,7 @@
           "name": "treasury",
           "docs": [
             "The fee destination, pinned by seed so the payer cannot name another",
-            "account. It also refunds the receipt rent the payer just advanced."
+            "account. Nothing else about a SOL settlement touches it."
           ],
           "writable": true,
           "pda": {
@@ -2513,18 +2515,29 @@
     {
       "name": "PaymentReceipt",
       "docs": [
-        "The permanent record of a settled invoice — SOL or token.",
+        "The permanent marker of a settled invoice — SOL or token.",
         "",
         "The temporary `Payment`/`TokenPayment` account is created, settled and",
-        "closed inside one transaction; this receipt is what survives. Its address is",
-        "derived from the invoice address (`[\"payment-receipt\", invoice]`), and",
-        "`settled_at` doubles as the replay guard: a second settlement of the same",
-        "invoice finds a receipt with `settled_at != 0`.",
+        "closed inside one transaction; this marker is what survives, and it is",
+        "deliberately not a copy of the payment. Everything the payment was — the",
+        "split, the payer, the memo, the reference and the mint — is in the",
+        "`PaymentSettled` event that the same transaction logs, and the price and",
+        "memo are in the instruction data that produced it. Storing that again here",
+        "would cost the seller ~2.3 times the rent for a second copy of facts the",
+        "cluster already keeps.",
         "",
-        "One type for both currencies, with the mint carrying the difference",
-        "(`Pubkey::default()` for SOL): a watcher holding only an invoice address can",
-        "then find its receipt with one derivation instead of guessing whether the",
-        "invoice was priced in SOL or a token."
+        "What cannot move off chain is what only the runtime can answer:",
+        "",
+        "- `settled_at` is the replay guard. A second settlement of the same invoice",
+        "finds this account already written and is refused with `AlreadySettled`,",
+        "atomically with the transfer rather than as a check made before it.",
+        "- `invoice` lets a program-wide scan (`get_program_accounts`) name the",
+        "invoice a marker belongs to. A PDA cannot be inverted, so without this a",
+        "scan sees an address and no way to say which payment it belongs to.",
+        "",
+        "Its address is derived from the invoice address",
+        "(`[\"payment-receipt\", invoice]`), so a watcher holding only the QR still",
+        "finds it with one derivation."
       ],
       "type": {
         "kind": "struct",
@@ -2532,60 +2545,18 @@
           {
             "name": "invoice",
             "docs": [
-              "The invoice PDA this receipt belongs to, so a program-wide scan can name",
-              "the invoice without re-deriving it."
+              "The invoice PDA this marker belongs to, so a program-wide scan can name",
+              "the invoice without a history read."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "seller",
-            "type": "pubkey"
-          },
-          {
-            "name": "reference",
-            "type": "pubkey"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "`Pubkey::default()` for a SOL invoice."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "memo",
-            "type": "string"
-          },
-          {
-            "name": "payer",
-            "docs": [
-              "Wallet or session key that signed the settlement."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "created_at",
-            "type": "i64"
           },
           {
             "name": "settled_at",
-            "type": "i64"
-          },
-          {
-            "name": "closed_at",
             "docs": [
-              "Equal to `settled_at`: the invoice account closes in the settle",
-              "transaction, so the record is complete the moment it is written."
+              "Equal to the settle transaction's timestamp. Non-zero means this invoice",
+              "is done; zero is what `init_if_needed` leaves in a fresh account."
             ],
             "type": "i64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }
@@ -2596,12 +2567,17 @@
         "One settled invoice — from the wallet path or an allowance, in SOL or a",
         "token.",
         "",
-        "All four settle instructions emit this same type, deliberately: like",
-        "`PaymentReceipt`, `mint` carries the currency (`Pubkey::default()` for SOL)",
-        "and `payer` is whoever signed, wallet or session key. The split is the point",
-        "of the event: `amount` is the price the QR showed, `fee` went to the",
-        "treasury, and `seller_proceeds = amount - fee` is what the seller keeps —",
-        "rents are the pool's business, not the seller's."
+        "This event is the record. The permanent `PaymentReceipt` account keeps only",
+        "the replay guard and a pointer back to the invoice, so everything a ledger,",
+        "a seller's screen or the API needs to describe a settlement is here: it",
+        "lands in the same transaction, it cannot be rewritten, and it costs no rent.",
+        "",
+        "All four settle instructions emit this same type, deliberately: `mint`",
+        "carries the currency (`Pubkey::default()` for SOL) and `payer` is whoever",
+        "signed, wallet or session key. `amount` is the price the QR showed, `fee`",
+        "went to the treasury, and `seller_proceeds` is what the seller actually",
+        "keeps — the price less the fee, less the receipt rent where the seller",
+        "carries it (the SOL paths; a token seller is charged no lamports)."
       ],
       "type": {
         "kind": "struct",
@@ -2623,7 +2599,9 @@
           {
             "name": "seller_proceeds",
             "docs": [
-              "`amount - fee`: what the seller keeps of the price."
+              "`amount - fee` on a token settle, `amount - fee - receipt rent` on SOL:",
+              "the receipt rent is a cost the seller now carries, so the event states",
+              "the number after it rather than making every reader know the rule."
             ],
             "type": "u64"
           },
@@ -2651,6 +2629,21 @@
               "The invoice's lookup key, as carried in its seeds."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "invoice",
+            "docs": [
+              "The invoice PDA this settlement closed, so an indexer can key the payment",
+              "by the address the QR carries without re-deriving the seeds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "memo",
+            "docs": [
+              "The invoice note, which used to live in the receipt."
+            ],
+            "type": "string"
           }
         ]
       }

@@ -2218,6 +2218,8 @@ dependencies = [
  "solana-commitment-config",
  "solana-pubkey 3.0.0",
  "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-signature",
  "thiserror 2.0.21",
  "tokio",
  "tower 0.5.3",
@@ -3863,6 +3865,7 @@ dependencies = [
  "serde-big-array",
  "serde_derive",
  "solana-sanitize",
+ "wincode",
 ]
 
 [[package]]

@@ -48,7 +48,8 @@ describe('rents', () => {
   it('matches the plan table on mainnet and the lower devnet rent', () => {
     expect(SOL_RENT).toBe(2_491_680)
     expect(TOKEN_RENT).toBe(2_714_400)
-    expect(RECEIPT_RENT).toBe(2_985_840)
+    // The marker is 48 bytes: the invoice pointer and the `settled_at` guard.
+    expect(RECEIPT_RENT).toBe(1_224_960)
     expect(TOKEN_ACCOUNT_RENT).toBe(2_039_280)
     expect(MINIMUM_BALANCE(PAYMENT_SPACE, DEVNET)).toBe(1_818_640)
   })
@@ -142,13 +143,15 @@ describe('invoiceCosts', () => {
     const costs = invoiceCosts({ ...base, amount: 1_000_000_000 })
 
     expect(costs.fee).toBe(20_000_000)
-    expect(costs.sellerReceives).toBe(980_000_000)
+    // The SOL seller also carries the marker's rent, which is permanent.
+    expect(costs.sellerReceives).toBe(980_000_000 - RECEIPT_RENT)
     expect(costs.payerPays).toBe(1_000_000_000)
     expect(costs.invoiceRent).toBe(SOL_RENT)
     expect(costs.receiptRent).toBe(RECEIPT_RENT)
     expect(costs.networkFee).toBe(NETWORK_FEE_LAMPORTS)
     expect(costs.sellerTokenAccountRent).toBe(0)
-    expect(costs.minPayable).toBe(2_542_531)
+    // The floor clears both rents, as `settle_payment` now requires.
+    expect(costs.minPayable).toBe(3_792_490)
   })
 
   it('takes no rent into a token invoice floor, which is the fee alone', () => {
@@ -177,7 +180,10 @@ describe('invoiceCosts', () => {
 
     expect(costs.amount).toBe(1_000)
     expect(costs.fee).toBe(20)
-    expect(costs.sellerReceives).toBe(980)
+    // A price this small cannot settle at all — the marker's rent alone is more
+    // than the whole invoice — so the quote floors the seller's share at zero
+    // rather than showing a negative number.
+    expect(costs.sellerReceives).toBe(0)
     expect(Number.isInteger(costs.sellerReceives)).toBe(true)
   })
 
@@ -185,7 +191,8 @@ describe('invoiceCosts', () => {
     const costs = invoiceCosts({ ...base, policy: buyerPays(200), amount: 1_000_000_000 })
 
     expect(costs.payerPays).toBe(1_020_000_000)
-    expect(costs.sellerReceives).toBe(1_000_000_000)
+    // The buyer buys the fee out, but the marker's rent is still the seller's.
+    expect(costs.sellerReceives).toBe(1_000_000_000 - RECEIPT_RENT)
   })
 
   it('reports the token account rent only when the seller has none', () => {
@@ -233,7 +240,7 @@ describe('invoiceCosts', () => {
       amount: 100_000_000
     })
     expect(costs.fee).toBe(3_000_000)
-    expect(costs.sellerReceives).toBe(97_000_000)
+    expect(costs.sellerReceives).toBe(97_000_000 - RECEIPT_RENT)
   })
 })
 
@@ -258,12 +265,12 @@ describe('break-even against the receipt rent', () => {
   }
 
   it.each([
-    // Receipt rents from `0002`'s table: 301 bytes at each cluster's rate.
-    ['2% on mainnet', sellerPays(200), RECEIPT_RENT, 149_292_000],
-    ['2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, DEVNET), 108_966_000],
-    ['1% on mainnet', sellerPays(100), RECEIPT_RENT, 298_584_000],
+    // The marker's rent at each cluster's rate, 48 bytes a receipt.
+    ['2% on mainnet', sellerPays(200), RECEIPT_RENT, 61_248_000],
+    ['2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, DEVNET), 44_704_000],
+    ['1% on mainnet', sellerPays(100), RECEIPT_RENT, 122_496_000],
     // The fixed fee covers the first 1,000,000 lamports of rent by itself.
-    ['2% plus a 0.001 SOL fixed fee', sellerPays(200, 1_000_000), RECEIPT_RENT, 99_292_000]
+    ['2% plus a 0.001 SOL fixed fee', sellerPays(200, 1_000_000), RECEIPT_RENT, 11_248_000]
   ])('breaks even at %s', (_name, policy, rent, expected) => {
     const amount = breakEven(policy, rent)
     expect(amount).toBe(expected)
@@ -297,7 +304,7 @@ describe('break-even against the receipt rent', () => {
     })
 
     expect(costs.fee).toBe(RECEIPT_RENT)
-    expect(costs.minPayable).toBe(2_542_531)
+    expect(costs.minPayable).toBe(3_792_490)
     // Payable long before it is profitable: that gap is `0002`'s documented
     // per-invoice subsidy, and the floor is what the seller feels first.
     expect(costs.minPayable).toBeLessThan(amount)

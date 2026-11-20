@@ -6,13 +6,13 @@ import { tokenFloatNeed, tokenFloatTopUp, tokenOpenCost } from './useBudget'
 /**
  * The allowance's two floats are what pay for a seller who has no token account.
  * They are sized for three such payments, not for ever: the budget's 18,000,000
- * refunds 5,700,240 of records a payment, so a fourth needs a refill. The refill
+ * refunds 3,939,360 of records a payment, so a fourth needs a refill. The refill
  * is a plain transfer because the program refunds from the budget's lamports and
  * hands the remainder back on close, so the only question is how much.
  */
 describe('the token float', () => {
   /** The harness's rent at 6,960 lamports a byte, to the lamport. */
-  const rents = { invoice: 2_714_400, receipt: 2_985_840, account: 2_039_280 }
+  const rents = { invoice: 2_714_400, receipt: 1_224_960, account: 2_039_280 }
   const fee = 5_000
 
   it('asks nothing of the budget and the whole peak of the session key', () => {
@@ -26,11 +26,11 @@ describe('the token float', () => {
   })
 
   it('refills only the session key, by the difference that makes the next payment go', () => {
-    // A worn-down key: 4,520,960 against the 7,744,520 — both records, the three
-    // accounts' rent and the fee — it has to front before the refund comes back.
-    // The budget is never part of a refill, however little it holds.
+    // A worn-down key: 4,520,960 against the 5,983,640 — both records, the
+    // seller's account and the fee — it has to front before the refund comes
+    // back. The budget is never part of a refill, however little it holds.
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 0, session: 4_520_960 }))
-      .toEqual({ budget: 0, session: 3_223_560, total: 3_223_560 })
+      .toEqual({ budget: 0, session: 1_462_680, total: 1_462_680 })
   })
 
   it('is the same rule the contract harness applies, from the shared vectors', () => {
@@ -67,8 +67,8 @@ describe('the token float', () => {
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 10_000_000, session: 10_000_000 }))
       .toEqual({ budget: 0, session: 0, total: 0 })
     // And nothing for the side that is short of nothing, even if the other is.
-    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 5_700_240, session: 1_000 }))
-      .toEqual({ budget: 0, session: 7_743_520, total: 7_743_520 })
+    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 3_939_360, session: 1_000 }))
+      .toEqual({ budget: 0, session: 5_982_640, total: 5_982_640 })
   })
 })
 

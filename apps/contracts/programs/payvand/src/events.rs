@@ -16,19 +16,26 @@ use crate::state::FeeMode;
 /// One settled invoice — from the wallet path or an allowance, in SOL or a
 /// token.
 ///
-/// All four settle instructions emit this same type, deliberately: like
-/// `PaymentReceipt`, `mint` carries the currency (`Pubkey::default()` for SOL)
-/// and `payer` is whoever signed, wallet or session key. The split is the point
-/// of the event: `amount` is the price the QR showed, `fee` went to the
-/// treasury, and `seller_proceeds = amount - fee` is what the seller keeps —
-/// rents are the pool's business, not the seller's.
+/// This event is the record. The permanent `PaymentReceipt` account keeps only
+/// the replay guard and a pointer back to the invoice, so everything a ledger,
+/// a seller's screen or the API needs to describe a settlement is here: it
+/// lands in the same transaction, it cannot be rewritten, and it costs no rent.
+///
+/// All four settle instructions emit this same type, deliberately: `mint`
+/// carries the currency (`Pubkey::default()` for SOL) and `payer` is whoever
+/// signed, wallet or session key. `amount` is the price the QR showed, `fee`
+/// went to the treasury, and `seller_proceeds` is what the seller actually
+/// keeps — the price less the fee, less the receipt rent where the seller
+/// carries it (the SOL paths; a token seller is charged no lamports).
 #[event]
 pub struct PaymentSettled {
     /// The invoice price, in lamports or the mint's base units.
     pub amount: u64,
     /// The seller-side fee that went to the treasury.
     pub fee: u64,
-    /// `amount - fee`: what the seller keeps of the price.
+    /// `amount - fee` on a token settle, `amount - fee - receipt rent` on SOL:
+    /// the receipt rent is a cost the seller now carries, so the event states
+    /// the number after it rather than making every reader know the rule.
     pub seller_proceeds: u64,
     /// Wallet or session key that settled.
     pub payer: Pubkey,
@@ -37,6 +44,11 @@ pub struct PaymentSettled {
     pub mint: Pubkey,
     /// The invoice's lookup key, as carried in its seeds.
     pub reference: Pubkey,
+    /// The invoice PDA this settlement closed, so an indexer can key the payment
+    /// by the address the QR carries without re-deriving the seeds.
+    pub invoice: Pubkey,
+    /// The invoice note, which used to live in the receipt.
+    pub memo: String,
 }
 
 /// The fee policy as the admin just wrote it, so an indexer prices a settlement

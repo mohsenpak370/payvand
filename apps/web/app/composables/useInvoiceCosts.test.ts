@@ -171,38 +171,41 @@ describe('estimateInvoiceCosts against the program math', () => {
     expect(token.sellerReceives).toBe(1_470_000)
     // Seller-pays: the buyer is charged the price and nothing else.
     expect(token.payerPays).toBe(1_500_000)
-    // 262 and 301 bytes at the stub's 1,000 lamports per byte.
+    // 262 and 48 bytes at the stub's 1,000 lamports per byte.
     expect(token.invoiceRent).toBe(262_000)
-    expect(token.receiptRent).toBe(301_000)
+    expect(token.receiptRent).toBe(48_000)
     // A token settle refunds the rents and asks only `amount > fee`.
     expect(token.minPayable).toBe(1)
   })
 
-  it('quotes the SOL floor from `amount > invoice rent + fee`', async () => {
+  it('quotes the SOL floor from `amount > invoice rent + marker rent + fee`', async () => {
     const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol')
 
     expect(sol.invoiceRent).toBe(230_000)
-    expect(sol.receiptRent).toBe(301_000)
+    expect(sol.receiptRent).toBe(48_000)
     expect(sol.fee).toBe(200_000)
     // The smallest amount that clears the program's `InvoiceTooSmall` guard at
-    // a 230,000 lamport invoice rent: 234,694, one more than the sum at 693.
-    expect(sol.minPayable).toBe(234_694)
+    // 230,000 lamports of invoice rent and 48,000 of marker rent.
+    expect(sol.minPayable).toBe(283_674)
 
-    const settles = (amount: number) => amount > sol.invoiceRent + feeOn(policy, amount)
+    const settles = (amount: number) =>
+      amount > sol.invoiceRent + sol.receiptRent + feeOn(policy, amount)
     expect(settles(sol.minPayable)).toBe(true)
     expect(settles(sol.minPayable - 1)).toBe(false)
     expect(settles(10_000_000)).toBe(true)
-    expect(sol.sellerReceives).toBe(9_800_000)
+    // The fee and the permanent marker come out of the seller's side.
+    expect(sol.sellerReceives).toBe(9_800_000 - 48_000)
     expect(sol.payerPays).toBe(10_000_000)
   })
 
   it('quotes a price the program will actually settle', async () => {
-    // At the floor the program's own numbers are tight: 4,693 of fee leaves
-    // the seller 230,001 against a 230,000 invoice rent.
-    const sol = await quote.estimateInvoiceCosts(234_694, 'sol')
+    // At the floor the program's own numbers are tight: 5,673 of fee and 48,000
+    // of marker rent leave the seller one lamport over the 230,000 invoice rent,
+    // which is the rent they get back when the invoice closes.
+    const sol = await quote.estimateInvoiceCosts(283_674, 'sol')
 
     expect(sol.minPayable).toBeLessThanOrEqual(sol.amount)
-    expect(sol.fee).toBe(4_693)
+    expect(sol.fee).toBe(5_673)
     expect(sol.sellerReceives).toBe(230_001)
   })
 })

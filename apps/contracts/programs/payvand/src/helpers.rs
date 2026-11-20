@@ -51,8 +51,14 @@ pub fn validate_fee_policy(
     Ok(())
 }
 
-/// Refuses to settle unless the treasury can refund a receipt rent and keep
-/// its own rent-exempt minimum, so a settle never leaves the treasury short.
+/// Refuses to settle unless the treasury can fund the records it is about to
+/// refund and keep its own rent-exempt minimum, so a settle never leaves the
+/// treasury short.
+///
+/// Only the token paths call this since revision 23: a token settlement cannot
+/// charge its non-signing seller lamports, so the treasury still funds the
+/// marker's rent there. The SOL paths pay it out of the seller's proceeds and
+/// ask the treasury for nothing.
 pub fn ensure_treasury_funded(treasury: &AccountInfo, receipt_rent: u64) -> Result<()> {
     let floor = Rent::get()?.minimum_balance(0);
     require!(

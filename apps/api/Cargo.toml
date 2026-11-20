@@ -37,7 +37,11 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 solana-rpc-client = "3"
+# The history read behind a settled invoice: its config types.
+solana-rpc-client-api = "3"
 solana-pubkey = "3"
+# The settle transaction behind a receipt marker is addressed by signature.
+solana-signature = "3"
 # The commitment level of the invoice reads; already resolved through
 # solana-rpc-client, named here because `fetch_payment` sets it explicitly.
 solana-commitment-config = "3"

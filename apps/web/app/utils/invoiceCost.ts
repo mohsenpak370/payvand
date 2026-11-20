@@ -13,8 +13,13 @@ import type { SupportedCurrency } from '../composables/usePaymentApi'
 export const PAYMENT_SPACE = 230
 /** `TOKEN_PAYMENT_SPACE`: its token counterpart. */
 export const TOKEN_PAYMENT_SPACE = 262
-/** `PAYMENT_RECEIPT_SPACE`: the permanent record of a settled invoice. */
-export const PAYMENT_RECEIPT_SPACE = 301
+/**
+ * `PAYMENT_RECEIPT_SPACE`: the permanent marker of a settled invoice — the
+ * invoice it points at plus the `settled_at` replay guard. The payment's own
+ * fields are in the `PaymentSettled` event, which is why this is 48 bytes and
+ * not 301.
+ */
+export const PAYMENT_RECEIPT_SPACE = 48
 /** An SPL token account. */
 export const TOKEN_ACCOUNT_SPACE = 165
 
@@ -48,7 +53,11 @@ export interface InvoiceCosts {
   payerPays: number
   /** Lamports: the invoice's rent, returned to the seller when it closes. */
   invoiceRent: number
-  /** Lamports: the permanent record, funded and refunded by the treasury. */
+  /**
+   * Lamports: the permanent marker. A SOL seller pays for it (it comes out of
+   * what the settle hands them); a token seller cannot be charged lamports, so
+   * the treasury funds that one.
+   */
   receiptRent: number
   /** Lamports: the network fee estimate. */
   networkFee: number
@@ -128,28 +137,37 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   const amount = Number.isFinite(input.amount) ? Math.trunc(input.amount) : 0
   const fee = feeOn(policy, amount)
   const sellerPays = policy.feeMode === 'seller'
-  // Both settles hand the payer back every lamport of record rent they advance:
-  // `settle_payment` reimburses the receipt and pays the seller
-  // `amount - rent - fee`, `settle_token_payment` refunds both from the treasury
-  // and closes the invoice to it. So a buyer's cost beyond the price is the
-  // network fee, and the one extra line a token invoice can have is an account
-  // the seller has not opened yet.
+  // The invoice rent is a loan, not a cost: the account closes to the seller in
+  // every SOL settle. The marker's rent is a cost, and on a SOL invoice it is
+  // the seller's — `settle_payment` hands them `amount - rent - marker rent -
+  // fee` and only returns the invoice rent on close. A token settle cannot
+  // charge a seller lamports, so there the treasury funds the marker and the
+  // seller keeps `amount - fee`.
+  //
+  // Either way the buyer pays the price: a SOL buyer advances the marker's rent
+  // at `init` and is made whole through the seller's reduced proceeds.
+  const markerRent = input.currency === 'sol' ? Math.trunc(input.receiptRent) : 0
+  const netOfFee = sellerPays ? amount - fee : amount
 
   return {
     currency: input.currency,
     amount,
     fee,
     feeBps: policy.feeBps,
-    sellerReceives: sellerPays ? amount - fee : amount,
+    sellerReceives: Math.max(0, netOfFee - markerRent),
     payerPays: sellerPays ? amount : amount + fee,
     invoiceRent: input.invoiceRent,
     receiptRent: input.receiptRent,
     networkFee: NETWORK_FEE_LAMPORTS,
     sellerTokenAccountRent: Math.trunc(input.sellerTokenAccountRent ?? 0),
     treasuryTokenAccountMissing: input.treasuryTokenAccountMissing === true,
-    // Only a SOL settle takes its rent out of the price (`amount > rent + fee`).
-    // A token settle refunds the rents from the treasury and asks only that the
-    // seller receive something (`amount > fee`), so its floor carries no rent.
-    minPayable: minimumPayable(policy, input.currency === 'sol' ? input.invoiceRent : 0)
+    // Only a SOL settle takes its rents out of the price (`amount > invoice rent
+    // + marker rent + fee`). A token settle refunds the records from the
+    // treasury and asks only that the seller receive something (`amount > fee`),
+    // so its floor carries no rent.
+    minPayable: minimumPayable(
+      policy,
+      input.currency === 'sol' ? input.invoiceRent + markerRent : 0
+    )
   }
 }
