@@ -40,8 +40,9 @@ use anchor_lang::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use payvand::constants::{
-    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
-    PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
+    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, CONFIG_SPACE_V1, CONFIG_VERSION,
+    MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO, PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE,
+    PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
 };
 use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
@@ -50,7 +51,8 @@ use payvand::constants::{
 use payvand::events::{BudgetOpened, ConfigUpdated, PaymentSettled};
 use payvand::helpers::fee_for;
 use payvand::state::{
-    Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, TokenBudget, TokenPayment,
+    Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, TokenBudget,
+    TokenPayment,
 };
 use sha2::{Digest, Sha256};
 use solana_account::Account;
@@ -88,6 +90,9 @@ const FEE_MODE_UNSUPPORTED: &str = "Custom(6015)";
 /// `PaymentError::Token2022Unsupported`: a mint the SPL Token program does not
 /// own is refused by name rather than inside a token CPI.
 const TOKEN_2022_UNSUPPORTED: &str = "Custom(6017)";
+/// `PaymentError::InvalidConfigVersion`: a config that is not the layout
+/// `migrate_config` upgrades.
+const INVALID_CONFIG_VERSION: &str = "Custom(6018)";
 /// `PaymentError::BudgetExhausted`: the month's limit, not the pot.
 const BUDGET_EXHAUSTED: &str = "Custom(6005)";
 /// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
@@ -436,7 +441,50 @@ fn program_data_account(authority: Option<Pubkey>) -> Account {
     }
 }
 
-/// Borsh `initialize_config` / `update_config` arguments.
+/// The USDC mint the per-currency flat applies to. No invoice in this suite is
+/// minted from it, so only the tests that name it pay a flat.
+fn usdc_mint() -> Pubkey {
+    Pubkey::new_from_array([1u8; 32])
+}
+
+fn eurc_mint() -> Pubkey {
+    Pubkey::new_from_array([2u8; 32])
+}
+
+/// A policy that charges `fee_bps` on everything: a boundary of 0 leaves every
+/// amount above it, so the two marginal rates collapse into one flat rate, and
+/// `fixed_fee_lamports` becomes the flat on both test token currencies.
+fn test_policy_of(fee_bps: u16, fixed_fee_lamports: u64) -> FeePolicy {
+    FeePolicy {
+        fee_bps_below: fee_bps,
+        fee_bps_above: fee_bps,
+        sol_tier_lamports: 0,
+        token_tier_base_units: 0,
+        flat_usdc_base_units: fixed_fee_lamports,
+        flat_eurc_base_units: fixed_fee_lamports,
+        usdc_mint: usdc_mint(),
+        eurc_mint: eurc_mint(),
+    }
+}
+
+/// The production policy the tests that need real tiers install: 1% up to
+/// 0.1 SOL / 10 tokens, 0.5% above it, and the marker's rent as a flat in each
+/// token currency.
+fn tiered_policy() -> FeePolicy {
+    FeePolicy {
+        fee_bps_below: 100,
+        fee_bps_above: 50,
+        sol_tier_lamports: 100_000_000,
+        token_tier_base_units: 10_000_000,
+        flat_usdc_base_units: 89_400,
+        flat_eurc_base_units: 89_400,
+        usdc_mint: usdc_mint(),
+        eurc_mint: eurc_mint(),
+    }
+}
+
+/// Borsh `initialize_config` / `update_config` / `migrate_config` arguments: the
+/// policy, then the fee mode and the session float.
 fn fee_policy_args(
     fee_bps: u16,
     fixed_fee_lamports: u64,
@@ -447,8 +495,10 @@ fn fee_policy_args(
         FeeMode::SellerPays => 0u8,
         FeeMode::BuyerPays => 1u8,
     };
-    let mut data = fee_bps.to_le_bytes().to_vec();
-    data.extend_from_slice(&fixed_fee_lamports.to_le_bytes());
+    let mut data = Vec::new();
+    test_policy_of(fee_bps, fixed_fee_lamports)
+        .serialize(&mut data)
+        .expect("the policy serializes");
     data.push(mode);
     data.extend_from_slice(&session_fee_float.to_le_bytes());
     data
@@ -514,6 +564,49 @@ fn update_config_instruction(
             "update_config",
             &fee_policy_args(fee_bps, fixed_fee_lamports, fee_mode, session_fee_float),
         ),
+    }
+}
+
+/// `migrate_config(policy)` on the config PDA, with the system program so the
+/// admin can pay the rent the taller account needs.
+fn migrate_config_instruction(admin: Pubkey, policy: FeePolicy) -> Instruction {
+    let mut args = Vec::new();
+    policy.serialize(&mut args).expect("the policy serializes");
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(admin, true),
+            AccountMeta::new(config_pda(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("migrate_config", &args),
+    }
+}
+
+/// A version 1 `Config` account: the 62-byte layout the live devnet config still
+/// has, and the shape `migrate_config` upgrades from.
+fn v1_config_account(
+    admin: Pubkey,
+    bump: u8,
+    treasury_bump: u8,
+    session_fee_float: u64,
+) -> Account {
+    let mut data = Config::DISCRIMINATOR.to_vec();
+    data.extend_from_slice(admin.as_ref());
+    data.extend_from_slice(&200u16.to_le_bytes());
+    data.extend_from_slice(&0u64.to_le_bytes());
+    data.push(0); // FeeMode::SellerPays
+    data.extend_from_slice(&session_fee_float.to_le_bytes());
+    data.push(bump);
+    data.push(treasury_bump);
+    data.push(1); // version
+    assert_eq!(data.len(), CONFIG_SPACE_V1);
+    Account {
+        lamports: Rent::default().minimum_balance(data.len()),
+        data,
+        owner: payvand::id(),
+        executable: false,
+        rent_epoch: 0,
     }
 }
 
@@ -1015,13 +1108,20 @@ fn fee(amount: u64) -> u64 {
 fn test_policy(fee_bps: u16, fixed_fee_lamports: u64) -> Config {
     Config {
         admin: Pubkey::default(),
-        fee_bps,
-        fixed_fee_lamports,
+        policy: test_policy_of(fee_bps, fixed_fee_lamports),
         fee_mode: FeeMode::SellerPays,
         session_fee_float: TEST_SESSION_FLOAT,
         bump: 255,
         treasury_bump: 254,
-        version: 1,
+        version: CONFIG_VERSION,
+    }
+}
+
+/// A `Config` carrying `policy`, for fee arithmetic that needs no account.
+fn config_with_policy(policy: FeePolicy) -> Config {
+    Config {
+        policy,
+        ..test_policy(0, 0)
     }
 }
 
@@ -1765,11 +1865,12 @@ async fn initialize_config_records_the_upgrade_authority() {
 
     let written = config(&context, config_pda()).await;
     assert_eq!(written.admin, admin.pubkey());
-    assert_eq!(written.fee_bps, TEST_FEE_BPS);
-    assert_eq!(written.fixed_fee_lamports, TEST_FIXED_FEE);
+    assert_eq!(written.policy.fee_bps_below, TEST_FEE_BPS);
+    assert_eq!(written.policy.fee_bps_above, TEST_FEE_BPS);
+    assert_eq!(written.policy.flat_usdc_base_units, TEST_FIXED_FEE);
     assert_eq!(written.fee_mode, FeeMode::SellerPays);
     assert_eq!(written.session_fee_float, TEST_SESSION_FLOAT);
-    assert_eq!(written.version, 1);
+    assert_eq!(written.version, CONFIG_VERSION);
     assert_eq!(
         account(&context, config_pda())
             .await
@@ -1916,38 +2017,161 @@ async fn buyer_pays_policy_is_rejected_before_it_is_implemented() {
     );
 }
 
+#[test]
+fn the_flat_is_charged_on_the_currencies_the_policy_names() {
+    let policy = test_policy(TEST_FEE_BPS, 89_400);
+    let amount = 10_000_000u64;
+    let rate = amount * TEST_FEE_BPS as u64 / 10_000;
+
+    // SOL pays the rate alone: its seller already carries the marker's rent.
+    assert_eq!(fee_for(&policy, amount, None).expect("the fee fits"), rate);
+    // A token invoice pays its currency's flat on top, which is that rent.
+    assert_eq!(
+        fee_for(&policy, amount, Some(&usdc_mint())).expect("the fee fits"),
+        rate + 89_400
+    );
+    assert_eq!(
+        fee_for(&policy, amount, Some(&eurc_mint())).expect("the fee fits"),
+        rate + 89_400
+    );
+
+    // The program has no oracle: a mint that names neither currency pays no
+    // flat rather than an invented one.
+    let other = Pubkey::new_from_array([3u8; 32]);
+    assert_eq!(
+        fee_for(&policy, amount, Some(&other)).expect("the fee fits"),
+        rate
+    );
+}
+
+/// The 0.1 SOL / 10-token boundary is a change of slope, not a cliff: the part
+/// at or below it pays the lower rate and the part above pays the higher one, so
+/// one lamport past the boundary costs one lamport's worth of rate more.
+#[test]
+fn the_tier_boundary_is_marginal() {
+    let policy = config_with_policy(tiered_policy());
+
+    // 1% up to and including the boundary.
+    assert_eq!(fee_for(&policy, 99_999_999, None).expect("fits"), 999_999);
+    assert_eq!(
+        fee_for(&policy, 100_000_000, None).expect("fits"),
+        1_000_000
+    );
+    // One lamport past it owes 1% of 0.1 SOL plus 0.5% of that lamport, floored.
+    assert_eq!(
+        fee_for(&policy, 100_000_001, None).expect("fits"),
+        1_000_000
+    );
+    // 0.2 SOL: 1,000,000 plus 0.5% of the second 0.1 SOL.
+    assert_eq!(
+        fee_for(&policy, 200_000_000, None).expect("fits"),
+        1_500_000
+    );
+
+    // The token boundary is its own number and follows the same rule.
+    assert_eq!(
+        fee_for(&policy, 10_000_000, Some(&usdc_mint())).expect("fits"),
+        100_000 + 89_400
+    );
+    assert_eq!(
+        fee_for(&policy, 20_000_000, Some(&usdc_mint())).expect("fits"),
+        150_000 + 89_400
+    );
+}
+
+/// `migrate_config` upgrades the live version 1 account in place: the layout
+/// grows from 62 to 160 bytes, the fields that outlive it are carried over, and
+/// the admin pays only the rent the taller account now needs.
 #[tokio::test]
-async fn fixed_fee_is_charged_on_top_of_the_rate() {
-    let fixed = 1_000_000u64;
-    let mut context = started_with_policy(
-        None,
-        TEST_FEE_BPS,
-        fixed,
-        FeeMode::SellerPays,
-        TREASURY_LAMPORTS,
-        &[],
+async fn migrate_config_upgrades_the_v1_layout_in_place() {
+    let mut test = program_test();
+    let admin = Keypair::new();
+    test.add_account(admin.pubkey(), system_account(LAMPORTS_PER_SOL / 10));
+    test.add_account(treasury_pda(), system_account(TREASURY_LAMPORTS));
+    let mut context = test.start_with_context().await;
+
+    let (address, bump) = Pubkey::find_program_address(&[CONFIG_SEED], &payvand::id());
+    context.set_account(
+        &address,
+        &v1_config_account(admin.pubkey(), bump, 254, 30_000_000).into(),
+    );
+    refresh_blockhash(&mut context).await;
+    let before = account(&context, address)
+        .await
+        .expect("config account missing")
+        .lamports;
+
+    // A funded stranger that is not the recorded admin cannot migrate it, and
+    // the refused attempt leaves the old layout untouched.
+    let stranger = Keypair::new();
+    context.set_account(
+        &stranger.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    refresh_blockhash(&mut context).await;
+    let policy = tiered_policy();
+    let attempt = send(
+        &mut context,
+        &[migrate_config_instruction(stranger.pubkey(), policy)],
+        &[&stranger],
     )
-    .await
-    .0;
-    let payer = context.payer.pubkey();
-    let seller = Keypair::new().pubkey();
-    let reference = Keypair::new().pubkey();
-    let amount = LAMPORTS_PER_SOL / 10;
-    let expected_fee = amount / 100 * 2 + fixed;
+    .await;
+    let error = attempt.expect_err("only the recorded admin may migrate");
+    assert!(
+        error.contains(INVALID_CONFIG_ADMIN),
+        "expected {INVALID_CONFIG_ADMIN}, got {error}"
+    );
+    assert_eq!(
+        account(&context, address)
+            .await
+            .expect("config account missing")
+            .data
+            .len(),
+        CONFIG_SPACE_V1,
+        "a refused migration leaves the account alone"
+    );
 
     send(
         &mut context,
-        &[settle_instruction(
-            payer, seller, reference, amount, "coffee",
-        )],
-        &[],
+        &[migrate_config_instruction(admin.pubkey(), policy)],
+        &[&admin],
     )
     .await
-    .expect("settle with a fixed fee failed");
+    .expect("the admin migration should succeed");
 
-    assert_eq!(
-        lamports(&context, seller).await,
-        amount - expected_fee - receipt_rent()
+    let migrated = account(&context, address)
+        .await
+        .expect("config account missing");
+    assert_eq!(migrated.data.len(), CONFIG_SPACE);
+    assert!(
+        migrated.lamports >= Rent::default().minimum_balance(CONFIG_SPACE),
+        "the taller account is left rent exempt"
+    );
+    assert!(migrated.lamports > before, "the admin paid the difference");
+
+    let migrated = config(&context, address).await;
+    assert_eq!(migrated.admin, admin.pubkey());
+    assert_eq!(migrated.policy, policy);
+    assert_eq!(migrated.fee_mode, FeeMode::SellerPays);
+    assert_eq!(migrated.session_fee_float, 30_000_000);
+    assert_eq!(migrated.bump, bump);
+    assert_eq!(migrated.treasury_bump, 254);
+    assert_eq!(migrated.version, CONFIG_VERSION);
+
+    // A version 2 account is not a version 1 one: the migration is not rerun
+    // over the layout it just wrote. A fresh blockhash keeps this from deduping
+    // against the successful migration above.
+    refresh_blockhash(&mut context).await;
+    let again = send(
+        &mut context,
+        &[migrate_config_instruction(admin.pubkey(), policy)],
+        &[&admin],
+    )
+    .await;
+    let error = again.expect_err("a migrated account is not migrated twice");
+    assert!(
+        error.contains(INVALID_CONFIG_VERSION),
+        "expected {INVALID_CONFIG_VERSION}, got {error}"
     );
 }
 
@@ -2021,7 +2245,7 @@ async fn update_config_requires_the_admin_and_a_valid_policy() {
     .await
     .expect("the admin update should succeed");
     let updated = config(&context, config_pda()).await;
-    assert_eq!(updated.fee_bps, 100);
+    assert_eq!(updated.policy.fee_bps_below, 100);
     assert_eq!(
         updated.admin, admin,
         "update_config never rewrites the admin"
@@ -2187,15 +2411,15 @@ async fn zero_fee_policy_charges_no_fee() {
 #[test]
 fn fee_floors_rather_than_rounds_at_ninety_nine_lamports() {
     let policy = test_policy(TEST_FEE_BPS, 0);
-    let fee = fee_for(&policy, 99).expect("the fee fits in a u64");
+    let fee = fee_for(&policy, 99, None).expect("the fee fits in a u64");
 
     assert_eq!(fee, 1, "2% of 99 floored is one lamport, not two");
     assert_eq!(99 - fee, 98);
 
     // A floor, not a rounding: 2% of 199 is 3.98 and still 3. The first amount
     // whose rate is a whole lamport is 100.
-    assert_eq!(fee_for(&policy, 199).expect("the fee fits"), 3);
-    assert_eq!(fee_for(&policy, 100).expect("the fee fits"), 2);
+    assert_eq!(fee_for(&policy, 199, None).expect("the fee fits"), 3);
+    assert_eq!(fee_for(&policy, 100, None).expect("the fee fits"), 2);
 }
 
 /// Task 1.6's cap on the SOL path. `fee_bps = 10_000` is accepted (`10_001` is
@@ -2219,7 +2443,10 @@ async fn a_ten_thousand_bps_policy_admits_no_sol_invoice() {
     let treasury_before = lamports(&context, treasury_pda()).await;
 
     // The policy is what the program stored, not what the test asked for.
-    assert_eq!(config(&context, config_pda()).await.fee_bps, 10_000);
+    assert_eq!(
+        config(&context, config_pda()).await.policy.fee_bps_below,
+        10_000
+    );
 
     let attempt = send(
         &mut context,
@@ -2651,13 +2878,12 @@ fn serialized_accounts_fit_their_space_constants() {
 
     let config = Config {
         admin: Pubkey::from(key),
-        fee_bps: 200,
-        fixed_fee_lamports: 1,
+        policy: test_policy_of(200, 1),
         fee_mode: FeeMode::SellerPays,
         session_fee_float: 30_000_000,
         bump: 255,
         treasury_bump: 254,
-        version: 1,
+        version: CONFIG_VERSION,
     };
     assert_eq!(borsh_len(&config) + 8, CONFIG_SPACE);
 }
@@ -2686,10 +2912,17 @@ fn account_spaces_match_the_sizes_used_by_the_program() {
     assert_eq!(PAYMENT_RECEIPT_SPACE, receipt);
     assert_eq!(PAYMENT_RECEIPT_SPACE, 48);
 
-    // admin, fee_bps, fixed_fee_lamports, fee_mode, session_fee_float, bump,
-    // treasury_bump, version.
-    assert_eq!(CONFIG_SPACE, 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1);
-    assert_eq!(CONFIG_SPACE, 62);
+    // admin, the policy (two rates, their two boundaries, the two per-currency
+    // flats and the two mints they apply to), fee_mode, session_fee_float,
+    // bump, treasury_bump, version.
+    assert_eq!(
+        CONFIG_SPACE,
+        8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 1 + 1 + 1
+    );
+    assert_eq!(CONFIG_SPACE, 152);
+    // The version 1 layout `migrate_config` upgrades from.
+    assert_eq!(CONFIG_SPACE_V1, 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1);
+    assert_eq!(CONFIG_SPACE_V1, 62);
 }
 
 /// The config bootstrap reads the upgradeable loader's `ProgramData` metadata
@@ -3034,7 +3267,10 @@ async fn a_ten_thousand_bps_policy_leaves_the_token_seller_one_base_unit() {
     )
     .await
     .expect("update_config failed");
-    assert_eq!(config(&context, config_pda()).await.fee_bps, 10_000);
+    assert_eq!(
+        config(&context, config_pda()).await.policy.fee_bps_below,
+        10_000
+    );
 
     let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
     send(
@@ -4335,8 +4571,8 @@ async fn update_config_emits_the_policy_it_installed() {
     assert_eq!(updates.len(), 1);
     let event = &updates[0];
     assert_eq!(event.admin, admin.pubkey());
-    assert_eq!(event.fee_bps, 350);
-    assert_eq!(event.fixed_fee_lamports, 1_000);
+    assert_eq!(event.policy.fee_bps_below, 350);
+    assert_eq!(event.policy.flat_usdc_base_units, 1_000);
     assert_eq!(event.fee_mode, FeeMode::BuyerPays);
     assert_eq!(event.session_fee_float, TEST_SESSION_FLOAT);
 }

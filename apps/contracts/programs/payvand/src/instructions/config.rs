@@ -11,8 +11,8 @@ use anchor_lang::solana_program::bpf_loader_upgradeable::{self, UpgradeableLoade
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::ConfigUpdated;
-use crate::helpers::{pay_from_treasury, validate_fee_policy};
-use crate::state::{Config, FeeMode};
+use crate::helpers::{pay_from_treasury, validate_fee_policy, validate_session_float};
+use crate::state::{Config, FeeMode, FeePolicy};
 
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
@@ -57,16 +57,25 @@ pub struct UpdateConfig<'info> {
     pub config: Account<'info, Config>,
 }
 
+/// Upgrades the version 1 config account in place.
+///
+/// The account cannot be typed as `Account<'info, Config>`: it is still the old,
+/// shorter layout, and deserializing it as `Config` would fail before the
+/// handler could migrate it. It is a raw account here, pinned to the config seed
+/// and checked by hand: the program must own it, `admin` must be the admin it
+/// records, and it must be a version 1 account of exactly
+/// `CONFIG_SPACE_V1` bytes. Anything else is refused rather than overwritten.
 #[derive(Accounts)]
-pub struct WithdrawTreasury<'info> {
+pub struct MigrateConfig<'info> {
+    /// The recorded admin. Pays the rent the taller account now needs.
     #[account(mut)]
     pub admin: Signer<'info>,
 
-    #[account(seeds = [CONFIG_SEED], bump = config.bump, has_one = admin)]
-    pub config: Account<'info, Config>,
-
-    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
-    pub treasury: SystemAccount<'info>,
+    /// CHECK: The program's own `config` account, in its version 1 shape. The
+    /// seeds derive it, and the handler checks its owner, its length and that
+    /// the admin it records is the signer before touching it.
+    #[account(mut, seeds = [CONFIG_SEED], bump)]
+    pub config: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -116,10 +125,25 @@ fn upgrade_authority(program_data: &AccountInfo) -> Result<Option<Pubkey>> {
     }
 }
 
+/// The version 1 `Config` body, read only by `migrate_config` so it can carry
+/// the fields that outlive the layout change over to version 2.
+#[derive(AnchorSerialize, AnchorDeserialize)]
+struct ConfigV1 {
+    admin: Pubkey,
+    #[allow(dead_code)]
+    fee_bps: u16,
+    #[allow(dead_code)]
+    fixed_fee_lamports: u64,
+    fee_mode: FeeMode,
+    session_fee_float: u64,
+    bump: u8,
+    treasury_bump: u8,
+    version: u8,
+}
+
 pub fn initialize_config_handler(
     ctx: Context<InitializeConfig>,
-    fee_bps: u16,
-    fixed_fee_lamports: u64,
+    policy: FeePolicy,
     fee_mode: FeeMode,
     session_fee_float: u64,
 ) -> Result<()> {
@@ -131,22 +155,24 @@ pub fn initialize_config_handler(
         None => return Err(PaymentError::ProgramNotUpgradeable.into()),
     }
 
-    validate_fee_policy(fee_bps, fixed_fee_lamports, session_fee_float)?;
+    validate_fee_policy(&policy)?;
+    validate_session_float(session_fee_float)?;
 
     let config = &mut ctx.accounts.config;
     config.admin = ctx.accounts.admin.key();
-    config.fee_bps = fee_bps;
-    config.fixed_fee_lamports = fixed_fee_lamports;
+    config.policy = policy;
     config.fee_mode = fee_mode;
     config.session_fee_float = session_fee_float;
     config.bump = ctx.bumps.config;
     config.treasury_bump = ctx.bumps.treasury;
-    config.version = 1;
+    config.version = CONFIG_VERSION;
 
     msg!(
-        "config initialized: {} bps + {} lamports, mode {:?}, float {}",
-        fee_bps,
-        fixed_fee_lamports,
+        "config initialized: {} / {} bps at {} lamports and {} base units, mode {:?}, float {}",
+        policy.fee_bps_below,
+        policy.fee_bps_above,
+        policy.sol_tier_lamports,
+        policy.token_tier_base_units,
         fee_mode,
         session_fee_float
     );
@@ -155,33 +181,119 @@ pub fn initialize_config_handler(
 
 pub fn update_config_handler(
     ctx: Context<UpdateConfig>,
-    fee_bps: u16,
-    fixed_fee_lamports: u64,
+    policy: FeePolicy,
     fee_mode: FeeMode,
     session_fee_float: u64,
 ) -> Result<()> {
-    validate_fee_policy(fee_bps, fixed_fee_lamports, session_fee_float)?;
+    validate_fee_policy(&policy)?;
+    validate_session_float(session_fee_float)?;
 
     let config = &mut ctx.accounts.config;
-    config.fee_bps = fee_bps;
-    config.fixed_fee_lamports = fixed_fee_lamports;
+    config.policy = policy;
     config.fee_mode = fee_mode;
     config.session_fee_float = session_fee_float;
 
     msg!(
-        "config updated: {} bps + {} lamports, mode {:?}, float {}",
-        fee_bps,
-        fixed_fee_lamports,
+        "config updated: {} / {} bps at {} lamports and {} base units, mode {:?}, float {}",
+        policy.fee_bps_below,
+        policy.fee_bps_above,
+        policy.sol_tier_lamports,
+        policy.token_tier_base_units,
         fee_mode,
         session_fee_float
     );
     emit!(ConfigUpdated {
         admin: config.admin,
-        fee_bps,
-        fixed_fee_lamports,
+        policy,
         fee_mode,
         session_fee_float,
     });
+    Ok(())
+}
+
+/// Upgrades the live version 1 config account to version 2 in place.
+///
+/// Only the layout changes: the admin, the fee mode and the session float the
+/// account already records are carried over, and the new `FeePolicy` is the one
+/// the admin passes. The account grows, so the admin tops its rent up first —
+/// the runtime refuses a realloc that leaves an account below its rent-exempt
+/// minimum.
+pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
+    validate_fee_policy(&policy)?;
+
+    let info = ctx.accounts.config.to_account_info();
+    require_keys_eq!(*info.owner, crate::ID, PaymentError::InvalidConfigAdmin);
+
+    let (admin, fee_mode, session_fee_float, bump, treasury_bump) = {
+        let data = info.try_borrow_data()?;
+        require!(
+            data.len() == CONFIG_SPACE_V1,
+            PaymentError::InvalidConfigVersion
+        );
+        let old = ConfigV1::try_from_slice(&data[8..])
+            .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
+        require!(old.version == 1, PaymentError::InvalidConfigVersion);
+        (
+            old.admin,
+            old.fee_mode,
+            old.session_fee_float,
+            old.bump,
+            old.treasury_bump,
+        )
+    };
+
+    require!(
+        admin == ctx.accounts.admin.key(),
+        PaymentError::InvalidConfigAdmin
+    );
+    validate_session_float(session_fee_float)?;
+
+    // Grow first, then pay the rent the taller account needs. `realloc` keeps
+    // the lamports the account already had, so only the difference is owed.
+    info.resize(CONFIG_SPACE)?;
+    let required = Rent::get()?.minimum_balance(CONFIG_SPACE);
+    let held = info.lamports();
+    if held < required {
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                anchor_lang::system_program::ID,
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.admin.to_account_info(),
+                    to: info.clone(),
+                },
+            ),
+            required - held,
+        )?;
+    }
+
+    let config = Config {
+        admin,
+        policy,
+        fee_mode,
+        session_fee_float,
+        bump,
+        treasury_bump,
+        version: CONFIG_VERSION,
+    };
+    let mut body = Vec::with_capacity(CONFIG_SPACE - 8);
+    config.serialize(&mut body)?;
+    {
+        let mut data = info.try_borrow_mut_data()?;
+        require!(
+            data.len() == CONFIG_SPACE,
+            PaymentError::InvalidConfigVersion
+        );
+        data[8..].copy_from_slice(&body);
+    }
+
+    msg!(
+        "config migrated to v{}: {} / {} bps at {} lamports and {} base units",
+        CONFIG_VERSION,
+        policy.fee_bps_below,
+        policy.fee_bps_above,
+        policy.sol_tier_lamports,
+        policy.token_tier_base_units
+    );
     Ok(())
 }
 
@@ -200,4 +312,18 @@ pub fn withdraw_treasury_handler(ctx: Context<WithdrawTreasury>, amount: u64) ->
 
     msg!("treasury withdrew {} lamports", amount);
     Ok(())
+}
+
+#[derive(Accounts)]
+pub struct WithdrawTreasury<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+
+    #[account(mut, seeds = [TREASURY_SEED], bump = config.treasury_bump)]
+    pub treasury: SystemAccount<'info>,
+
+    pub system_program: Program<'info, System>,
 }

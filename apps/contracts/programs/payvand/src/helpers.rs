@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 
 use crate::constants::{MIN_SESSION_FEE_FLOAT, TREASURY_SEED};
 use crate::errors::PaymentError;
-use crate::state::Config;
+use crate::state::{Config, FeePolicy};
 
 /// `year * 12 + month` (month 1-based) for the current clock, so a monthly
 /// allowance resets on a real calendar-month boundary rather than every 30
@@ -25,25 +25,63 @@ pub fn current_month_index() -> Result<u64> {
 
 /// The fee a settlement of `amount` owes under `config`.
 ///
-/// Capped at `amount - 1` so the underflow guard (`amount > rent + fee`) can
+/// `mint` is `None` on the SOL paths and the invoice's mint on the token ones.
+/// The rate is marginal: the part of the amount at or below the currency's
+/// boundary pays `fee_bps_below`, the part above it pays `fee_bps_above`, so the
+/// boundary is a change of slope and not a cliff — an invoice crossing it costs
+/// one lamport's worth of rate more, never twice the fee.
+///
+/// A token invoice then adds its currency's flat, which is what pays the
+/// permanent marker's rent that the treasury advances on that path. A SOL
+/// invoice adds nothing: its seller already carries that rent directly.
+///
+/// Capped at `amount - 1` so the guard on the price (`amount > rent + fee`) can
 /// never be satisfied by taking the whole invoice; the cap is a safety net, not
-/// a policy — a sane `fee_bps` stays far below it.
-pub fn fee_for(config: &Config, amount: u64) -> Result<u64> {
-    let proportional = (amount as u128)
-        .checked_mul(config.fee_bps as u128)
+/// a policy.
+pub fn fee_for(config: &Config, amount: u64, mint: Option<&Pubkey>) -> Result<u64> {
+    let policy = &config.policy;
+    let (boundary, flat) = match mint {
+        None => (policy.sol_tier_lamports as u128, 0u128),
+        Some(mint) if *mint == policy.usdc_mint => (
+            policy.token_tier_base_units as u128,
+            policy.flat_usdc_base_units as u128,
+        ),
+        Some(mint) if *mint == policy.eurc_mint => (
+            policy.token_tier_base_units as u128,
+            policy.flat_eurc_base_units as u128,
+        ),
+        Some(_) => (policy.token_tier_base_units as u128, 0u128),
+    };
+
+    let amount = amount as u128;
+    let below = amount.min(boundary);
+    let above = amount.saturating_sub(boundary);
+    let proportional = below
+        .checked_mul(policy.fee_bps_below as u128)
+        .and_then(|first| {
+            above
+                .checked_mul(policy.fee_bps_above as u128)
+                .and_then(|second| first.checked_add(second))
+        })
         .ok_or(PaymentError::FeeOverflow)?
         / 10_000;
-    let fee = (proportional as u64).saturating_add(config.fixed_fee_lamports);
-    Ok(fee.min(amount.saturating_sub(1)))
+
+    let fee = proportional.saturating_add(flat);
+    Ok(fee.min(amount.saturating_sub(1)) as u64)
 }
 
-/// Policy validation shared by `initialize_config` and `update_config`.
-pub fn validate_fee_policy(
-    fee_bps: u16,
-    _fixed_fee_lamports: u64,
-    session_fee_float: u64,
-) -> Result<()> {
-    require!(fee_bps <= 10_000, PaymentError::InvalidFeeBps);
+/// Policy validation shared by `initialize_config`, `update_config` and
+/// `migrate_config`.
+pub fn validate_fee_policy(policy: &FeePolicy) -> Result<()> {
+    require!(
+        policy.fee_bps_below <= 10_000 && policy.fee_bps_above <= 10_000,
+        PaymentError::InvalidFeeBps
+    );
+    Ok(())
+}
+
+/// The session float's floor, shared by the same three instructions.
+pub fn validate_session_float(session_fee_float: u64) -> Result<()> {
     require!(
         session_fee_float >= MIN_SESSION_FEE_FLOAT,
         PaymentError::InvalidSessionFloat

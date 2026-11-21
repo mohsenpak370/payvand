@@ -10,7 +10,9 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
 use solana_rpc_client_api::config::{RpcTransactionConfig, UiTransactionEncoding};
 use solana_signature::Signature;
+use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 use thiserror::Error;
 
 /// Mirrors `PAYMENT_MAX_MEMO` in `apps/contracts/programs/payvand`.
@@ -586,7 +588,11 @@ fn program_id() -> ApiResult<Pubkey> {
 
 /// Reads the payment account straight from the cluster. The handler is
 /// stateless so it behaves the same locally and inside a serverless isolate.
-pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<PaymentRecord> {
+pub async fn fetch_payment(
+    payment_pda: &str,
+    query: PaymentQuery,
+    db: &libsql::Database,
+) -> ApiResult<PaymentRecord> {
     let pubkey = parse_pubkey(payment_pda, "id")?;
     let cluster = query.cluster.clone().unwrap_or_else(default_cluster);
     let endpoint = resolve_endpoint(query.endpoint.as_deref(), &cluster)?;
@@ -617,7 +623,10 @@ pub async fn fetch_payment(payment_pda: &str, query: PaymentQuery) -> ApiResult<
         .and_then(|account| account.as_ref())
         .map(|account| account.data.as_slice());
 
-    Ok(record_for_invoice(&rpc, pubkey, invoice_data, receipt_data, cluster, endpoint).await)
+    // One address is one invoice, so one history read is the whole need: a
+    // settled invoice the cache has not seen yet is read once, here.
+    let mut reader = InvoiceReader::new(&rpc, db, cluster, endpoint, 1);
+    Ok(reader.record(pubkey, invoice_data, receipt_data).await)
 }
 
 /// The client every invoice read goes through.
@@ -635,28 +644,73 @@ fn payment_rpc(endpoint: String) -> RpcClient {
 /// it was paid, the invoice account itself if it still exists, and otherwise the
 /// placeholder a watcher reads as "not paid yet".
 ///
-/// A marker alone no longer describes a payment, so the settled case costs a
-/// history read. When that read fails the marker's own answer (settled, and
-/// which invoice it closed) is still returned: the cluster settled it, and a
-/// flaky node must not turn that back into "pending".
-async fn record_for_invoice(
-    rpc: &RpcClient,
-    invoice: Pubkey,
-    invoice_data: Option<&[u8]>,
-    receipt_data: Option<&[u8]>,
+/// Everything one request's invoice reads share: the cluster to ask, the cache
+/// behind the chain, and the history this request may still spend. `fetch_many`
+/// holds one across a whole batch, so its budget covers the poll rather than
+/// each address.
+struct InvoiceReader<'a> {
+    rpc: &'a RpcClient,
+    db: &'a libsql::Database,
     cluster: String,
     endpoint: String,
-) -> PaymentRecord {
-    if let Some(marker) = receipt_data.and_then(decode_receipt_marker) {
-        return match settled_from_history(rpc, marker.invoice).await {
-            Some(settled) => receipt_record(settled, cluster, endpoint),
-            None => marker_record(marker, cluster, endpoint),
-        };
+    budget: HistoryBudget,
+}
+
+impl<'a> InvoiceReader<'a> {
+    /// `wanted` is how many settlements this caller can show; the budget caps
+    /// it, and a cache hit spends nothing.
+    fn new(
+        rpc: &'a RpcClient,
+        db: &'a libsql::Database,
+        cluster: String,
+        endpoint: String,
+        wanted: usize,
+    ) -> Self {
+        Self {
+            rpc,
+            db,
+            cluster,
+            endpoint,
+            budget: HistoryBudget::new(wanted),
+        }
     }
-    match invoice_data.and_then(|data| record_for(invoice, data, cluster.clone(), endpoint.clone()))
-    {
-        Some(record) => record,
-        None => pending_record(invoice, cluster, endpoint),
+
+    /// The record for one settlement marker. A marker alone no longer describes
+    /// a payment, so this needs the settle transaction — read at most once per
+    /// invoice, and within this request's budget. When neither memory, the
+    /// database nor history can answer, the marker's own answer (settled, and
+    /// which invoice it closed) is still returned: the cluster settled it, and a
+    /// flaky node must not turn that back into "pending".
+    async fn settled(&mut self, marker: ReceiptMarker) -> PaymentRecord {
+        settled_record(
+            self.rpc,
+            self.db,
+            marker,
+            self.cluster.clone(),
+            self.endpoint.clone(),
+            &mut self.budget,
+        )
+        .await
+    }
+
+    /// The best record for one invoice address: the settlement behind its marker
+    /// if it was paid, the invoice account itself if it still exists, and
+    /// otherwise the placeholder a watcher reads as "not paid yet".
+    async fn record(
+        &mut self,
+        invoice: Pubkey,
+        invoice_data: Option<&[u8]>,
+        receipt_data: Option<&[u8]>,
+    ) -> PaymentRecord {
+        if let Some(marker) = receipt_data.and_then(decode_receipt_marker) {
+            return self.settled(marker).await;
+        }
+        match invoice_data
+            .and_then(|data| record_for(invoice, data, self.cluster.clone(), self.endpoint.clone()))
+        {
+            Some(record) => record,
+            None => pending_record(invoice, self.cluster.clone(), self.endpoint.clone()),
+        }
     }
 }
 
@@ -766,7 +820,10 @@ const MAX_ACCOUNTS_PER_RPC: usize = 100;
 /// Addresses with no receipt and no invoice account come back as `Pending`,
 /// the normal state of a QR nobody has paid yet. A cluster that does not answer
 /// is an error, not a status, so the seller's screen keeps its last known one.
-pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> {
+pub async fn fetch_many(
+    request: WatchRequest,
+    db: &libsql::Database,
+) -> ApiResult<Vec<PaymentRecord>> {
     if request.pdas.is_empty() {
         return Ok(Vec::new());
     }
@@ -787,6 +844,9 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
     let program = program_id()?;
     let rpc = RpcClient::new(endpoint.clone());
     let mut records = Vec::with_capacity(pubkeys.len());
+    // A watched address is an invoice the caller is about to display, so it may
+    // be resolved from history — but only once: the next poll is a cache hit.
+    let mut reader = InvoiceReader::new(&rpc, db, cluster, endpoint, pubkeys.len());
 
     // Two accounts per invoice (the invoice and its receipt), and JSON-RPC caps
     // one `getMultipleAccounts` call at 100 keys, so batch the addresses.
@@ -816,17 +876,7 @@ pub async fn fetch_many(request: WatchRequest) -> ApiResult<Vec<PaymentRecord>> 
                 .get(index * 2 + 1)
                 .and_then(|account| account.as_ref())
                 .map(|account| account.data.as_slice());
-            records.push(
-                record_for_invoice(
-                    &rpc,
-                    *invoice,
-                    invoice_data,
-                    receipt_data,
-                    cluster.clone(),
-                    endpoint.clone(),
-                )
-                .await,
-            );
+            records.push(reader.record(*invoice, invoice_data, receipt_data).await);
         }
     }
 
@@ -865,7 +915,15 @@ pub struct BudgetAccount {
 /// means asking the program for its accounts (`get_program_accounts`).
 /// That scan is fine while the platform is small; revisit if the account
 /// count ever grows into the thousands.
-pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
+///
+/// `history_reads` is how many settled invoices this caller can actually show
+/// (a page size): those are resolved from their settle transactions, newest
+/// first, and every other marker is answered from itself. A cache hit costs
+/// nothing, so a warm instance resolves none of them.
+pub async fn fetch_program_scan(
+    history_reads: usize,
+    db: &libsql::Database,
+) -> ApiResult<ProgramScan> {
     let cluster = default_cluster();
     let endpoint = resolve_endpoint(None, &cluster)?;
     let program_id = Pubkey::from_str(PAYVAND_PROGRAM_ID)
@@ -884,25 +942,23 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
 
     let mut payments = Vec::new();
     let mut budgets = Vec::new();
+    // Markers are collected rather than resolved where they are found: the
+    // budget has to go to the newest settlements, and the account order a scan
+    // returns is arbitrary.
+    let mut markers = Vec::new();
     for (pubkey, account) in accounts {
         match classify_program_account(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
             Some(ScannedAccount::Payment(record)) => payments.push(*record),
-            Some(ScannedAccount::Settled(invoice)) => {
-                payments.push(match settled_from_history(&rpc, invoice).await {
-                    Some(settled) => receipt_record(settled, cluster.clone(), endpoint.clone()),
-                    None => marker_record(
-                        ReceiptMarker {
-                            invoice,
-                            settled_at: 0,
-                        },
-                        cluster.clone(),
-                        endpoint.clone(),
-                    ),
-                })
-            }
+            Some(ScannedAccount::Settled(marker)) => markers.push(marker),
             Some(ScannedAccount::Budget(budget)) => budgets.push(budget),
             None => {}
         }
+    }
+
+    markers.sort_by_key(|marker| std::cmp::Reverse(marker.settled_at));
+    let mut reader = InvoiceReader::new(&rpc, db, cluster.clone(), endpoint.clone(), history_reads);
+    for marker in markers {
+        payments.push(reader.settled(marker).await);
     }
 
     Ok(ProgramScan {
@@ -918,9 +974,10 @@ pub async fn fetch_program_scan() -> ApiResult<ProgramScan> {
 /// invoice, and the scan builds one enum value per account.
 enum ScannedAccount {
     Payment(Box<PaymentRecord>),
-    /// A settlement's marker. Resolving it into a record is the scan's job, not
-    /// this function's: it needs the cluster, and this is a pure decoder.
-    Settled(Pubkey),
+    /// A settlement's marker, unturned into a record. Resolving it is the
+    /// caller's job, not this function's: it needs the cluster and the request's
+    /// history budget, and this is a pure decoder.
+    Settled(ReceiptMarker),
     Budget(BudgetAccount),
 }
 
@@ -942,15 +999,18 @@ fn classify_program_account(
     if let Some(marker) = decode_receipt_marker(data) {
         // A settled invoice only exists as its marker, and the marker names the
         // invoice the scan addresses it by. Its payment facts are in the settle
-        // transaction, which `fetch_program_scan` reads for this variant.
-        return Some(ScannedAccount::Settled(marker.invoice));
+        // transaction, which the scan reads within its history budget.
+        return Some(ScannedAccount::Settled(marker));
     }
     decode_budget(data).map(ScannedAccount::Budget)
 }
 
 /// The payment half of a program scan (the admin feed needs nothing else).
-pub async fn fetch_all_payments() -> ApiResult<AllPayments> {
-    let scan = fetch_program_scan().await?;
+pub async fn fetch_all_payments(
+    history_reads: usize,
+    db: &libsql::Database,
+) -> ApiResult<AllPayments> {
+    let scan = fetch_program_scan(history_reads, db).await?;
     Ok(AllPayments {
         records: scan.payments,
         cluster: scan.cluster,
@@ -1110,6 +1170,7 @@ struct ReceiptMarker {
 /// `PaymentReceipt` account's old ones on purpose: every consumer of a settled
 /// invoice below already speaks this shape, and where the facts live is the
 /// only thing that changed.
+#[derive(Clone, Debug)]
 struct OnchainReceipt {
     invoice: Pubkey,
     seller: Pubkey,
@@ -1123,9 +1184,21 @@ struct OnchainReceipt {
     settled_at: i64,
 }
 
+/// The marker's exact size: discriminator, invoice, `settled_at` — 48 bytes,
+/// mirroring `PAYMENT_RECEIPT_SPACE` in the program.
+const RECEIPT_MARKER_LEN: usize = 8 + 32 + 8;
+
 /// Borsh layout of the `PaymentReceipt` account since revision 23:
 /// discriminator, the invoice, and `settled_at`. It is a marker, not a record.
+///
+/// The length is checked rather than trusted. The pre-marker receipt carried the
+/// same discriminator with the invoice at the same offset but a different store
+/// of fields after it, so a 301-byte account read as a marker would report its
+/// seller's first bytes as `settled_at`.
 fn decode_receipt_marker(data: &[u8]) -> Option<ReceiptMarker> {
+    if data.len() != RECEIPT_MARKER_LEN {
+        return None;
+    }
     let mut reader = Reader::new(data);
 
     if reader.take(8)? != discriminator_for("PaymentReceipt") {
@@ -1243,6 +1316,225 @@ async fn settled_from_history(rpc: &RpcClient, invoice: Pubkey) -> Option<Onchai
     }
 
     None
+}
+
+/// Most settle transactions one request may read from history.
+///
+/// History is the only expensive read this API does — two round trips per
+/// settled invoice — so a request that finds many unknown settlements resolves
+/// the newest few and answers the rest from their markers. The cache makes the
+/// next poll cheaper instead of re-paying for the same invoices, so a large
+/// cold programme fills in over a couple of polls rather than in one burst.
+pub const MAX_HISTORY_READS: usize = 32;
+
+/// How many more history reads a request may spend. Cache hits are free and
+/// never consume it, so a warm isolate answers a whole page without reading
+/// history at all.
+pub struct HistoryBudget {
+    remaining: usize,
+}
+
+impl HistoryBudget {
+    /// `wanted` is what the caller can actually show (a page size, the number
+    /// of watched addresses); the cap keeps one request bounded anyway.
+    pub fn new(wanted: usize) -> Self {
+        Self {
+            remaining: wanted.min(MAX_HISTORY_READS),
+        }
+    }
+
+    /// Claims one read, or says there are none left.
+    fn take(&mut self) -> bool {
+        if self.remaining == 0 {
+            return false;
+        }
+        self.remaining -= 1;
+        true
+    }
+}
+
+/// Settlements are immutable: a marker and the transaction behind it are
+/// written once, and nothing rewrites a settled invoice. So an isolate can keep
+/// what it resolved and never ask again while it lives — which is what turns a
+/// poll from "read history for every settled invoice" into "read history for
+/// the one that was just paid".
+///
+/// Bounded by [`SETTLED_CACHE_LIMIT`] with oldest-first eviction: an isolate
+/// that has seen a very long programme forgets its oldest settlements, and pays
+/// for them again only if they are shown again.
+const SETTLED_CACHE_LIMIT: usize = 4_096;
+
+struct SettledCache {
+    inner: Mutex<SettledCacheInner>,
+}
+
+struct SettledCacheInner {
+    /// `(endpoint, invoice)` — the same invoice on two clusters is two
+    /// settlements, so the endpoint is part of the key.
+    entries: HashMap<(String, Pubkey), OnchainReceipt>,
+    /// Insertion order, so the oldest entry is the one evicted.
+    order: VecDeque<(String, Pubkey)>,
+}
+
+static SETTLED_CACHE: OnceLock<SettledCache> = OnceLock::new();
+
+fn settled_cache() -> &'static SettledCache {
+    SETTLED_CACHE.get_or_init(|| SettledCache {
+        inner: Mutex::new(SettledCacheInner {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        }),
+    })
+}
+
+/// A lock poisoned by a panicking request is still a usable map: recover the
+/// data rather than turning one failed thread into a failing endpoint.
+fn cached_settlement(endpoint: &str, invoice: &Pubkey) -> Option<OnchainReceipt> {
+    let inner = settled_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    inner.entries.get(&(endpoint.to_owned(), *invoice)).cloned()
+}
+
+/// Only successful reads are remembered: a failed one must be retried, or one
+/// bad node would pin an invoice to its marker for the isolate's lifetime.
+fn remember_settlement(endpoint: &str, invoice: Pubkey, settled: &OnchainReceipt) {
+    let mut inner = settled_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    remember_in(&mut inner, endpoint, invoice, settled);
+}
+
+/// The insertion itself, taking the map rather than reaching for the static
+/// one, so the bound can be tested without filling the process-wide cache.
+fn remember_in(
+    inner: &mut SettledCacheInner,
+    endpoint: &str,
+    invoice: Pubkey,
+    settled: &OnchainReceipt,
+) {
+    let key = (endpoint.to_owned(), invoice);
+    if inner.entries.insert(key.clone(), settled.clone()).is_none() {
+        inner.order.push_back(key);
+    }
+    while inner.entries.len() > SETTLED_CACHE_LIMIT {
+        match inner.order.pop_front() {
+            Some(oldest) => {
+                inner.entries.remove(&oldest);
+            }
+            None => break,
+        }
+    }
+}
+
+/// The settlement as the database remembers it, for an instance that has never
+/// seen this invoice.
+///
+/// `None` covers both "not stored yet" and "the database did not answer": this
+/// is a cache in front of the chain, so a miss or a hiccup falls through to
+/// history rather than failing a status read.
+async fn stored_settlement(
+    db: &libsql::Database,
+    endpoint: &str,
+    invoice: &Pubkey,
+) -> Option<OnchainReceipt> {
+    let connection = db.connect().ok()?;
+    let mut rows = connection
+        .query(
+            "SELECT seller, reference, mint, amount, memo, payer, created_at, settled_at \
+             FROM settled_payments WHERE invoice = ?1 AND endpoint = ?2",
+            vec![
+                libsql::Value::Text(invoice.to_string()),
+                libsql::Value::Text(endpoint.to_owned()),
+            ],
+        )
+        .await
+        .ok()?;
+    let row = rows.next().await.ok()??;
+
+    Some(OnchainReceipt {
+        invoice: *invoice,
+        seller: Pubkey::from_str(&row.get::<String>(0).ok()?).ok()?,
+        reference: Pubkey::from_str(&row.get::<String>(1).ok()?).ok()?,
+        mint: Pubkey::from_str(&row.get::<String>(2).ok()?).ok()?,
+        amount: u64::try_from(row.get::<i64>(3).ok()?).ok()?,
+        memo: row.get::<String>(4).ok()?,
+        payer: Pubkey::from_str(&row.get::<String>(5).ok()?).ok()?,
+        created_at: row.get::<i64>(6).ok()?,
+        settled_at: row.get::<i64>(7).ok()?,
+    })
+}
+
+/// Remembers one settlement in the database, so the history read that produced
+/// it happens once per invoice per cluster instead of once per cold instance.
+///
+/// Best effort on purpose: the settlement is already known and the caller has
+/// its record. Failing the request because a cache write failed would be worse
+/// than reading history one more time on a later poll.
+async fn store_settlement(db: &libsql::Database, endpoint: &str, settled: &OnchainReceipt) {
+    let Ok(connection) = db.connect() else {
+        return;
+    };
+    let params = vec![
+        libsql::Value::Text(settled.invoice.to_string()),
+        libsql::Value::Text(endpoint.to_owned()),
+        libsql::Value::Text(settled.seller.to_string()),
+        libsql::Value::Text(settled.reference.to_string()),
+        libsql::Value::Text(settled.mint.to_string()),
+        libsql::Value::Integer(settled.amount as i64),
+        libsql::Value::Text(settled.memo.clone()),
+        libsql::Value::Text(settled.payer.to_string()),
+        libsql::Value::Integer(settled.created_at),
+        libsql::Value::Integer(settled.settled_at),
+    ];
+    let written = connection
+        .execute(
+            "INSERT INTO settled_payments \
+                (invoice, endpoint, seller, reference, mint, amount, memo, payer, created_at, settled_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             ON CONFLICT(invoice, endpoint) DO UPDATE SET \
+                seller = excluded.seller, reference = excluded.reference, \
+                mint = excluded.mint, amount = excluded.amount, \
+                memo = excluded.memo, payer = excluded.payer, \
+                created_at = excluded.created_at, settled_at = excluded.settled_at",
+            params,
+        )
+        .await;
+    if let Err(error) = written {
+        tracing::info!(%error, "settlement was not cached");
+    }
+}
+
+/// The record for a settled invoice: from this instance's memory, then from the
+/// database that outlives it, then from history when this request still has a
+/// read to spend, and otherwise from the marker alone.
+async fn settled_record(
+    rpc: &RpcClient,
+    db: &libsql::Database,
+    marker: ReceiptMarker,
+    cluster: String,
+    endpoint: String,
+    budget: &mut HistoryBudget,
+) -> PaymentRecord {
+    if let Some(cached) = cached_settlement(&endpoint, &marker.invoice) {
+        return receipt_record(cached, cluster, endpoint);
+    }
+    // The database row was written from the settle transaction once, so a
+    // brand-new instance answers without touching history at all.
+    if let Some(stored) = stored_settlement(db, &endpoint, &marker.invoice).await {
+        remember_settlement(&endpoint, marker.invoice, &stored);
+        return receipt_record(stored, cluster, endpoint);
+    }
+    if budget.take() {
+        if let Some(settled) = settled_from_history(rpc, marker.invoice).await {
+            store_settlement(db, &endpoint, &settled).await;
+            remember_settlement(&endpoint, marker.invoice, &settled);
+            return receipt_record(settled, cluster, endpoint);
+        }
+    }
+    marker_record(marker, cluster, endpoint)
 }
 
 /// The record for a settled invoice whose settlement could not be read back:
@@ -1824,21 +2116,27 @@ mod tests {
     fn config_data(session_fee_float: u64) -> Vec<u8> {
         let mut data = discriminator_for("Config").to_vec();
         data.extend_from_slice(&[6u8; 32]); // admin
-        data.extend_from_slice(&200u16.to_le_bytes()); // fee_bps
-        data.extend_from_slice(&0u64.to_le_bytes()); // fixed_fee_lamports
+        data.extend_from_slice(&100u16.to_le_bytes()); // fee_bps_below
+        data.extend_from_slice(&50u16.to_le_bytes()); // fee_bps_above
+        data.extend_from_slice(&100_000_000u64.to_le_bytes()); // sol_tier_lamports
+        data.extend_from_slice(&10_000_000u64.to_le_bytes()); // token_tier_base_units
+        data.extend_from_slice(&89_400u64.to_le_bytes()); // flat_usdc_base_units
+        data.extend_from_slice(&89_400u64.to_le_bytes()); // flat_eurc_base_units
+        data.extend_from_slice(&[4u8; 32]); // usdc_mint
+        data.extend_from_slice(&[5u8; 32]); // eurc_mint
         data.push(0); // fee_mode: SellerPays
         data.extend_from_slice(&session_fee_float.to_le_bytes());
         data.push(251); // bump
         data.push(250); // treasury_bump
-        data.push(1); // version
+        data.push(2); // version
         data
     }
 
     #[test]
     fn the_program_scan_skips_the_config_account() {
         let data = config_data(30_000_000);
-        // 62 bytes, the shape the program allocates.
-        assert_eq!(data.len(), 62);
+        // 152 bytes, the shape the program allocates.
+        assert_eq!(data.len(), 152);
 
         // No decoder mistakes it for something the scan keeps.
         assert!(decode_payment(&data).is_none());
@@ -1871,8 +2169,12 @@ mod tests {
             "https://example".into(),
         );
         assert!(
-            matches!(marker, Some(ScannedAccount::Settled(found)) if found == invoice),
-            "a marker must classify as a settlement of the invoice it names"
+            matches!(
+                marker,
+                Some(ScannedAccount::Settled(found))
+                    if found.invoice == invoice && found.settled_at == 200
+            ),
+            "a marker must classify as a settlement of the invoice it names, keeping its own time"
         );
 
         let mut budget = discriminator_for("Budget").to_vec();
@@ -1912,6 +2214,28 @@ mod tests {
 
         // A SOL invoice must not decode as a token invoice and vice versa.
         assert!(decode_payment(&data).is_none());
+    }
+
+    /// The pre-marker `PaymentReceipt` account — 301 bytes with a full-length
+    /// memo. Same discriminator and same invoice offset as the marker, then
+    /// seller, reference, mint, amount, memo, payer and three timestamps, so its
+    /// `settled_at` is nowhere near the offset the marker decoder reads.
+    fn old_receipt_data(invoice: Pubkey) -> Vec<u8> {
+        let mut data = discriminator_for("PaymentReceipt").to_vec();
+        data.extend_from_slice(invoice.as_ref());
+        data.extend_from_slice(&[7u8; 32]); // seller
+        data.extend_from_slice(&[9u8; 32]); // reference
+        data.extend_from_slice(&[0u8; 32]); // mint: SOL
+        data.extend_from_slice(&42u64.to_le_bytes()); // amount
+        let memo = [b'm'; 96];
+        data.extend_from_slice(&(memo.len() as u32).to_le_bytes());
+        data.extend_from_slice(&memo);
+        data.extend_from_slice(&[5u8; 32]); // payer
+        data.extend_from_slice(&100i64.to_le_bytes()); // created_at
+        data.extend_from_slice(&200i64.to_le_bytes()); // settled_at
+        data.extend_from_slice(&300i64.to_le_bytes()); // closed_at
+        data.push(255); // bump
+        data
     }
 
     /// The marker as the program writes it: discriminator, invoice, `settled_at`.
@@ -1994,23 +2318,35 @@ mod tests {
         assert_eq!(record.options[0].mint, usdc.to_string());
     }
 
+    /// A database on disk, so two connections see the same rows: an in-memory
+    /// SQLite belongs to one connection, which is not what a cold instance and
+    /// the instance that filled the cache before it look like.
+    async fn temp_db() -> (libsql::Database, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "payvand-settlement-{}.db",
+            crate::auth::random_id()
+        ));
+        let db = libsql::Builder::new_local(&path)
+            .build()
+            .await
+            .expect("temp db");
+        crate::db::migrate(&db).await.expect("schema");
+        (db, path)
+    }
+
     #[tokio::test]
     async fn an_unpaid_invoice_is_pending_not_missing() {
+        let (db, path) = temp_db().await;
         let invoice = Pubkey::from([4u8; 32]);
         let rpc = RpcClient::new("https://example.invalid".into());
-        let record = record_for_invoice(
-            &rpc,
-            invoice,
-            None,
-            None,
-            "devnet".into(),
-            "https://example".into(),
-        )
-        .await;
+        let mut reader =
+            InvoiceReader::new(&rpc, &db, "devnet".into(), "https://example".into(), 1);
+        let record = reader.record(invoice, None, None).await;
         assert_eq!(record.status, PaymentStatus::Pending);
         assert_eq!(record.payment_pda, invoice.to_string());
         assert_eq!(record.amount_lamports, 0);
         assert!(record.settled_by.is_none());
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -2069,6 +2405,185 @@ mod tests {
         assert_eq!(json["settled_by"], Pubkey::from([5u8; 32]).to_string());
     }
 
+    /// The whole point of the cache: a settled invoice already resolved is
+    /// answered without touching history, so a poll repeated once a second is
+    /// one account read and nothing else. The cluster here is unreachable, and
+    /// the budget is empty, so only the cache can produce this record.
+    #[tokio::test]
+    async fn a_resolved_settlement_is_served_from_memory() {
+        let (db, path) = temp_db().await;
+        let endpoint = "https://cache-test-resolved.invalid";
+        let invoice = Pubkey::from([0xB1u8; 32]);
+        let line = settled_log_line(invoice, Pubkey::default(), 42, "tip");
+        let settled = settled_event_in_log(&line).expect("decodes");
+        remember_settlement(endpoint, invoice, &settled);
+
+        let rpc = RpcClient::new("https://example.invalid".into());
+        let mut budget = HistoryBudget::new(0);
+        let record = settled_record(
+            &rpc,
+            &db,
+            ReceiptMarker {
+                invoice,
+                settled_at: 200,
+            },
+            "devnet".into(),
+            endpoint.into(),
+            &mut budget,
+        )
+        .await;
+
+        assert_eq!(record.status, PaymentStatus::Settled);
+        assert_eq!(record.amount_lamports, 42);
+        assert_eq!(record.memo, "tip");
+        assert_eq!(record.settled_by, Some(Pubkey::from([5u8; 32]).to_string()));
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// When a request has no history read left, the marker still answers —
+    /// settled, with the time it settled at — instead of the read stalling the
+    /// whole page.
+    #[tokio::test]
+    async fn an_exhausted_history_budget_falls_back_to_the_marker() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0xB2u8; 32]);
+        let rpc = RpcClient::new("https://example.invalid".into());
+        let mut budget = HistoryBudget::new(0);
+
+        let record = settled_record(
+            &rpc,
+            &db,
+            ReceiptMarker {
+                invoice,
+                settled_at: 200,
+            },
+            "devnet".into(),
+            "https://cache-test-budget.invalid".into(),
+            &mut budget,
+        )
+        .await;
+
+        assert_eq!(record.status, PaymentStatus::Settled);
+        assert_eq!(record.id, invoice.to_string());
+        // The marker carries the settlement's time; a marker answer is not a
+        // blank one.
+        assert_eq!(record.settled_at_unix, 200);
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The reason the cache moved into the database: a fresh instance has an
+    /// empty memory, and the settlement it stored earlier still answers — with
+    /// an unreachable cluster and no history read left, only that row can.
+    #[tokio::test]
+    async fn a_settlement_read_once_is_answered_from_the_database() {
+        let (db, path) = temp_db().await;
+        let endpoint = "https://settled-db-test.invalid";
+        let invoice = Pubkey::from([0xC1u8; 32]);
+        let line = settled_log_line(invoice, Pubkey::default(), 42, "tip");
+        // What a successful history read hands on: the event plus the block time
+        // the settle transaction carried.
+        let settled = OnchainReceipt {
+            created_at: 190,
+            settled_at: 200,
+            ..settled_event_in_log(&line).expect("decodes")
+        };
+        store_settlement(&db, endpoint, &settled).await;
+
+        let rpc = RpcClient::new("https://example.invalid".into());
+        let mut budget = HistoryBudget::new(0);
+        let record = settled_record(
+            &rpc,
+            &db,
+            ReceiptMarker {
+                invoice,
+                settled_at: 200,
+            },
+            "devnet".into(),
+            endpoint.into(),
+            &mut budget,
+        )
+        .await;
+
+        assert_eq!(record.status, PaymentStatus::Settled);
+        assert_eq!(record.amount_lamports, 42);
+        assert_eq!(record.memo, "tip");
+        assert_eq!(record.settled_by, Some(Pubkey::from([5u8; 32]).to_string()));
+        assert_eq!(record.created_at_unix, 190);
+        assert_eq!(record.settled_at_unix, 200);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Storing the same invoice twice updates the row instead of failing: a
+    /// settlement is read once, but an operator re-reading one must not run into
+    /// a primary-key error.
+    #[tokio::test]
+    async fn storing_a_settlement_twice_updates_it() {
+        let (db, path) = temp_db().await;
+        let endpoint = "https://settled-db-upsert.invalid";
+        let invoice = Pubkey::from([0xC2u8; 32]);
+        let line = settled_log_line(invoice, Pubkey::default(), 42, "tip");
+        let settled = settled_event_in_log(&line).expect("decodes");
+        store_settlement(&db, endpoint, &settled).await;
+        store_settlement(
+            &db,
+            endpoint,
+            &OnchainReceipt {
+                memo: "flat white".into(),
+                ..settled.clone()
+            },
+        )
+        .await;
+
+        let stored = stored_settlement(&db, endpoint, &invoice)
+            .await
+            .expect("stored");
+        assert_eq!(stored.memo, "flat white");
+        assert_eq!(stored.amount, 42);
+
+        // Another cluster is another settlement, not the same row.
+        assert!(stored_settlement(&db, "https://other.invalid", &invoice)
+            .await
+            .is_none());
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A bounded cache, so a long-running instance cannot grow one entry per
+    /// settlement ever made.
+    #[test]
+    fn the_settled_cache_evicts_its_oldest_entry() {
+        let endpoint = "https://cache-test-bound.invalid";
+        let mut inner = SettledCacheInner {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        };
+
+        let mut invoices = Vec::new();
+        for index in 0..(SETTLED_CACHE_LIMIT + 8) {
+            let mut bytes = [0u8; 32];
+            bytes[..8].copy_from_slice(&(index as u64).to_le_bytes());
+            let invoice = Pubkey::from(bytes);
+            let line = settled_log_line(invoice, Pubkey::default(), 1_000, "x");
+            remember_in(
+                &mut inner,
+                endpoint,
+                invoice,
+                &settled_event_in_log(&line).expect("decodes"),
+            );
+            invoices.push(invoice);
+        }
+
+        let newest = *invoices.last().expect("inserted at least one");
+        assert!(inner.entries.contains_key(&(endpoint.to_string(), newest)));
+        assert!(
+            !inner
+                .entries
+                .contains_key(&(endpoint.to_string(), invoices[0])),
+            "the oldest settlement should have been evicted"
+        );
+        assert_eq!(inner.entries.len(), SETTLED_CACHE_LIMIT);
+    }
+
     #[test]
     fn refuses_to_read_a_receipt_out_of_a_foreign_account() {
         assert!(decode_receipt_marker(&[0u8; 48]).is_none());
@@ -2076,8 +2591,18 @@ mod tests {
         let mut invoice = account_discriminator().to_vec();
         invoice.extend_from_slice(&[0u8; 48]);
         assert!(decode_receipt_marker(&invoice).is_none());
-        // A 301-byte receipt from the old program does not decode as a marker,
-        // and a truncated one does not panic.
+        // A receipt from the old program is a different layout under the same
+        // discriminator: read as a marker, its seller would land in
+        // `settled_at`. The length check is what refuses it.
+        let old = old_receipt_data(Pubkey::from([4u8; 32]));
+        assert_eq!(old.len(), 301);
+        assert!(decode_receipt_marker(&old).is_none());
+
+        // A truncated marker does not panic and does not decode.
         assert!(decode_receipt_marker(&receipt_data(Pubkey::from([4u8; 32]), 1)[..20]).is_none());
+        // Neither does a longer account, which is what the exact length means.
+        let mut longer = receipt_data(Pubkey::from([4u8; 32]), 1);
+        longer.push(0);
+        assert!(decode_receipt_marker(&longer).is_none());
     }
 }

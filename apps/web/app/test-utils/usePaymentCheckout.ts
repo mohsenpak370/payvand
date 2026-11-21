@@ -43,7 +43,18 @@ export const wallet = { canSign: true }
 /** A 1.5 USDC invoice, priced the way the program prices one. */
 export function quoteFor(treasuryTokenAccountMissing: boolean): InvoiceCosts {
   return invoiceCosts({
-    policy: { feeBps: 200, fixedFeeLamports: 0, feeMode: 'seller' },
+    policy: {
+      feeBpsBelow: 200,
+      feeBpsAbove: 200,
+      solTierLamports: 0,
+      tokenTierBaseUnits: 0,
+      flatUsdcBaseUnits: 0,
+      flatEurcBaseUnits: 0,
+      usdcMint: mint,
+      eurcMint: mint,
+      feeMode: 'seller'
+    },
+    mint,
     amount: 1_500_000,
     currency: 'usdc',
     invoiceRent: 1_000_000,

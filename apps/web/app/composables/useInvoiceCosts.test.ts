@@ -29,7 +29,7 @@ const seller = address('6dQgFZDTkhDMTZv9ftZe4ufU9jG5fvJEw6zpw6WCKjPz')
 const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
 
 /** `CONFIG_SIZE` from `useFeeConfig.ts`: the account the quote will decode. */
-const CONFIG_SIZE = 62
+const CONFIG_SIZE = 152
 
 let asked: string[] = []
 let rentReads = 0
@@ -39,15 +39,26 @@ let sellerAta: string
 let treasuryAta: string
 let quote: ReturnType<typeof useInvoiceCosts>
 
-/** A `Config` account with a 2% seller-paid fee, as the program writes one. */
+/**
+ * A `Config` account with a 2% seller-paid policy, as the program writes one:
+ * a 0 boundary (so every amount pays the one rate) and no named currencies, so
+ * no invoice in this suite pays a flat.
+ */
 async function configAccount(): Promise<string> {
   const bytes = new Uint8Array(CONFIG_SIZE)
   bytes.set(await accountDiscriminator('Config'), 0)
   const view = new DataView(bytes.buffer)
-  view.setUint16(40, 200, true)
-  view.setBigUint64(42, 0n, true)
-  bytes[50] = 0
-  view.setBigUint64(51, 12_000_000n, true)
+  view.setUint16(40, 200, true) // fee_bps_below
+  view.setUint16(42, 200, true) // fee_bps_above
+  view.setBigUint64(44, 0n, true) // sol_tier_lamports
+  view.setBigUint64(52, 0n, true) // token_tier_base_units
+  view.setBigUint64(60, 0n, true) // flat_usdc_base_units
+  view.setBigUint64(68, 0n, true) // flat_eurc_base_units
+  bytes[140] = 0 // fee_mode: SellerPays
+  view.setBigUint64(141, 12_000_000n, true)
+  bytes[149] = 255 // bump
+  bytes[150] = 254 // treasury_bump
+  bytes[151] = 2 // version
   return Buffer.from(bytes).toString('base64')
 }
 
@@ -162,7 +173,17 @@ describe('estimateInvoiceCosts account reads', () => {
  * rent a test can state.
  */
 describe('estimateInvoiceCosts against the program math', () => {
-  const policy = { feeBps: 200, fixedFeeLamports: 0, feeMode: 'seller' as const }
+  const policy = {
+    feeBpsBelow: 200,
+    feeBpsAbove: 200,
+    solTierLamports: 0,
+    tokenTierBaseUnits: 0,
+    flatUsdcBaseUnits: 0,
+    flatEurcBaseUnits: 0,
+    usdcMint: mint,
+    eurcMint: mint,
+    feeMode: 'seller' as const
+  }
 
   it('quotes the split the program would settle, in the mint base units', async () => {
     const token = await quote.estimateInvoiceCosts(1_500_000, 'usdc', { mint, seller })

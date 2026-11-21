@@ -93,6 +93,11 @@ const SCHEMA: &[&str] = &[
         issued_at  INTEGER NOT NULL,
         expires_at INTEGER NOT NULL
     )",
+    // A settled invoice's facts, copied off its settle transaction once. The
+    // chain keeps the only authoritative record — the marker — and this is a
+    // cache: losing every row costs one history read, never correctness, which
+    // is why nothing here is a foreign key or a source of truth.
+    "CREATE TABLE IF NOT EXISTS settled_payments (\n        invoice    TEXT NOT NULL,\n        endpoint   TEXT NOT NULL,\n        seller     TEXT NOT NULL,\n        reference  TEXT NOT NULL,\n        mint       TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        memo       TEXT NOT NULL,\n        payer      TEXT NOT NULL,\n        created_at INTEGER NOT NULL,\n        settled_at INTEGER NOT NULL,\n        PRIMARY KEY (invoice, endpoint)\n    )",
     // A wallet belongs to at most one account.
     "CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_unique_idx \
      ON users(wallet) WHERE wallet IS NOT NULL",

@@ -222,16 +222,18 @@ async fn create_payment(
 
 /// Live status of a payment, read straight from the cluster.
 async fn get_payment(
+    State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<PaymentQuery>,
 ) -> Result<Json<payments::PaymentRecord>, ApiError> {
-    Ok(Json(payments::fetch_payment(&id, query).await?))
+    Ok(Json(payments::fetch_payment(&id, query, &state.db).await?))
 }
 
 /// Batch status read — the seller's screen watches the invoice address and
 /// every discounted variant in a single round trip.
 async fn watch_payments(
+    State(state): State<AppState>,
     Json(request): Json<payments::WatchRequest>,
 ) -> Result<Json<Vec<payments::PaymentRecord>>, ApiError> {
-    Ok(Json(payments::fetch_many(request).await?))
+    Ok(Json(payments::fetch_many(request, &state.db).await?))
 }

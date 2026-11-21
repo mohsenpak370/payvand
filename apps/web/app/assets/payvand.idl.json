@@ -390,12 +390,12 @@
       ],
       "args": [
         {
-          "name": "fee_bps",
-          "type": "u16"
-        },
-        {
-          "name": "fixed_fee_lamports",
-          "type": "u64"
+          "name": "policy",
+          "type": {
+            "defined": {
+              "name": "FeePolicy"
+            }
+          }
         },
         {
           "name": "fee_mode",
@@ -408,6 +408,72 @@
         {
           "name": "session_fee_float",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "migrate_config",
+      "docs": [
+        "Upgrades the live version 1 config account to version 2 in place. Admin",
+        "only, and only once: the account must be the old 62-byte layout and must",
+        "record the signer as its admin. It carries the admin, fee mode and",
+        "session float over and installs the `FeePolicy` passed here."
+      ],
+      "discriminator": [
+        92,
+        131,
+        58,
+        105,
+        210,
+        154,
+        224,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The recorded admin. Pays the rent the taller account now needs."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "docs": [
+            "seeds derive it, and the handler checks its owner, its length and that",
+            "the admin it records is the signer before touching it."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "policy",
+          "type": {
+            "defined": {
+              "name": "FeePolicy"
+            }
+          }
         }
       ]
     },
@@ -974,6 +1040,11 @@
         },
         {
           "name": "receipt",
+          "docs": [
+            "The permanent marker; `settled_at` is the replay guard. The session key",
+            "advances its rent and the pot reimburses it, so the seller carries the",
+            "cost through the reduced proceeds."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1034,7 +1105,7 @@
         {
           "name": "treasury",
           "docs": [
-            "The fee destination and the refund source, pinned by seed."
+            "The fee destination, pinned by seed."
           ],
           "writable": true,
           "pda": {
@@ -1936,12 +2007,12 @@
       ],
       "args": [
         {
-          "name": "fee_bps",
-          "type": "u16"
-        },
-        {
-          "name": "fixed_fee_lamports",
-          "type": "u64"
+          "name": "policy",
+          "type": {
+            "defined": {
+              "name": "FeePolicy"
+            }
+          }
         },
         {
           "name": "fee_mode",
@@ -2245,6 +2316,11 @@
       "code": 6017,
       "name": "Token2022Unsupported",
       "msg": "Payvand settles only SPL Token mints; Token-2022 is not supported"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidConfigVersion",
+      "msg": "This config account is not the version this migration upgrades"
     }
   ],
   "types": [
@@ -2341,7 +2417,10 @@
         "Created once per deployment by the program's upgrade authority, which",
         "becomes `admin`. Settlements read it and never write it; only the admin can",
         "change the policy, and the fee destination is derived from a seed here",
-        "rather than named by a caller, so no settlement can redirect it."
+        "rather than named by a caller, so no settlement can redirect it.",
+        "",
+        "Version 2 carries the tiered `FeePolicy`; version 1 was one rate plus a flat",
+        "lamport fee, and `migrate_config` reallocates the account it left behind."
       ],
       "type": {
         "kind": "struct",
@@ -2355,18 +2434,15 @@
             "type": "pubkey"
           },
           {
-            "name": "fee_bps",
+            "name": "policy",
             "docs": [
-              "Seller-side fee in basis points (200 = 2%)."
+              "The two rates, their boundaries and the per-currency flats."
             ],
-            "type": "u16"
-          },
-          {
-            "name": "fixed_fee_lamports",
-            "docs": [
-              "Flat lamport fee added on top of the proportional one."
-            ],
-            "type": "u64"
+            "type": {
+              "defined": {
+                "name": "FeePolicy"
+              }
+            }
           },
           {
             "name": "fee_mode",
@@ -2406,7 +2482,9 @@
       "name": "ConfigUpdated",
       "docs": [
         "The fee policy as the admin just wrote it, so an indexer prices a settlement",
-        "with the policy in force rather than today's."
+        "with the policy in force rather than today's. It carries the whole",
+        "`FeePolicy`, because a tiered fee needs both rates and both boundaries to be",
+        "reproduced."
       ],
       "type": {
         "kind": "struct",
@@ -2416,12 +2494,12 @@
             "type": "pubkey"
           },
           {
-            "name": "fee_bps",
-            "type": "u16"
-          },
-          {
-            "name": "fixed_fee_lamports",
-            "type": "u64"
+            "name": "policy",
+            "type": {
+              "defined": {
+                "name": "FeePolicy"
+              }
+            }
           },
           {
             "name": "fee_mode",
@@ -2448,6 +2526,91 @@
           },
           {
             "name": "BuyerPays"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeePolicy",
+      "docs": [
+        "The fee policy a `Config` carries: two marginal rates, the boundary they meet",
+        "at in each currency, and the flat each token currency pays for the marker's",
+        "rent.",
+        "",
+        "The rate is marginal, not a cliff. An amount at or below the boundary pays",
+        "`fee_bps_below` on all of it; an amount above it pays `fee_bps_below` on the",
+        "part at or below the boundary plus `fee_bps_above` on the part above. A 0.1",
+        "SOL invoice and one lamport more therefore owe fees a lamport's worth of rate",
+        "apart, not twice as far.",
+        "",
+        "The two flat fields exist because a token settlement cannot charge its",
+        "non-signing seller lamports, so the treasury — not the seller — funds the",
+        "permanent marker's 1,224,960-lamport rent on that path. Charging the seller",
+        "that same cost in the currency they are paid in is what keeps the treasury",
+        "whole. `usdc_mint` and `eurc_mint` select them: the program has no oracle, so",
+        "the flat is stated per currency by the admin rather than converted at settle",
+        "time. A mint that names neither pays no flat."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_bps_below",
+            "docs": [
+              "Basis points on the part of the amount at or below the boundary."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "fee_bps_above",
+            "docs": [
+              "Basis points on the part above it."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "sol_tier_lamports",
+            "docs": [
+              "The SOL boundary, in lamports (100_000_000 = 0.1 SOL)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_tier_base_units",
+            "docs": [
+              "The token boundary, in base units (10_000_000 = 10 USDC at 6 decimals)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "flat_usdc_base_units",
+            "docs": [
+              "Flat charged on a USDC invoice, in base units: the marker's rent at the",
+              "SOL price the admin priced it at (1,224,960 lamports ≈ 89,400 base units",
+              "at $73)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "flat_eurc_base_units",
+            "docs": [
+              "Flat charged on a EURC invoice, in base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "usdc_mint",
+            "docs": [
+              "The mint `flat_usdc_base_units` applies to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "eurc_mint",
+            "docs": [
+              "The mint `flat_eurc_base_units` applies to."
+            ],
+            "type": "pubkey"
           }
         ]
       }

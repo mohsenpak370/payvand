@@ -249,7 +249,10 @@ pub async fn list_payments(
     require_admin(&state.db, &headers).await?;
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
 
-    let all = crate::payments::fetch_all_payments().await?;
+    // The page is what the admin sees, so only the markers it can show are
+    // worth a history read; the rest answer from themselves and fill in on a
+    // later poll (or from the cache, which makes repeats free).
+    let all = crate::payments::fetch_all_payments(limit as usize, &state.db).await?;
     let (items, total) = shape_feed(all.records, limit as usize);
     Ok(Json(PaymentsPage {
         items,

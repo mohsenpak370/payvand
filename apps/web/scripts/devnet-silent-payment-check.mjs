@@ -7,6 +7,12 @@
 //
 //   node scripts/devnet-silent-payment-check.mjs
 //   node scripts/devnet-silent-payment-check.mjs --cluster devnet --keypair ~/.config/solana/id.json
+//   node scripts/devnet-silent-payment-check.mjs --mint 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+//
+// `--mint` spends the wallet's own balance of that token instead of minting a
+// throwaway one. That is how the policy's per-currency flat is exercised on
+// chain: the mint has to be the one `Config` names, and only a real USDC/EURC
+// mint is.
 //
 // Needs the `spl-token` CLI for the mint and the buyer's account, and a funded
 // keypair (devnet only, by default). The policy is read from the on-chain
@@ -24,6 +30,7 @@ import {
   createKeyPairSignerFromBytes,
   createSolanaRpc,
   createTransactionMessage,
+  getAddressDecoder,
   getAddressEncoder,
   getBase64EncodedWireTransaction,
   getProgramDerivedAddress,
@@ -41,6 +48,7 @@ const SESSION_SIGNATURE_FEE = 5_000
 
 const encoder = new TextEncoder()
 const bytes = getAddressEncoder()
+const addresses = getAddressDecoder()
 
 function fail(message) {
   console.error(`error: ${message}`)
@@ -214,19 +222,39 @@ async function main() {
     if (!configInfo) fail(`no Config at ${configPda}; the program is not initialized on this cluster`)
     const config = decode(configInfo.data[0])
     const view = new DataView(config.buffer, config.byteOffset, config.byteLength)
-    const feeBps = view.getUint16(40, true)
-    const fixedFee = Number(view.getBigUint64(42, true))
-    const feeMode = config[50] === 1 ? 'buyer' : 'seller'
-    console.log(`config    ${configPda}  fee ${feeBps} bps + ${fixedFee}  mode ${feeMode}`)
+    const feeBpsBelow = view.getUint16(40, true)
+    const feeBpsAbove = view.getUint16(42, true)
+    const solTier = Number(view.getBigUint64(44, true))
+    const tokenTier = Number(view.getBigUint64(52, true))
+    const flatUsdc = Number(view.getBigUint64(60, true))
+    const flatEurc = Number(view.getBigUint64(68, true))
+    const usdcMint = addresses.decode(config.subarray(76, 108))
+    const eurcMint = addresses.decode(config.subarray(108, 140))
+    const feeMode = config[140] === 1 ? 'buyer' : 'seller'
+    console.log(
+      `config    ${configPda}  fee ${feeBpsBelow}/${feeBpsAbove} bps at ${solTier} lamports`
+      + ` and ${tokenTier} base units, mode ${feeMode}`
+    )
     if (feeMode !== 'seller') fail('the budget path only settles a seller-paid policy')
 
-    // A throwaway mint, with the buyer's own account funded.
-    const mint = token('create-token', '--decimals', '6').commandOutput.address
-    const buyerAta = await ataFor(admin.address, mint)
-    token('create-account', mint, '--owner', admin.address)
+    // A throwaway mint, with the buyer's own account funded. `--mint` runs the
+    // same flow against a token the policy names instead, spending the wallet's
+    // existing balance rather than minting a token no policy could charge a flat
+    // on.
     const limit = 500_000
-    token('mint', mint, String(limit), buyerAta)
-    console.log(`mint      ${mint}`)
+    const mint = args.mint ? address(args.mint) : token('create-token', '--decimals', '6').commandOutput.address
+    const buyerAta = await ataFor(admin.address, mint)
+    if (args.mint) {
+      const buyerAccount = (await rpc.getAccountInfo(buyerAta, { encoding: 'base64' }).send()).value
+      if (!buyerAccount) fail(`no token account ${buyerAta} for ${mint} to spend from`)
+      const funded = await tokenBalance(buyerAta)
+      if (funded < limit) fail(`the budget needs ${limit} base units, ${buyerAta} holds ${funded}`)
+      console.log(`mint      ${mint}  (existing, buyer holds ${funded} base units)`)
+    } else {
+      token('create-account', mint, '--owner', admin.address)
+      token('mint', mint, String(limit), buyerAta)
+      console.log(`mint      ${mint}`)
+    }
 
     // The treasury's account for this mint: opened by the admin if it is the
     // first invoice in this mint, which is also the account the fee lands in.
@@ -280,8 +308,12 @@ async function main() {
     const sellerLamportsBefore = await lamports(seller.address)
 
     const amount = 100_000
+    // `fee_for`: the part at or below the token boundary at one rate, the rest
+    // at the other, plus this mint's flat if the policy names it.
+    const flat = mint === usdcMint ? flatUsdc : mint === eurcMint ? flatEurc : 0
+    const below = Math.min(amount, tokenTier)
     const fee = Math.min(
-      Math.floor((amount * feeBps) / 10_000) + fixedFee,
+      Math.floor((below * feeBpsBelow + (amount - below) * feeBpsAbove) / 10_000) + flat,
       amount - 1
     )
     const reference = (await freshSigner()).address

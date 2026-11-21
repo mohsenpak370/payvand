@@ -122,22 +122,62 @@ pub enum PaymentState {
     Settled,
 }
 
+/// The fee policy a `Config` carries: two marginal rates, the boundary they meet
+/// at in each currency, and the flat each token currency pays for the marker's
+/// rent.
+///
+/// The rate is marginal, not a cliff. An amount at or below the boundary pays
+/// `fee_bps_below` on all of it; an amount above it pays `fee_bps_below` on the
+/// part at or below the boundary plus `fee_bps_above` on the part above. A 0.1
+/// SOL invoice and one lamport more therefore owe fees a lamport's worth of rate
+/// apart, not twice as far.
+///
+/// The two flat fields exist because a token settlement cannot charge its
+/// non-signing seller lamports, so the treasury — not the seller — funds the
+/// permanent marker's 1,224,960-lamport rent on that path. Charging the seller
+/// that same cost in the currency they are paid in is what keeps the treasury
+/// whole. `usdc_mint` and `eurc_mint` select them: the program has no oracle, so
+/// the flat is stated per currency by the admin rather than converted at settle
+/// time. A mint that names neither pays no flat.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FeePolicy {
+    /// Basis points on the part of the amount at or below the boundary.
+    pub fee_bps_below: u16,
+    /// Basis points on the part above it.
+    pub fee_bps_above: u16,
+    /// The SOL boundary, in lamports (100_000_000 = 0.1 SOL).
+    pub sol_tier_lamports: u64,
+    /// The token boundary, in base units (10_000_000 = 10 USDC at 6 decimals).
+    pub token_tier_base_units: u64,
+    /// Flat charged on a USDC invoice, in base units: the marker's rent at the
+    /// SOL price the admin priced it at (1,224,960 lamports ≈ 89,400 base units
+    /// at $73).
+    pub flat_usdc_base_units: u64,
+    /// Flat charged on a EURC invoice, in base units.
+    pub flat_eurc_base_units: u64,
+    /// The mint `flat_usdc_base_units` applies to.
+    pub usdc_mint: Pubkey,
+    /// The mint `flat_eurc_base_units` applies to.
+    pub eurc_mint: Pubkey,
+}
+
 /// The program's singleton fee policy and treasury pointers.
 ///
 /// Created once per deployment by the program's upgrade authority, which
 /// becomes `admin`. Settlements read it and never write it; only the admin can
 /// change the policy, and the fee destination is derived from a seed here
 /// rather than named by a caller, so no settlement can redirect it.
+///
+/// Version 2 carries the tiered `FeePolicy`; version 1 was one rate plus a flat
+/// lamport fee, and `migrate_config` reallocates the account it left behind.
 #[account]
 #[derive(Debug)]
 pub struct Config {
     /// The upgrade authority that initialized the config. It may change the
     /// policy and withdraw treasury surplus, nothing else.
     pub admin: Pubkey,
-    /// Seller-side fee in basis points (200 = 2%).
-    pub fee_bps: u16,
-    /// Flat lamport fee added on top of the proportional one.
-    pub fixed_fee_lamports: u64,
+    /// The two rates, their boundaries and the per-currency flats.
+    pub policy: FeePolicy,
     /// Who pays the fee.
     pub fee_mode: FeeMode,
     /// Lamports parked on a session key so its silent transactions can pay

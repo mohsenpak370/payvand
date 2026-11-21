@@ -14,8 +14,10 @@ import {
 /**
  * The numbers below are the program's, written out from its Rust:
  *
- * - `fee_for` (`helpers.rs`): `amount * fee_bps / 10_000 + fixed_fee_lamports`,
- *   capped at `amount - 1`, with the product taken in `u128`.
+ * - `fee_for` (`helpers.rs`): `fee_bps_below` on the part at or below the
+ *   currency's tier boundary, `fee_bps_above` on the part above it, plus the
+ *   currency's flat on a token invoice, capped at `amount - 1`, with the
+ *   products taken in `u128`.
  * - `Rent::minimum_balance` at each call site in `sol.rs`: `(space + 128) *
  *   lamports_per_byte_year * 2`. Mainnet charges 3,480 lamports per byte-year,
  *   devnet 2,540 — which is why the rents are read from the cluster rather than
@@ -35,14 +37,45 @@ const TOKEN_RENT = MINIMUM_BALANCE(TOKEN_PAYMENT_SPACE, MAINNET)
 const RECEIPT_RENT = MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, MAINNET)
 const TOKEN_ACCOUNT_RENT = MINIMUM_BALANCE(TOKEN_ACCOUNT_SPACE, MAINNET)
 
-const sellerPays = (feeBps: number, fixedFeeLamports = 0): FeePolicy =>
-  ({ feeBps, fixedFeeLamports, feeMode: 'seller' })
-const buyerPays = (feeBps: number, fixedFeeLamports = 0): FeePolicy =>
-  ({ feeBps, fixedFeeLamports, feeMode: 'buyer' })
+/** The two currencies the policy can name a flat for. */
+const USDC = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+const EURC = 'HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr'
+/** A mint the policy does not name: an invoice in it pays no flat. */
+const UNNAMED_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 
-/** `amount > rent + fee`, exactly what `settle_payment` requires. */
-const settles = (policy: FeePolicy, rent: number, amount: number): boolean =>
-  amount > rent + feeOn(policy, amount)
+/**
+ * A policy with a 0 boundary, so every amount pays the one rate and the two
+ * marginal rates collapse into the flat rate these cases state. `flat` is what
+ * both named currencies charge: the token path's marker rent.
+ */
+const policyOf = (
+  feeBps: number,
+  options: {
+    flat?: number
+    feeMode?: 'seller' | 'buyer'
+    below?: number
+    above?: number
+    solTier?: number
+    tokenTier?: number
+  } = {}
+): FeePolicy => ({
+  feeBpsBelow: options.below ?? feeBps,
+  feeBpsAbove: options.above ?? feeBps,
+  solTierLamports: options.solTier ?? 0,
+  tokenTierBaseUnits: options.tokenTier ?? 0,
+  flatUsdcBaseUnits: options.flat ?? 0,
+  flatEurcBaseUnits: options.flat ?? 0,
+  usdcMint: USDC,
+  eurcMint: EURC,
+  feeMode: options.feeMode ?? 'seller'
+})
+const sellerPays = (feeBps: number, flat = 0): FeePolicy => policyOf(feeBps, { flat })
+const buyerPays = (feeBps: number, flat = 0): FeePolicy =>
+  policyOf(feeBps, { flat, feeMode: 'buyer' })
+
+/** `amount > rent + fee`, exactly what a settle requires. */
+const settles = (policy: FeePolicy, rent: number, amount: number, mint?: string): boolean =>
+  amount > rent + feeOn(policy, amount, mint)
 
 describe('rents', () => {
   it('matches the plan table on mainnet and the lower devnet rent', () => {
@@ -59,23 +92,26 @@ describe('feeOn', () => {
   const policy = sellerPays(200)
 
   it.each([
-    // amount, bps, fixed, fee — the shape of `fee_for`.
-    [1_000_000_000, 200, 0, 20_000_000],
-    [250_000_000, 200, 0, 5_000_000],
-    // `fixed_fee_is_charged_on_top_of_the_rate` in the contract suite.
-    [100_000_000, 200, 1_000_000, 3_000_000],
+    // amount, bps, flat, fee, mint — the shape of `fee_for`.
+    [1_000_000_000, 200, 0, 20_000_000, undefined],
+    [250_000_000, 200, 0, 5_000_000, undefined],
+    // `the_flat_is_charged_on_the_currencies_the_policy_names` in the contract
+    // suite: the flat is the token path's, and SOL pays the rate alone.
+    [100_000_000, 200, 1_000_000, 3_000_000, USDC],
+    [100_000_000, 200, 1_000_000, 3_000_000, EURC],
+    [100_000_000, 200, 1_000_000, 2_000_000, undefined],
+    [100_000_000, 200, 1_000_000, 2_000_000, UNNAMED_MINT],
     // Below a basis point: the fee floors to zero rather than rounding up.
-    [1, 200, 0, 0],
-    [99, 200, 0, 1],
-    // A free policy charges nothing, and a fixed fee bigger than the price is
-    // capped just short of taking the whole invoice.
-    [10_000, 0, 0, 0],
-    [10, 10_000, 0, 9],
-    [1, 0, 5_000_000, 0],
-    [0, 200, 0, 0]
-  ])('charges %i at %i bps plus %i as %i', (amount, bps, fixed, expected) => {
-    expect(feeOn({ feeBps: bps, fixedFeeLamports: fixed, feeMode: 'seller' }, amount))
-      .toBe(expected)
+    [1, 200, 0, 0, undefined],
+    [99, 200, 0, 1, undefined],
+    // A free policy charges nothing, and a flat bigger than the price is capped
+    // just short of taking the whole invoice.
+    [10_000, 0, 0, 0, undefined],
+    [10, 10_000, 0, 9, undefined],
+    [1, 0, 5_000_000, 0, undefined],
+    [0, 200, 0, 0, undefined]
+  ])('charges %i at %i bps plus %i as %i on %s', (amount, bps, flat, expected, mint) => {
+    expect(feeOn(policyOf(bps, { flat }), amount, mint)).toBe(expected)
   })
 
   it('takes a large invoice at the rate', () => {
@@ -98,28 +134,54 @@ describe('feeOn', () => {
   it('multiplies exactly where a float would lose a lamport', () => {
     // The product here is far past 2^53, so `amount * bps` in a float rounds to
     // an odd number; the program's u128 division floors to this value instead.
-    expect(feeOn({ feeBps: 9_354, fixedFeeLamports: 0, feeMode: 'seller' }, 2_060_979_503_424_492))
+    expect(feeOn(policyOf(9_354), 2_060_979_503_424_492))
       .toBe(1_927_840_227_503_269)
+  })
+
+  it('changes slope at the tier boundary instead of doubling the fee', () => {
+    // `the_tier_boundary_is_marginal` in the contract suite, from the same
+    // policy: 1% up to 0.1 SOL, 0.5% above it.
+    const policy = policyOf(0, {
+      below: 100,
+      above: 50,
+      solTier: 100_000_000,
+      tokenTier: 10_000_000,
+      flat: 89_400
+    })
+
+    expect(feeOn(policy, 99_999_999)).toBe(999_999)
+    expect(feeOn(policy, 100_000_000)).toBe(1_000_000)
+    // One lamport past the boundary is one lamport's worth of rate more.
+    expect(feeOn(policy, 100_000_001)).toBe(1_000_000)
+    expect(feeOn(policy, 200_000_000)).toBe(1_500_000)
+
+    // The token boundary is its own number, and its flat rides on top.
+    expect(feeOn(policy, 10_000_000, USDC)).toBe(100_000 + 89_400)
+    expect(feeOn(policy, 20_000_000, USDC)).toBe(150_000 + 89_400)
   })
 })
 
 describe('minimumPayable', () => {
   it.each([
-    ['SOL at 2% on mainnet', sellerPays(200), SOL_RENT, 2_542_531],
+    ['SOL at 2% on mainnet', sellerPays(200), SOL_RENT, 2_542_531, undefined],
     // Same policy, devnet rent: the floor follows the cluster, not a constant.
-    ['SOL at 2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_SPACE, DEVNET), 1_855_756],
-    ['a token invoice at 2%', sellerPays(200), TOKEN_RENT, 2_769_796],
-    ['SOL at 2% plus a 0.001 SOL fixed fee', sellerPays(200, 1_000_000), SOL_RENT, 3_562_939],
-    ['a free policy', sellerPays(0), SOL_RENT, 2_491_681],
-    ['a 10% policy', sellerPays(1_000), SOL_RENT, 2_768_534],
-    ['an almost total fee', sellerPays(9_999), SOL_RENT, 24_916_800_001]
-  ])('finds the floor for %s', (_name, policy, rent, expected) => {
-    const floor = minimumPayable(policy, rent)
+    ['SOL at 2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_SPACE, DEVNET), 1_855_756, undefined],
+    ['a token invoice at 2%', sellerPays(200), TOKEN_RENT, 2_769_796, undefined],
+    // A SOL invoice pays no flat, so the token flat does not move its floor.
+    ['SOL at 2% beside a token flat', sellerPays(200, 1_000_000), SOL_RENT, 2_542_531, undefined],
+    // A token settle only asks that the seller receive something, and the
+    // `amount - 1` cap makes one base unit settle with no fee at all.
+    ['a USDC invoice at 2% plus the marker flat', sellerPays(200, 89_400), 0, 1, USDC],
+    ['a free policy', sellerPays(0), SOL_RENT, 2_491_681, undefined],
+    ['a 10% policy', sellerPays(1_000), SOL_RENT, 2_768_534, undefined],
+    ['an almost total fee', sellerPays(9_999), SOL_RENT, 24_916_800_001, undefined]
+  ])('finds the floor for %s', (_name, policy, rent, expected, mint) => {
+    const floor = minimumPayable(policy, rent, mint)
     expect(floor).toBe(expected)
 
     // The two assertions the program itself makes around `InvoiceTooSmall`.
-    expect(settles(policy, rent, floor)).toBe(true)
-    expect(settles(policy, rent, floor - 1)).toBe(false)
+    expect(settles(policy, rent, floor, mint)).toBe(true)
+    expect(settles(policy, rent, floor - 1, mint)).toBe(false)
   })
 
   it('admits nothing at 10,000 bps, because the fee is always amount - 1', () => {
@@ -135,6 +197,8 @@ describe('invoiceCosts', () => {
   const base = {
     policy: sellerPays(200),
     currency: 'sol' as const,
+    // Ignored on the SOL path; a token case inherits it and its flat is 0 here.
+    mint: USDC,
     invoiceRent: SOL_RENT,
     receiptRent: RECEIPT_RENT
   }
@@ -231,16 +295,46 @@ describe('invoiceCosts', () => {
     expect(token.sellerTokenAccountRent).toBe(TOKEN_ACCOUNT_RENT)
   })
 
-  it('agrees with the settle the contract suite asserts', () => {
-    // `fixed_fee_is_charged_on_top_of_the_rate`: 0.1 SOL less a 3,000,000 fee
-    // reaches the seller, and 97,000,000 is exactly what settle.rs checks.
-    const costs = invoiceCosts({
+  it('charges the currency flat on a token invoice, as the contract suite does', () => {
+    // `the_flat_is_charged_on_the_currencies_the_policy_names` in settle.rs:
+    // 2% of 100,000,000 plus the 1,000,000 flat the policy names for USDC.
+    const token = invoiceCosts({
+      ...base,
+      policy: sellerPays(200, 1_000_000),
+      currency: 'usdc',
+      amount: 100_000_000
+    })
+    expect(token.fee).toBe(3_000_000)
+    // A token seller is charged no lamports of rent, so it all reaches them.
+    expect(token.sellerReceives).toBe(97_000_000)
+
+    // The same policy charges a SOL invoice the rate alone.
+    const sol = invoiceCosts({
       ...base,
       policy: sellerPays(200, 1_000_000),
       amount: 100_000_000
     })
-    expect(costs.fee).toBe(3_000_000)
-    expect(costs.sellerReceives).toBe(97_000_000 - RECEIPT_RENT)
+    expect(sol.fee).toBe(2_000_000)
+    expect(sol.sellerReceives).toBe(98_000_000 - RECEIPT_RENT)
+  })
+
+  it('labels the fee with the rate the amount ends up paying', () => {
+    const policy = policyOf(0, {
+      below: 100,
+      above: 50,
+      solTier: 100_000_000,
+      tokenTier: 10_000_000,
+      flat: 89_400
+    })
+
+    expect(invoiceCosts({ ...base, policy, amount: 100_000_000 }).feeBps).toBe(100)
+    expect(invoiceCosts({ ...base, policy, amount: 100_000_001 }).feeBps).toBe(50)
+    // 0.2 SOL: 1% of the first 0.1 SOL plus 0.5% of the second.
+    expect(invoiceCosts({ ...base, policy, amount: 200_000_000 }).fee)
+      .toBe(1_500_000)
+    // A 20 USDC invoice keeps the token flat, which the boundary does not cover.
+    expect(invoiceCosts({ ...base, policy, currency: 'usdc', amount: 20_000_000 }).fee)
+      .toBe(239_400)
   })
 })
 
@@ -251,14 +345,18 @@ describe('break-even against the receipt rent', () => {
    * `feeOn`, so the answer is the program's arithmetic at the lamport, not a
    * closed form that could drift from the floor and the cap.
    */
-  const breakEven = (policy: FeePolicy, receiptRent: number): number => {
-    if (policy.feeBps <= 0 && policy.fixedFeeLamports <= 0) return Number.POSITIVE_INFINITY
+  const breakEven = (policy: FeePolicy, receiptRent: number, mint?: string): number => {
+    const flat = mint === USDC ? policy.flatUsdcBaseUnits : 0
+    if (policy.feeBpsAbove <= 0 && flat <= 0) return Number.POSITIVE_INFINITY
     let low = 1
     // A basis point of the price is always enough to cover any rent this small.
     let high = receiptRent * 10_000
+    // The flat is a fixed sum, so the search starts from it rather than from 1.
+    low += flat
+    high += flat
     while (low < high) {
       const mid = Math.floor((low + high) / 2)
-      if (feeOn(policy, mid) >= receiptRent) high = mid
+      if (feeOn(policy, mid, mint) >= receiptRent) high = mid
       else low = mid + 1
     }
     return low
@@ -266,25 +364,26 @@ describe('break-even against the receipt rent', () => {
 
   it.each([
     // The marker's rent at each cluster's rate, 48 bytes a receipt.
-    ['2% on mainnet', sellerPays(200), RECEIPT_RENT, 61_248_000],
-    ['2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, DEVNET), 44_704_000],
-    ['1% on mainnet', sellerPays(100), RECEIPT_RENT, 122_496_000],
-    // The fixed fee covers the first 1,000,000 lamports of rent by itself.
-    ['2% plus a 0.001 SOL fixed fee', sellerPays(200, 1_000_000), RECEIPT_RENT, 11_248_000]
-  ])('breaks even at %s', (_name, policy, rent, expected) => {
-    const amount = breakEven(policy, rent)
+    ['2% on mainnet', sellerPays(200), RECEIPT_RENT, 61_248_000, undefined],
+    ['2% on devnet', sellerPays(200), MINIMUM_BALANCE(PAYMENT_RECEIPT_SPACE, DEVNET), 44_704_000, undefined],
+    ['1% on mainnet', sellerPays(100), RECEIPT_RENT, 122_496_000, undefined],
+    // The token flat covers the first 1,000,000 base units of rent by itself.
+    ['2% plus the USDC flat', sellerPays(200, 1_000_000), RECEIPT_RENT, 11_248_000, USDC]
+  ])('breaks even at %s', (_name, policy, rent, expected, mint) => {
+    const amount = breakEven(policy, rent, mint)
     expect(amount).toBe(expected)
 
     // The two sides of the rule, as the program applies it at the lamport.
-    expect(feeOn(policy, amount)).toBeGreaterThanOrEqual(rent)
-    expect(feeOn(policy, amount - 1)).toBeLessThan(rent)
-    // And the durable statement `0002` records, in whole lamports: the rate
-    // plus the fixed fee on one side, the receipt rent on the other. The fixed
-    // fee is counted once, which is why it is scaled rather than multiplied by
-    // the amount.
-    expect(policy.feeBps * amount + policy.fixedFeeLamports * 10_000)
+    expect(feeOn(policy, amount, mint)).toBeGreaterThanOrEqual(rent)
+    expect(feeOn(policy, amount - 1, mint)).toBeLessThan(rent)
+    // And the durable statement `0002` records, in whole base units: the rate
+    // plus the flat on one side, the receipt rent on the other. The flat is
+    // counted once, which is why it is scaled rather than multiplied by the
+    // amount.
+    const flat = mint === USDC ? policy.flatUsdcBaseUnits : 0
+    expect(policy.feeBpsAbove * amount + flat * 10_000)
       .toBeGreaterThanOrEqual(rent * 10_000)
-    expect(policy.feeBps * (amount - 1) + policy.fixedFeeLamports * 10_000)
+    expect(policy.feeBpsAbove * (amount - 1) + flat * 10_000)
       .toBeLessThan(rent * 10_000)
   })
 

@@ -4,7 +4,7 @@ import type {
   SupportedCurrency
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
-import { currenciesForCluster } from '~/composables/usePaymentProgram'
+import { currenciesForCluster, mintForCurrency } from '~/composables/usePaymentProgram'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotalLamports } from '~/composables/useShop'
@@ -113,8 +113,13 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
       netQuote.value = null
       return
     }
+    // The mint is what selects the currency's flat: quoting without it would
+    // show a seller net that the token path then charges 89,400 base units for.
+    const mint = currentCurrency === 'sol'
+      ? undefined
+      : mintForCurrency(currentCurrency, options.cluster)?.toString()
     try {
-      netQuote.value = await estimateInvoiceCosts(amount, currentCurrency)
+      netQuote.value = await estimateInvoiceCosts(amount, currentCurrency, { mint })
     } catch {
       // No policy, no promise: a stale number here would be a lie.
       netQuote.value = null

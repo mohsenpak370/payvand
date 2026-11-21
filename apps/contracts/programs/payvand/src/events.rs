@@ -11,7 +11,7 @@
 
 use anchor_lang::prelude::*;
 
-use crate::state::FeeMode;
+use crate::state::{FeeMode, FeePolicy};
 
 /// One settled invoice — from the wallet path or an allowance, in SOL or a
 /// token.
@@ -52,12 +52,13 @@ pub struct PaymentSettled {
 }
 
 /// The fee policy as the admin just wrote it, so an indexer prices a settlement
-/// with the policy in force rather than today's.
+/// with the policy in force rather than today's. It carries the whole
+/// `FeePolicy`, because a tiered fee needs both rates and both boundaries to be
+/// reproduced.
 #[event]
 pub struct ConfigUpdated {
     pub admin: Pubkey,
-    pub fee_bps: u16,
-    pub fixed_fee_lamports: u64,
+    pub policy: FeePolicy,
     pub fee_mode: FeeMode,
     pub session_fee_float: u64,
 }

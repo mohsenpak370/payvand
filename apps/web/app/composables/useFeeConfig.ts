@@ -5,6 +5,7 @@ import {
   TOKEN_ACCOUNT_SPACE,
   TOKEN_PAYMENT_SPACE,
   invoiceCosts,
+  type FeePolicy,
   type InvoiceCosts
 } from '~/utils/invoiceCost'
 import type { SupportedCurrency } from './usePaymentApi'
@@ -23,22 +24,19 @@ import { clearRentCache, rentMinimum } from './rents'
  * policy update on chain (a different fee rate, a larger session float) then
  * shows up in the next quote instead of quoting yesterday's numbers.
  */
-export interface FeeConfig {
+export interface FeeConfig extends FeePolicy {
   admin: Address
-  /** Seller-side fee in basis points (200 = 2%). */
-  feeBps: number
-  fixedFeeLamports: number
-  feeMode: 'seller' | 'buyer'
   /** Lamports `open_budget` parks on a session key. */
   sessionFeeFloat: number
 }
 
 /**
- * `CONFIG_SPACE` from the program: 8 (discriminator) + 32 (admin) + 2 (fee_bps)
- * + 8 (fixed_fee_lamports) + 1 (fee_mode) + 8 (session_fee_float) + 1 (bump) +
- * 1 (treasury_bump) + 1 (version).
+ * `CONFIG_SPACE` from the program: 8 (discriminator) + 32 (admin) + 100 (the
+ * `FeePolicy`: two rates, their two boundaries, the two per-currency flats and
+ * the two mints) + 1 (fee_mode) + 8 (session_fee_float) + 1 (bump) + 1
+ * (treasury_bump) + 1 (version).
  */
-const CONFIG_SIZE = 62
+const CONFIG_SIZE = 152
 
 /**
  * How long a read stays fresh. Long enough that a checkout does not re-read the
@@ -107,12 +105,19 @@ export function useFeeConfig() {
     }
 
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const addressAt = (offset: number) => getAddressDecoder().decode(bytes.subarray(offset, offset + 32))
     const config: FeeConfig = {
-      admin: getAddressDecoder().decode(bytes.subarray(8, 40)),
-      feeBps: view.getUint16(40, true),
-      fixedFeeLamports: Number(view.getBigUint64(42, true)),
-      feeMode: bytes[50] === 1 ? 'buyer' : 'seller',
-      sessionFeeFloat: Number(view.getBigUint64(51, true))
+      admin: addressAt(8),
+      feeBpsBelow: view.getUint16(40, true),
+      feeBpsAbove: view.getUint16(42, true),
+      solTierLamports: Number(view.getBigUint64(44, true)),
+      tokenTierBaseUnits: Number(view.getBigUint64(52, true)),
+      flatUsdcBaseUnits: Number(view.getBigUint64(60, true)),
+      flatEurcBaseUnits: Number(view.getBigUint64(68, true)),
+      usdcMint: addressAt(76),
+      eurcMint: addressAt(108),
+      feeMode: bytes[140] === 1 ? 'buyer' : 'seller',
+      sessionFeeFloat: Number(view.getBigUint64(141, true))
     }
 
     cache = { readAt: Date.now(), config }
@@ -189,6 +194,7 @@ export function useInvoiceCosts() {
       policy,
       amount,
       currency,
+      mint: options.mint,
       invoiceRent,
       receiptRent,
       sellerTokenAccountRent,

@@ -365,7 +365,7 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount)?;
+    let fee = fee_for(config, amount, Some(&ctx.accounts.mint.key()))?;
     // The seller must still receive something, as in `settle_payment`.
     require!(amount > fee, PaymentError::InvoiceTooSmall);
 
@@ -598,7 +598,7 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         config.fee_mode == FeeMode::SellerPays,
         PaymentError::FeeModeUnsupported
     );
-    let fee = fee_for(config, amount)?;
+    let fee = fee_for(config, amount, Some(&ctx.accounts.mint.key()))?;
     // The seller must still receive something. The `amount - 1` cap in `fee_for`
     // makes this hold at any `fee_bps`; the guard says so out loud.
     require!(amount > fee, PaymentError::InvoiceTooSmall);

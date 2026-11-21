@@ -206,7 +206,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount)?;
+    let fee = fee_for(config, amount, None)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     // The seller receives `amount - rent - receipt rent - fee` now, plus the
@@ -438,7 +438,7 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount)?;
+    let fee = fee_for(config, amount, None)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);

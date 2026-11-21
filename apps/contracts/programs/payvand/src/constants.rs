@@ -45,10 +45,21 @@ pub const MIN_SESSION_FEE_FLOAT: u64 = 3_716_640;
 
 /// Seed of the singleton fee policy account.
 pub const CONFIG_SEED: &[u8] = b"config";
-/// `8` (discriminator) + `32 (admin) + 2 (fee_bps) + 8 (fixed_fee_lamports) + 1
-/// (fee_mode) + 8 (session_fee_float) + 1 (bump) + 1 (treasury_bump) + 1
-/// (version)`.
-pub const CONFIG_SPACE: usize = 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1;
+/// `8` (discriminator) + `32 (admin) + 2 + 2 (the two rates) + 8 + 8 (their
+/// boundaries) + 8 + 8 (the two per-currency flats) + 32 + 32 (the mints they
+/// apply to) + 1 (fee_mode) + 8 (session_fee_float) + 1 (bump) + 1
+/// (treasury_bump) + 1 (version)`.
+pub const CONFIG_SPACE: usize = 8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 1 + 1 + 1;
+
+/// The version `initialize_config` and `migrate_config` write.
+pub const CONFIG_VERSION: u8 = 2;
+
+/// The size of the version 1 `Config` layout: 8 bytes of discriminator, 32 of
+/// admin, 2 of `fee_bps`, 8 of `fixed_fee_lamports`, 1 of `fee_mode`, 8 of
+/// `session_fee_float`, and 1 each of `bump`, `treasury_bump` and `version`.
+/// Only `migrate_config` reads or writes this shape, and it is what tells the
+/// migration it is looking at the account it can upgrade.
+pub const CONFIG_SPACE_V1: usize = 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1;
 
 /// Seed of the treasury: a system-owned PDA with no data, the only account a
 /// fee may be sent to. Deriving it from a seed is what makes the recipient

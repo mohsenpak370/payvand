@@ -40,4 +40,6 @@ pub enum PaymentError {
     FeeOverflow,
     #[msg("Payvand settles only SPL Token mints; Token-2022 is not supported")]
     Token2022Unsupported,
+    #[msg("This config account is not the version this migration upgrades")]
+    InvalidConfigVersion,
 }

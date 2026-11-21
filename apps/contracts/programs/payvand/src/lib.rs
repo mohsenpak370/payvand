@@ -45,35 +45,29 @@ pub mod payvand {
     /// an admin of its choosing.
     pub fn initialize_config(
         ctx: Context<InitializeConfig>,
-        fee_bps: u16,
-        fixed_fee_lamports: u64,
+        policy: FeePolicy,
         fee_mode: FeeMode,
         session_fee_float: u64,
     ) -> Result<()> {
-        instructions::config::initialize_config_handler(
-            ctx,
-            fee_bps,
-            fixed_fee_lamports,
-            fee_mode,
-            session_fee_float,
-        )
+        instructions::config::initialize_config_handler(ctx, policy, fee_mode, session_fee_float)
     }
 
     /// Changes the fee policy. Admin only; it never rewrites `admin` itself.
     pub fn update_config(
         ctx: Context<UpdateConfig>,
-        fee_bps: u16,
-        fixed_fee_lamports: u64,
+        policy: FeePolicy,
         fee_mode: FeeMode,
         session_fee_float: u64,
     ) -> Result<()> {
-        instructions::config::update_config_handler(
-            ctx,
-            fee_bps,
-            fixed_fee_lamports,
-            fee_mode,
-            session_fee_float,
-        )
+        instructions::config::update_config_handler(ctx, policy, fee_mode, session_fee_float)
+    }
+
+    /// Upgrades the live version 1 config account to version 2 in place. Admin
+    /// only, and only once: the account must be the old 62-byte layout and must
+    /// record the signer as its admin. It carries the admin, fee mode and
+    /// session float over and installs the `FeePolicy` passed here.
+    pub fn migrate_config(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
+        instructions::config::migrate_config_handler(ctx, policy)
     }
 
     /// Moves treasury surplus to the admin, leaving its rent-exempt minimum.

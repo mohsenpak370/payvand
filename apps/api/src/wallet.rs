@@ -350,7 +350,9 @@ pub async fn transactions(
         ApiError::BadRequest("Link your wallet on the profile page first.".into())
     })?;
 
-    let scan = payments::fetch_program_scan().await?;
+    // Only `TRANSACTION_LIMIT` rows survive the truncation below, so that is
+    // how many settled invoices are worth resolving from history.
+    let scan = payments::fetch_program_scan(TRANSACTION_LIMIT, &state.db).await?;
     let mut items = match_transactions(scan.payments, &scan.budgets, &wallet);
     items.truncate(TRANSACTION_LIMIT);
 

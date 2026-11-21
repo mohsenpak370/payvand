@@ -101,6 +101,57 @@ solana account 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J --url devnet
 # look for "Executable: true"
 ```
 
+### Publishing the IDL
+
+The on-chain IDL is not part of the program binary: it lives in a Program
+Metadata account (seed `idl`), so `pnpm anchor:deploy` leaves it describing the
+previous interface. Publish a changed one with `task idl:upload` — it builds the
+IDL, uploads it, then fetches it back and compares — or run the same steps by
+hand from `apps/contracts`:
+
+```bash
+anchor idl build -o target/idl/payvand.json
+npx @solana-program/program-metadata \
+  --rpc https://api.devnet.solana.com -k ~/.config/solana/id.json \
+  write idl 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J target/idl/payvand.json
+```
+
+`[Warning] RPC rate limited (HTTP 429), retrying…` lines are normal on the
+public devnet RPC; the command retries them and finishes.
+
+Confirm the cluster serves what you built (the fetch itself can need a retry
+while the RPC is busy):
+
+```bash
+anchor idl fetch 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J -o /tmp/live.json
+diff <(python3 -m json.tool /tmp/live.json) <(python3 -m json.tool target/idl/payvand.json)
+```
+
+#### Why `anchor idl init` / `upgrade` are not the route
+
+Anchor 1.2.1 talks to the same Program Metadata program, but its IDL commands
+build one multi-transaction plan and abort it when the public devnet RPC rate
+limits a later send: `create-buffer` lands the buffer's own transaction, then
+dies with `HTTP error (429): Too Many Requests` — or with the bare `The provided
+transaction plan failed to execute` when only the plan wrapper's message survives
+— and exits 1. `init` and `upgrade` wrap that same plan, so they abort before
+anything is written and the previous IDL stays live. This is **not an on-chain
+refusal**: the Anchor CLI does not retry a 429, while the npm CLI retries the
+identical create/write/set sequence on the same wallet and cluster and finishes.
+
+`anchor idl create-buffer` followed by `anchor idl write-buffer <program>
+--buffer <address> --close-buffer` is **not** a safe workaround. `write-buffer`
+reports `Metadata written successfully` against the buffer the aborted
+`create-buffer` left behind, but the account ends up holding a truncated
+compressed payload — its length field sits at the full 10,112-byte capacity with
+an incomplete zlib stream — and every reader then fails with
+`[Error] undefined` until a real upload repairs it. That was observed on devnet
+on 2026-11-21; re-publishing with the npm command above restored the account.
+
+A buffer an interrupted run leaves behind holds ~0.05 SOL of rent;
+`npx @solana-program/program-metadata list-buffers` and
+`close-buffer <address>` recover it.
+
 ### Local development
 
 Run the API and the web app in two terminals:

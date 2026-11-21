@@ -6,6 +6,10 @@
 
 version: "3"
 
+vars:
+  PROGRAM_ID: 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J
+  DEVNET_RPC: https://api.devnet.solana.com
+
 tasks:
   default:
     desc: List available tasks
@@ -100,6 +104,35 @@ tasks:
     desc: Show the program ids Anchor has on disk
     cmds:
       - pnpm anchor:keys
+
+  idl:upload:
+    desc: Build the IDL and publish it to the metadata account on devnet, then verify it
+    dir: apps/contracts
+    # One block, not `cmds`, so the PATH export reaches every command: `anchor`
+    # needs the Solana CLI and self-installs a toolchain without it.
+    cmds:
+      - |
+        set -e
+        solana_bin="$HOME/.local/share/solana/install/active_release/bin"
+        if [ -d "$solana_bin" ]; then PATH="$solana_bin:$PATH"; fi
+        anchor idl build -o target/idl/payvand.json
+        # The metadata account is not part of the program, so this is the step a
+        # deploy does not do. The anchor idl buffer commands (`create-buffer`
+        # then `write-buffer`) abort mid-plan on the public devnet RPC and leave
+        # the account unreadable; see "Publishing the IDL" in README.md.
+        npx -y @solana-program/program-metadata write idl {{.PROGRAM_ID}} \
+          target/idl/payvand.json --rpc {{.DEVNET_RPC}} \
+          -k "$HOME/.config/solana/id.json"
+        # Fetching also goes through the rate-limited RPC, so retry rather than
+        # fail a publish that already landed.
+        fetched=0
+        for attempt in 1 2 3; do
+          if anchor idl fetch {{.PROGRAM_ID}} --provider.cluster {{.DEVNET_RPC}} \
+            -o /tmp/payvand-idl-live.json; then fetched=1; break; fi
+          sleep 5
+        done
+        if [ "$fetched" != 1 ]; then echo "could not fetch the IDL back from devnet"; exit 1; fi
+        python3 -c "import json,sys; live=json.load(open('/tmp/payvand-idl-live.json')); built=json.load(open('target/idl/payvand.json')); sys.exit(0 if live==built else 'the on-chain IDL differs from target/idl/payvand.json')"
 
   deploy:web:
     desc: Deploy the web app to Vercel production

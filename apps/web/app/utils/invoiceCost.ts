@@ -30,11 +30,32 @@ export const TOKEN_ACCOUNT_SPACE = 165
  */
 export const NETWORK_FEE_LAMPORTS = 10_000
 
-/** The part of `Config` a quote needs. */
+/**
+ * The part of `Config` a quote needs: the `FeePolicy` the program settles with.
+ *
+ * The rate is marginal. The part of the amount at or below the currency's
+ * boundary pays `feeBpsBelow`; the part above it pays `feeBpsAbove`. A token
+ * invoice whose mint is one of the two named currencies also pays that
+ * currency's flat, which is the marker's rent the treasury advances on the
+ * token paths. `feeMode` is the `Config` field beside the policy.
+ */
 export interface FeePolicy {
-  /** Seller-side fee in basis points (200 = 2%). */
-  feeBps: number
-  fixedFeeLamports: number
+  /** Basis points on the part at or below the boundary. */
+  feeBpsBelow: number
+  /** Basis points on the part above it. */
+  feeBpsAbove: number
+  /** The SOL boundary, in lamports (100,000,000 = 0.1 SOL). */
+  solTierLamports: number
+  /** The token boundary, in base units (10,000,000 = 10 USDC). */
+  tokenTierBaseUnits: number
+  /** Flat on a USDC invoice, in base units: the marker's rent. */
+  flatUsdcBaseUnits: number
+  /** Flat on a EURC invoice, in base units. */
+  flatEurcBaseUnits: number
+  /** The mint `flatUsdcBaseUnits` applies to. */
+  usdcMint: string
+  /** The mint `flatEurcBaseUnits` applies to. */
+  eurcMint: string
   /** `buyer` charges the fee on top of the price; `seller` takes it out. */
   feeMode: 'seller' | 'buyer'
 }
@@ -74,12 +95,49 @@ export interface InvoiceCosts {
 }
 
 /**
- * `fee_for`: the rate plus the fixed fee, capped at `amount - 1` so a payment
- * can never hand over the whole invoice. The program multiplies in `u128`; the
- * BigInt product is the same guarantee, and stays exact for every amount a
- * JavaScript number can hold.
+ * The rate and flat that apply to an amount in one currency: the boundary and
+ * the flat are the program's, selected by the invoice's mint — no `mint` is a
+ * SOL invoice, and a token mint the policy does not name pays no flat.
  */
-export function feeOn(policy: FeePolicy, amount: number): number {
+function tierFor(
+  policy: FeePolicy,
+  mint?: string
+): { boundary: number, bpsBelow: number, bpsAbove: number, flat: number } {
+  if (!mint) {
+    return {
+      boundary: policy.solTierLamports,
+      bpsBelow: policy.feeBpsBelow,
+      bpsAbove: policy.feeBpsAbove,
+      flat: 0
+    }
+  }
+  const flat = mint === policy.usdcMint
+    ? policy.flatUsdcBaseUnits
+    : mint === policy.eurcMint ? policy.flatEurcBaseUnits : 0
+  return {
+    boundary: policy.tokenTierBaseUnits,
+    bpsBelow: policy.feeBpsBelow,
+    bpsAbove: policy.feeBpsAbove,
+    flat
+  }
+}
+
+/**
+ * The rate a price in this currency ends up paying: the one at or below the
+ * boundary, or the one above it. What a screen labels the fee with.
+ */
+export function rateOn(policy: FeePolicy, amount: number, mint?: string): number {
+  const { boundary, bpsBelow, bpsAbove } = tierFor(policy, mint)
+  return Math.trunc(amount) <= boundary ? bpsBelow : bpsAbove
+}
+
+/**
+ * `fee_for`: the marginal rate plus the currency's flat, capped at `amount - 1`
+ * so a payment can never hand over the whole invoice. The program multiplies in
+ * `u128`; the BigInt product is the same guarantee, and stays exact for every
+ * amount a JavaScript number can hold.
+ */
+export function feeOn(policy: FeePolicy, amount: number, mint?: string): number {
   // The chain holds whole base units, and a price can reach here with a
   // fraction on it (a typed amount times decimals, a percentage). Truncating
   // keeps the quote on the low side of the wire, and it keeps `BigInt` — which
@@ -87,34 +145,43 @@ export function feeOn(policy: FeePolicy, amount: number): number {
   // payment. `NaN` and `Infinity` are not payments either.
   const units = Math.trunc(amount)
   if (!Number.isFinite(units) || units <= 0) return 0
-  const proportional = (BigInt(units) * BigInt(policy.feeBps)) / 10_000n
-  const fee = proportional + BigInt(policy.fixedFeeLamports)
+
+  const { boundary, bpsBelow, bpsAbove, flat } = tierFor(policy, mint)
+  const total = BigInt(units)
+  const edge = BigInt(Math.max(0, Math.trunc(boundary)))
+  const below = total < edge ? total : edge
+  const above = total - below
+  const proportional = (below * BigInt(bpsBelow) + above * BigInt(bpsAbove)) / 10_000n
+  const fee = proportional + BigInt(Math.max(0, Math.trunc(flat)))
   const cap = BigInt(units - 1)
   return Number(fee < cap ? fee : cap)
 }
 
 /**
  * The smallest amount the program settles: `amount > rent + fee`, the
- * `InvoiceTooSmall` guard. Solved rather than probed, so it costs the same at
- * 1% and at 99.99%; the closed form lands within a lamport or two (the floor
- * and the cap move it), and the two corrections below settle the rest.
+ * `InvoiceTooSmall` guard.
  *
- * `Infinity` means the policy admits no payment at all: at 10,000 bps the fee is
- * always `amount - 1`, so `amount > rent + amount - 1` is never true.
+ * `amount - fee(amount)` never falls while every rate is below 100%, so a
+ * doubling search for a settling amount followed by a bisection lands on the
+ * first one. `Infinity` means the policy admits no payment at all — at 10,000
+ * bps the fee is always `amount - 1`, so `amount > rent + amount - 1` is never
+ * true above a zero rent.
  */
-export function minimumPayable(policy: FeePolicy, rent: number): number {
-  if (policy.feeBps >= 10_000) return Number.POSITIVE_INFINITY
-  const scaled = BigInt(rent + policy.fixedFeeLamports - 1) * 10_000n
-  const scale = BigInt(10_000 - policy.feeBps)
-  // ceil(scaled / scale), in integers.
-  let candidate = Number(scaled / scale + (scaled % scale ? 1n : 0n))
-  while (candidate > 1 && candidate - 1 > rent + feeOn(policy, candidate - 1)) {
-    candidate--
+export function minimumPayable(policy: FeePolicy, rent: number, mint?: string): number {
+  const floor = Math.max(0, Math.trunc(rent))
+  const settles = (amount: number) => amount > floor + feeOn(policy, amount, mint)
+
+  let low = 0
+  let high = 1
+  while (high <= Number.MAX_SAFE_INTEGER && !settles(high)) high *= 2
+  if (!settles(high)) return Number.POSITIVE_INFINITY
+
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2)
+    if (settles(middle)) high = middle
+    else low = middle
   }
-  while (candidate <= rent + feeOn(policy, candidate)) {
-    candidate++
-  }
-  return candidate
+  return high
 }
 
 export interface InvoiceQuoteInput {
@@ -122,6 +189,8 @@ export interface InvoiceQuoteInput {
   /** The price, in the currency's base units. */
   amount: number
   currency: SupportedCurrency
+  /** The invoice's mint, which selects the token flat. Absent on SOL. */
+  mint?: string
   invoiceRent: number
   receiptRent: number
   /** Lamports the payer must add because the seller has no token account yet. */
@@ -135,7 +204,10 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   const { policy } = input
   // Same rule as `feeOn`: the quote reports the amount the wire will carry.
   const amount = Number.isFinite(input.amount) ? Math.trunc(input.amount) : 0
-  const fee = feeOn(policy, amount)
+  // A SOL invoice has no mint; a token one without a known mint still uses the
+  // token boundary but matches neither currency, so it pays no flat.
+  const mint = input.currency === 'sol' ? undefined : (input.mint ?? '')
+  const fee = feeOn(policy, amount, mint)
   const sellerPays = policy.feeMode === 'seller'
   // The invoice rent is a loan, not a cost: the account closes to the seller in
   // every SOL settle. The marker's rent is a cost, and on a SOL invoice it is
@@ -153,7 +225,7 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     currency: input.currency,
     amount,
     fee,
-    feeBps: policy.feeBps,
+    feeBps: rateOn(policy, amount, mint),
     sellerReceives: Math.max(0, netOfFee - markerRent),
     payerPays: sellerPays ? amount : amount + fee,
     invoiceRent: input.invoiceRent,
@@ -167,7 +239,8 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     // so its floor carries no rent.
     minPayable: minimumPayable(
       policy,
-      input.currency === 'sol' ? input.invoiceRent + markerRent : 0
+      input.currency === 'sol' ? input.invoiceRent + markerRent : 0,
+      mint
     )
   }
 }
