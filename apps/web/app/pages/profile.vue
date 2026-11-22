@@ -22,13 +22,12 @@ const {
   linkWalletNow,
   unlinkWalletNow,
   allowanceAddress,
-  budget,
-  budgetPot,
+  rows,
+  hasBudget,
+  totalRemainingFiat,
+  displayCurrency,
   budgetLoading,
   budgetError,
-  spentThisMonth,
-  remaining,
-  spentPercent,
   savedCards,
   savedCount,
   savedLoading,
@@ -78,13 +77,12 @@ const {
 
       <ProfileAllowanceCard
         :has-address="!!allowanceAddress"
-        :budget="budget"
-        :budget-pot="budgetPot"
+        :rows="rows"
+        :has-budget="hasBudget"
+        :total-fiat="totalRemainingFiat"
+        :display-currency="displayCurrency"
         :loading="budgetLoading"
         :error="budgetError"
-        :spent-this-month="spentThisMonth"
-        :remaining="remaining"
-        :spent-percent="spentPercent"
       />
 
       <ProfileSavedPaymentsCard

@@ -72,6 +72,36 @@ export function fiatFromLamports(
   return formatFiat((lamports / 1_000_000_000) * rate, currency)
 }
 
+/**
+ * What an amount already held in `currency` is worth, in the currency the
+ * person reads prices in. SOL goes through its rate; a stablecoin is already
+ * fiat — USDC is dollars and EURC is euros, so an amount in the same one needs
+ * no conversion at all, and crossing between the two goes through the SOL rate,
+ * the only ratio the app knows.
+ *
+ * `null` while a rate it needs is unknown, so a caller shows nothing rather
+ * than a number that is quietly wrong.
+ */
+export function fiatValueOf(
+  currency: 'sol' | 'usdc' | 'eurc',
+  baseUnits: number,
+  rates: SolRates | null | undefined,
+  display: FiatCurrency
+): number | null {
+  if (!Number.isFinite(baseUnits)) return null
+  if (currency === 'sol') {
+    const rate = rates?.[display]
+    return rate ? (baseUnits / 1_000_000_000) * rate : null
+  }
+  const amount = baseUnits / 1_000_000
+  const source: FiatCurrency = currency === 'usdc' ? 'usd' : 'eur'
+  if (source === display) return amount
+  const usd = rates?.usd
+  const eur = rates?.eur
+  if (!usd || !eur) return null
+  return source === 'usd' ? amount * (eur / usd) : amount * (usd / eur)
+}
+
 /** Lamports for a fiat price, or 0 while the rate is unknown. */
 export function lamportsFromFiat(
   value: number,
