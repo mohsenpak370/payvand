@@ -674,6 +674,7 @@ mod tests {
             description: String::new(),
             items: Vec::new(),
             discount: None,
+            allow_discounts: false,
             cluster: "devnet".into(),
             endpoint: "https://api.devnet.solana.com".into(),
             settled_by: (settled > 0).then(|| "Payer111111".into()),

@@ -232,6 +232,10 @@ pub struct PaymentRecord {
     /// The code attached while creating the invoice, if any. Chain reads carry
     /// none: the discount lives in the payload, not in the account.
     pub discount: Option<PaymentDiscount>,
+    /// Whether the buyer may apply a code of this seller's own choosing. An
+    /// invoice carries a code or offers the choice, never both.
+    #[serde(default)]
+    pub allow_discounts: bool,
     pub cluster: String,
     pub endpoint: String,
     pub settled_by: Option<String>,
@@ -265,12 +269,17 @@ impl PaymentRecord {
             description: &self.description,
             items: &self.items,
             discount: self.discount.as_ref(),
+            allow_discounts: self.allow_discounts,
             options: if many { &self.options } else { &[] },
             cluster: &self.cluster,
             endpoint: &self.endpoint,
         })
         .expect("qr payload is serializable")
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Serialize)]
@@ -295,6 +304,9 @@ struct QrPayload<'a> {
     /// Skipped when absent, so an ordinary invoice scans exactly as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     discount: Option<&'a PaymentDiscount>,
+    /// Skipped when false: only an invoice that invites a code says so.
+    #[serde(skip_serializing_if = "is_false")]
+    allow_discounts: bool,
     /// The currencies this invoice accepts. Skipped for a SOL-only invoice,
     /// whose `id` and `amount_lamports` already say everything.
     #[serde(skip_serializing_if = "<[PaymentOption]>::is_empty")]
@@ -334,6 +346,10 @@ pub struct CreatePaymentRequest {
     /// name a code but never choose the discount.
     #[serde(default)]
     pub discount_code: Option<String>,
+    /// Let the buyer pick one of the seller's codes on their own screen. A code
+    /// in `discount_code` already decides the price, so the two are exclusive.
+    #[serde(default)]
+    pub allow_discounts: bool,
     pub cluster: String,
     pub endpoint: Option<String>,
 }
@@ -365,6 +381,12 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
     }
     if request.memo.len() > MAX_MEMO_LEN {
         return Err(bad(format!("memo must be at most {MAX_MEMO_LEN} bytes")));
+    }
+
+    if request.allow_discounts && request.discount_code.is_some() {
+        return Err(bad(
+            "An invoice carries a discount code or lets the buyer choose one, not both.",
+        ));
     }
 
     // Derived before any field is moved out of the request.
@@ -414,6 +436,7 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         description,
         items,
         discount: None,
+        allow_discounts: request.allow_discounts,
         cluster: request.cluster,
         endpoint,
         settled_by: None,
@@ -750,6 +773,7 @@ fn pending_record(pubkey: Pubkey, cluster: String, endpoint: String) -> PaymentR
         description: String::new(),
         items: Vec::new(),
         discount: None,
+        allow_discounts: false,
         cluster,
         endpoint,
         settled_by: None,
@@ -790,6 +814,7 @@ fn record_from_chain(
         description: String::new(),
         items: Vec::new(),
         discount: None,
+        allow_discounts: false,
         cluster,
         endpoint,
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
@@ -1556,6 +1581,7 @@ fn marker_record(marker: ReceiptMarker, cluster: String, endpoint: String) -> Pa
         description: String::new(),
         items: Vec::new(),
         discount: None,
+        allow_discounts: false,
         cluster,
         endpoint,
         settled_by: None,
@@ -1606,6 +1632,7 @@ fn receipt_record(receipt: OnchainReceipt, cluster: String, endpoint: String) ->
         description: String::new(),
         items: Vec::new(),
         discount: None,
+        allow_discounts: false,
         cluster,
         endpoint,
         settled_by: (receipt.payer != Pubkey::default()).then(|| receipt.payer.to_string()),
@@ -1648,6 +1675,7 @@ fn token_record_from_chain(
         description: String::new(),
         items: Vec::new(),
         discount: None,
+        allow_discounts: false,
         cluster,
         endpoint,
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
@@ -1809,6 +1837,7 @@ mod tests {
             description: None,
             items: Vec::new(),
             discount_code: None,
+            allow_discounts: false,
             cluster: "devnet".to_string(),
             endpoint: None,
         }
@@ -2126,17 +2155,18 @@ mod tests {
         data.extend_from_slice(&[5u8; 32]); // eurc_mint
         data.push(0); // fee_mode: SellerPays
         data.extend_from_slice(&session_fee_float.to_le_bytes());
+        data.extend_from_slice(&1_760_000_000i64.to_le_bytes()); // flats_updated_at
         data.push(251); // bump
         data.push(250); // treasury_bump
-        data.push(2); // version
+        data.push(3); // version
         data
     }
 
     #[test]
     fn the_program_scan_skips_the_config_account() {
         let data = config_data(30_000_000);
-        // 152 bytes, the shape the program allocates.
-        assert_eq!(data.len(), 152);
+        // 160 bytes, the shape the program allocates.
+        assert_eq!(data.len(), 160);
 
         // No decoder mistakes it for something the scan keeps.
         assert!(decode_payment(&data).is_none());

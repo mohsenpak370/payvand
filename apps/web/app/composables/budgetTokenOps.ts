@@ -1,7 +1,6 @@
 import type { Address, Instruction } from '@vue-solana/nuxt/kit'
 import {
   PAYMENT_RECEIPT_SPACE,
-  TOKEN_ACCOUNT_SPACE,
   TOKEN_PAYMENT_SPACE
 } from '~/utils/invoiceCost'
 import {
@@ -65,15 +64,14 @@ export function createTokenBudgetOps(ctx: {
   ): Promise<Instruction[]> {
     const budget = await loadTokenBudget(buyer, mint)
     if (!budget) return []
-    const [invoice, receipt, account, budgetRent, session] = await Promise.all([
+    const [invoice, receipt, budgetRent, session] = await Promise.all([
       rentMinimum(TOKEN_PAYMENT_SPACE),
       rentMinimum(PAYMENT_RECEIPT_SPACE),
-      rentMinimum(TOKEN_ACCOUNT_SPACE),
       rentMinimum(TOKEN_BUDGET_SPACE),
       client.rpc.getBalance(budget.sessionKey, { commitment: 'confirmed' }).send()
     ])
     const topUp = tokenFloatTopUp(
-      tokenFloatNeed({ invoice, receipt, account }, NETWORK_FEE_LAMPORTS),
+      tokenFloatNeed({ invoice, receipt }, NETWORK_FEE_LAMPORTS),
       {
         budget: Math.max(0, budget.lamports - budgetRent),
         session: Number(session.value)

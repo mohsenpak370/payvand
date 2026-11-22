@@ -30,11 +30,25 @@ const shopId = computed(() => String(route.params.id ?? ''))
 
       <ShopEditor :shop-id="shopId" />
 
-      <!-- A code priced from this shop's menu, made where the menu lives. -->
-      <ShopPayment
-        :key="shopId"
-        :shop-id="shopId"
-      />
+      <!-- The full payment form, priced from this shop's menu, on its own page
+           so the shop keeps its catalogue and the code gets the room. -->
+      <UCard>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold">
+              {{ $t('shops.createPaymentTitle') }}
+            </h2>
+            <p class="text-sm text-muted">
+              {{ $t('shops.createPaymentDescription') }}
+            </p>
+          </div>
+          <UButton
+            :to="`/shops/${shopId}/pay`"
+            :label="$t('shops.createPayment')"
+            icon="i-lucide-receipt"
+          />
+        </div>
+      </UCard>
 
       <!-- The links this shop keeps, next to the products they price. -->
       <ShopCodes

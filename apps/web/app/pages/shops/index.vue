@@ -24,6 +24,8 @@ definePageMeta({ middleware: 'auth' })
         {{ $t('shops.backToProfile') }}
       </NuxtLink>
 
+      <ShopsSubscription />
+
       <ShopsList />
     </div>
   </UPageSection>

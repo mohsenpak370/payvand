@@ -67,6 +67,17 @@ export interface InvoiceCosts {
   amount: number
   /** Protocol fee, in the same base units. */
   fee: number
+  /**
+   * The part of `fee` that is the flat for this currency: the permanent payment
+   * record's rent. Zero on SOL, which takes that rent out of the price instead.
+   */
+  recordFee: number
+  /**
+   * True when the record's rent is the whole fee — the payment is small enough
+   * that the percentage is below it — so the screen must not label the fee with
+   * a percentage it is not charging.
+   */
+  feeIsFloor: boolean
   feeBps: number
   /** What the seller keeps, after a seller-paid fee. */
   sellerReceives: number
@@ -132,12 +143,26 @@ export function rateOn(policy: FeePolicy, amount: number, mint?: string): number
 }
 
 /**
- * `fee_for`: the marginal rate plus the currency's flat, capped at `amount - 1`
- * so a payment can never hand over the whole invoice. The program multiplies in
- * `u128`; the BigInt product is the same guarantee, and stays exact for every
- * amount a JavaScript number can hold.
+ * `fee_for`: the marginal rate, with the permanent record's rent as its floor,
+ * capped at `amount - 1` so a payment can never hand over the whole invoice.
+ *
+ * The floor is expressed in the currency the seller is charged in. A token
+ * seller cannot be charged lamports, so the marker's rent is the currency's flat
+ * and the fee is the larger of it and the rate. A SOL seller pays that rent
+ * directly out of the price (`settle_payment` hands them `amount - rent - marker
+ * rent - fee`), so it is taken off the rate instead and the fee is zero while the
+ * rent is the larger of the two. Either way the seller's total is the larger of
+ * the rate and the rent.
+ *
+ * The program multiplies in `u128`; the BigInt product is the same guarantee, and
+ * stays exact for every amount a JavaScript number can hold.
  */
-export function feeOn(policy: FeePolicy, amount: number, mint?: string): number {
+export function feeOn(
+  policy: FeePolicy,
+  amount: number,
+  mint: string | undefined,
+  receiptRent: number
+): number {
   // The chain holds whole base units, and a price can reach here with a
   // fraction on it (a typed amount times decimals, a percentage). Truncating
   // keeps the quote on the low side of the wire, and it keeps `BigInt` — which
@@ -152,7 +177,12 @@ export function feeOn(policy: FeePolicy, amount: number, mint?: string): number 
   const below = total < edge ? total : edge
   const above = total - below
   const proportional = (below * BigInt(bpsBelow) + above * BigInt(bpsAbove)) / 10_000n
-  const fee = proportional + BigInt(Math.max(0, Math.trunc(flat)))
+  const rent = BigInt(Math.max(0, Math.trunc(receiptRent)))
+  const fee = mint === undefined
+    ? proportional - (proportional < rent ? proportional : rent)
+    : proportional > BigInt(Math.max(0, Math.trunc(flat)))
+      ? proportional
+      : BigInt(Math.max(0, Math.trunc(flat)))
   const cap = BigInt(units - 1)
   return Number(fee < cap ? fee : cap)
 }
@@ -167,9 +197,14 @@ export function feeOn(policy: FeePolicy, amount: number, mint?: string): number 
  * bps the fee is always `amount - 1`, so `amount > rent + amount - 1` is never
  * true above a zero rent.
  */
-export function minimumPayable(policy: FeePolicy, rent: number, mint?: string): number {
+export function minimumPayable(
+  policy: FeePolicy,
+  rent: number,
+  mint: string | undefined,
+  receiptRent: number
+): number {
   const floor = Math.max(0, Math.trunc(rent))
-  const settles = (amount: number) => amount > floor + feeOn(policy, amount, mint)
+  const settles = (amount: number) => amount > floor + feeOn(policy, amount, mint, receiptRent)
 
   let low = 0
   let high = 1
@@ -207,7 +242,16 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   // A SOL invoice has no mint; a token one without a known mint still uses the
   // token boundary but matches neither currency, so it pays no flat.
   const mint = input.currency === 'sol' ? undefined : (input.mint ?? '')
-  const fee = feeOn(policy, amount, mint)
+  const receiptRent = Math.trunc(input.receiptRent)
+  const flat = Math.max(0, Math.trunc(tierFor(policy, mint).flat))
+  const fee = feeOn(policy, amount, mint, receiptRent)
+  // The flat inside `fee`, after the `amount - 1` cap: shown apart from the
+  // percentage so the seller can see both parts.
+  const recordFee = Math.min(flat, fee)
+  // The record is the whole fee when the flat is what the fee comes to — on a
+  // token invoice, or when the SOL fee has been swallowed by the rent it is
+  // measured against.
+  const feeIsFloor = mint === undefined ? fee === 0 : flat > 0 && fee <= flat
   const sellerPays = policy.feeMode === 'seller'
   // The invoice rent is a loan, not a cost: the account closes to the seller in
   // every SOL settle. The marker's rent is a cost, and on a SOL invoice it is
@@ -218,13 +262,15 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   //
   // Either way the buyer pays the price: a SOL buyer advances the marker's rent
   // at `init` and is made whole through the seller's reduced proceeds.
-  const markerRent = input.currency === 'sol' ? Math.trunc(input.receiptRent) : 0
+  const markerRent = input.currency === 'sol' ? receiptRent : 0
   const netOfFee = sellerPays ? amount - fee : amount
 
   return {
     currency: input.currency,
     amount,
     fee,
+    recordFee,
+    feeIsFloor,
     feeBps: rateOn(policy, amount, mint),
     sellerReceives: Math.max(0, netOfFee - markerRent),
     payerPays: sellerPays ? amount : amount + fee,
@@ -240,7 +286,8 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     minPayable: minimumPayable(
       policy,
       input.currency === 'sol' ? input.invoiceRent + markerRent : 0,
-      mint
+      mint,
+      receiptRent
     )
   }
 }

@@ -105,9 +105,9 @@ solana account 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J --url devnet
 
 The on-chain IDL is not part of the program binary: it lives in a Program
 Metadata account (seed `idl`), so `pnpm anchor:deploy` leaves it describing the
-previous interface. Publish a changed one with `task idl:upload` — it builds the
-IDL, uploads it, then fetches it back and compares — or run the same steps by
-hand from `apps/contracts`:
+previous interface. Publish a changed one with `task idl:upload` (or
+`pnpm anchor:idl` without `task`) — it builds the IDL, uploads it, then fetches
+it back and compares — or run the same steps by hand from `apps/contracts`:
 
 ```bash
 anchor idl build -o target/idl/payvand.json
@@ -247,6 +247,28 @@ it, connect a wallet and pay, and `POST /api/discounts/validate` is public for
 the same reason. Only creating invoices, managing discount codes and the
 monthly budget require a session.
 
+### Shops subscription
+
+Shops and products are sold by the month: **€1.70 for 30 days**, payable in
+SOL, USDC or EURC. The price is a euro price, so EURC pays at par while USDC and
+SOL are converted at a live rate (`SUBSCRIPTION_RATES_URL`, cached for five
+minutes by the API) and rounded up to the base unit. `GET /api/subscription`
+returns the account's period and all three amounts; the shops page renders them
+and offers a button per currency.
+
+Paying is an ordinary invoice from the platform wallet (`PLATFORM_SELLER`):
+`POST /api/subscription/invoice` quotes the currency, records the invoice for
+that account, and returns the same code shape a seller's QR carries, so the
+checkout, the wallet and the program's settle paths are unchanged. Coming back
+from the checkout, `POST /api/subscription/confirm` asks the cluster whether
+that invoice settled — nothing the browser says is trusted — and only then
+records the period, adding 30 days to whatever is left. Nothing about the plan
+changes the percentage fee on ordinary invoices.
+
+A lapsed subscription does not hide existing shops or break printed codes: it
+refuses creating or editing shops and products (403), which is what the card on
+`/shops` is there to settle.
+
 ### Discount codes
 
 Codes are per account, not per invoice: a seller creates percentage-off codes
@@ -266,54 +288,122 @@ address.
 ### Fees, rent and the treasury
 
 The fee policy is on chain in `Config`, not in the app: every settlement reads
-it, so changing `fee_bps` takes effect without a release. The default is
-`200` bps (2%), no flat fee, and `SellerPays` — the buyer is charged the price
-the QR shows, never the price plus something.
+it, so changing the rates takes effect without a release. The default is `100`
+bps up to 0.1 SOL (or 10 token units) and `50` bps above it, `SellerPays` — the
+buyer is charged the price the QR shows, never the price plus something — and a
+permanent 48-byte receipt for every settled invoice.
+
+**A shop can cut the rate, never raise it.** `set_shop_policy` writes a
+`ShopPolicy` PDA (`["shop-policy", seller, shop_key]`, 75 bytes) holding one
+multiplier in basis points on `Config`'s two rates, signed by the shop's own
+seller. The band is the write: `0..=10_000`, so a shop can discount itself to
+nothing — a token invoice still pays the receipt's flat, so a free shop cannot
+put the record on the treasury — and `ShopFeeTooHigh` refuses anything above
+`10_000`, which is `Config` unchanged. The settle paths take that account as an
+optional trailing account; an invoice that names none, including every QR
+printed before this existed, pays `Config`'s rate exactly as it did. A policy
+recorded under another seller is refused with `ShopPolicySellerMismatch`, so one
+shop cannot price another's invoice.
+
+**The receipt's rent is the floor of the fee.** A token seller cannot be charged
+lamports, so on that path the treasury funds the receipt and collects it back as
+a flat in the currency (`flat_usdc_base_units`, `flat_eurc_base_units`); the fee
+is `max(rate, flat)`. A SOL seller hands the rent over out of the price directly,
+so the rate has it taken off instead: `max(0, rate − receipt rent)`. Either way
+the seller's total is `max(rate, receipt rent)` — a payment too small for the
+rate to cover the record is charged the record and nothing else, so the
+treasury neither takes a fee on it nor pays for it.
 
 | Who | Pays | Ends up with |
 | --- | --- | --- |
-| Buyer | the price, plus the Solana network fee | out exactly `amount` plus that fee, and the receipt on chain |
-| Seller | the protocol fee, taken out of the price rather than added on top | `amount − fee` |
-| Treasury | the receipt's rent, on every settlement | `fee − receipt rent` |
+| Buyer | the price, plus the Solana network fee (only the price, when a sponsor pays it) | out exactly `amount` plus that fee, and the receipt on chain |
+| Seller | the larger of the rate and the receipt's rent, out of the price | `amount − max(rate, receipt rent)` |
+| Treasury | the receipt's rent on the token path, nothing on SOL | `max(rate, receipt rent) − receipt rent` |
 
 How a SOL settlement gets there, in one signature: the payer funds the invoice
-account and the receipt; `amount − invoice rent − fee` goes to the seller; `fee` goes
-to the treasury; the invoice account closes to the seller with its rent; and
-the treasury pays the payer back the receipt rent. The payer's balance therefore
-moves by exactly `amount` plus the network fee, the seller receives exactly
-`amount − fee`, and the only lasting cost is the receipt, which the treasury
-paid for and which nobody can close.
+account and the receipt; `amount − invoice rent − receipt rent − fee` goes to the
+seller; `fee` goes to the treasury; the invoice account closes to the seller with
+its rent; and the treasury pays the payer back the receipt rent. The payer's
+balance therefore moves by exactly `amount` plus the network fee, and the only
+lasting cost is the receipt, which the seller paid for and which nobody can
+close.
 
 Token invoices take the fee in the token: `amount − fee_t` to the seller and
 `fee_t` to the treasury's own account for that mint. **Sellers need no SOL** to
-be paid in a token, and the payer's SOL exposure is the network fee (plus the
-seller's account rent if that seller had not opened one yet). The treasury must
+be paid in a token, and the payer's SOL exposure is the network fee alone: the
+seller's token account must already exist, on both the wallet and the allowance
+path, because its rent would be a cost nobody refunds and the buyer's money
+would be paying it. The treasury must
 have its account for a mint opened before an invoice in that mint can settle —
 `pnpm treasury:open --mint <mint>`; the checkout reads the account and refuses
 to let anyone sign before it exists.
+
+That network fee is the one thing a wallet must hold SOL for, and on a token
+invoice it can be someone else's. `settle_token_payment` takes a `sponsor`: it
+advances the invoice's rent and the receipt's and receives the treasury's refund
+of both, so its net cost is the network fee it signs for, and the buyer's wallet
+ends where it began. A wallet holding SOL passes itself as its own sponsor — one
+signature, no change in cost — and a wallet holding only the token passes a
+relayer's key instead, which is what makes a USDC-only buyer able to pay. The
+refund goes to the sponsor and never to the buyer on purpose: a sponsor that
+funded the buyer's wallet would leave it holding both rents, 3,939,360 lamports
+per settlement at mainnet's rate, which is a faucet. A SOL invoice cannot be
+sponsored this way — the buyer's own lamports are the payment.
 
 A budget payment is the same ledger with the pot in place of the wallet: the pot
 pays exactly the price, and a float fronts the temporary rents and is reimbursed
 inside the same transaction. In SOL the session key carries the whole 30,000,000
 lamports (`Config::session_fee_float`). In a token the budget account holds its
-own rent and nothing more: the session key fronts the invoice and receipt rents,
-the fee, and a fresh seller's token-account rent out of `SESSION_FEE_FLOAT`
-(12,000,000), and the treasury pool refunds the two records in the same
-transaction — enough for three payments to sellers who hold neither SOL nor a
-token before the key needs a top-up.
+own rent and nothing more: the session key fronts the invoice and receipt rents
+and the fee out of `SESSION_FEE_FLOAT` (12,000,000), and the treasury pool
+refunds the two records in the same transaction, so a payment costs the float
+its signature and the peak it has to front is 3,939,360 lamports plus that fee.
+The seller's token account is not part of it: a seller who has not opened one is
+refused, exactly as on the wallet path, and the buyer tops the key up only when
+it is short of that peak.
 
-**Break-even.** The treasury's delta per settlement is `fee − receipt rent`, so
-an invoice starts paying for its own record once
-`fee_bps × amount ≥ receipt rent`. At 2% and devnet's rent for the 301-byte
-receipt (2,179,320 lamports, 2026-11-15) that is ≈0.109 SOL; below it the
-treasury subsidises each payment by `receipt rent − floor(amount × fee_bps /
-10_000)` lamports, which is the cost of accepting small invoices at all. Two
-levers keep that subsidy in check: `fee_bps` is adjustable on chain, and
-`fixed_fee_lamports` can make every invoice self-funding — but a flat fee that
-covers the receipt (≈0.0022 SOL today) is a fifth of a 0.01 SOL sale, so it
-defaults to 0. A settlement is refused with
+**Break-even.** With the rent as the floor, no settlement loses money: the
+treasury's delta is `max(rate, receipt rent) − receipt rent` on the token path,
+which is never negative, and `max(0, rate − receipt rent)` on SOL, where it pays
+nothing. What a small invoice earns is nothing rather than a subsidy, and the
+first fee-sized margin appears once the rate overtakes the record.
+
+**Planned compressed receipts (`plans/0006`).** When compressed receipts are
+enabled, a settlement commits the invoice to one of four shared Merkle trees
+instead of opening a permanent receipt account. The same `100`/`50` bps tiers
+apply, but there is no receipt-rent floor, no rent-derived token flat, and no
+receipt-rent refund; only the invoice-rent refund remains on token payments.
+Tree, nullifier, and occupancy accounts are shared infrastructure paid for by
+the operator and the treasury, old trees remain verifiable after rotation, and
+the legacy marker path stays available for rollback. Rotation is not free: a
+new generation costs **3.900 SOL** of permanently locked rent, of which the
+operator keypair that creates and prepares the four new trees pays **1.234 SOL**
+and the treasury pays **2.666 SOL** for the four occupancy bitmaps. The
+treasury's share is held back rather than merely recorded: while compressed
+receipts are enabled, `withdraw_treasury` reserves the next token settlement's
+refund plus the four occupancy bitmaps, so fees cannot be withdrawn out of the
+rent the next rotation needs, and settlement refunds are the one remaining drain
+the balance alert watches. The treasury is funded for that share before the
+first rotation, and a treasury short anyway refuses the rotation instead of
+half-applying it. Until that plan ships, the accounting above is the live
+behaviour and the reserve stays at one settlement's refund.
+
+**Keeping the flats live.** The program has no oracle, so the two token flats
+are written from a price rather than computed at settle time:
+`refresh_fee_price(sol_usd_micros, sol_eur_micros)` recomputes both from the
+cluster's current `Rent::minimum_balance(PAYMENT_RECEIPT_SPACE)` and the price it
+is given. It is permissionless — `pnpm fee:refresh --cluster devnet` fetches the
+rate and sends it — and bounded by the program: a price must be plausible, it
+must sit within `PRICE_ANCHOR_BAND_BPS` (10%) of the price the admin anchored
+with `set_fee_price_anchor` (`pnpm fee:anchor`), and a second call inside
+`FLATS_REFRESH_SECS` (60 s) is refused. The band is measured from that anchor,
+never from the flat the last refresh wrote, so repeated calls cannot walk the
+flats anywhere: however many run, every price they accept is in the same window.
+Run it on the same cadence as the app's rate cache, or whenever SOL has moved;
+use `pnpm fee:anchor` when the price should move further than the band in one
+step. A settlement is refused with
 `TreasuryUnderfunded` before it moves anything when the treasury cannot cover the
-receipt rent, so a drained treasury blocks payments rather than losing them.
+refund it owes, so a drained treasury blocks payments rather than losing them.
 
 Rent is read from the cluster (`Rent::minimum_balance`), never from a constant,
 so these figures follow it. The addresses, the current `Config` values, and the
@@ -377,6 +467,8 @@ on startup.
 | `EMAIL_USE_TLS`                 | api          | `true`          | STARTTLS on the SMTP connection          |
 | `DEFAULT_FROM_EMAIL`            | api          | SMTP user       | Sender address                           |
 | `ADMIN_EMAILS`                  | api          | — (nobody)      | Comma-separated addresses allowed into `/api/admin/*` |
+| `PLATFORM_SELLER`               | api          | —               | Wallet that sells the shops subscription; unset disables buying one |
+| `SUBSCRIPTION_RATES_URL`        | api          | CoinGecko       | EUR/SOL and EUR/USD price feed the subscription quotes use |
 
 Never put a wallet secret key or a seed phrase anywhere in this repository. The
 Nuxt module deliberately strips `payer` and `payerSecretKey` from its public
@@ -399,14 +491,16 @@ Vercel projects** pointing at the same repo. Both work on the Hobby plan.
   `nuxt.config.ts` reads the workspace `package.json` for the footer version
   (`../../package.json`), so include that file too. The repository root itself
   can exceed Vercel's 10 MB upload limit; a two-file tree
-  (`package.json` + `apps/web/`) deploys the same app.
+  (`package.json` + `apps/web/`) deploys the same app. `task deploy:web` builds
+  exactly that tree, deploys it and removes it again.
 
 ### 2. API
 
 - Create a second Vercel project from the same repo with
   **Root Directory = `apps/api`** and Framework Preset = **Other**. CLI deploys
-  follow the same rule: the upload tree must contain `apps/api`, so a tree with
-  just `apps/api/` (no `target/`, `.vercel` or `.env*`) deploys it.
+  follow the same rule: this project's Root Directory is `.`, so `apps/api`
+  itself is the upload tree (no `target/`, `.vercel` or `.env*`);
+  `task deploy:api` assembles and deploys it.
 - `apps/api/vercel.json` rewrites every path to the Rust binary
   (`src/main.rs`, the `@vercel/rust` zero-config entrypoint), which mounts the
   same Axum router through `vercel_runtime`'s `VercelLayer`. The local dev

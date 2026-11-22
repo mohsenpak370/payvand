@@ -26,7 +26,8 @@ Solana a été conçu pour le cas inverse : un très grand nombre de petits paie
   général. [Ce chiffre mérite son propre guide](/learn/when-is-a-payment-final), parce que
   « final » est le mot qui compte au comptoir d'un commerce.
 - **Les frais sont de 0,000005 SOL**, une fraction de centime, quelle que soit la taille du
-  paiement ([pourquoi c'est ainsi](/learn/what-is-a-fee)).
+  paiement ([pourquoi c'est ainsi](/learn/what-is-a-fee)) ; le reste de ce que coûte un paiement est
+  dans [ce que coûte un paiement, et pourquoi](/learn/what-a-payment-costs).
 
 ## Qui le tient honnête
 

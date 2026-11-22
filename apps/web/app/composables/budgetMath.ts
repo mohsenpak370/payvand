@@ -57,20 +57,21 @@ export function tokenOpenCost(
 }
 
 /**
- * What one payment to a seller with no token account needs from the floats.
+ * What one payment needs from the floats.
  *
- * The session key advances both records, the seller's account and the signature
- * before the handler runs, and gets the two records back from the pool in the
- * same transaction; the seller's account is the one thing nobody refunds. So the
- * session side is that whole peak, and the budget side is nothing: since revision
- * 12 the pool funds the records, not a float parked on the budget.
+ * The session key advances both records and the signature before the handler
+ * runs, and gets the two records back from the pool in the same transaction, so
+ * its side is that peak. The seller's token account is not in the sum: it must
+ * already exist — the same rule `settle_token_payment` applies — because its rent
+ * would be the buyer's money spent on a cost nobody refunds. The budget side is
+ * nothing: the pool funds the records, not a float parked on the budget.
  */
 export function tokenFloatNeed(
-  rents: { invoice: number, receipt: number, account: number },
+  rents: { invoice: number, receipt: number },
   fee: number
 ): { budget: number, session: number } {
   const records = rents.invoice + rents.receipt
-  return { budget: 0, session: records + rents.account + fee }
+  return { budget: 0, session: records + fee }
 }
 
 /**

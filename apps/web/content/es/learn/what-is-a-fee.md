@@ -54,3 +54,5 @@ vez, y por eso abrir un presupuesto cuesta algo más que el propio límite.
 
 Las comisiones no son algo que preocuparte ni presupuestar. Ten un poco de SOL en la cartera con la que
 pagas y el coste de un pago sigue siendo tan pequeño que es más fácil ignorarlo que calcularlo.
+
+La comisión de red es solo la parte más pequeña de lo que cuesta un pago. A dónde va el resto — la parte del protocolo, el recibo permanente en la cadena y los gastos que mantienen el servicio — está en [lo que cuesta un pago](/learn/what-a-payment-costs).

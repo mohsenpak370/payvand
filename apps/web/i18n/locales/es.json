@@ -779,7 +779,9 @@
     "addDiscountFailure": "No se pudo añadir el código de descuento.",
     "deleteDiscountFailure": "No se pudo borrar el código de descuento.",
     "presentFallbackTitle": "Código de pago",
-    "scanToPay": "Escanea esto con la cámara de un móvil para pagar."
+    "scanToPay": "Escanea esto con la cámara de un móvil para pagar.",
+    "allowDiscountsLabel": "Dejar que los compradores usen tus códigos",
+    "allowDiscountsHelp": "Los compradores pueden aplicar uno de tus códigos a un pago creado con tus productos. Cada cartera puede usar un código una vez."
   },
   "productPicker": {
     "fromYourShops": "Desde tus comercios",
@@ -788,23 +790,6 @@
     "increaseAria": "Uno más de {name}",
     "total": "Total",
     "limit": "Un recibo admite {max} productos distintos — crea un segundo pago para más."
-  },
-  "shopPayment": {
-    "title": "Crear un pago",
-    "newPayment": "Nuevo pago",
-    "loadingMenu": "Cargando la carta de este comercio…",
-    "emptyMenu": "Añade un producto arriba y esto se convierte en una carta para cobrar.",
-    "scanHint": "Cualquier cámara de móvil lo abre — y la página cobra el pago.",
-    "openPage": "Abrir página de pago",
-    "copyLink": "Copiar enlace",
-    "linkCopied": "Enlace copiado",
-    "connectFirst": "Conecta primero tu cartera de vendedor.",
-    "pickSomething": "Elige primero algo del comercio.",
-    "createFailure": "No se pudo crear el pago.",
-    "alertTitle": "No se pudo crear el pago",
-    "createCode": "Crear código de pago",
-    "connectHint": "Conecta tu cartera de vendedor para crear el código.",
-    "costUnavailable": "No se pudo leer la comisión del clúster ahora mismo."
   },
   "shopsList": {
     "title": "Tus comercios",
@@ -856,7 +841,23 @@
     "readingRate": "Leyendo el tipo de cambio de hoy…",
     "productFailureTitle": "No se pudo guardar el producto",
     "saveChanges": "Guardar cambios",
-    "addProduct": "Añadir producto"
+    "addProduct": "Añadir producto",
+    "categoryLabel": "Categoría",
+    "categoryHelp": "Opcional — el encabezado bajo el que aparece, como «Bebidas».",
+    "categoryPlaceholder": "Bebidas"
+  },
+  "subscription": {
+    "title": "Suscripción de tiendas",
+    "description": "1,70 € al mes mantienen las tiendas y productos de esta cuenta.",
+    "active": "Activa",
+    "inactive": "No activa",
+    "loading": "Leyendo tu suscripción…",
+    "renewsOn": "Pagada hasta el {date}.",
+    "price": "1,70 € por {days} días, pagadero en cualquiera de estas monedas.",
+    "rateNote": "Precios convertidos al tipo leído el {date}.",
+    "errorTitle": "Suscripción",
+    "loadFailure": "No se pudo leer tu suscripción.",
+    "payFailure": "No se pudo iniciar el pago de la suscripción."
   },
   "shops": {
     "metaTitle": "Comercios — Payvand",
@@ -866,7 +867,10 @@
     "shopMetaTitle": "Comercio — Payvand",
     "shopTitle": "Comercio",
     "shopDescription": "Tus productos, los precios que cobra la página de pago y los códigos que has guardado aquí.",
-    "backToShops": "Volver a tus comercios"
+    "backToShops": "Volver a tus comercios",
+    "createPaymentTitle": "Crear un pago",
+    "createPaymentDescription": "Todo el formulario de pago, con precios de la carta de este comercio y tus códigos de descuento.",
+    "createPayment": "Crear pago"
   },
   "settings": {
     "metaTitle": "Ajustes — Payvand",
@@ -938,7 +942,7 @@
     },
     "fees": {
       "title": "Comisiones",
-      "body": "Crear o escanear un código de pago no cuesta nada al cliente más allá de lo que muestra: paga el precio que ve más la comisión de red de Solana. Los vendedores pagan la comisión del protocolo — hoy el 2 % del precio, descontado de lo que reciben en lugar de sumarse — y la app muestra el importe exacto antes de compartir un código. El registro permanente de un pago en la cadena lo paga el protocolo, y la renta temporal que adelanta un pago vuelve en la misma transacción."
+      "body": "Crear o escanear un código no cuesta nada al cliente más allá de lo que dice: paga el precio que ve más la comisión de red de Solana por la transacción, y nada más. Los vendedores pagan la comisión del protocolo, que tiene dos partes. Una es un porcentaje del precio, descontado de lo que recibe el vendedor. La otra es una comisión de registro en las facturas pagadas con un token, que cubre la prueba permanente de ese pago en la cadena; en una factura en SOL ese coste sale del precio. La comisión se cobra en la moneda del pago, nunca forma parte del total del cliente, y la app muestra el importe exacto que recibirá el vendedor antes de compartir un código. Los porcentajes y la comisión de registro los fija la plataforma y pueden cambiar con el coste de operar el servicio; se aplica la comisión vigente al pagar, y el precio de un código nunca cambia."
     },
     "testMoney": {
       "title": "Dinero de prueba",
@@ -991,8 +995,20 @@
     "open": "Abrir"
   },
   "invoiceSplit": {
-    "netReceive": "Recibes {net} después de la comisión del {percent}%",
-    "rentNote": "El alquiler del código ({rent} SOL) te vuelve cuando se paga; el protocolo paga el registro del pago.",
-    "rentNoteToken": "Un código en tokens no te cuesta SOL: el comprador adelanta su renta y se la devuelven, y el protocolo paga el registro permanente del pago."
+    "netReceive": "Recibes {net}",
+    "detailsAria": "Cómo se calcula la comisión",
+    "feeLine": "Comisión del protocolo: {percent}% del precio, {fee}.",
+    "feeFloorLine": "Sin comisión del protocolo en este pago: {fee}, la renta del recibo permanente, es todo lo que se descuenta.",
+    "feeNoneLine": "Sin comisión del protocolo en este pago: es lo bastante pequeño para que el porcentaje se anule, y la renta del recibo, tomada del precio, es todo lo que cuesta.",
+    "recordLine": "De eso, {fee} es la comisión de registro: el recibo permanente de este pago en la cadena.",
+    "rentNote": "La renta del propio código ({rent} SOL) vuelve a ti cuando se paga.",
+    "rentNoteToken": "Un código de token no necesita SOL de tu parte: quien paga adelanta la renta de ambas cuentas y el protocolo la devuelve en la misma transacción. La comisión de registro de arriba es la parte que se queda el protocolo.",
+    "learnMore": "Más información"
+  },
+  "shopSell": {
+    "metaTitle": "Crear un pago — Payvand",
+    "pageTitle": "Crear un pago",
+    "pageDescription": "Pon precio desde la carta de este comercio o escribe un importe, añade un código o deja que el comprador elija, y muestra el código.",
+    "backToShop": "Volver a este comercio"
   }
 }

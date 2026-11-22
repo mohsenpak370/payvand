@@ -53,6 +53,9 @@ Chaque transaction paie de petits frais de réseau. Sur Solana, les frais de bas
 priorité facultatifs quand le réseau est chargé. Les frais vont au réseau, pas à Payvand ni au
 vendeur.
 
+Ce n'est qu'une ligne de ce que coûte un paiement. [Ce que coûte un paiement, et pourquoi](/learn/what-a-payment-costs)
+détaille le reste — la part du protocole et le reçu permanent sur la chaîne — et qui paie chaque part.
+
 Il vous faut tout de même un peu de SOL dans le portefeuille pour les payer. Un portefeuille avec
 un gros solde de stablecoins et zéro SOL ne peut rien déplacer, ce qui surprend la première fois.
 

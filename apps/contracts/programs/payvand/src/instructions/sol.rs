@@ -13,8 +13,8 @@ use anchor_lang::{AccountsClose, Lamports};
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::{BudgetOpened, PaymentSettled};
-use crate::helpers::{current_month_index, fee_for};
-use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState};
+use crate::helpers::{current_month_index, fee_for, shop_multiplier};
+use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, ShopPolicy};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -71,6 +71,22 @@ pub struct SettlePayment<'info> {
     pub treasury: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
+
+    /// The shop that priced this invoice, when its seller has one. Optional and
+    /// trailing, so every invoice printed before shop rates existed settles
+    /// exactly as it did: no account means `Config`'s rate. The seeds derive it
+    /// from the seller and shop key it records, so a stand-in address is refused
+    /// here; whether it belongs to *this* invoice's seller is the handler's
+    /// named check.
+    #[account(
+        seeds = [
+            SHOP_POLICY_SEED,
+            shop_policy.seller.as_ref(),
+            shop_policy.shop_key.as_ref()
+        ],
+        bump = shop_policy.bump
+    )]
+    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 #[derive(Accounts)]
@@ -159,6 +175,20 @@ pub struct PayFromBudget<'info> {
     pub treasury: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
+
+    /// The shop that priced this invoice: optional and trailing, exactly as on
+    /// `settle_payment`. The allowance path is where a shop rate matters most —
+    /// a buyer paying silently from a pot still pays the shop's rate, because the
+    /// policy travels with the invoice's seller.
+    #[account(
+        seeds = [
+            SHOP_POLICY_SEED,
+            shop_policy.seller.as_ref(),
+            shop_policy.shop_key.as_ref()
+        ],
+        bump = shop_policy.bump
+    )]
+    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 #[derive(Accounts)]
@@ -199,16 +229,23 @@ pub fn settle_payment_handler<'info, 'ctx>(
     );
 
     // Seller-pays is the only mode this release settles: the payer pays the
-    // price, and the seller absorbs the fee plus the permanent marker's rent.
+    // price, and the seller absorbs the permanent marker's rent plus whatever the
+    // fee adds above it (nothing, while the rent is the larger of the two).
     let config = &ctx.accounts.config;
     require!(
         config.fee_mode == FeeMode::SellerPays,
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount, None)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    // The shop's rate when the invoice names a policy of its own seller, and
+    // `Config`'s otherwise.
+    let multiplier = shop_multiplier(
+        ctx.accounts.shop_policy.as_deref(),
+        &ctx.accounts.seller.key(),
+    )?;
+    let fee = fee_for(config, amount, None, receipt_rent, multiplier)?;
     // The seller receives `amount - rent - receipt rent - fee` now, plus the
     // invoice rent when the account closes, so this subtraction must not
     // underflow. The payer advances the marker's rent at `init` below; paying
@@ -438,9 +475,13 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount, None)?;
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    let multiplier = shop_multiplier(
+        ctx.accounts.shop_policy.as_deref(),
+        &ctx.accounts.seller.key(),
+    )?;
+    let fee = fee_for(config, amount, None, receipt_rent, multiplier)?;
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);
     require!(
         amount

@@ -136,9 +136,14 @@ pub enum PaymentState {
 /// non-signing seller lamports, so the treasury — not the seller — funds the
 /// permanent marker's 1,224,960-lamport rent on that path. Charging the seller
 /// that same cost in the currency they are paid in is what keeps the treasury
-/// whole. `usdc_mint` and `eurc_mint` select them: the program has no oracle, so
-/// the flat is stated per currency by the admin rather than converted at settle
-/// time. A mint that names neither pays no flat.
+/// whole. `usdc_mint` and `eurc_mint` select them, and a mint that names neither
+/// pays no flat.
+///
+/// The program has no oracle, so the flats cannot be derived at settle time.
+/// They are instead kept *live*: `refresh_fee_price` recomputes both from the
+/// cluster's current marker rent and a SOL price in micros, so what a token
+/// seller is charged tracks what the record actually costs today rather than
+/// what SOL was worth when the policy was written.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FeePolicy {
     /// Basis points on the part of the amount at or below the boundary.
@@ -150,10 +155,11 @@ pub struct FeePolicy {
     /// The token boundary, in base units (10_000_000 = 10 USDC at 6 decimals).
     pub token_tier_base_units: u64,
     /// Flat charged on a USDC invoice, in base units: the marker's rent at the
-    /// SOL price the admin priced it at (1,224,960 lamports ≈ 89,400 base units
-    /// at $73).
+    /// SOL price the last `refresh_fee_price` wrote. A token settle charges the
+    /// larger of this and the percentage, so a small invoice pays the record
+    /// and nothing more.
     pub flat_usdc_base_units: u64,
-    /// Flat charged on a EURC invoice, in base units.
+    /// Flat charged on a EURC invoice, in base units, from the same refresh.
     pub flat_eurc_base_units: u64,
     /// The mint `flat_usdc_base_units` applies to.
     pub usdc_mint: Pubkey,
@@ -168,8 +174,9 @@ pub struct FeePolicy {
 /// change the policy, and the fee destination is derived from a seed here
 /// rather than named by a caller, so no settlement can redirect it.
 ///
-/// Version 2 carries the tiered `FeePolicy`; version 1 was one rate plus a flat
-/// lamport fee, and `migrate_config` reallocates the account it left behind.
+/// Version 3 carries the tiered `FeePolicy` and the refresh cooldown; version 2
+/// was the same policy without `flats_updated_at`, and version 1 one rate plus a
+/// flat lamport fee. `migrate_config` reallocates whichever it finds.
 #[account]
 #[derive(Debug)]
 pub struct Config {
@@ -183,9 +190,68 @@ pub struct Config {
     /// Lamports parked on a session key so its silent transactions can pay
     /// their own network fees. Replaces the old hardcoded float.
     pub session_fee_float: u64,
+    /// When `policy`'s two token flats were last recomputed from a live SOL
+    /// price. Zero on a fresh or migrated config, so the first refresh is never
+    /// made to wait; `refresh_fee_price` sets it and refuses another within
+    /// `FLATS_REFRESH_SECS`.
+    pub flats_updated_at: i64,
     pub bump: u8,
     pub treasury_bump: u8,
     pub version: u8,
+}
+
+/// The SOL price the admin has blessed, in micros per SOL, for the two currencies
+/// the flats are priced in.
+///
+/// `refresh_fee_price` is permissionless, so its band cannot be measured from the
+/// flat it is about to rewrite: a caller could move that flat a band's worth
+/// every cooldown, and a flat that drifts far enough from the rent stops covering
+/// the receipt the treasury refunds, or overcharges a seller. The anchor is a
+/// separate account the admin writes, so every permissionless refresh is bound to
+/// the same price no matter how many of them ran before it.
+///
+/// It lives beside `Config` rather than inside it because it arrived after
+/// version 3 was live: a new account needs no layout migration, and the app's
+/// fixed-offset `Config` reader keeps working.
+#[account]
+#[derive(Debug)]
+pub struct FeeAnchor {
+    /// The USD price of one SOL the admin last set, in micros.
+    pub sol_usd_micros: u64,
+    /// The EUR price of one SOL, from the same decision.
+    pub sol_eurc_micros: u64,
+    pub bump: u8,
+}
+
+/// A shop's multiplier on `Config`'s rates.
+///
+/// A shop is an API row, not an account, so the on-chain identity is the seller
+/// that owns it plus a key the API generates when the row is created —
+/// `["shop-policy", seller, shop_key]`. The account is optional: an invoice that
+/// names none settles at `Config`'s rate, which is what keeps every QR printed
+/// before this landed working.
+///
+/// The multiplier is the whole policy, not a second copy of one. It scales the
+/// two rates and leaves the boundaries and the per-currency flats to `Config`,
+/// so every shop is priced from the same live numbers and a refresh still has
+/// one place to write. `10_000` is `Config` unchanged, `0` charges no
+/// percentage at all — the marker's flat still applies on a token invoice, so a
+/// free shop cannot make the treasury pay for the record.
+///
+/// A multiplier cannot exceed `10_000`: the band is the type's range plus the
+/// program's own check on write, which is why this needs no `Config` field and
+/// no version bump. A shop can discount itself, never surcharge a buyer.
+#[account]
+#[derive(Debug)]
+pub struct ShopPolicy {
+    /// The wallet that owns the shop. Every settle compares this against the
+    /// invoice's seller, so one shop's policy cannot price another's invoice.
+    pub seller: Pubkey,
+    /// The key the API stores beside its `shops` row; part of the PDA seeds.
+    pub shop_key: Pubkey,
+    /// Basis points applied to `Config`'s two rates: `10_000` is unchanged.
+    pub multiplier_bps: u16,
+    pub bump: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]

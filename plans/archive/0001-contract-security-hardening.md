@@ -16,7 +16,7 @@ two:
 - This plan keeps the security work: the unsafe close path, replay, the
   receipt-backed settlement model, and the API/web status semantics.
 - Fee policy, treasury, budget accounting, session-key floats, events, and
-  Token-2022 moved to `plans/0002-fee-model-and-treasury.md`.
+  Token-2022 moved to `plans/archive/0002-fee-model-and-treasury.md`.
 
 Changes from revision 1:
 
@@ -42,7 +42,7 @@ Changes from revision 2, made while implementing Phase 1:
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
-- `plans/0002-fee-model-and-treasury.md` — the fee model that supersedes the
+- `plans/archive/0002-fee-model-and-treasury.md` — the fee model that supersedes the
   interim rent handling here.
 - `README.md` — project overview and the current Anchor claim.
 - `apps/contracts/programs/payvand/src/lib.rs` — entrypoints and documented

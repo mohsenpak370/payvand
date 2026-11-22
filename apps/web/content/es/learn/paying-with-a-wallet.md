@@ -52,6 +52,9 @@ Toda transacción paga una comisión pequeña de red. En Solana la comisión bas
 decir, 0,000005 SOL, una fracción de céntimo — más una comisión de prioridad opcional cuando la red
 está cargada. La comisión va a la red, no a Payvand ni al vendedor.
 
+Eso es solo una línea de lo que cuesta un pago. [Lo que cuesta un pago, y por qué](/learn/what-a-payment-costs)
+detalla el resto — la parte del protocolo y el recibo permanente en la cadena — y quién paga cada parte.
+
 Sí necesitas un poco de SOL en la cartera para pagarla. Una cartera con mucho saldo en stablecoins y
 cero SOL no puede mover nada, cosa que sorprende la primera vez.
 

@@ -19,7 +19,11 @@ interface CreatedPaymentPayload {
 interface UseSellInvoiceFormOptions {
   cluster: string
   shopsEnabled: Ref<boolean>
+  /** A page made for one shop: only its menu, and it starts priced from it. */
+  shopId?: string
   selectedDiscount: Ref<DiscountCode | null>
+  /** Let the buyer apply one of the seller's codes on the payment page. */
+  allowDiscounts: Ref<boolean>
   priceCurrency: Ref<SupportedCurrency>
   applyCreated: (created: CreatedPaymentPayload) => void
 }
@@ -64,12 +68,20 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   // An invoice is priced one of two ways: a number the seller types, or the total
   // of what they pick off a shop's menu. Most codes are the first, so the menus
   // stay folded away until a seller asks for them.
-  const priceMode = ref<'amount' | 'products'>('amount')
+  const priceMode = ref<'amount' | 'products'>(options.shopId ? 'products' : 'amount')
   const priceModeItems = computed(() => [
     { label: t('sell.priceModes.amount'), value: 'amount' },
     { label: t('sell.priceModes.products'), value: 'products' }
   ])
   const sellingFromShops = computed(() => priceMode.value === 'products')
+  // A code prices a basket: on the shared sell page the field belongs to the
+  // cart, as before. A shop's own payment page attaches one to any price.
+  const discountAllowed = computed(() => Boolean(options.shopId) || sellingFromShops.value)
+  // A buyer's own code prices a basket, so only an invoice built from products
+  // offers one, and never beside a code the seller already attached.
+  const canInviteBuyerCodes = computed(
+    () => sellingFromShops.value && !options.selectedDiscount.value
+  )
 
   /**
    * The typed price in what the code charges: lamports for SOL, the token's own
@@ -151,9 +163,11 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   })
 
   // Switching back to a typed amount drops the tray: a cart left behind would
-  // price the invoice from items nobody can see any more.
+  // price the invoice from items nobody can see any more. A chosen code stays:
+  // it prices whatever is charged, basket or number.
   watch(priceMode, (mode) => {
-    if (mode === 'amount') cart.value = []
+    if (mode !== 'amount') return
+    cart.value = []
   })
 
   // Quoting reads the chain, so the first one waits for the browser: the server
@@ -193,7 +207,9 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
    *  a seller from typing an amount the way they always could. */
   async function loadShop() {
     try {
-      shops.value = await shopApi.list()
+      shops.value = options.shopId
+        ? [await shopApi.get(options.shopId)]
+        : await shopApi.list()
     } catch {
       shops.value = []
     }
@@ -253,7 +269,10 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
           quantity: line.quantity,
           amount_lamports: line.product.price_lamports
         })),
-        discount_code: options.selectedDiscount.value?.code,
+        // A code the seller picked is stamped into the invoice; otherwise the
+        // invoice may invite the buyer to bring one of their own.
+        discount_code: discountAllowed.value ? options.selectedDiscount.value?.code : undefined,
+        allow_discounts: canInviteBuyerCodes.value && options.allowDiscounts.value,
         cluster: options.cluster
       })
 
@@ -294,6 +313,8 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
     priceMode,
     priceModeItems,
     sellingFromShops,
+    discountAllowed,
+    canInviteBuyerCodes,
     priceSummary,
     netQuote,
     discountedPrice,

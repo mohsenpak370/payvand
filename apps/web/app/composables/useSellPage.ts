@@ -1,6 +1,6 @@
 import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
-export function useSellPage() {
+export function useSellPage(shopId?: string) {
   const { cluster } = useRuntimeConfig().public
   const { shopsEnabled } = useShopPreference()
 
@@ -17,7 +17,9 @@ export function useSellPage() {
   const invoiceForm = useSellInvoiceForm({
     cluster,
     shopsEnabled,
+    shopId,
     selectedDiscount: discountCodes.selectedDiscount,
+    allowDiscounts: discountCodes.allowDiscounts,
     priceCurrency,
     applyCreated: (created) => {
       paymentResult.applyCreated(created)

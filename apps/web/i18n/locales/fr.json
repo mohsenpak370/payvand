@@ -779,7 +779,9 @@
     "addDiscountFailure": "Impossible d'ajouter le code de remise.",
     "deleteDiscountFailure": "Impossible de supprimer le code de remise.",
     "presentFallbackTitle": "Code de paiement",
-    "scanToPay": "Scannez ceci avec l'appareil photo d'un téléphone pour payer."
+    "scanToPay": "Scannez ceci avec l'appareil photo d'un téléphone pour payer.",
+    "allowDiscountsLabel": "Laisser les acheteurs utiliser vos codes",
+    "allowDiscountsHelp": "Les acheteurs peuvent appliquer un de vos codes à un paiement créé à partir de vos produits. Chaque portefeuille peut utiliser un code une fois."
   },
   "productPicker": {
     "fromYourShops": "Depuis vos boutiques",
@@ -788,23 +790,6 @@
     "increaseAria": "Un {name} de plus",
     "total": "Total",
     "limit": "Un reçu accepte {max} produits différents — créez un second paiement pour en ajouter."
-  },
-  "shopPayment": {
-    "title": "Créer un paiement",
-    "newPayment": "Nouveau paiement",
-    "loadingMenu": "Chargement du menu de cette boutique…",
-    "emptyMenu": "Ajoutez un produit ci-dessus et cette page devient un menu à payer.",
-    "scanHint": "N'importe quelle caméra de téléphone l'ouvre — et la page encaisse le paiement.",
-    "openPage": "Ouvrir la page de paiement",
-    "copyLink": "Copier le lien",
-    "linkCopied": "Lien copié",
-    "connectFirst": "Connectez d'abord votre portefeuille vendeur.",
-    "pickSomething": "Choisissez d'abord un article dans la boutique.",
-    "createFailure": "Impossible de créer le paiement.",
-    "alertTitle": "Impossible de créer le paiement",
-    "createCode": "Créer le code de paiement",
-    "connectHint": "Connectez votre portefeuille vendeur pour créer le code.",
-    "costUnavailable": "Les frais n'ont pas pu être lus depuis le cluster."
   },
   "shopsList": {
     "title": "Vos boutiques",
@@ -856,7 +841,23 @@
     "readingRate": "Lecture du taux du jour…",
     "productFailureTitle": "Impossible d'enregistrer le produit",
     "saveChanges": "Enregistrer les modifications",
-    "addProduct": "Ajouter le produit"
+    "addProduct": "Ajouter le produit",
+    "categoryLabel": "Catégorie",
+    "categoryHelp": "Facultatif — le titre sous lequel l’article apparaît, comme « Boissons ».",
+    "categoryPlaceholder": "Boissons"
+  },
+  "subscription": {
+    "title": "Abonnement boutiques",
+    "description": "1,70 € par mois gardent les boutiques et produits de ce compte.",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "loading": "Lecture de votre abonnement…",
+    "renewsOn": "Payé jusqu’au {date}.",
+    "price": "1,70 € pour {days} jours, payable dans l’une de ces devises.",
+    "rateNote": "Prix convertis au taux lu le {date}.",
+    "errorTitle": "Abonnement",
+    "loadFailure": "Impossible de lire votre abonnement.",
+    "payFailure": "Impossible de lancer le paiement de l’abonnement."
   },
   "shops": {
     "metaTitle": "Boutiques — Payvand",
@@ -866,7 +867,10 @@
     "shopMetaTitle": "Boutique — Payvand",
     "shopTitle": "Boutique",
     "shopDescription": "Vos produits, les prix facturés par la page de paiement, et les codes que vous avez enregistrés ici.",
-    "backToShops": "Retour à vos boutiques"
+    "backToShops": "Retour à vos boutiques",
+    "createPaymentTitle": "Créer un paiement",
+    "createPaymentDescription": "Tout le formulaire de paiement, tarifé depuis le menu de cette boutique, avec vos codes de remise.",
+    "createPayment": "Créer un paiement"
   },
   "settings": {
     "metaTitle": "Paramètres — Payvand",
@@ -938,7 +942,7 @@
     },
     "fees": {
       "title": "Frais",
-      "body": "Créer ou scanner un code de paiement ne coûte rien au client au-delà de ce qui est affiché : il paie le prix indiqué plus les frais de réseau Solana. Les vendeurs paient les frais du protocole — actuellement 2 % du prix, déduits de ce qu’ils reçoivent plutôt qu’ajoutés — et l’app affiche le montant exact avant qu’un code soit partagé. Le protocole paie l’enregistrement permanent d’un paiement sur la chaîne, et la location temporaire avancée lors d’un paiement revient dans la même transaction."
+      "body": "Créer ou scanner un code ne coûte rien au client au-delà de ce qui est affiché : il paie le prix indiqué plus les frais de réseau Solana pour la transaction, rien d’autre. Les vendeurs paient les frais du protocole, en deux parties. L’une est un pourcentage du prix, déduit de ce que reçoit le vendeur. L’autre est des frais de reçu sur les factures payées en token, qui couvrent la preuve permanente de ce paiement sur la chaîne ; sur une facture en SOL, ce coût sort du prix. Les frais sont prélevés dans la devise du paiement, ne font jamais partie du total du client, et l’app montre le montant exact que recevra le vendeur avant qu’un code soit partagé. Les pourcentages et les frais de reçu sont fixés par la plateforme et peuvent évoluer avec le coût du service ; les frais appliqués sont ceux en vigueur au moment du paiement, et le prix d’un code ne change jamais."
     },
     "testMoney": {
       "title": "Argent de test",
@@ -991,8 +995,20 @@
     "open": "Ouvrir"
   },
   "invoiceSplit": {
-    "netReceive": "Tu reçois {net} après les frais de {percent} %",
-    "rentNote": "Le loyer du code ({rent} SOL) te revient une fois payé ; le protocole paie l'enregistrement du paiement.",
-    "rentNoteToken": "Un code en jetons ne vous coûte pas de SOL : l’acheteur avance sa location et la récupère, et le protocole paie l’enregistrement permanent du paiement."
+    "netReceive": "Vous recevez {net}",
+    "detailsAria": "Comment les frais sont calculés",
+    "feeLine": "Frais du protocole : {percent} % du prix, {fee}.",
+    "feeFloorLine": "Aucun frais de protocole sur ce paiement : {fee}, le loyer du reçu permanent, est tout ce qui est prélevé.",
+    "feeNoneLine": "Aucun frais de protocole sur ce paiement : il est assez petit pour que le pourcentage soit annulé, et le loyer du reçu, pris sur le prix, en est tout le coût.",
+    "recordLine": "Sur ce montant, {fee} sont les frais de reçu : la preuve permanente de ce paiement sur la chaîne.",
+    "rentNote": "Le loyer du code lui-même ({rent} SOL) vous revient au moment du paiement.",
+    "rentNoteToken": "Un code en token ne vous demande aucun SOL : le payeur avance le loyer des deux comptes et le protocole le rembourse dans la même transaction. Les frais de reçu ci-dessus sont la part que garde le protocole.",
+    "learnMore": "En savoir plus"
+  },
+  "shopSell": {
+    "metaTitle": "Créer un paiement — Payvand",
+    "pageTitle": "Créer un paiement",
+    "pageDescription": "Tarifez depuis le menu de cette boutique ou saisissez un montant, joignez un code de remise ou laissez l’acheteur en choisir un, puis montrez le code.",
+    "backToShop": "Retour à cette boutique"
   }
 }

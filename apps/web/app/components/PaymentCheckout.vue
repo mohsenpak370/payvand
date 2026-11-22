@@ -757,9 +757,11 @@ useSeoMeta({
               />
             </div>
 
-            <!-- Priced by a code: the invoice's own, or one typed here. -->
+            <!-- Priced by a code: one typed here, on an invoice whose seller
+                 invited it. The flag is the seller's own answer, so the page
+                 asks nothing else of the invoice. -->
             <div
-              v-if="payload?.seller_user && !discount && !settled"
+              v-if="payload?.seller_user && payload?.allow_discounts && !discount && !settled"
               class="mt-3 w-full print:hidden"
             >
               <UButton

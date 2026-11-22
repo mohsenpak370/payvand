@@ -15,12 +15,14 @@ export function useCheckoutDiscount(deps: {
   priceAmount: ComputedRef<number>
   payableAmount: ComputedRef<number>
   selected: ComputedRef<PaymentOption>
+  /** The wallet asking, so a code it already spent is refused. */
+  buyer: () => string | null
   stopHold: () => void
   refreshCosts: () => Promise<InvoiceCosts | null>
   refreshBudget: () => Promise<void>
   addressFor: (option: PaymentOption, amount: number) => Promise<Address>
 }) {
-  const { state, api, priceAmount, payableAmount, selected } = deps
+  const { state, api, priceAmount, payableAmount, selected, buyer } = deps
   const { stopHold, refreshCosts, refreshBudget, addressFor } = deps
   const { payload, activePda, discount, discountInput, discountBusy, discountError } = state
 
@@ -40,7 +42,9 @@ export function useCheckoutDiscount(deps: {
         seller: current.seller,
         // The API owns the percentage; the price it applies to is the one the
         // buyer is looking at, in whichever currency that is.
-        price_lamports: priceAmount.value
+        price_lamports: priceAmount.value,
+        // A code is once per buyer, and the buyer is the wallet paying.
+        buyer: buyer() ?? undefined
       })
       discount.value = preview
       // The buyer is now looking at a different price, so the fee and rent

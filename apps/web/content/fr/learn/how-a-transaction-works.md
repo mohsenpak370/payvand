@@ -80,6 +80,10 @@ de slots peut sauter ou prendre du retard, ce qui explique que les clients suive
   total valant `ceil(prix × limite d'UC demandée / 1 000 000)`. Notez bien *demandée* : vous payez
   la limite que vous demandez, pas le calcul que vous utilisez réellement. Tout va au validateur.
 
+Ce sont les frais du réseau lui-même, et ils ne sont qu'une partie de la facture. [Ce que coûte un
+paiement, et pourquoi](/learn/what-a-payment-costs) couvre le reste — la part du protocole et le reçu
+permanent sur la chaîne — et ce qui fixe le prix de chaque partie.
+
 ## Le calcul : le vrai budget
 
 - Une instruction non intégrée reçoit **200 000 unités de calcul** par défaut ; une instruction

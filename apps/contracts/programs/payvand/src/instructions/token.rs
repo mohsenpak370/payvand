@@ -4,6 +4,14 @@
 //! and closed in the settle transaction, a receipt keyed by the invoice address
 //! keeps the record, and the receipt's `settled_at` is the replay guard.
 //!
+//! `settle_token_payment` separates the two jobs a wallet used to do at once:
+//! `payer` signs for the buyer's token account, and `sponsor` advances the two
+//! record rents and receives the treasury's refund of them. A wallet holding SOL
+//! passes itself as both — one signature, and the settlement ends where it began
+//! — while a wallet holding only the token passes a relayer's key, which the
+//! program refunds, so a sponsored settlement cannot leave the buyer's wallet
+//! holding lamports it never owned.
+//!
 //! The contexts below use `anchor_spl`'s *interface* account types for the token
 //! accounts and the token program: those parse an account owned by either token
 //! program, which is what makes the mint's owner check the rejection a
@@ -16,31 +24,42 @@
 use anchor_lang::prelude::*;
 use anchor_lang::AccountsClose;
 use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{self, Transfer as TokenTransfer};
 // The interface types accept either token program at parse time, which is what
 // lets the mint's owner constraint below (SPL Token only) be the error a
 // Token-2022 caller sees. Anchor's `Account<TokenAccount>` would fail its own
 // owner check first with the generic `AccountOwnedByWrongProgram`.
-use anchor_spl::token_interface::{TokenAccount, TokenInterface};
+//
+// The CPIs are the interface ones for the same reason: `transfer_checked` is one
+// instruction on either token program, so the mint policy alone decides which
+// invoices settle.
+use anchor_spl::token_interface::{
+    self, CloseAccount as TokenCloseAccount, TokenAccount, TokenInterface,
+    TransferChecked as TokenTransferChecked,
+};
 
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::{BudgetOpened, PaymentSettled};
-use crate::helpers::{current_month_index, ensure_treasury_funded, fee_for, pay_from_treasury};
-use crate::state::{Config, FeeMode, PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
+use crate::helpers::{
+    current_month_index, ensure_treasury_funded, fee_for, mint_decimals, pay_from_treasury,
+    shop_multiplier,
+};
+use crate::state::{
+    Config, FeeMode, PaymentReceipt, PaymentState, ShopPolicy, TokenBudget, TokenPayment,
+};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct SettleTokenPayment<'info> {
-    /// Advances the invoice and receipt rents and the network fee; the treasury
-    /// refunds both rents in this same instruction, so the buyer's lamports
-    /// loss is the network fee alone and the price is all they pay.
+    /// The buyer. Its signature proves it owns `payer_token_account` — which is
+    /// all a sponsor cannot do for it — and its wallet loses nothing: every
+    /// lamport this settlement advances belongs to `sponsor` below.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     #[account(
         init,
-        payer = payer,
+        payer = sponsor,
         space = TOKEN_PAYMENT_SPACE,
         seeds = [
             TOKEN_PAYMENT_SEED,
@@ -80,7 +99,7 @@ pub struct SettleTokenPayment<'info> {
 
     #[account(
         init_if_needed,
-        payer = payer,
+        payer = sponsor,
         space = PAYMENT_RECEIPT_SPACE,
         seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
         bump
@@ -108,6 +127,35 @@ pub struct SettleTokenPayment<'info> {
 
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+
+    /// Who pays for this settlement's records. It advances the invoice's rent
+    /// and the marker's (`init`, above) and receives the treasury's refund of
+    /// both in this same instruction, so its net cost is the network fee — the
+    /// fee it signs as — and nothing else. A funded wallet passes its own key
+    /// here and is therefore its own sponsor; a wallet holding only the token
+    /// passes a relayer's, which turns a zero-lamport buyer into a payer.
+    ///
+    /// The refund goes to this account and never to `payer` on purpose: a
+    /// sponsor that topped a buyer up would otherwise hand it both rents —
+    /// 3,939,360 lamports per settlement at mainnet's rate — for the price of
+    /// one signature.
+    #[account(mut)]
+    pub sponsor: Signer<'info>,
+
+    /// The shop that priced this invoice, when its seller has one: optional and
+    /// trailing, so a funded or sponsored settle that names none pays `Config`'s
+    /// rate exactly as before. The seeds prove the account is the canonical PDA
+    /// for its own contents; the handler refuses one recorded under another
+    /// seller by name.
+    #[account(
+        seeds = [
+            SHOP_POLICY_SEED,
+            shop_policy.seller.as_ref(),
+            shop_policy.shop_key.as_ref()
+        ],
+        bump = shop_policy.bump
+    )]
+    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 /// Opens the treasury's token account for a mint, paid by the admin.
@@ -246,12 +294,12 @@ pub struct PayFromTokenBudget<'info> {
     #[account(mut)]
     pub seller: UncheckedAccount<'info>,
 
-    #[account(
-        init_if_needed,
-        payer = session_key,
-        associated_token::mint = mint,
-        associated_token::authority = seller
-    )]
+    /// The seller's own token account, which must already exist — the same rule
+    /// `settle_token_payment` applies. Creating it here would spend the session
+    /// float, and that float is the buyer's money: the rent would be a fee the
+    /// buyer pays, and nobody refunds it. Opening the account is the seller's
+    /// setup step, like having a wallet at all.
+    #[account(mut, token::mint = mint, token::authority = seller)]
     pub seller_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
@@ -300,6 +348,19 @@ pub struct PayFromTokenBudget<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+
+    /// The shop that priced this invoice: optional and trailing, as on the other
+    /// three settle paths, so an allowance payment from a pot pays the shop's
+    /// rate when the invoice names one and `Config`'s when it does not.
+    #[account(
+        seeds = [
+            SHOP_POLICY_SEED,
+            shop_policy.seller.as_ref(),
+            shop_policy.shop_key.as_ref()
+        ],
+        bump = shop_policy.bump
+    )]
+    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 #[derive(Accounts)]
@@ -365,50 +426,65 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         PaymentError::FeeModeUnsupported
     );
 
-    let fee = fee_for(config, amount, Some(&ctx.accounts.mint.key()))?;
-    // The seller must still receive something, as in `settle_payment`.
-    require!(amount > fee, PaymentError::InvoiceTooSmall);
-
     let payment_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
-    // The payer advanced both rents above; the refund is checked before any
+    let multiplier = shop_multiplier(
+        ctx.accounts.shop_policy.as_deref(),
+        &ctx.accounts.seller.key(),
+    )?;
+    let fee = fee_for(
+        config,
+        amount,
+        Some(&ctx.accounts.mint.key()),
+        receipt_rent,
+        multiplier,
+    )?;
+    // The seller must still receive something, as in `settle_payment`.
+    require!(amount > fee, PaymentError::InvoiceTooSmall);
+    // The sponsor advanced both rents above; the refund is checked before any
     // transfer so a settlement cannot start what the treasury cannot finish.
     let refund = payment_rent.saturating_add(receipt_rent);
     ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
+    let decimals = mint_decimals(&ctx.accounts.mint)?;
 
     // Exactly `amount` leaves the buyer: the fee goes to the treasury's account
     // for this mint and the rest to the seller, who is the one carrying it.
-    token::transfer(
+    token_interface::transfer_checked(
         CpiContext::new(
             ctx.accounts.token_program.key(),
-            TokenTransfer {
+            TokenTransferChecked {
                 from: ctx.accounts.payer_token_account.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.seller_token_account.to_account_info(),
                 authority: ctx.accounts.payer.to_account_info(),
             },
         ),
         amount - fee,
+        decimals,
     )?;
     if fee > 0 {
-        token::transfer(
+        token_interface::transfer_checked(
             CpiContext::new(
                 ctx.accounts.token_program.key(),
-                TokenTransfer {
+                TokenTransferChecked {
                     from: ctx.accounts.payer_token_account.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
                     to: ctx.accounts.treasury_token_account.to_account_info(),
                     authority: ctx.accounts.payer.to_account_info(),
                 },
             ),
             fee,
+            decimals,
         )?;
     }
 
-    // Hand back the two rents the payer advanced. A CPI, so it runs while no
+    // Hand back the two rents the sponsor advanced. A CPI, so it runs while no
     // lamport delta is outstanding; the invoice's close below does the direct
-    // move.
+    // move. The destination is the sponsor and never the payer, which is what
+    // keeps a sponsored settlement from being a lamport faucet for the buyer.
     pay_from_treasury(
         &ctx.accounts.treasury.to_account_info(),
-        &ctx.accounts.payer.to_account_info(),
+        &ctx.accounts.sponsor.to_account_info(),
         refund,
         ctx.accounts.config.treasury_bump,
     )?;
@@ -419,6 +495,7 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
     let reference = ctx.accounts.reference.key();
     let mint = ctx.accounts.mint.key();
     let invoice = ctx.accounts.payment.key();
+    let sponsor = ctx.accounts.sponsor.key();
 
     {
         let payment = &mut ctx.accounts.payment;
@@ -446,11 +523,16 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         .payment
         .close(ctx.accounts.treasury.to_account_info())?;
 
+    // The sponsor is named in the log rather than in `PaymentSettled`: that
+    // event is shared with the SOL paths, whose settlements have no sponsor, and
+    // its shape is what the app and the watchers decode. The transaction's own
+    // fee payer is the same key on chain.
     msg!(
-        "token payment settled: {} of {}, fee {} to the treasury",
+        "token payment settled: {} of {}, fee {} to the treasury, sponsor {}",
         amount,
         mint,
-        fee
+        fee,
+        sponsor
     );
     emit!(PaymentSettled {
         amount,
@@ -522,16 +604,19 @@ pub fn open_token_budget_handler<'info, 'ctx>(
     let held_tokens = ctx.accounts.vault.amount;
     let top_up = monthly_limit.saturating_sub(held_tokens);
     if top_up > 0 {
-        token::transfer(
+        let decimals = mint_decimals(&ctx.accounts.mint)?;
+        token_interface::transfer_checked(
             CpiContext::new(
                 ctx.accounts.token_program.key(),
-                TokenTransfer {
+                TokenTransferChecked {
                     from: ctx.accounts.buyer_token_account.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
                     authority: ctx.accounts.buyer.to_account_info(),
                 },
             ),
             top_up,
+            decimals,
         )?;
     }
 
@@ -598,7 +683,18 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         config.fee_mode == FeeMode::SellerPays,
         PaymentError::FeeModeUnsupported
     );
-    let fee = fee_for(config, amount, Some(&ctx.accounts.mint.key()))?;
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    let multiplier = shop_multiplier(
+        ctx.accounts.shop_policy.as_deref(),
+        &ctx.accounts.seller.key(),
+    )?;
+    let fee = fee_for(
+        config,
+        amount,
+        Some(&ctx.accounts.mint.key()),
+        receipt_rent,
+        multiplier,
+    )?;
     // The seller must still receive something. The `amount - 1` cap in `fee_for`
     // makes this hold at any `fee_bps`; the guard says so out loud.
     require!(amount > fee, PaymentError::InvoiceTooSmall);
@@ -625,7 +721,6 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     // come out of the fee. Checked before any transfer, so a pool that cannot
     // refund cannot start a settlement.
     let invoice_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
-    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
     let refund = invoice_rent.saturating_add(receipt_rent);
     ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
 
@@ -635,30 +730,35 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     let mint = ctx.accounts.budget.mint;
     let bump = ctx.accounts.budget.bump;
     let seeds: &[&[u8]] = &[TOKEN_BUDGET_SEED, buyer.as_ref(), mint.as_ref(), &[bump]];
-    token::transfer(
+    let decimals = mint_decimals(&ctx.accounts.mint)?;
+    token_interface::transfer_checked(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.key(),
-            TokenTransfer {
+            TokenTransferChecked {
                 from: ctx.accounts.vault.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.seller_token_account.to_account_info(),
                 authority: ctx.accounts.budget.to_account_info(),
             },
             &[seeds],
         ),
         amount - fee,
+        decimals,
     )?;
     if fee > 0 {
-        token::transfer(
+        token_interface::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
-                TokenTransfer {
+                TokenTransferChecked {
                     from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
                     to: ctx.accounts.treasury_token_account.to_account_info(),
                     authority: ctx.accounts.budget.to_account_info(),
                 },
                 &[seeds],
             ),
             fee,
+            decimals,
         )?;
     }
 
@@ -752,24 +852,27 @@ pub fn close_token_budget_handler<'info, 'ctx>(
     // Whatever is left in the vault goes back to the buyer's own account.
     let remaining = ctx.accounts.vault.amount;
     if remaining > 0 {
-        token::transfer(
+        let decimals = mint_decimals(&ctx.accounts.mint)?;
+        token_interface::transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
-                TokenTransfer {
+                TokenTransferChecked {
                     from: ctx.accounts.vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
                     to: ctx.accounts.buyer_token_account.to_account_info(),
                     authority: ctx.accounts.budget.to_account_info(),
                 },
                 &[seeds],
             ),
             remaining,
+            decimals,
         )?;
     }
 
     // Close the vault itself and send its rent to the buyer.
-    token::close_account(CpiContext::new_with_signer(
+    token_interface::close_account(CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),
-        token::CloseAccount {
+        TokenCloseAccount {
             account: ctx.accounts.vault.to_account_info(),
             destination: ctx.accounts.buyer.to_account_info(),
             authority: ctx.accounts.budget.to_account_info(),

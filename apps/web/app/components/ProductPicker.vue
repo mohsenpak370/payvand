@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CartLine, Product, ShopWithProducts } from '~/composables/useShop'
+import { menuGroups } from '~/composables/useShop'
 
 // Tapping products is the whole point: a seller behind a counter should price a
 // payment by quantity, not by adding up numbers in their head. The total here
@@ -85,47 +86,54 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
       :key="shop.id"
       class="flex flex-col divide-y divide-default"
     >
-      <li class="pt-2 pb-1 text-xs font-medium text-muted">
-        {{ shop.name }}
-      </li>
-      <li
-        v-for="product in shop.products"
-        :key="product.id"
-        class="flex min-w-0 items-center justify-between gap-3 py-2"
+      <template
+        v-for="group in menuGroups(shop.products)"
+        :key="`${shop.id}:${group.category}`"
       >
-        <div class="min-w-0">
-          <p class="text-sm break-words">
-            {{ product.name }}
-          </p>
-          <p class="text-xs text-muted tabular-nums">
-            {{ lamportsToSol(product.price_lamports) }} SOL
-          </p>
-        </div>
+        <!-- A category is a heading on the menu; an uncategorised product
+             keeps its place under the shop's own name. -->
+        <li class="pt-2 pb-1 text-xs font-medium text-muted">
+          {{ group.category || shop.name }}
+        </li>
+        <li
+          v-for="product in group.products"
+          :key="product.id"
+          class="flex min-w-0 items-center justify-between gap-3 py-2"
+        >
+          <div class="min-w-0">
+            <p class="text-sm break-words">
+              {{ product.name }}
+            </p>
+            <p class="text-xs text-muted tabular-nums">
+              {{ lamportsToSol(product.price_lamports) }} SOL
+            </p>
+          </div>
 
-        <div class="flex shrink-0 items-center gap-1">
-          <UButton
-            icon="i-lucide-minus"
-            color="neutral"
-            variant="outline"
-            size="xs"
-            square
-            :disabled="quantityFor(product) === 0"
-            :aria-label="$t('productPicker.decreaseAria', { name: product.name })"
-            @click="decrease(product)"
-          />
-          <span class="w-6 text-center text-sm tabular-nums">{{ quantityFor(product) }}</span>
-          <UButton
-            icon="i-lucide-plus"
-            color="neutral"
-            variant="outline"
-            size="xs"
-            square
-            :aria-label="$t('productPicker.increaseAria', { name: product.name })"
-            :disabled="quantityFor(product) === 0 && atLineLimit"
-            @click="increase(product)"
-          />
-        </div>
-      </li>
+          <div class="flex shrink-0 items-center gap-1">
+            <UButton
+              icon="i-lucide-minus"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              square
+              :disabled="quantityFor(product) === 0"
+              :aria-label="$t('productPicker.decreaseAria', { name: product.name })"
+              @click="decrease(product)"
+            />
+            <span class="w-6 text-center text-sm tabular-nums">{{ quantityFor(product) }}</span>
+            <UButton
+              icon="i-lucide-plus"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              square
+              :aria-label="$t('productPicker.increaseAria', { name: product.name })"
+              :disabled="quantityFor(product) === 0 && atLineLimit"
+              @click="increase(product)"
+            />
+          </div>
+        </li>
+      </template>
     </ul>
 
     <div class="flex items-baseline justify-between gap-3 border-t border-default pt-2 text-sm">

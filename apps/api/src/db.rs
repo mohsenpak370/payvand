@@ -40,6 +40,20 @@ const SCHEMA: &[&str] = &[
         UNIQUE (user_id, code)
     )",
     "CREATE INDEX IF NOT EXISTS discount_codes_user_id_idx ON discount_codes(user_id)",
+    // A code is once per buyer, and the buyer is a wallet: a payment link can be
+    // opened without an account, so an account id would leave most redemptions
+    // uncounted. The invoice is kept because it is the evidence — `use_code`
+    // reads the payer off the settled invoice rather than trusting a request.
+    "CREATE TABLE IF NOT EXISTS discount_redemptions (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code       TEXT NOT NULL,
+        buyer      TEXT NOT NULL,
+        invoice    TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (user_id, code, buyer)
+    )",
+    "CREATE INDEX IF NOT EXISTS discount_redemptions_user_id_idx ON discount_redemptions(user_id)",
     // A saved payment keeps a copy of the code that already *is* the invoice:
     // the API does not know invoices, only what the account wants to see again.
     // `shop_id` is the shop the seller filed it under, when they picked one.
@@ -74,6 +88,7 @@ const SCHEMA: &[&str] = &[
         shop_id        TEXT NOT NULL,
         name           TEXT NOT NULL,
         details        TEXT NOT NULL DEFAULT '',
+        category       TEXT NOT NULL DEFAULT '',
         price_lamports INTEGER NOT NULL,
         created_at     INTEGER NOT NULL
     )",
@@ -106,6 +121,19 @@ const SCHEMA: &[&str] = &[
     // an account, because someone on the list may not have one.
     "CREATE TABLE IF NOT EXISTS waitlist (\n        email      TEXT PRIMARY KEY,\n        created_at INTEGER NOT NULL\n    )",
     "CREATE INDEX IF NOT EXISTS password_resets_user_id_idx ON password_resets(user_id)",
+    // The shops subscription: one row per paid period. `payment_id` is the
+    // settled invoice address, so the same payment cannot buy two periods.
+    "CREATE TABLE IF NOT EXISTS subscriptions (\n        id         TEXT PRIMARY KEY,\n        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        currency   TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        payment_id TEXT NOT NULL,\n        paid_at    INTEGER NOT NULL,\n        expires_at INTEGER NOT NULL,\n        UNIQUE (user_id, payment_id)\n    )",
+    "CREATE INDEX IF NOT EXISTS subscriptions_user_id_idx ON subscriptions(user_id)",
+    // The invoice a subscription was quoted at, kept until it settles: the
+    // amount the buyer agreed to is the amount `confirm` requires on chain,
+    // whatever the rate has done since.
+    "CREATE TABLE IF NOT EXISTS subscription_invoices (\n        payment_id TEXT PRIMARY KEY,\n        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        currency   TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        created_at INTEGER NOT NULL\n    )",
+    // Every settlement the relayer paid the network fee for. The caps in
+    // `sponsor.rs` read this table, and a row is written only after the cluster
+    // accepted the transaction, so the count is spend rather than attempts. The
+    // signature is the id: one sponsored settle cannot be counted twice.
+    "CREATE TABLE IF NOT EXISTS sponsored_settlements (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, wallet TEXT NOT NULL, cluster TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL)",
 ];
 
 #[derive(Debug)]
@@ -198,6 +226,17 @@ async fn migrate_shops_to_a_list(connection: &libsql::Connection) -> Result<(), 
             .execute("ALTER TABLE products ADD COLUMN shop_id TEXT", ())
             .await?;
         eprintln!("[db] migrate: added products.shop_id");
+    }
+
+    // Categories are additive too, and an older catalogue simply has none.
+    if !has_column(connection, "products", "category").await? {
+        connection
+            .execute(
+                "ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+                (),
+            )
+            .await?;
+        eprintln!("[db] migrate: added products.category");
     }
 
     // One shop per account was expressed as a UNIQUE column. SQLite cannot drop

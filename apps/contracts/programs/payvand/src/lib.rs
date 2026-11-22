@@ -31,6 +31,7 @@ pub use state::*;
 // beside them have to be reachable from the crate root, where `#[program]`
 // looks them up.
 pub use instructions::config::*;
+pub use instructions::shop::*;
 pub use instructions::sol::*;
 pub use instructions::token::*;
 
@@ -62,15 +63,58 @@ pub mod payvand {
         instructions::config::update_config_handler(ctx, policy, fee_mode, session_fee_float)
     }
 
-    /// Upgrades the live version 1 config account to version 2 in place. Admin
-    /// only, and only once: the account must be the old 62-byte layout and must
-    /// record the signer as its admin. It carries the admin, fee mode and
-    /// session float over and installs the `FeePolicy` passed here.
+    /// Re-pegs the two token flats — the marker's rent expressed in USDC and in
+    /// EURC — to a live SOL price. Permissionless and bounded: a plausible price
+    /// only, one within `PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one
+    /// call a minute. The band is measured from the anchor rather than the flat
+    /// it rewrites, so repeated calls cannot walk the flats anywhere.
+    pub fn refresh_fee_price(
+        ctx: Context<RefreshFeePrice>,
+        sol_usd_micros: u64,
+        sol_eur_micros: u64,
+    ) -> Result<()> {
+        instructions::config::refresh_fee_price_handler(ctx, sol_usd_micros, sol_eur_micros)
+    }
+
+    /// Writes the SOL price the permissionless refresh is measured against —
+    /// `["fee-anchor"]`, created on the first call — and prices both token flats
+    /// at it from the cluster's current rent. Admin only: it is the one price a
+    /// permissionless caller cannot choose.
+    pub fn set_fee_price_anchor(
+        ctx: Context<SetFeePriceAnchor>,
+        sol_usd_micros: u64,
+        sol_eur_micros: u64,
+    ) -> Result<()> {
+        instructions::config::set_fee_price_anchor_handler(ctx, sol_usd_micros, sol_eur_micros)
+    }
+
+    /// Upgrades the live config account — version 1 or 2 — to version 3 in place. Admin
+    /// only, and only once: the account must be one of the two older layouts and
+    /// must record the signer as its admin. It carries the admin, fee mode and
+    /// session float over and installs the `FeePolicy` passed here, except both
+    /// token flats, which it zeroes until `set_fee_price_anchor` prices them.
     pub fn migrate_config(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
         instructions::config::migrate_config_handler(ctx, policy)
     }
 
-    /// Moves treasury surplus to the admin, leaving its rent-exempt minimum.
+    /// Sets a shop's multiplier on the global fee policy — its own rate, in
+    /// basis points on `Config`'s two rates, `10_000` being `Config` unchanged.
+    ///
+    /// Signed by the seller and seeded by the seller plus the key the API keeps
+    /// beside its `shops` row, so a shop is priced on chain by the wallet that
+    /// owns it and two shops of one wallet can charge differently. The cap is
+    /// enforced here rather than at settle time: a shop may discount itself and
+    /// never surcharge a buyer, and no settlement has an out-of-band rate to
+    /// handle. The account is optional on every settle path — an invoice that
+    /// names none pays `Config`'s rate, which is what keeps every QR printed
+    /// before this landed working.
+    pub fn set_shop_policy(ctx: Context<SetShopPolicy>, multiplier_bps: u16) -> Result<()> {
+        instructions::shop::set_shop_policy_handler(ctx, multiplier_bps)
+    }
+
+    /// Moves treasury surplus to the admin. It always leaves the account's
+    /// rent-exempt minimum plus `TREASURY_RESERVE_SETTLEMENTS` settlements' worth
+    /// of refunds, so a withdrawal cannot be what stops the next token payment.
     /// No payment path can touch the treasury this way.
     pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
         instructions::config::withdraw_treasury_handler(ctx, amount)
@@ -126,6 +170,13 @@ pub mod payvand {
     /// shows. The mint is in the seeds too, so a USDC invoice and a SOL
     /// invoice that happen to share a reference and a price are different
     /// accounts and cannot pay for each other.
+    ///
+    /// The buyer signs for its own token account, and a `sponsor` pays for the
+    /// settlement's two record rents and receives the treasury's refund of
+    /// them. A funded wallet passes itself as the sponsor — one signature, no
+    /// change in cost — and a wallet holding only the token passes a relayer's
+    /// key, which turns a zero-lamport buyer into a payer without being a
+    /// lamport faucet for it.
     pub fn settle_token_payment(
         ctx: Context<SettleTokenPayment>,
         amount: u64,

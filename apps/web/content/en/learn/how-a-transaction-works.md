@@ -72,6 +72,10 @@ setting their own timer.
   `ceil(price × requested CU limit / 1,000,000)`. Note *requested*: you pay for the limit you ask
   for, not the compute you actually use. All of it goes to the validator.
 
+Those are the network's own fees, and they are only part of the bill. [What a payment costs, and
+why](/learn/what-a-payment-costs) covers the rest — the protocol's cut and the permanent record on
+chain — and what each part is priced from.
+
 ## Compute: the real budget
 
 - A non-builtin instruction gets **200,000 compute units** by default; a builtin gets 3,000.

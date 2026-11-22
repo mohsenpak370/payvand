@@ -779,7 +779,9 @@
     "addDiscountFailure": "Could not add the discount code.",
     "deleteDiscountFailure": "Could not delete the discount code.",
     "presentFallbackTitle": "Payment code",
-    "scanToPay": "Scan this with a phone camera to pay."
+    "scanToPay": "Scan this with a phone camera to pay.",
+    "allowDiscountsLabel": "Let buyers use your codes",
+    "allowDiscountsHelp": "Buyers can apply one of your codes to a payment built from your products. Each wallet can use a code once."
   },
   "productPicker": {
     "fromYourShops": "From your shops",
@@ -788,23 +790,6 @@
     "increaseAria": "One more {name}",
     "total": "Total",
     "limit": "A receipt fits {max} different products — make a second payment for more."
-  },
-  "shopPayment": {
-    "title": "Create a payment",
-    "newPayment": "New payment",
-    "loadingMenu": "Loading this shop's menu…",
-    "emptyMenu": "Add a product above and this becomes a payable menu.",
-    "scanHint": "Any phone camera opens this — and the page takes the payment.",
-    "openPage": "Open payment page",
-    "copyLink": "Copy link",
-    "linkCopied": "Link copied",
-    "connectFirst": "Connect your seller wallet first.",
-    "pickSomething": "Pick something from the shop first.",
-    "createFailure": "Could not create the payment.",
-    "alertTitle": "Could not create the payment",
-    "createCode": "Create payment code",
-    "connectHint": "Connect your seller wallet to create the code.",
-    "costUnavailable": "The fee could not be read from the cluster right now."
   },
   "shopsList": {
     "title": "Your shops",
@@ -856,7 +841,23 @@
     "readingRate": "Reading today's rate…",
     "productFailureTitle": "Could not save the product",
     "saveChanges": "Save changes",
-    "addProduct": "Add product"
+    "addProduct": "Add product",
+    "categoryLabel": "Category",
+    "categoryHelp": "Optional — the heading this sits under, like “Drinks”.",
+    "categoryPlaceholder": "Drinks"
+  },
+  "subscription": {
+    "title": "Shops subscription",
+    "description": "€1.70 a month keeps shops and products on this account.",
+    "active": "Active",
+    "inactive": "Not active",
+    "loading": "Reading your subscription…",
+    "renewsOn": "Paid until {date}.",
+    "price": "€1.70 for {days} days, payable in any of these currencies.",
+    "rateNote": "Prices converted at the rate read {date}.",
+    "errorTitle": "Subscription",
+    "loadFailure": "Could not read your subscription.",
+    "payFailure": "Could not start the subscription payment."
   },
   "shops": {
     "metaTitle": "Shops — Payvand",
@@ -866,7 +867,10 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Your products, the prices the payment page charges, and the codes you saved here.",
-    "backToShops": "Back to your shops"
+    "backToShops": "Back to your shops",
+    "createPaymentTitle": "Create a payment",
+    "createPaymentDescription": "The whole payment form, priced from this shop’s menu, with your discount codes.",
+    "createPayment": "Create payment"
   },
   "settings": {
     "metaTitle": "Settings — Payvand",
@@ -938,7 +942,7 @@
     },
     "fees": {
       "title": "Fees",
-      "body": "Making or scanning a payment code costs the customer nothing beyond what it says: they pay the price they see plus the Solana network fee for the transaction. Sellers pay the protocol fee — currently 2% of the price, taken out of what they receive rather than added on top — and the app shows the exact amount before a code is shared. The protocol pays for the permanent record of a payment on chain, and the temporary rent a payment advances comes back in the same transaction."
+      "body": "Making or scanning a code is free for the customer beyond what it says: they pay the price they see plus the Solana network fee for the transaction, and nothing else. Sellers pay the protocol fee, which has two parts. One is a percentage of the price, taken out of what the seller receives. The other is a record fee on invoices paid in a token, which covers the permanent on-chain proof of that payment; a SOL invoice carries that record cost out of the price instead. The fee is charged in the currency the payment is made in, the customer’s total never includes it, and the app shows the exact amount the seller will receive before a code is shared. The percentages and the record fee are set by the platform and can change with the cost of operating the service; the fee applied is the one in force when a payment is made, and the price on a code never changes."
     },
     "testMoney": {
       "title": "Test money",
@@ -991,8 +995,20 @@
     "open": "Open"
   },
   "invoiceSplit": {
-    "netReceive": "You receive {net} after the {percent}% fee",
-    "rentNote": "The code's rent ({rent} SOL) comes back to you when it is paid; the protocol pays for the payment record.",
-    "rentNoteToken": "A token code needs no SOL from you: the payer’s rent is refunded to them, and the protocol pays for the payment record."
+    "netReceive": "You receive {net}",
+    "detailsAria": "How the fee is worked out",
+    "feeLine": "Protocol fee: {percent}% of the price, {fee}.",
+    "feeFloorLine": "No protocol fee on this payment: {fee}, the permanent record’s rent, is all that is taken.",
+    "feeNoneLine": "No protocol fee on this payment: it is small enough that the percentage is waived, and the record’s rent, taken straight from the price, is all it costs.",
+    "recordLine": "Of that, {fee} is the record fee: the permanent on-chain receipt of this payment.",
+    "rentNote": "The code’s own rent ({rent} SOL) comes back to you when the payment is made.",
+    "rentNoteToken": "A token code needs no SOL from you: the payer advances the rent for both accounts and the protocol refunds it in the same transaction. The record fee above is the part the protocol keeps.",
+    "learnMore": "Learn more"
+  },
+  "shopSell": {
+    "metaTitle": "Create a payment — Payvand",
+    "pageTitle": "Create a payment",
+    "pageDescription": "Price from this shop’s menu or type an amount, attach a discount code or let buyers bring one, then show the code.",
+    "backToShop": "Back to this shop"
   }
 }

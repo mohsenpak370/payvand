@@ -39,14 +39,22 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 solana-rpc-client = "3"
 # The history read behind a settled invoice: its config types.
 solana-rpc-client-api = "3"
-solana-pubkey = "3"
+solana-pubkey = { version = "3", features = ["curve25519"] }
 # The settle transaction behind a receipt marker is addressed by signature.
 solana-signature = "3"
 # The commitment level of the invoice reads; already resolved through
 # solana-rpc-client, named here because `fetch_payment` sets it explicitly.
 solana-commitment-config = "3"
 sha2 = "0.10"
+# The sponsor decodes the buyer-signed transaction, rebuilds the one message it
+# will sign, and submits it: the whole toolchain from one crate, re-exporting the
+# same `solana-pubkey`/`solana-signature` types the client code already uses.
+solana-sdk = "3"
+bincode = "1.3"
 libsql = "0.10"
+# The subscription's live EUR/SOL and EUR/USD rate, over HTTPS from a public
+# price feed. No key, so no credential to configure.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 # Parsing RPC endpoints the way a browser would, so a payment code cannot
 # smuggle a different host past the allowlist in `payments::resolve_endpoint`.
 url = "2"

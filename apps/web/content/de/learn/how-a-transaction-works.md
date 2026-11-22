@@ -78,6 +78,10 @@ Slotproduktion springen oder nachhängen, deshalb verfolgen Clients `lastValidBl
   für das Limit, das du verlangst, nicht für den Compute, den du tatsächlich nutzt. Sie geht
   vollständig an den Validator.
 
+Das sind die Gebühren des Netzwerks selbst, und sie sind nur ein Teil der Rechnung. [Was eine Zahlung
+kostet, und warum](/learn/what-a-payment-costs) deckt den Rest ab — den Anteil des Protokolls und den
+dauerhaften Beleg auf der Chain — und woraus jeder Teil bepreist wird.
+
 ## Compute: das eigentliche Budget
 
 - Eine nicht eingebaute Anweisung bekommt standardmäßig **200.000 Compute Units**; eine eingebaute

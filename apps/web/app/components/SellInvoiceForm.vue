@@ -15,6 +15,8 @@ const {
   cart,
   cartActive,
   sellingFromShops,
+  discountAllowed,
+  canInviteBuyerCodes,
   priceMode,
   priceModeItems,
   priceInput,
@@ -26,6 +28,7 @@ const {
   memo,
   detailsOpen,
   discounts,
+  allowDiscounts,
   discountCode,
   discountOptions,
   selectedDiscount,
@@ -113,8 +116,11 @@ const {
         class="-mt-2"
       />
 
+      <!-- A code prices a basket, so on the shared sell page the field appears
+           with the cart. A shop's own payment page attaches one to a typed
+           price too. Alternatively the buyer brings one. -->
       <UFormField
-        v-if="discounts.length"
+        v-if="discounts.length && discountAllowed"
         :label="t('sell.discountLabel')"
         :help="selectedDiscount
           ? t('sell.discountHelpSelected', { price: discountedPrice, percent: selectedDiscount.percent_off })
@@ -125,6 +131,16 @@ const {
           :items="discountOptions"
           class="w-full"
         />
+      </UFormField>
+
+      <!-- Only a payment built from products can offer the buyer a code, so the
+           switch that invites one appears with the cart and nowhere else. -->
+      <UFormField
+        v-if="discounts.length && canInviteBuyerCodes"
+        :label="t('sell.allowDiscountsLabel')"
+        :help="t('sell.allowDiscountsHelp')"
+      >
+        <USwitch v-model="allowDiscounts" />
       </UFormField>
 
       <UFormField

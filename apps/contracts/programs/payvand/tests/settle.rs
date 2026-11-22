@@ -40,9 +40,11 @@ use anchor_lang::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use payvand::constants::{
-    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, CONFIG_SPACE_V1, CONFIG_VERSION,
-    MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO, PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE,
-    PAYMENT_SEED, PAYMENT_SPACE, TREASURY_SEED,
+    BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, CONFIG_SPACE_V1, CONFIG_SPACE_V2,
+    CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
+    PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE,
+    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, SHOP_POLICY_SEED, SHOP_POLICY_SPACE,
+    TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
 };
 use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
@@ -51,8 +53,8 @@ use payvand::constants::{
 use payvand::events::{BudgetOpened, ConfigUpdated, PaymentSettled};
 use payvand::helpers::fee_for;
 use payvand::state::{
-    Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, TokenBudget,
-    TokenPayment,
+    Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, ShopPolicy,
+    TokenBudget, TokenPayment,
 };
 use sha2::{Digest, Sha256};
 use solana_account::Account;
@@ -93,6 +95,16 @@ const TOKEN_2022_UNSUPPORTED: &str = "Custom(6017)";
 /// `PaymentError::InvalidConfigVersion`: a config that is not the layout
 /// `migrate_config` upgrades.
 const INVALID_CONFIG_VERSION: &str = "Custom(6018)";
+/// `PaymentError::InvalidFeePrice`.
+const INVALID_FEE_PRICE: &str = "Custom(6019)";
+/// `PaymentError::FeePriceTooSoon`.
+const FEE_PRICE_TOO_SOON: &str = "Custom(6020)";
+/// `PaymentError::ShopFeeTooHigh`: a shop's multiplier above `10_000`, refused
+/// when it is written rather than when it settles.
+const SHOP_FEE_TOO_HIGH: &str = "Custom(6021)";
+/// `PaymentError::ShopPolicySellerMismatch`: a shop policy recorded under a
+/// seller other than the invoice's.
+const SHOP_POLICY_SELLER_MISMATCH: &str = "Custom(6022)";
 /// `PaymentError::BudgetExhausted`: the month's limit, not the pot.
 const BUDGET_EXHAUSTED: &str = "Custom(6005)";
 /// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
@@ -263,8 +275,8 @@ fn token_program() -> Pubkey {
     address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
 }
 
-/// The associated-token program, which creates the vault and a fresh seller's
-/// token account.
+/// The associated-token program, which creates the budget's vault and the
+/// treasury's own token account. A seller's account is theirs to open.
 fn associated_token_program() -> Pubkey {
     address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 }
@@ -412,6 +424,12 @@ fn config_pda() -> Pubkey {
 /// `["treasury"]` — the only account a fee may be sent to.
 fn treasury_pda() -> Pubkey {
     Pubkey::find_program_address(&[TREASURY_SEED], &payvand::id()).0
+}
+
+/// `["fee-anchor"]` — the admin's SOL price, the band a permissionless refresh
+/// is measured against.
+fn fee_anchor_pda() -> Pubkey {
+    Pubkey::find_program_address(&[FEE_ANCHOR_SEED], &payvand::id()).0
 }
 
 /// This program's `ProgramData` address under the upgradeable loader.
@@ -581,6 +599,62 @@ fn migrate_config_instruction(admin: Pubkey, policy: FeePolicy) -> Instruction {
         ],
         data: instruction_data("migrate_config", &args),
     }
+}
+
+/// `refresh_fee_price` arguments — the SOL price in USD then in EUR, micros per
+/// SOL — and its accounts: any signer, the config it rewrites, and the admin's
+/// price anchor that bounds it.
+fn refresh_fee_price_instruction(
+    caller: Pubkey,
+    sol_usd_micros: u64,
+    sol_eur_micros: u64,
+) -> Instruction {
+    let mut args = Vec::new();
+    args.extend_from_slice(&sol_usd_micros.to_le_bytes());
+    args.extend_from_slice(&sol_eur_micros.to_le_bytes());
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new_readonly(caller, true),
+            AccountMeta::new(config_pda(), false),
+            AccountMeta::new_readonly(fee_anchor_pda(), false),
+        ],
+        data: instruction_data("refresh_fee_price", &args),
+    }
+}
+
+/// `set_fee_price_anchor(usd, eur)`, signed by the admin: creates the anchor on
+/// the first call and re-pegs both flats at that price.
+fn set_fee_price_anchor_instruction(
+    admin: Pubkey,
+    sol_usd_micros: u64,
+    sol_eur_micros: u64,
+) -> Instruction {
+    let mut args = Vec::new();
+    args.extend_from_slice(&sol_usd_micros.to_le_bytes());
+    args.extend_from_slice(&sol_eur_micros.to_le_bytes());
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(admin, true),
+            AccountMeta::new(config_pda(), false),
+            AccountMeta::new(fee_anchor_pda(), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("set_fee_price_anchor", &args),
+    }
+}
+
+/// `price_micros` raised by `percent`, rounded down: the step a caller trying to
+/// walk the flats would send next.
+fn price_above(price_micros: u64, percent: u64) -> u64 {
+    price_micros * (100 + percent) / 100
+}
+
+/// What `fee_for` charges as a token flat at a price: the marker's rent in SOL,
+/// times the price, in six-decimal base units.
+fn flat_at(receipt_rent: u64, price_micros: u64) -> u64 {
+    (receipt_rent as u128 * price_micros as u128 / 1_000_000_000) as u64
 }
 
 /// A version 1 `Config` account: the 62-byte layout the live devnet config still
@@ -808,8 +882,11 @@ fn settle_token_payment_instruction(
     amount: u64,
     memo: &str,
 ) -> Instruction {
-    settle_token_payment_instruction_with_token_program(
+    settle_token_payment_instruction_with_sponsor(
         token_program(),
+        payer,
+        // A funded wallet is its own sponsor: one key, one signature, and the
+        // refunds land where they always did.
         payer,
         seller,
         reference,
@@ -825,6 +902,33 @@ fn settle_token_payment_instruction(
 fn settle_token_payment_instruction_with_token_program(
     token_program: Pubkey,
     payer: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    mint: Pubkey,
+    amount: u64,
+    memo: &str,
+) -> Instruction {
+    settle_token_payment_instruction_with_sponsor(
+        token_program,
+        payer,
+        payer,
+        seller,
+        reference,
+        mint,
+        amount,
+        memo,
+    )
+}
+
+/// `settle_token_payment` with the two roles split: `payer` signs for the buyer's
+/// token account, `sponsor` advances the record rents and is paid the treasury's
+/// refund of them. A relayer settlement is this call with a key the buyer does
+/// not hold.
+#[allow(clippy::too_many_arguments)]
+fn settle_token_payment_instruction_with_sponsor(
+    token_program: Pubkey,
+    payer: Pubkey,
+    sponsor: Pubkey,
     seller: Pubkey,
     reference: Pubkey,
     mint: Pubkey,
@@ -849,6 +953,7 @@ fn settle_token_payment_instruction_with_token_program(
             AccountMeta::new(ata(treasury_pda()), false),
             AccountMeta::new_readonly(token_program, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new(sponsor, true),
         ],
         data: instruction_data("settle_token_payment", &amount_and_memo(amount, memo)),
     }
@@ -959,6 +1064,21 @@ async fn refresh_blockhash(context: &mut ProgramTestContext) {
         .get_new_latest_blockhash()
         .await
         .expect("could not refresh the blockhash");
+}
+
+/// Moves the bank's clock forward, so a cooldown that reads `unix_timestamp`
+/// can be walked past without waiting. Also refreshes the blockhash, since an
+/// instruction repeated after this would otherwise be deduped as already
+/// processed.
+async fn advance_clock(context: &mut ProgramTestContext, seconds: i64) {
+    let mut clock: Clock = context
+        .banks_client
+        .get_sysvar()
+        .await
+        .expect("the clock sysvar should be readable");
+    clock.unix_timestamp += seconds;
+    context.set_sysvar(&clock);
+    refresh_blockhash(context).await;
 }
 
 async fn send(
@@ -1074,6 +1194,75 @@ async fn config(context: &ProgramTestContext, address: Pubkey) -> Config {
     Config::try_deserialize(&mut account.data.as_slice()).expect("config did not decode")
 }
 
+async fn shop_policy(context: &ProgramTestContext, address: Pubkey) -> ShopPolicy {
+    let account = account(context, address)
+        .await
+        .expect("shop policy account missing");
+    ShopPolicy::try_deserialize(&mut account.data.as_slice()).expect("shop policy did not decode")
+}
+
+/// `["shop-policy", seller, shop_key]`: one account per shop, so two shops of
+/// one seller are two policies.
+fn shop_policy_pda(seller: &Pubkey, shop_key: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[SHOP_POLICY_SEED, seller.as_ref(), shop_key.as_ref()],
+        &payvand::id(),
+    )
+    .0
+}
+
+/// `set_shop_policy`, in the account order the program declares them.
+fn set_shop_policy_instruction(
+    seller: Pubkey,
+    shop_key: Pubkey,
+    multiplier_bps: u16,
+) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(seller, true),
+            AccountMeta::new_readonly(shop_key, false),
+            AccountMeta::new(shop_policy_pda(&seller, &shop_key), false),
+            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+        ],
+        data: instruction_data("set_shop_policy", &multiplier_bps.to_le_bytes()),
+    }
+}
+
+/// The same instruction with a caller-chosen account in the policy slot, so a
+/// test can prove the seeds refuse a stand-in.
+fn set_shop_policy_instruction_to(
+    seller: Pubkey,
+    shop_key: Pubkey,
+    shop_policy: Pubkey,
+    multiplier_bps: u16,
+) -> Instruction {
+    let mut instruction = set_shop_policy_instruction(seller, shop_key, multiplier_bps);
+    instruction.accounts[2] = AccountMeta::new(shop_policy, false);
+    instruction
+}
+
+/// A settle instruction with a shop's policy appended as the trailing optional
+/// account the four settle paths take. The builders above leave it off, which is
+/// what an invoice with no shop — or one printed before shop rates existed —
+/// sends: no account at all, and `Config`'s rate.
+fn with_shop_policy(mut instruction: Instruction, shop_policy: Pubkey) -> Instruction {
+    instruction
+        .accounts
+        .push(AccountMeta::new_readonly(shop_policy, false));
+    instruction
+}
+
+/// The seller-side fee on a token path at a shop's multiplier: the same
+/// arithmetic `fee_for` does, with the percentage scaled before the flat's
+/// comparison. The flat is `TEST_FIXED_FEE`, which the default test policy keeps
+/// at zero, so the larger of the two is the scaled percentage.
+fn token_fee_at(amount: u64, multiplier_bps: u16) -> u64 {
+    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
+    let scaled = (proportional as u128 * multiplier_bps as u128 / 10_000) as u64;
+    scaled.min(amount - 1)
+}
+
 /// What `init` puts in a receipt account. The payer fronts it and the seller
 /// ends up paying for it: the seller's proceeds are reduced by exactly this, so
 /// the payer is made whole without the treasury moving a lamport.
@@ -1086,9 +1275,28 @@ fn invoice_rent() -> u64 {
     Rent::default().minimum_balance(PAYMENT_SPACE)
 }
 
+/// Anchor's `ConstraintHasOne`: `set_fee_price_anchor` is refused when the
+/// signer is not the config's admin.
+const HAS_ONE_FAILED: &str = "Custom(2001)";
+/// The account constraint on a seller's token account that was never opened:
+/// Anchor reports the missing account rather than creating it.
+const MISSING_TOKEN_ACCOUNT: &str = "Custom(3012)";
+
 /// The treasury's own rent-exempt minimum: it holds no data.
 fn treasury_rent() -> u64 {
     Rent::default().minimum_balance(0)
+}
+
+/// What one token settlement draws from the pool: the invoice's rent and the
+/// marker's, both advanced by the payer and refunded by the treasury.
+fn token_refund() -> u64 {
+    token_invoice_rent() + receipt_rent()
+}
+
+/// The lamports `withdraw_treasury` always leaves behind: the refunds it reserves
+/// for token settlements, plus the account's own rent-exempt minimum.
+fn treasury_reserve() -> u64 {
+    token_refund() * TREASURY_RESERVE_SETTLEMENTS + treasury_rent()
 }
 
 /// What the budget account's own rent costs, and therefore what the program
@@ -1097,10 +1305,19 @@ fn budget_rent() -> u64 {
     Rent::default().minimum_balance(BUDGET_SPACE)
 }
 
-/// The seller-side fee under the default test policy.
+/// The seller-side fee under the default test policy: the rate, less the
+/// marker's rent, which the SOL path charges out of the price directly — so a
+/// payment too small for the rate to cover the record pays no fee at all.
 fn fee(amount: u64) -> u64 {
     let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    (proportional + TEST_FIXED_FEE).min(amount - 1)
+    proportional.saturating_sub(receipt_rent())
+}
+
+/// The same under the token paths, where the record's rent is the currency's
+/// flat and the fee is the larger of it and the rate.
+fn token_fee(amount: u64) -> u64 {
+    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
+    proportional.max(TEST_FIXED_FEE).min(amount - 1)
 }
 
 /// A `Config` with the layout `initialize_config` writes and the given rate, for
@@ -1111,6 +1328,7 @@ fn test_policy(fee_bps: u16, fixed_fee_lamports: u64) -> Config {
         policy: test_policy_of(fee_bps, fixed_fee_lamports),
         fee_mode: FeeMode::SellerPays,
         session_fee_float: TEST_SESSION_FLOAT,
+        flats_updated_at: 0,
         bump: 255,
         treasury_bump: 254,
         version: CONFIG_VERSION,
@@ -1921,7 +2139,10 @@ async fn initialize_config_rejects_a_signer_that_is_not_the_upgrade_authority() 
 
 /// The SOL path asks the treasury for nothing since the seller started carrying
 /// the marker's rent: a treasury holding one lamport settles as well as a funded
-/// one, and the only lamports it sees are the fee arriving.
+/// one, and the only lamports it sees are the fee arriving. The price is half a
+/// SOL rather than a tenth because the fee is the rate *less* the marker's rent
+/// now, and a fee that lands on a bare system account has to leave it rent
+/// exempt — a tenth of a SOL's fee no longer does.
 #[tokio::test]
 async fn settle_payment_needs_nothing_of_the_treasury() {
     let mut context = started_with_policy(
@@ -1937,7 +2158,7 @@ async fn settle_payment_needs_nothing_of_the_treasury() {
     let payer = context.payer.pubkey();
     let seller = Keypair::new().pubkey();
     let reference = Keypair::new().pubkey();
-    let amount = LAMPORTS_PER_SOL / 10;
+    let amount = LAMPORTS_PER_SOL / 2;
 
     send(
         &mut context,
@@ -2017,30 +2238,123 @@ async fn buyer_pays_policy_is_rejected_before_it_is_implemented() {
     );
 }
 
+/// A shop's multiplier scales the rate and nothing else: half is half of the
+/// percentage, zero charges no percentage at all, and the boundaries, the
+/// marker's flat and the `amount - 1` cap are `Config`'s. That is what lets a
+/// shop discount itself without moving the record's cost onto the treasury — on
+/// a token invoice a free shop still pays the flat, and on SOL it pays nothing
+/// because its seller already hands over the rent.
 #[test]
-fn the_flat_is_charged_on_the_currencies_the_policy_names() {
-    let policy = test_policy(TEST_FEE_BPS, 89_400);
-    let amount = 10_000_000u64;
-    let rate = amount * TEST_FEE_BPS as u64 / 10_000;
+fn a_shop_multiplier_scales_the_rate_and_never_the_record() {
+    let rent = receipt_rent();
+    let flat = 89_400u64;
+    let policy = test_policy(TEST_FEE_BPS, flat);
+    let amount = 10_000_000; // 10 USDC: 2% is 200,000, above the flat.
 
-    // SOL pays the rate alone: its seller already carries the marker's rent.
-    assert_eq!(fee_for(&policy, amount, None).expect("the fee fits"), rate);
-    // A token invoice pays its currency's flat on top, which is that rent.
+    let full = fee_for(&policy, amount, Some(&usdc_mint()), rent, SHOP_FEE_BASE_BPS).expect("fits");
     assert_eq!(
-        fee_for(&policy, amount, Some(&usdc_mint())).expect("the fee fits"),
-        rate + 89_400
+        fee_for(&policy, amount, Some(&usdc_mint()), rent, 5_000).expect("fits"),
+        full / 2
+    );
+    // Free of the percentage, but not of the record.
+    assert_eq!(
+        fee_for(&policy, amount, Some(&usdc_mint()), rent, 0).expect("fits"),
+        flat
+    );
+
+    let sol_amount = 1_000_000_000;
+    let sol_full = fee_for(&policy, sol_amount, None, rent, SHOP_FEE_BASE_BPS).expect("fits");
+    // 2% of 1 SOL is 20,000,000; at half it is 10,000,000, still less the rent.
+    assert_eq!(
+        fee_for(&policy, sol_amount, None, rent, 5_000).expect("fits"),
+        10_000_000 - rent
+    );
+    assert!(sol_full > 10_000_000 - rent);
+    assert_eq!(
+        fee_for(&policy, sol_amount, None, rent, 0).expect("fits"),
+        0
+    );
+}
+
+/// The record's rent is the floor of what a seller pays, in both currencies.
+///
+/// 2% of a price below the rent is less than the rent, so the token path charges
+/// the flat — the record and nothing more — and the SOL path charges no fee,
+/// because its seller is already handing over that rent. Above the crossover the
+/// percentage takes over, and a mint the policy does not name has no record cost
+/// to cover.
+#[test]
+fn the_record_fee_is_the_floor_of_the_fee() {
+    let rent = receipt_rent();
+    let flat = 89_400u64;
+    let policy = test_policy(TEST_FEE_BPS, flat);
+
+    // 1 token: 2% is 20,000 base units, under the rent. 100,000,000 lamports:
+    // 2% is 2,000,000, still under it at 1,224,960.
+    assert_eq!(
+        fee_for(
+            &policy,
+            1_000_000,
+            Some(&usdc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        flat
     );
     assert_eq!(
-        fee_for(&policy, amount, Some(&eurc_mint())).expect("the fee fits"),
-        rate + 89_400
+        fee_for(&policy, 50_000_000, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        0
     );
 
-    // The program has no oracle: a mint that names neither currency pays no
-    // flat rather than an invented one.
+    // Above the crossover the rate is the larger share, and the SOL side takes
+    // the rent off it because the seller pays that rent separately.
+    assert_eq!(
+        fee_for(
+            &policy,
+            10_000_000,
+            Some(&usdc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        200_000
+    );
+    assert_eq!(
+        fee_for(
+            &policy,
+            10_000_000,
+            Some(&eurc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        200_000
+    );
+    assert_eq!(
+        fee_for(&policy, 1_000_000_000, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        20_000_000 - rent
+    );
+
+    // A mint that is neither currency has no flat to pay, so it keeps the rate.
     let other = Pubkey::new_from_array([3u8; 32]);
     assert_eq!(
-        fee_for(&policy, amount, Some(&other)).expect("the fee fits"),
-        rate
+        fee_for(&policy, 1_000_000, Some(&other), rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        20_000
+    );
+
+    // The cap still guards the small end: a 100% policy cannot take the price.
+    let total = test_policy(10_000, 0);
+    assert_eq!(
+        fee_for(
+            &total,
+            1_000_000,
+            Some(&usdc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        999_999
     );
 }
 
@@ -2052,30 +2366,49 @@ fn the_tier_boundary_is_marginal() {
     let policy = config_with_policy(tiered_policy());
 
     // 1% up to and including the boundary.
-    assert_eq!(fee_for(&policy, 99_999_999, None).expect("fits"), 999_999);
     assert_eq!(
-        fee_for(&policy, 100_000_000, None).expect("fits"),
+        fee_for(&policy, 99_999_999, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        999_999
+    );
+    assert_eq!(
+        fee_for(&policy, 100_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
         1_000_000
     );
     // One lamport past it owes 1% of 0.1 SOL plus 0.5% of that lamport, floored.
     assert_eq!(
-        fee_for(&policy, 100_000_001, None).expect("fits"),
+        fee_for(&policy, 100_000_001, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
         1_000_000
     );
     // 0.2 SOL: 1,000,000 plus 0.5% of the second 0.1 SOL.
     assert_eq!(
-        fee_for(&policy, 200_000_000, None).expect("fits"),
+        fee_for(&policy, 200_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
         1_500_000
     );
 
-    // The token boundary is its own number and follows the same rule.
+    // The token boundary is its own number and follows the same rule. The flat
+    // is not added on top: it is a floor, and at these sizes the rate is above
+    // it.
     assert_eq!(
-        fee_for(&policy, 10_000_000, Some(&usdc_mint())).expect("fits"),
-        100_000 + 89_400
+        fee_for(
+            &policy,
+            10_000_000,
+            Some(&usdc_mint()),
+            0,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        100_000
     );
     assert_eq!(
-        fee_for(&policy, 20_000_000, Some(&usdc_mint())).expect("fits"),
-        150_000 + 89_400
+        fee_for(
+            &policy,
+            20_000_000,
+            Some(&usdc_mint()),
+            0,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        150_000
     );
 }
 
@@ -2151,16 +2484,78 @@ async fn migrate_config_upgrades_the_v1_layout_in_place() {
 
     let migrated = config(&context, address).await;
     assert_eq!(migrated.admin, admin.pubkey());
-    assert_eq!(migrated.policy, policy);
+    // Everything the policy carries is installed except the two token flats: a
+    // migration zeroes them, so the first refresh has no stale price to be
+    // bounded against (see the refresh below).
+    assert_eq!(migrated.policy.fee_bps_below, policy.fee_bps_below);
+    assert_eq!(migrated.policy.fee_bps_above, policy.fee_bps_above);
+    assert_eq!(migrated.policy.sol_tier_lamports, policy.sol_tier_lamports);
+    assert_eq!(
+        migrated.policy.token_tier_base_units,
+        policy.token_tier_base_units
+    );
+    assert_eq!(migrated.policy.flat_usdc_base_units, 0);
+    assert_eq!(migrated.policy.flat_eurc_base_units, 0);
     assert_eq!(migrated.fee_mode, FeeMode::SellerPays);
     assert_eq!(migrated.session_fee_float, 30_000_000);
+    assert_eq!(migrated.flats_updated_at, 0, "no cooldown after migrating");
     assert_eq!(migrated.bump, bump);
     assert_eq!(migrated.treasury_bump, 254);
     assert_eq!(migrated.version, CONFIG_VERSION);
 
-    // A version 2 account is not a version 1 one: the migration is not rerun
-    // over the layout it just wrote. A fresh blockhash keeps this from deduping
-    // against the successful migration above.
+    // A migrated account carries no price anchor — that account postdates the
+    // layouts this migration upgrades — so a permissionless refresh has no band
+    // to be measured against until the admin writes one.
+    let caller = Keypair::new();
+    context.set_account(
+        &caller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    refresh_blockhash(&mut context).await;
+    let unanchored = send(
+        &mut context,
+        &[refresh_fee_price_instruction(
+            caller.pubkey(),
+            67_000_000,
+            62_000_000,
+        )],
+        &[&caller],
+    )
+    .await;
+    assert!(
+        unanchored.is_err(),
+        "a refresh before the admin anchors a price has no band"
+    );
+
+    // The admin's anchor prices both zeroed flats from the cluster's own rent,
+    // so the migration is one admin call away from being priced.
+    let rent = receipt_rent();
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[set_fee_price_anchor_instruction(
+            admin.pubkey(),
+            67_000_000,
+            62_000_000,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("the admin anchors the price after a migration");
+    let pegged = config(&context, address).await;
+    assert_eq!(
+        pegged.policy.flat_usdc_base_units,
+        flat_at(rent, 67_000_000)
+    );
+    assert_eq!(
+        pegged.policy.flat_eurc_base_units,
+        flat_at(rent, 62_000_000)
+    );
+    assert!(pegged.flats_updated_at > 0);
+
+    // A version 3 account is neither of the layouts the migration reads: it is
+    // not rerun over what it just wrote. A fresh blockhash keeps this from
+    // deduping against the successful migration above.
     refresh_blockhash(&mut context).await;
     let again = send(
         &mut context,
@@ -2173,6 +2568,228 @@ async fn migrate_config_upgrades_the_v1_layout_in_place() {
         error.contains(INVALID_CONFIG_VERSION),
         "expected {INVALID_CONFIG_VERSION}, got {error}"
     );
+}
+
+/// The token flats track the cluster's rent and a live SOL price, and the call
+/// that rewrites them is bounded by a band measured from the admin's anchor and
+/// a cooldown.
+///
+/// The config is initialized with the production flat (89,400 base units per
+/// six-decimal token), which implies a SOL price of about €73. The admin anchors
+/// $67 / €62: a caller's price outside `PRICE_ANCHOR_BAND_BPS` of that is refused
+/// by name, an honest one writes the rent at its price, and the same caller
+/// cannot do it twice in a minute.
+#[tokio::test]
+async fn refresh_fee_price_repegs_the_flats_within_its_bounds() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        100,
+        89_400,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let rent = receipt_rent();
+    let usd = 67_000_000u64;
+    let eur = 62_000_000u64;
+
+    // The band is measured from a price only the admin writes.
+    send(
+        &mut context,
+        &[set_fee_price_anchor_instruction(admin.pubkey(), usd, eur)],
+        &[&admin],
+    )
+    .await
+    .expect("the admin anchors the price");
+
+    // Anyone may call the refresh: this key is a stranger to the config.
+    let caller = Keypair::new();
+    context.set_account(
+        &caller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    // The anchor's own write stamped a refresh, so walk past that cooldown.
+    advance_clock(&mut context, FLATS_REFRESH_SECS).await;
+
+    // A price nowhere near the anchor ($1 a SOL) is refused by name.
+    let wild = send(
+        &mut context,
+        &[refresh_fee_price_instruction(
+            caller.pubkey(),
+            1_000_000,
+            1_000_000,
+        )],
+        &[&caller],
+    )
+    .await;
+    let error = wild.expect_err("a price outside the band must be refused");
+    assert!(
+        error.contains(INVALID_FEE_PRICE),
+        "expected {INVALID_FEE_PRICE}, got {error}"
+    );
+
+    // The honest one writes the rent at that price, in each currency's units.
+    send(
+        &mut context,
+        &[refresh_fee_price_instruction(caller.pubkey(), usd, eur)],
+        &[&caller],
+    )
+    .await
+    .expect("an honest refresh should be accepted");
+
+    let refreshed = config(&context, config_pda()).await;
+    assert_eq!(refreshed.policy.flat_usdc_base_units, flat_at(rent, usd));
+    assert_eq!(refreshed.policy.flat_eurc_base_units, flat_at(rent, eur));
+    assert_eq!(
+        refreshed.policy.flat_eurc_base_units, 75_947,
+        "the rent at EUR 62 in six-decimal units"
+    );
+    assert!(refreshed.flats_updated_at > 0);
+    assert_eq!(refreshed.version, CONFIG_VERSION);
+
+    // And a second call inside the cooldown is refused even at the same price.
+    refresh_blockhash(&mut context).await;
+    let again = send(
+        &mut context,
+        &[refresh_fee_price_instruction(caller.pubkey(), usd, eur)],
+        &[&caller],
+    )
+    .await;
+    let error = again.expect_err("a second refresh within a minute must be refused");
+    assert!(
+        error.contains(FEE_PRICE_TOO_SOON),
+        "expected {FEE_PRICE_TOO_SOON}, got {error}"
+    );
+    assert!(FLATS_REFRESH_SECS >= 60, "the cooldown is a real one");
+    assert!(
+        PRICE_ANCHOR_BAND_BPS < 5_000,
+        "the band is a bound, not a formality"
+    );
+}
+
+/// The band is measured from the admin's anchor, not from the flat the previous
+/// refresh wrote, so repeated permissionless calls cannot walk the flats away.
+///
+/// One accepted refresh takes the price to 9% above the anchor. Every later call
+/// then prices another 2% higher: each is within `PRICE_ANCHOR_BAND_BPS` of the
+/// flat that call would start from — a relative band would have accepted all
+/// four and drifted the record fee about 17% — and each is refused because it is
+/// outside the band around the anchor. The flat and the refresh stamp survive
+/// every refusal unchanged.
+#[tokio::test]
+async fn refresh_fee_price_cannot_walk_the_flats_away_from_the_anchor() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        100,
+        89_400,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let rent = receipt_rent();
+    let usd = 67_000_000u64;
+    let eur = 62_000_000u64;
+
+    // Only the admin chooses the anchor a refresh is measured against.
+    let stranger = Keypair::new();
+    context.set_account(
+        &stranger.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    refresh_blockhash(&mut context).await;
+    let refused = send(
+        &mut context,
+        &[set_fee_price_anchor_instruction(
+            stranger.pubkey(),
+            usd,
+            eur,
+        )],
+        &[&stranger],
+    )
+    .await;
+    let error = refused.expect_err("a stranger cannot choose the anchor");
+    assert!(
+        error.contains(HAS_ONE_FAILED),
+        "expected {HAS_ONE_FAILED}, got {error}"
+    );
+
+    send(
+        &mut context,
+        &[set_fee_price_anchor_instruction(admin.pubkey(), usd, eur)],
+        &[&admin],
+    )
+    .await
+    .expect("the admin anchors the price");
+    assert_eq!(
+        config(&context, config_pda())
+            .await
+            .policy
+            .flat_usdc_base_units,
+        flat_at(rent, usd),
+        "anchoring prices the flats too"
+    );
+
+    let caller = Keypair::new();
+    context.set_account(
+        &caller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+
+    // One honest refresh, 9% above the anchor, is inside the band and lands.
+    let accepted = price_above(usd, 9);
+    advance_clock(&mut context, FLATS_REFRESH_SECS).await;
+    send(
+        &mut context,
+        &[refresh_fee_price_instruction(
+            caller.pubkey(),
+            accepted,
+            price_above(eur, 9),
+        )],
+        &[&caller],
+    )
+    .await
+    .expect("a price inside the anchor band is accepted");
+    let walked = config(&context, config_pda()).await;
+    assert_eq!(walked.policy.flat_usdc_base_units, flat_at(rent, accepted));
+    let stamped = walked.flats_updated_at;
+
+    for step in [11u64, 13, 15, 17] {
+        let price = price_above(usd, step);
+        // What the flat on chain implies, the price the old relative band would
+        // have measured from: every step below is well within 10% of it.
+        let implied = walked.policy.flat_usdc_base_units as u128 * 1_000_000_000 / rent as u128;
+        assert!(
+            price as u128 * 10_000 <= implied * 11_000,
+            "step {step}% is inside the old band around the current flat"
+        );
+
+        advance_clock(&mut context, FLATS_REFRESH_SECS).await;
+        let attempt = send(
+            &mut context,
+            &[refresh_fee_price_instruction(
+                caller.pubkey(),
+                price,
+                price_above(eur, step),
+            )],
+            &[&caller],
+        )
+        .await;
+        let error = attempt.expect_err("a step outside the anchor band is refused");
+        assert!(
+            error.contains(INVALID_FEE_PRICE),
+            "expected {INVALID_FEE_PRICE} at step {step}%, got {error}"
+        );
+
+        let after = config(&context, config_pda()).await;
+        assert_eq!(
+            after.policy.flat_usdc_base_units,
+            flat_at(rent, accepted),
+            "a refused step must not move the flat"
+        );
+        assert_eq!(after.flats_updated_at, stamped);
+    }
 }
 
 #[tokio::test]
@@ -2411,15 +3028,21 @@ async fn zero_fee_policy_charges_no_fee() {
 #[test]
 fn fee_floors_rather_than_rounds_at_ninety_nine_lamports() {
     let policy = test_policy(TEST_FEE_BPS, 0);
-    let fee = fee_for(&policy, 99, None).expect("the fee fits in a u64");
+    let fee = fee_for(&policy, 99, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits in a u64");
 
     assert_eq!(fee, 1, "2% of 99 floored is one lamport, not two");
     assert_eq!(99 - fee, 98);
 
     // A floor, not a rounding: 2% of 199 is 3.98 and still 3. The first amount
     // whose rate is a whole lamport is 100.
-    assert_eq!(fee_for(&policy, 199, None).expect("the fee fits"), 3);
-    assert_eq!(fee_for(&policy, 100, None).expect("the fee fits"), 2);
+    assert_eq!(
+        fee_for(&policy, 199, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits"),
+        3
+    );
+    assert_eq!(
+        fee_for(&policy, 100, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits"),
+        2
+    );
 }
 
 /// Task 1.6's cap on the SOL path. `fee_bps = 10_000` is accepted (`10_001` is
@@ -2473,7 +3096,7 @@ async fn a_ten_thousand_bps_policy_admits_no_sol_invoice() {
 }
 
 #[tokio::test]
-async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
+async fn withdraw_treasury_requires_the_admin_and_keeps_the_refund_reserve() {
     let (mut context, admin_keypair) = started_with_policy(
         None,
         TEST_FEE_BPS,
@@ -2485,7 +3108,10 @@ async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
     .await;
     let admin = admin_keypair.pubkey();
     let treasury = treasury_pda();
-    let surplus = lamports(&context, treasury).await - treasury_rent();
+    // Withdrawable is everything above the reserve: one settlement's refund and
+    // the account's own rent.
+    let surplus = lamports(&context, treasury).await - treasury_reserve();
+    assert_eq!(treasury_reserve(), token_refund() + treasury_rent());
 
     // A funded stranger cannot move treasury lamports.
     let stranger = Keypair::new();
@@ -2513,7 +3139,7 @@ async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
         &[&admin_keypair],
     )
     .await;
-    let error = overdraft.expect_err("the treasury must keep its rent-exempt minimum");
+    let error = overdraft.expect_err("the treasury must keep its refund reserve");
     assert!(
         error.contains(TREASURY_UNDERFUNDED),
         "expected {TREASURY_UNDERFUNDED}, got {error}"
@@ -2527,21 +3153,26 @@ async fn withdraw_treasury_requires_the_admin_and_keeps_the_rent_minimum() {
     )
     .await
     .expect("the admin withdrawal should succeed");
-    assert_eq!(lamports(&context, treasury).await, treasury_rent());
+    assert_eq!(
+        lamports(&context, treasury).await,
+        treasury_reserve(),
+        "the reserve is what the next token settlement needs to refund"
+    );
     // The test payer covers the network fee, not the admin.
     assert_eq!(lamports(&context, admin).await, payer_before + surplus);
 }
 
 /// Task 1.6's sequence, in the order an operator can cause it: the admin
-/// withdraws the treasury down to its rent-exempt minimum, and the next settle
-/// goes through anyway — the seller pays for the marker, so a drained treasury
-/// is not a settlement the protocol cannot finish.
+/// withdraws every lamport the program allows, and the next settle goes through
+/// anyway — the seller pays for the marker, so a drained treasury is not a
+/// settlement the protocol cannot finish, and the reserve a withdrawal leaves
+/// cannot be under one refund.
 ///
 /// This used to be the underfunding guard's second case. It survives the move
 /// as the opposite assertion: what a withdrawal must not do is take the
 /// protocol's ability to settle with it.
 #[tokio::test]
-async fn withdrawing_the_treasury_to_its_rent_does_not_block_the_next_settle() {
+async fn withdrawing_the_treasury_to_its_reserve_does_not_block_the_next_settle() {
     let (mut context, admin_keypair) = started_with_policy(
         None,
         TEST_FEE_BPS,
@@ -2553,7 +3184,7 @@ async fn withdrawing_the_treasury_to_its_rent_does_not_block_the_next_settle() {
     .await;
     let admin = admin_keypair.pubkey();
     let treasury = treasury_pda();
-    let surplus = lamports(&context, treasury).await - treasury_rent();
+    let surplus = lamports(&context, treasury).await - treasury_reserve();
 
     send(
         &mut context,
@@ -2562,10 +3193,10 @@ async fn withdrawing_the_treasury_to_its_rent_does_not_block_the_next_settle() {
     )
     .await
     .expect("withdrawing the surplus failed");
-    assert_eq!(lamports(&context, treasury).await, treasury_rent());
+    assert_eq!(lamports(&context, treasury).await, treasury_reserve());
     assert!(
-        treasury_rent() < receipt_rent(),
-        "the rent of an empty account has to be short of a receipt's for this test to mean anything"
+        treasury_reserve() > token_refund(),
+        "the reserve has to cover a refund for this test to mean anything"
     );
 
     let payer = context.payer.pubkey();
@@ -2599,7 +3230,7 @@ async fn withdrawing_the_treasury_to_its_rent_does_not_block_the_next_settle() {
     assert!(account(&context, receipt_pda(&invoice)).await.is_some());
     assert_eq!(
         lamports(&context, treasury).await,
-        treasury_rent() + fee(amount),
+        treasury_reserve() + fee(amount),
         "the fee is the only lamport the treasury gains"
     );
 }
@@ -2881,11 +3512,20 @@ fn serialized_accounts_fit_their_space_constants() {
         policy: test_policy_of(200, 1),
         fee_mode: FeeMode::SellerPays,
         session_fee_float: 30_000_000,
+        flats_updated_at: 1_700_000_000,
         bump: 255,
         treasury_bump: 254,
         version: CONFIG_VERSION,
     };
     assert_eq!(borsh_len(&config) + 8, CONFIG_SPACE);
+
+    let shop_policy = ShopPolicy {
+        seller: Pubkey::from(key),
+        shop_key: Pubkey::from(key),
+        multiplier_bps: 5_000,
+        bump: 255,
+    };
+    assert_eq!(borsh_len(&shop_policy) + 8, SHOP_POLICY_SPACE);
 }
 
 // The spaces are hand-written byte sums; a pin on the arithmetic catches a
@@ -2914,15 +3554,22 @@ fn account_spaces_match_the_sizes_used_by_the_program() {
 
     // admin, the policy (two rates, their two boundaries, the two per-currency
     // flats and the two mints they apply to), fee_mode, session_fee_float,
-    // bump, treasury_bump, version.
+    // flats_updated_at, bump, treasury_bump, version.
     assert_eq!(
         CONFIG_SPACE,
-        8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 1 + 1 + 1
+        8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 8 + 1 + 1 + 1
     );
-    assert_eq!(CONFIG_SPACE, 152);
+    assert_eq!(CONFIG_SPACE, 160);
+    // The version 2 layout `migrate_config` upgrades from: the same account
+    // without the refresh cooldown.
+    assert_eq!(CONFIG_SPACE_V2, 152);
     // The version 1 layout `migrate_config` upgrades from.
     assert_eq!(CONFIG_SPACE_V1, 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1);
     assert_eq!(CONFIG_SPACE_V1, 62);
+
+    // seller, the shop key it is seeded by, the multiplier, the bump.
+    assert_eq!(SHOP_POLICY_SPACE, 8 + 32 + 32 + 2 + 1);
+    assert_eq!(SHOP_POLICY_SPACE, 75);
 }
 
 /// The config bootstrap reads the upgradeable loader's `ProgramData` metadata
@@ -3087,8 +3734,17 @@ async fn open_token_budget(context: &mut ProgramTestContext, world: &TokenWorld,
     .expect("open_token_budget failed");
 }
 
-/// One `pay_from_token_budget` from the session key to `seller`, who is expected
-/// to hold neither SOL nor a token account.
+/// `seller`'s token account, opened before the payment the way the seller would
+/// open it: its rent is the seller's, never the buyer's session float.
+fn seed_seller_token_account(context: &mut ProgramTestContext, mint: Pubkey, seller: Pubkey) {
+    context.set_account(
+        &associated_token_address(seller, mint),
+        &spl_token_account(mint, seller, 0).into(),
+    );
+}
+
+/// One `pay_from_token_budget` from the session key to `seller`, who holds no SOL
+/// but has opened their token account.
 async fn pay_from_token_budget(
     context: &mut ProgramTestContext,
     world: &TokenWorld,
@@ -3096,6 +3752,7 @@ async fn pay_from_token_budget(
     amount: u64,
 ) {
     let reference = Keypair::new().pubkey();
+    seed_seller_token_account(context, world.mint, seller);
     // The session key pays, as it does in the client.
     send_with_fee_payer(
         context,
@@ -3112,39 +3769,6 @@ async fn pay_from_token_budget(
     )
     .await
     .expect("pay_from_token_budget failed");
-}
-
-/// A fresh seller the floats cannot fund: the payment `pay_from_token_budget`
-/// sends, but expected to fail. Asserting the failure is what pins the floats'
-/// boundary instead of describing it.
-async fn refused_fresh_seller(
-    context: &mut ProgramTestContext,
-    world: &TokenWorld,
-    amount: u64,
-    tag: &str,
-) {
-    let error = send_with_fee_payer(
-        context,
-        &[pay_from_token_budget_instruction(
-            world,
-            world.mint,
-            world.vault,
-            Keypair::new().pubkey(),
-            Keypair::new().pubkey(),
-            amount,
-            tag,
-        )],
-        &world.session,
-    )
-    .await
-    .expect_err("a fresh seller past the floats must be refused");
-    // `Custom(1)` is the system program refusing the session key's transfer: it
-    // lacks the lamports to advance the next payment's rents, which is the job
-    // of the float it was given.
-    assert!(
-        error.contains("Custom(1)"),
-        "expected the session key's transfer to fail for want of lamports, got {error}"
-    );
 }
 
 /// A second mint with `budget`'s own canonical vault for it, funded with
@@ -3197,7 +3821,7 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
 
     let reference = Keypair::new().pubkey();
     let amount = 700_000;
-    let fee_t = fee(amount);
+    let fee_t = token_fee(amount);
     let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
     let treasury_before = lamports(&context, treasury_pda()).await;
 
@@ -3241,6 +3865,165 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
         lamports(&context, treasury_pda()).await,
         treasury_before - receipt_rent()
     );
+}
+
+/// The gasless case: a wallet that holds only the token has never had a lamport,
+/// so it cannot pay the network fee or advance the two record rents. The sponsor
+/// signs as fee payer, advances both rents and receives the pool's refund of
+/// them, and the buyer's lamport balance is still exactly zero after the
+/// settlement — the price is the only thing that left it. A sponsor that funded
+/// the buyer instead would hand it 3,939,360 lamports a settlement, which is the
+/// faucet this split exists to close.
+#[tokio::test]
+async fn a_sponsored_settle_pays_with_a_wallet_that_holds_no_sol() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // A buyer that was never funded: the key exists only as the authority on its
+    // token account, which is enough to sign for it.
+    let buyer = Keypair::new();
+    let buyer_token_account = associated_token_address(buyer.pubkey(), world.mint);
+    context.set_account(
+        &buyer_token_account,
+        &spl_token_account(world.mint, buyer.pubkey(), TEST_TOKEN_BALANCE).into(),
+    );
+
+    // The seller's account is their own setup step, as on every token path.
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let fee_t = token_fee(amount);
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+
+    // The relayer: the bank's own funded key, so it is the transaction's fee
+    // payer as well as the settlement's sponsor.
+    let sponsor = context.payer.pubkey();
+    let sponsor_before = lamports(&context, sponsor).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+    assert_eq!(lamports(&context, buyer.pubkey()).await, 0);
+
+    send(
+        &mut context,
+        &[settle_token_payment_instruction_with_sponsor(
+            token_program(),
+            buyer.pubkey(),
+            sponsor,
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "sponsored",
+        )],
+        &[&buyer],
+    )
+    .await
+    .expect("a sponsored token settle should succeed");
+
+    // The buyer paid the price and no lamports at all.
+    assert_eq!(
+        lamports(&context, buyer.pubkey()).await,
+        0,
+        "a sponsored settle must not leave the buyer holding lamports"
+    );
+    assert_eq!(
+        token_balance(&context, buyer_token_account).await,
+        TEST_TOKEN_BALANCE - amount
+    );
+    assert_eq!(
+        token_balance(&context, seller_token_account).await,
+        amount - fee_t
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        fee_t
+    );
+
+    // The refund came back to the sponsor, so its whole cost is the network fee:
+    // two signatures at the bank's 5,000 lamports each.
+    assert_eq!(
+        sponsor_before - lamports(&context, sponsor).await,
+        10_000,
+        "the sponsor should be refunded both rents and pay only the transaction fee"
+    );
+
+    // The pool's books are the unsponsored ones: it advanced both rents, took the
+    // invoice's back when the account closed, and is one receipt rent down for
+    // the record.
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - receipt_rent()
+    );
+    let kept = receipt(&context, receipt_pda(&invoice)).await;
+    assert_eq!(kept.invoice, invoice);
+    assert!(kept.settled_at > 0);
+}
+
+/// A sponsored settlement is refused exactly where an unsponsored one is when the
+/// pool cannot refund: before any token moves, with the named error. The buyer's
+/// zero balance is what makes this the sponsored case rather than the wallet's.
+#[tokio::test]
+async fn a_sponsored_settle_is_refused_when_the_treasury_cannot_refund() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // Only the account's own rent: not enough for the marker's rent, let alone
+    // the invoice's.
+    context.set_account(&treasury_pda(), &system_account(treasury_rent()).into());
+
+    let buyer = Keypair::new();
+    let buyer_token_account = associated_token_address(buyer.pubkey(), world.mint);
+    context.set_account(
+        &buyer_token_account,
+        &spl_token_account(world.mint, buyer.pubkey(), TEST_TOKEN_BALANCE).into(),
+    );
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let sponsor = context.payer.pubkey();
+    let error = send(
+        &mut context,
+        &[settle_token_payment_instruction_with_sponsor(
+            token_program(),
+            buyer.pubkey(),
+            sponsor,
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "sponsored",
+        )],
+        &[&buyer],
+    )
+    .await
+    .expect_err("a pool that cannot refund must not start a settlement");
+    assert!(
+        error.contains(TREASURY_UNDERFUNDED),
+        "expected {TREASURY_UNDERFUNDED}, got {error}"
+    );
+
+    // Nothing moved and no record was written.
+    assert_eq!(token_balance(&context, seller_token_account).await, 0);
+    assert_eq!(
+        token_balance(&context, buyer_token_account).await,
+        TEST_TOKEN_BALANCE
+    );
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+    assert!(account(&context, receipt_pda(&invoice)).await.is_none());
 }
 
 /// Task 3.1's cap on the token path, where there is no invoice rent to subtract:
@@ -3412,34 +4195,24 @@ async fn settle_token_payment_replay_is_rejected_as_already_settled() {
     assert_eq!(receipt_after_replay.invoice, receipt_after_first.invoice);
 }
 
-/// Task 3.2's criterion, with sellers that hold neither SOL nor a token account:
-/// three consecutive payments fit inside the float the session key opens with.
+/// The allowance path takes the wallet path's rule for the seller's account: it
+/// must already exist. Creating it from the session float would spend the
+/// buyer's money on rent nobody refunds, so opening the account is the seller's
+/// setup step, never a line on the buyer's bill.
 ///
-/// The sizing is the peak, and revision 12 moved who pays it. One payment fronts
-/// 7,744,520 at the bank's 6,960 lamports a byte — both records, the seller's
-/// account when it must be made, and the signature — and the pool refunds
-/// 5,700,240 of it in the same transaction, so each settled payment costs the key
-/// 2,044,280. `SESSION_FEE_FLOAT` is 8,000,000: it covers any one payment's peak
-/// and carries three consecutive fresh sellers. A fourth is beyond what the key
-/// still holds and is refused, which is the boundary the refill test beside this
-/// one picks up.
-///
-/// The budget's lamports never move. It pays the price in tokens only, and the
-/// pool funds the records: it refunds both per payment and takes each invoice's
-/// rent back when the invoice closes, so it ends one receipt rent down a payment
-/// while its token account holds the fees.
+/// The records stay the pool's: the session key advances both and the treasury
+/// refunds both in the same transaction, so a settled payment costs the key its
+/// own signature. The budget's lamports never move at all; its token account
+/// collects the fees.
 #[tokio::test]
-async fn the_float_carries_three_payments_to_fresh_sellers() {
+async fn a_budget_payment_never_pays_a_sellers_account_rent() {
     let (mut context, world) = TokenWorld::start().await;
 
     // The session key holds nothing until `open_token_budget` funds it.
     assert_eq!(lamports(&context, world.session.pubkey()).await, 0);
-    // The buyer holds every token there is here, so the limit is that and five
-    // payments of 200,000 sit inside it — the fourth is refused for lamports,
-    // not for the month.
     let limit = TEST_TOKEN_BALANCE;
     let price = 200_000;
-    let fee_t = fee(price);
+    let fee_t = token_fee(price);
     open_token_budget(&mut context, &world, limit).await;
     assert_eq!(token_balance(&context, world.vault).await, limit);
     // `open_token_budget` puts the key's float on the session key, and nothing
@@ -3457,25 +4230,76 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
         "the budget holds its rent, and the pool funds the records"
     );
 
-    // Three sellers who never held SOL or a token: the float pays for their
-    // accounts, the pool funds both records, and the seller receives the price
-    // less the fee with no lamports at all.
-    for _ in 0..3 {
-        let seller = Keypair::new().pubkey();
-        pay_from_token_budget(&mut context, &world, seller, price).await;
-        assert_eq!(
-            token_balance(&context, associated_token_address(seller, world.mint)).await,
-            price - fee_t
-        );
-        assert_eq!(lamports(&context, seller).await, 0);
-    }
+    // A seller who holds neither SOL nor a token account: refused, and the float
+    // is not spent opening one for them.
+    let fresh = Keypair::new().pubkey();
+    let error = send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            fresh,
+            Keypair::new().pubkey(),
+            price,
+            "fresh seller",
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a seller with no token account must be refused");
+    assert!(
+        error.contains(MISSING_TOKEN_ACCOUNT),
+        "expected {MISSING_TOKEN_ACCOUNT}, got {error}"
+    );
+    assert!(
+        account(&context, associated_token_address(fresh, world.mint))
+            .await
+            .is_none(),
+        "the buyer's float must not open the seller's account"
+    );
+    assert_eq!(lamports(&context, fresh).await, 0);
+    // A failed transaction is rolled back, so the attempt costs the float its
+    // signature and no rent at all.
+    let session_after_refusal = lamports(&context, world.session.pubkey()).await;
+    assert_eq!(session_after_refusal, session_before - TX_FEE);
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
 
-    // The float paid for what is nobody's to refund — three seller accounts and
-    // the three signatures — and nothing else.
+    // A seller who opened their own account is paid, and the session key pays
+    // its signature alone.
+    let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
+    let account_rent = lamports(&context, associated_token_address(seller, world.mint)).await;
+    pay_from_token_budget(&mut context, &world, seller, price).await;
+    assert_eq!(
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        price - fee_t
+    );
+    assert_eq!(
+        lamports(&context, seller).await,
+        0,
+        "the seller receives tokens, never lamports"
+    );
+    assert_eq!(
+        lamports(&context, associated_token_address(seller, world.mint)).await,
+        account_rent,
+        "the account's rent is exactly what the seller put there"
+    );
     assert_eq!(
         lamports(&context, world.session.pubkey()).await,
-        session_before - 3 * (token_account_rent() + TX_FEE),
-        "each payment costs the session key the seller's account and its own fee"
+        session_after_refusal - TX_FEE,
+        "a payment costs the float its own signature"
+    );
+
+    // Two more sellers, each with their own account: the cost per payment stays
+    // the signature, whatever the seller's account rent is.
+    for _ in 0..2 {
+        pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
+    }
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        session_after_refusal - 3 * TX_FEE,
+        "three payments cost the float three signatures and nothing else"
     );
     assert_eq!(
         lamports(&context, world.budget).await,
@@ -3501,35 +4325,13 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
         token_balance(&context, world.buyer_token_account).await,
         TEST_TOKEN_BALANCE - limit
     );
-
-    // A fourth fresh seller is past what the float was sized for: refused for
-    // want of lamports, and rolled back, so nothing it tried to move survives.
-    let session_after_three = lamports(&context, world.session.pubkey()).await;
-    let budget_after_three = lamports(&context, world.budget).await;
-    refused_fresh_seller(&mut context, &world, price, "fourth").await;
-    assert_eq!(token_budget(&context, world.budget).await.spent, 3 * price);
-    assert_eq!(
-        token_balance(&context, world.vault).await,
-        limit - 3 * price
-    );
-    // A failed transaction is rolled back, but the fee payer still pays its
-    // signature — the only lamports a refusal costs the float.
-    assert_eq!(
-        lamports(&context, world.session.pubkey()).await,
-        session_after_three - TX_FEE,
-        "a refused payment must cost the session key nothing but its fee"
-    );
-    assert_eq!(
-        lamports(&context, world.budget).await,
-        budget_after_three,
-        "a refused payment must not touch the budget"
-    );
 }
 
 /// The client's refill rule (`tokenFloatNeed` + `tokenFloatTopUp` in
-/// `apps/web/app/composables/useBudget.ts`), in one place: the budget carries the
-/// two records, the session key fronts the seller's account and its own fee on
-/// top of them, and each side is topped up by the difference from what it holds.
+/// `apps/web/app/composables/useBudget.ts`), in one place: the session key fronts
+/// the two records and its own fee, the pool refunds the records, and the budget
+/// is never refilled. A seller's token account is not in the sum: it must exist
+/// before the payment, so no float pays for it.
 ///
 /// The two copies cannot be merged — a Rust harness cannot call the app — so the
 /// vectors in `tests/fixtures/token-float-top-up.txt` are the shared truth both
@@ -3537,21 +4339,17 @@ async fn the_float_carries_three_payments_to_fresh_sellers() {
 fn token_float_top_up(
     invoice_rent: u64,
     receipt_rent: u64,
-    account_rent: u64,
     fee: u64,
     _budget_held: u64,
     session_held: u64,
 ) -> (u64, u64) {
     let records = invoice_rent + receipt_rent;
-    // Since revision 12 the pool refunds both records, so the budget holds its own
-    // rent and is never refilled: `to_budget` is zero whatever it holds.
-    (
-        0,
-        (records + account_rent + fee).saturating_sub(session_held),
-    )
+    // The pool refunds both records, so the budget holds its own rent and is never
+    // refilled: `to_budget` is zero whatever it holds.
+    (0, (records + fee).saturating_sub(session_held))
 }
 
-/// Refills both floats by exactly what one more fresh seller needs, by the rule
+/// Refills the session float by exactly what one more payment needs, by the rule
 /// above and the accounts as they are now.
 async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorld) {
     let budget_held = lamports(context, world.budget)
@@ -3561,7 +4359,6 @@ async fn top_up_token_floats(context: &mut ProgramTestContext, world: &TokenWorl
     let (to_budget, to_session) = token_float_top_up(
         token_invoice_rent(),
         receipt_rent(),
-        token_account_rent(),
         TX_FEE,
         budget_held,
         session_held,
@@ -3609,13 +4406,11 @@ fn the_float_top_up_rule_matches_the_shared_vectors() {
                     .expect("a number in the float fixture")
             })
             .collect::<Vec<_>>();
-        assert_eq!(numbers.len(), 8, "a row needs eight numbers: {line}");
-        let top_up = token_float_top_up(
-            numbers[0], numbers[1], numbers[2], numbers[3], numbers[4], numbers[5],
-        );
+        assert_eq!(numbers.len(), 7, "a row needs seven numbers: {line}");
+        let top_up = token_float_top_up(numbers[0], numbers[1], numbers[2], numbers[3], numbers[4]);
         assert_eq!(
             (top_up.0, top_up.1),
-            (numbers[6], numbers[7]),
+            (numbers[5], numbers[6]),
             "row: {line}"
         );
         rows += 1;
@@ -3625,42 +4420,61 @@ fn the_float_top_up_rule_matches_the_shared_vectors() {
 
 /// Task 3.2's refill path: the floats are lamports the program reads live, so the
 /// buyer's plain transfers are the whole top-up — no limit change, no token
-/// movement, and whatever is left comes back when the budget closes. Three
-/// payments fit the floats; a fourth needs the refill, and so does a fifth.
+/// movement, and whatever is left comes back when the budget closes.
+///
+/// The key has to hold one payment's advance before the refund lands, so a key a
+/// lamport short is refused; the refill is exactly the gap.
 #[tokio::test]
-async fn a_top_up_lets_the_float_carry_more_fresh_sellers() {
+async fn a_top_up_restores_a_float_short_of_one_payment() {
     let (mut context, world) = TokenWorld::start().await;
-
     let limit = TEST_TOKEN_BALANCE;
     let price = 200_000;
     open_token_budget(&mut context, &world, limit).await;
 
-    // Three fresh sellers fit, as the test above pins.
-    for _ in 0..3 {
-        pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
-    }
-
-    let fourth = Keypair::new().pubkey();
-    refused_fresh_seller(&mut context, &world, price, "fourth").await;
-
-    // One refill, and the same fourth seller goes through.
-    top_up_token_floats(&mut context, &world).await;
-    pay_from_token_budget(&mut context, &world, fourth, price).await;
-    assert_eq!(
-        token_balance(&context, associated_token_address(fourth, world.mint)).await,
-        price - fee(price)
+    // One lamport short of the advance a payment fronts: both records plus the
+    // signature.
+    let records = token_invoice_rent() + receipt_rent();
+    context.set_account(
+        &world.session.pubkey(),
+        &system_account(records + TX_FEE - 1).into(),
     );
+    let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
 
-    // The refill is a rule, not a one-off: the next fresh seller needs its own,
-    // and gets one the same way.
-    top_up_token_floats(&mut context, &world).await;
-    let fifth = Keypair::new().pubkey();
-    pay_from_token_budget(&mut context, &world, fifth, price).await;
-    assert_eq!(
-        token_balance(&context, associated_token_address(fifth, world.mint)).await,
-        price - fee(price)
+    let error = send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            Keypair::new().pubkey(),
+            price,
+            "short",
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a float that cannot front the payment must refuse it");
+    assert!(
+        error.contains("Custom(1)"),
+        "expected the session key's transfer to fail for want of lamports, got {error}"
     );
-    assert_eq!(token_budget(&context, world.budget).await.spent, 5 * price);
+    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
+
+    // One refill, and the payment it could not fund goes through.
+    top_up_token_floats(&mut context, &world).await;
+    assert_eq!(
+        lamports(&context, world.session.pubkey()).await,
+        records + TX_FEE,
+        "the refill brings the key to exactly one payment's advance"
+    );
+    pay_from_token_budget(&mut context, &world, seller, price).await;
+    assert_eq!(
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        price - token_fee(price)
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, price);
 }
 
 /// Task 3.2's last criterion: the float can be topped up on its own. A refill is
@@ -3675,13 +4489,35 @@ async fn a_float_top_up_needs_no_limit_change() {
     let price = 200_000;
     open_token_budget(&mut context, &world, limit).await;
 
-    // Spend the float to the boundary the tests above measure: three fresh
-    // sellers fit, the fourth is refused for want of lamports.
-    for _ in 0..3 {
-        pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), price).await;
-    }
-    let fourth = Keypair::new().pubkey();
-    refused_fresh_seller(&mut context, &world, price, "fourth").await;
+    // A key one lamport short of a payment's advance, and a seller whose account
+    // exists: what refuses the payment is the float, which is what makes the
+    // refill below the thing this test measures.
+    let records = token_invoice_rent() + receipt_rent();
+    context.set_account(
+        &world.session.pubkey(),
+        &system_account(records + TX_FEE - 1).into(),
+    );
+    let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
+    let error = send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            seller,
+            Keypair::new().pubkey(),
+            price,
+            "short",
+        )],
+        &world.session,
+    )
+    .await
+    .expect_err("a float that cannot front the payment must refuse it");
+    assert!(
+        error.contains("Custom(1)"),
+        "expected Custom(1), got {error}"
+    );
 
     let opened = token_budget(&context, world.budget).await;
     let spent_before = opened.spent;
@@ -3694,10 +4530,9 @@ async fn a_float_top_up_needs_no_limit_change() {
 
     // Each side now holds exactly one more payment's worth, and nothing else
     // about the budget moved.
-    let records = token_invoice_rent() + receipt_rent();
     assert_eq!(
         lamports(&context, world.session.pubkey()).await,
-        records + token_account_rent() + TX_FEE,
+        records + TX_FEE,
         "the session key should hold one more payment's advance"
     );
     assert_eq!(
@@ -3726,10 +4561,10 @@ async fn a_float_top_up_needs_no_limit_change() {
     );
 
     // The seller the float could not fund now settles, and the counter follows.
-    pay_from_token_budget(&mut context, &world, fourth, price).await;
+    pay_from_token_budget(&mut context, &world, seller, price).await;
     assert_eq!(
-        token_balance(&context, associated_token_address(fourth, world.mint)).await,
-        price - fee(price)
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        price - token_fee(price)
     );
     assert_eq!(
         token_budget(&context, world.budget).await.spent,
@@ -3749,10 +4584,13 @@ async fn pay_from_token_budget_splits_the_price_and_closes_to_the_treasury() {
 
     let seller = Keypair::new().pubkey();
     let seller_token_account = associated_token_address(seller, world.mint);
+    // The seller's account is there before the payment: their setup cost, not
+    // the buyer's.
+    seed_seller_token_account(&mut context, world.mint, seller);
     let treasury_token_account = associated_token_address(treasury_pda(), world.mint);
     let reference = Keypair::new().pubkey();
     let amount = 700_000;
-    let fee_t = fee(amount);
+    let fee_t = token_fee(amount);
     let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
 
     let session_before = lamports(&context, world.session.pubkey()).await;
@@ -3788,11 +4626,12 @@ async fn pay_from_token_budget_splits_the_price_and_closes_to_the_treasury() {
     // The seller's proceeds are the price less the fee, and no lamports.
     assert_eq!(lamports(&context, seller).await, 0);
 
-    // The session key got both rents back and paid only the account nobody
-    // refunds plus its own signature.
+    // The session key got both rents back and paid only its own signature: the
+    // seller's account existed before the payment, and the buyer funded none of
+    // its rent.
     assert_eq!(
         lamports(&context, world.session.pubkey()).await,
-        session_before - token_account_rent() - TX_FEE
+        session_before - TX_FEE
     );
 
     // The invoice closed to the pool, which keeps its rent and pays the receipt's;
@@ -3816,25 +4655,55 @@ async fn pay_from_token_budget_rejects_a_treasury_that_cannot_fund_the_records()
     let (mut context, world) = TokenWorld::start().await;
     open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
 
-    // Drain the pool to exactly the invoice rent: enough for the invoice, one
-    // receipt short of the pair.
+    // A withdrawal stops at the reserve — one refund plus the account's rent —
+    // so take the pool to exactly that and let a real settlement spend it: the
+    // first token payment is funded out of the reserve, and only the rent floor
+    // is left after it, which is the state the guard exists to refuse.
     let funded = lamports(&context, treasury_pda()).await;
-    let keep = token_invoice_rent();
     send(
         &mut context,
         &[withdraw_treasury_instruction(
             world.admin.pubkey(),
-            funded - keep,
+            funded - treasury_reserve(),
         )],
         &[&world.admin],
     )
     .await
     .expect("withdraw_treasury failed");
-    assert_eq!(lamports(&context, treasury_pda()).await, keep);
+    assert_eq!(lamports(&context, treasury_pda()).await, treasury_reserve());
+
+    let amount = 700_000;
+    // Smaller than the second payment, so the month's limit still has room for
+    // it: what has to refuse the second one is the pool, not the budget.
+    let first = 300_000;
+    let first_seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, first_seller);
+    send_with_fee_payer(
+        &mut context,
+        &[pay_from_token_budget_instruction(
+            &world,
+            world.mint,
+            world.vault,
+            first_seller,
+            Keypair::new().pubkey(),
+            first,
+            "reserve",
+        )],
+        &world.session,
+    )
+    .await
+    .expect("the reserve must fund one token settlement");
+    // The invoice's rent comes back to the pool when the invoice closes; the
+    // marker's does not, so that is what the settlement spent out of the reserve.
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_reserve() - receipt_rent(),
+        "a settlement spends the refund the reserve held"
+    );
 
     let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
     let reference = Keypair::new().pubkey();
-    let amount = 700_000;
     let vault_before = token_balance(&context, world.vault).await;
     let error = send_with_fee_payer(
         &mut context,
@@ -3856,18 +4725,22 @@ async fn pay_from_token_budget_rejects_a_treasury_that_cannot_fund_the_records()
         "expected {TREASURY_UNDERFUNDED}, got {error}"
     );
 
-    // Nothing moved: no seller account, no tokens, no invoice, no receipt, no spend.
+    // Nothing moved: the seller's account is theirs and still empty, and no
+    // tokens, invoice, receipt or spend were made.
     assert_eq!(token_balance(&context, world.vault).await, vault_before);
-    assert!(
-        account(&context, associated_token_address(seller, world.mint))
-            .await
-            .is_none(),
-        "a refused payment must not open the seller's token account"
+    assert_eq!(
+        token_balance(&context, associated_token_address(seller, world.mint)).await,
+        0,
+        "a refused payment must not move a base unit into the seller's account"
     );
     let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
     assert_eq!(lamports(&context, invoice).await, 0);
     assert!(account(&context, receipt_pda(&invoice)).await.is_none());
-    assert_eq!(token_budget(&context, world.budget).await.spent, 0);
+    assert_eq!(
+        token_budget(&context, world.budget).await.spent,
+        first,
+        "the funded settlement's spend, and nothing from the refused one"
+    );
 }
 
 /// The pool is the canonical one: a treasury with the right owner but the wrong
@@ -3879,6 +4752,7 @@ async fn pay_from_token_budget_rejects_a_substituted_treasury() {
     open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
 
     let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
     let reference = Keypair::new().pubkey();
     let amount = 700_000;
     let mut instruction = pay_from_token_budget_instruction(
@@ -4056,13 +4930,15 @@ async fn paying_from_another_mints_vault_fails_with_mint_mismatch() {
     .await
     .expect("open_treasury_token_account failed");
 
+    let other_seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, other_mint, other_seller);
     let error = send(
         &mut context,
         &[pay_from_token_budget_instruction(
             &world,
             other_mint,
             other_vault,
-            Keypair::new().pubkey(),
+            other_seller,
             Keypair::new().pubkey(),
             100_000,
             "vault",
@@ -4098,13 +4974,15 @@ async fn a_decoy_vault_with_the_same_mint_and_authority_is_rejected() {
         &spl_token_account(world.mint, world.budget, 1_000_000).into(),
     );
 
+    let decoy_seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, decoy_seller);
     let error = send(
         &mut context,
         &[pay_from_token_budget_instruction(
             &world,
             world.mint,
             decoy,
-            Keypair::new().pubkey(),
+            decoy_seller,
             Keypair::new().pubkey(),
             100_000,
             "vault",
@@ -4318,6 +5196,7 @@ async fn a_zero_fee_budget_payment_sends_no_fee_transfer() {
     .await
     .expect("update_config failed");
     let refused_seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, refused_seller);
     let error = send_with_fee_payer(
         &mut context,
         &[pay_from_token_budget_instruction(
@@ -4339,14 +5218,14 @@ async fn a_zero_fee_budget_payment_sends_no_fee_transfer() {
     );
     assert_eq!(token_budget(&context, world.budget).await.spent, price);
     assert_eq!(token_balance(&context, world.vault).await, limit - price);
-    assert!(
-        account(
+    assert_eq!(
+        token_balance(
             &context,
             associated_token_address(refused_seller, world.mint)
         )
-        .await
-        .is_none(),
-        "the refused payment must not leave a seller account behind"
+        .await,
+        0,
+        "the refused payment must leave the seller's own account untouched"
     );
 }
 
@@ -4495,8 +5374,8 @@ async fn settle_token_payment_emits_the_mint_beside_the_split() {
     assert_eq!(settled.len(), 1);
     let event = &settled[0];
     assert_eq!(event.amount, amount);
-    assert_eq!(event.fee, fee(amount));
-    assert_eq!(event.seller_proceeds, amount - fee(amount));
+    assert_eq!(event.fee, token_fee(amount));
+    assert_eq!(event.seller_proceeds, amount - token_fee(amount));
     assert_eq!(event.payer, world.buyer.pubkey());
     assert_eq!(event.seller, seller);
     assert_eq!(event.mint, world.mint);
@@ -4512,6 +5391,7 @@ async fn pay_from_token_budget_emits_the_session_key_as_the_payer() {
     open_token_budget(&mut context, &world, 1_000_000).await;
 
     let seller = Keypair::new().pubkey();
+    seed_seller_token_account(&mut context, world.mint, seller);
     let reference = Keypair::new().pubkey();
     let payloads = simulated_events(
         &mut context,
@@ -4532,8 +5412,8 @@ async fn pay_from_token_budget_emits_the_session_key_as_the_payer() {
     assert_eq!(settled.len(), 1);
     let event = &settled[0];
     assert_eq!(event.amount, amount);
-    assert_eq!(event.fee, fee(amount));
-    assert_eq!(event.seller_proceeds, amount - fee(amount));
+    assert_eq!(event.fee, token_fee(amount));
+    assert_eq!(event.seller_proceeds, amount - token_fee(amount));
     assert_eq!(event.payer, world.session.pubkey());
     assert_eq!(event.seller, seller);
     assert_eq!(event.mint, world.mint);
@@ -4636,4 +5516,489 @@ async fn open_token_budget_emits_the_mint_and_the_limit() {
     assert_eq!(event.session_key, world.session.pubkey());
     assert_eq!(event.mint, world.mint);
     assert_eq!(event.monthly_limit, limit);
+}
+
+// ---------------------------------------------------------------------------
+// shop policies
+// ---------------------------------------------------------------------------
+
+/// The shop policy's layout is the space the setter allocates: the seller, the
+/// shop key the seeds carry, the multiplier and the bump — a shop's rate costs
+/// one 75-byte account and nothing else.
+#[test]
+fn shop_policy_layout_fits_its_space() {
+    let key = Pubkey::new_from_array([7u8; 32]);
+    let policy = ShopPolicy {
+        seller: key,
+        shop_key: Pubkey::new_from_array([8u8; 32]),
+        multiplier_bps: 5_000,
+        bump: 255,
+    };
+    assert_eq!(borsh_len(&policy) + 8, SHOP_POLICY_SPACE);
+}
+
+/// A seller writes its shop's rate, and the cap is enforced when it is written:
+/// `10_000` is `Config` unchanged and accepted, anything above it is refused by
+/// name and leaves nothing behind. A second write updates the same account, so
+/// changing a rate is one signature and no close in between.
+#[tokio::test]
+async fn set_shop_policy_writes_the_rate_and_refuses_one_above_the_cap() {
+    let mut context = started().await;
+    let seller = Keypair::new();
+    context.set_account(
+        &seller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    let shop_key = Keypair::new().pubkey();
+    let policy_address = shop_policy_pda(&seller.pubkey(), &shop_key);
+
+    let over = send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            SHOP_FEE_BASE_BPS + 1,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect_err("a surcharge on buyers must not be writable");
+    assert!(
+        over.contains(SHOP_FEE_TOO_HIGH),
+        "expected {SHOP_FEE_TOO_HIGH}, got {over}"
+    );
+    assert!(
+        account(&context, policy_address).await.is_none(),
+        "a refused write must not leave the account behind"
+    );
+
+    // The account's address is derived from its seeds, so a caller cannot park
+    // a policy anywhere it likes.
+    let decoy = send(
+        &mut context,
+        &[set_shop_policy_instruction_to(
+            seller.pubkey(),
+            shop_key,
+            Keypair::new().pubkey(),
+            5_000,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect_err("the policy address is derived, not chosen");
+    assert!(
+        decoy.contains("Custom(2006)"),
+        "expected the seeds constraint, got {decoy}"
+    );
+
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            SHOP_FEE_BASE_BPS,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect("the cap itself is a valid rate");
+    let written = shop_policy(&context, policy_address).await;
+    assert_eq!(written.seller, seller.pubkey());
+    assert_eq!(written.shop_key, shop_key);
+    assert_eq!(written.multiplier_bps, SHOP_FEE_BASE_BPS);
+
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            2_500,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect("a rate change should land");
+    assert_eq!(
+        shop_policy(&context, policy_address).await.multiplier_bps,
+        2_500
+    );
+}
+
+/// The SOL wallet path takes the shop's rate: the seller keeps
+/// `amount - invoice rent - receipt rent - fee`, and `fee` is `Config`'s rate
+/// scaled by the shop's multiplier — half here, which is less than the full rate
+/// but more than the rent's floor.
+#[tokio::test]
+async fn the_sol_path_charges_the_shop_rate() {
+    let mut context = started().await;
+    let payer = context.payer.pubkey();
+    let seller = Keypair::new();
+    context.set_account(
+        &seller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    let shop_key = Keypair::new().pubkey();
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            5_000,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect("set_shop_policy failed");
+
+    let reference = Keypair::new().pubkey();
+    let amount = LAMPORTS_PER_SOL / 5;
+    // Writing the policy is the seller's own cost: the 75-byte account's rent,
+    // and nothing else.
+    let seller_before = lamports(&context, seller.pubkey()).await;
+    assert_eq!(
+        seller_before,
+        LAMPORTS_PER_SOL / 10 - Rent::default().minimum_balance(SHOP_POLICY_SPACE)
+    );
+    send(
+        &mut context,
+        &[with_shop_policy(
+            settle_instruction(payer, seller.pubkey(), reference, amount, "shop"),
+            shop_policy_pda(&seller.pubkey(), &shop_key),
+        )],
+        &[],
+    )
+    .await
+    .expect("a SOL settle with a shop policy should succeed");
+
+    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
+    let half = (proportional as u128 * 5_000u128 / 10_000) as u64;
+    let fee_shop = half.saturating_sub(receipt_rent());
+    // The full rate would have charged more: the multiplier moved the fee.
+    assert!(fee(amount) > fee_shop);
+    // The invoice rent cancels — advanced from the payer, returned when the
+    // account closes to the seller — so the seller's gain is the price less the
+    // marker's rent, which they carry, and the shop's fee.
+    assert_eq!(
+        lamports(&context, seller.pubkey()).await - seller_before,
+        amount - receipt_rent() - fee_shop
+    );
+}
+
+/// Two shops under one seller, at different rates, for the same price: each
+/// invoice pays its own shop's fee, and a third with no policy at all pays
+/// `Config`'s — the fallback every QR printed before shop rates existed relies
+/// on. One seller, two rates, enforced on chain.
+#[tokio::test]
+async fn two_shops_of_one_seller_settle_at_their_own_rates() {
+    let (mut context, world) = TokenWorld::start().await;
+    let seller = Keypair::new();
+    context.set_account(
+        &seller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
+
+    let half = Keypair::new().pubkey();
+    let fifth = Keypair::new().pubkey();
+    for (shop_key, multiplier_bps) in [(half, 5_000u16), (fifth, 2_000u16)] {
+        send(
+            &mut context,
+            &[set_shop_policy_instruction(
+                seller.pubkey(),
+                shop_key,
+                multiplier_bps,
+            )],
+            &[&seller],
+        )
+        .await
+        .expect("set_shop_policy failed");
+    }
+
+    let amount = 300_000;
+    for shop_key in [half, fifth] {
+        let reference = Keypair::new().pubkey();
+        send(
+            &mut context,
+            &[with_shop_policy(
+                settle_token_payment_instruction(
+                    world.buyer.pubkey(),
+                    seller.pubkey(),
+                    reference,
+                    world.mint,
+                    amount,
+                    "shop",
+                ),
+                shop_policy_pda(&seller.pubkey(), &shop_key),
+            )],
+            &[&world.buyer],
+        )
+        .await
+        .expect("a shop settlement should succeed");
+    }
+
+    // No policy account: an invoice that names no shop, or any invoice printed
+    // before this feature, keeps `Config`'s rate.
+    let reference = Keypair::new().pubkey();
+    send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller.pubkey(),
+            reference,
+            world.mint,
+            amount,
+            "no shop",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("the fallback should settle");
+
+    let fee_half = token_fee_at(amount, 5_000);
+    let fee_fifth = token_fee_at(amount, 2_000);
+    let fee_full = token_fee(amount);
+    assert!(fee_half > fee_fifth, "the two shops charge differently");
+    assert!(fee_full > fee_half, "the fallback is Config's whole rate");
+
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(seller.pubkey(), world.mint)
+        )
+        .await,
+        (amount - fee_half) + (amount - fee_fifth) + (amount - fee_full)
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        fee_half + fee_fifth + fee_full
+    );
+}
+
+/// The SOL allowance path takes the shop's rate too: a payment from a pot is
+/// still a payment to that shop, so the seller's share carries the shop's fee and
+/// the treasury receives it. The pot pays the price either way, so the split
+/// moves without the buyer's cost moving.
+#[tokio::test]
+async fn the_budget_path_charges_the_shop_rate() {
+    // Large enough that the shop's half still clears the marker's rent: the
+    // point is the split, not the floor.
+    let amount = LAMPORTS_PER_SOL / 5;
+    let session = Keypair::new();
+    let (mut context, _admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), LAMPORTS_PER_SOL)],
+    )
+    .await;
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    send(
+        &mut context,
+        &[open_budget_instruction(buyer, session.pubkey(), amount * 2)],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+
+    let seller = Keypair::new();
+    context.set_account(
+        &seller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    let shop_key = Keypair::new().pubkey();
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            5_000,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect("set_shop_policy failed");
+
+    let reference = Keypair::new().pubkey();
+    let invoice = payment_pda(&seller.pubkey(), &reference, amount);
+    // Read after the policy write: its rent is the seller's own cost, not part
+    // of what the settlement moves.
+    let seller_before = lamports(&context, seller.pubkey()).await;
+    let pot_before = lamports(&context, budget_address).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+
+    send_with_fee_payer(
+        &mut context,
+        &[with_shop_policy(
+            pay_from_budget_instruction(
+                session.pubkey(),
+                budget_address,
+                seller.pubkey(),
+                reference,
+                amount,
+                "shop allowance",
+            ),
+            shop_policy_pda(&seller.pubkey(), &shop_key),
+        )],
+        &session,
+    )
+    .await
+    .expect("a budget payment with a shop policy should succeed");
+
+    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
+    let half = (proportional as u128 * 5_000u128 / 10_000) as u64;
+    let fee_shop = half.saturating_sub(receipt_rent());
+    // The shop's rate, not `Config`'s: half the full fee and no less than the
+    // marker's rent. The seller's gain is the price less the marker, which they
+    // carry, and the shop's fee.
+    assert!(fee(amount) > fee_shop);
+    assert_eq!(
+        lamports(&context, seller.pubkey()).await - seller_before,
+        amount - receipt_rent() - fee_shop
+    );
+    assert_eq!(
+        lamports(&context, treasury_pda()).await - treasury_before,
+        fee_shop,
+        "the treasury's share is the shop's fee"
+    );
+    // Whatever the split, the pot pays exactly the price.
+    assert_eq!(
+        pot_before - lamports(&context, budget_address).await,
+        amount
+    );
+    let spent = budget(&context, budget_address).await;
+    assert_eq!(spent.spent, amount);
+    assert!(account(&context, invoice).await.is_none());
+}
+
+/// The token allowance path, the last of the four: the invoice's seller carries
+/// the policy, so a pot paying a shop's invoice pays that shop's rate. The
+/// vault pays the price and the seller receives it less the shop's fee, which
+/// the treasury's account for the mint receives.
+#[tokio::test]
+async fn the_token_allowance_charges_the_shop_rate() {
+    let (mut context, world) = TokenWorld::start().await;
+    let amount = 700_000;
+    // The whole balance, so the vault's leftover after the payment is visible:
+    // the pot pays the price and the shop only changes how it is split.
+    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
+
+    let seller = Keypair::new();
+    context.set_account(
+        &seller.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
+    let shop_key = Keypair::new().pubkey();
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(
+            seller.pubkey(),
+            shop_key,
+            5_000,
+        )],
+        &[&seller],
+    )
+    .await
+    .expect("set_shop_policy failed");
+
+    let reference = Keypair::new().pubkey();
+    send_with_fee_payer(
+        &mut context,
+        &[with_shop_policy(
+            pay_from_token_budget_instruction(
+                &world,
+                world.mint,
+                world.vault,
+                seller.pubkey(),
+                reference,
+                amount,
+                "shop allowance",
+            ),
+            shop_policy_pda(&seller.pubkey(), &shop_key),
+        )],
+        &world.session,
+    )
+    .await
+    .expect("a token allowance payment with a shop policy should succeed");
+
+    let fee_shop = token_fee_at(amount, 5_000);
+    assert!(token_fee(amount) > fee_shop);
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(seller.pubkey(), world.mint)
+        )
+        .await,
+        amount - fee_shop
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        fee_shop,
+        "the treasury's share is the shop's fee"
+    );
+    // The vault pays the price and keeps the rest of the allowance.
+    assert_eq!(
+        token_balance(&context, world.vault).await,
+        TEST_TOKEN_BALANCE - amount
+    );
+    assert_eq!(token_budget(&context, world.budget).await.spent, amount);
+}
+
+/// A policy recorded under one seller cannot price another seller's invoice.
+/// The account is canonical for its own contents, so the seeds pass; the refusal
+/// is the program's named check that the policy belongs to *this* invoice's
+/// seller.
+#[tokio::test]
+async fn a_policy_of_another_seller_is_refused_by_name() {
+    let (mut context, world) = TokenWorld::start().await;
+    let owner = Keypair::new();
+    context.set_account(
+        &owner.pubkey(),
+        &system_account(LAMPORTS_PER_SOL / 10).into(),
+    );
+    let shop_key = Keypair::new().pubkey();
+    send(
+        &mut context,
+        &[set_shop_policy_instruction(owner.pubkey(), shop_key, 5_000)],
+        &[&owner],
+    )
+    .await
+    .expect("set_shop_policy failed");
+
+    let seller = Keypair::new();
+    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
+    let reference = Keypair::new().pubkey();
+    let attempt = send(
+        &mut context,
+        &[with_shop_policy(
+            settle_token_payment_instruction(
+                world.buyer.pubkey(),
+                seller.pubkey(),
+                reference,
+                world.mint,
+                300_000,
+                "wrong shop",
+            ),
+            shop_policy_pda(&owner.pubkey(), &shop_key),
+        )],
+        &[&world.buyer],
+    )
+    .await;
+    let error = attempt.expect_err("another seller's rate must not apply");
+    assert!(
+        error.contains(SHOP_POLICY_SELLER_MISMATCH),
+        "expected {SHOP_POLICY_SELLER_MISMATCH}, got {error}"
+    );
 }

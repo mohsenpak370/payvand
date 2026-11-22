@@ -430,8 +430,8 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
 
     async fn test_state() -> (crate::AppState, std::path::PathBuf) {
-        let path = std::path::PathBuf::from(std::env::temp_dir())
-            .join(format!("payvand-wallet-test-{}.db", auth::random_id()));
+        let path =
+            std::env::temp_dir().join(format!("payvand-wallet-test-{}.db", auth::random_id()));
         let db = libsql::Builder::new_local(&path)
             .build()
             .await
@@ -764,6 +764,7 @@ mod tests {
             description: String::new(),
             items: Vec::new(),
             discount: None,
+            allow_discounts: false,
             cluster: "devnet".into(),
             endpoint: "https://api.devnet.solana.com".into(),
             settled_by: settled_by.map(str::to_string),

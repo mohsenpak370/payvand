@@ -54,6 +54,10 @@ Lamports — das sind 0,000005 SOL, ein Bruchteil eines Cents — plus eine opti
 wenn das Netzwerk ausgelastet ist. Die Gebühr geht ans Netzwerk, nicht an Payvand und nicht an den
 Verkäufer.
 
+Das ist nur eine Zeile dessen, was eine Zahlung kostet. [Was eine Zahlung kostet, und warum](/learn/what-a-payment-costs)
+legt den Rest dar — den Anteil des Protokolls und den dauerhaften Beleg auf der Chain — und wer
+welchen Teil zahlt.
+
 Du brauchst dafür ein wenig SOL im Wallet. Ein Wallet mit viel Stablecoin-Guthaben und null SOL kann
 nichts bewegen, was viele beim ersten Mal überrascht.
 

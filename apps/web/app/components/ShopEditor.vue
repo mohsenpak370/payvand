@@ -33,6 +33,7 @@ const priceUnits: { label: string, value: PriceUnit }[] = [
 const editingId = ref<string | null>(null)
 const productName = ref('')
 const productDetails = ref('')
+const productCategory = ref('')
 const productPrice = ref('')
 const priceUnit = ref<PriceUnit>('sol')
 const productBusy = ref(false)
@@ -92,6 +93,7 @@ function resetForm() {
   editingId.value = null
   productName.value = ''
   productDetails.value = ''
+  productCategory.value = ''
   productPrice.value = ''
   priceUnit.value = 'sol'
   productFailure.value = ''
@@ -102,6 +104,7 @@ function editProduct(product: Product) {
   editingId.value = product.id
   productName.value = product.name
   productDetails.value = product.details
+  productCategory.value = product.category
   productPrice.value = lamportsToSol(product.price_lamports)
   priceUnit.value = 'sol'
   productFailure.value = ''
@@ -115,6 +118,7 @@ async function submitProduct() {
     const body = {
       name: productName.value.trim(),
       details: productDetails.value.trim(),
+      category: productCategory.value.trim(),
       price_lamports: priceLamports.value
     }
     if (editingId.value) {
@@ -262,8 +266,16 @@ onMounted(load)
               class="flex min-w-0 items-start justify-between gap-3 py-2"
             >
               <div class="min-w-0">
-                <p class="text-sm font-medium break-words">
+                <p class="flex flex-wrap items-center gap-1.5 text-sm font-medium break-words">
                   {{ product.name }}
+                  <UBadge
+                    v-if="product.category"
+                    color="neutral"
+                    variant="subtle"
+                    size="sm"
+                  >
+                    {{ product.category }}
+                  </UBadge>
                 </p>
                 <p
                   v-if="product.details"
@@ -337,6 +349,18 @@ onMounted(load)
                     :aria-label="$t('shopEditor.priceUnitAria')"
                   />
                 </div>
+              </UFormField>
+              <UFormField
+                :label="$t('shopEditor.categoryLabel')"
+                :help="$t('shopEditor.categoryHelp')"
+                class="sm:col-span-2"
+              >
+                <UInput
+                  v-model="productCategory"
+                  class="w-full"
+                  :placeholder="$t('shopEditor.categoryPlaceholder')"
+                  :maxlength="32"
+                />
               </UFormField>
               <UFormField
                 :label="$t('shopEditor.detailsLabel')"

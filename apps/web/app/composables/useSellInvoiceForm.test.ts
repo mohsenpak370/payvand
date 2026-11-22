@@ -1,7 +1,13 @@
 import type { Ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoiceCosts, type FeePolicy, type InvoiceCosts } from '~/utils/invoiceCost'
-import { lamportsToSol, solToLamports, type SupportedCurrency } from './usePaymentApi'
+import {
+  lamportsToSol,
+  solToLamports,
+  type CreatePaymentInput,
+  type DiscountCode,
+  type SupportedCurrency
+} from './usePaymentApi'
 import { createReference } from './usePaymentProgram'
 import { useSellInvoiceForm } from './useSellInvoiceForm'
 
@@ -80,10 +86,131 @@ function sellFormIn(currency: SupportedCurrency) {
     cluster: 'devnet',
     shopsEnabled: ref(true),
     selectedDiscount: ref(null),
+    allowDiscounts: ref(false),
     priceCurrency: ref(currency),
     applyCreated: () => {}
   })
 }
+
+/**
+ * A discount code is offered where it can price something: the shared sell
+ * page shows it only when the invoice is built from a cart, while a shop's own
+ * payment page attaches one to a typed price too.
+ */
+describe('where a discount code may be attached', () => {
+  it('offers one on the shared form only when pricing from products', () => {
+    const form = sellFormIn('sol')
+    expect(form.discountAllowed.value).toBe(false)
+
+    form.priceMode.value = 'products'
+    expect(form.discountAllowed.value).toBe(true)
+  })
+
+  it('offers one on a shop\'s own page however it is priced', () => {
+    const form = useSellInvoiceForm({
+      cluster: 'devnet',
+      shopsEnabled: ref(true),
+      shopId: 'shop-1',
+      selectedDiscount: ref(null),
+      allowDiscounts: ref(false),
+      priceCurrency: ref('sol'),
+      applyCreated: () => {}
+    })
+
+    expect(form.priceMode.value).toBe('products')
+    expect(form.discountAllowed.value).toBe(true)
+
+    form.priceMode.value = 'amount'
+    expect(form.discountAllowed.value).toBe(true)
+  })
+})
+
+/**
+ * What the invoice lets the buyer do with the seller's codes. The flag rides
+ * in the QR code, and the payment page offers the buyer nothing else, so the
+ * body sent to the API is the whole of this rule.
+ */
+describe('the invoice that invites the buyer\'s own code', () => {
+  const seller = 'So11111111111111111111111111111111111111112'
+  const product = {
+    id: 'p1',
+    shop_id: 'shop-1',
+    name: 'Flat white',
+    details: '',
+    category: '',
+    price_lamports: 5_000_000,
+    created_at_unix: 0
+  }
+  const code: DiscountCode = { id: 'd1', code: 'SAVE10', percent_off: 10 }
+
+  let created: CreatePaymentInput[]
+
+  beforeEach(() => {
+    created = []
+    vi.stubGlobal('usePaymentApi', () => ({
+      createPayment: async (body: CreatePaymentInput) => {
+        created.push(body)
+        return { payment: { items: [] }, qrPayload: '{}' }
+      }
+    }))
+    vi.stubGlobal('useSolanaWallet', () => ({ publicKey: ref(seller), connected: ref(true) }))
+  })
+
+  /** Creates the invoice the form describes and returns what it posted. */
+  async function post(options: {
+    shopId?: string
+    fromProducts?: boolean
+    typedAmount?: boolean
+    allowDiscounts?: boolean
+    discount?: DiscountCode | null
+  }) {
+    const form = useSellInvoiceForm({
+      cluster: 'devnet',
+      shopsEnabled: ref(true),
+      shopId: options.shopId,
+      selectedDiscount: ref(options.discount ?? null),
+      allowDiscounts: ref(options.allowDiscounts ?? false),
+      priceCurrency: ref('sol'),
+      applyCreated: () => {}
+    })
+    if (options.typedAmount) {
+      form.priceMode.value = 'amount'
+    }
+    if (options.fromProducts) {
+      form.priceMode.value = 'products'
+      form.cart.value = [{ product, quantity: 2 }]
+    }
+    await form.createPayment()
+    return created[0]!
+  }
+
+  it('invites one on a payment built from products', async () => {
+    const body = await post({ fromProducts: true, allowDiscounts: true })
+
+    expect(body.allow_discounts).toBe(true)
+    expect(body.items).toHaveLength(1)
+  })
+
+  it('stays silent when the seller left the switch off', async () => {
+    const body = await post({ fromProducts: true })
+
+    expect(body.allow_discounts).toBe(false)
+  })
+
+  it('never invites one beside a code the seller attached', async () => {
+    const body = await post({ fromProducts: true, allowDiscounts: true, discount: code })
+
+    expect(body.discount_code).toBe('SAVE10')
+    expect(body.allow_discounts).toBe(false)
+  })
+
+  it('never invites one on a typed price, even on a shop\'s own page', async () => {
+    const body = await post({ shopId: 'shop-1', typedAmount: true, allowDiscounts: true })
+
+    expect(body.allow_discounts).toBe(false)
+    expect(body.discount_code).toBeUndefined()
+  })
+})
 
 describe('the sell form\'s net quote', () => {
   it('quotes a USDC price with the USDC mint, so the flat is charged', () => {

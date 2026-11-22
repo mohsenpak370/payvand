@@ -29,7 +29,7 @@ const seller = address('6dQgFZDTkhDMTZv9ftZe4ufU9jG5fvJEw6zpw6WCKjPz')
 const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
 
 /** `CONFIG_SIZE` from `useFeeConfig.ts`: the account the quote will decode. */
-const CONFIG_SIZE = 152
+const CONFIG_SIZE = 160
 
 let asked: string[] = []
 let rentReads = 0
@@ -56,9 +56,10 @@ async function configAccount(): Promise<string> {
   view.setBigUint64(68, 0n, true) // flat_eurc_base_units
   bytes[140] = 0 // fee_mode: SellerPays
   view.setBigUint64(141, 12_000_000n, true)
-  bytes[149] = 255 // bump
-  bytes[150] = 254 // treasury_bump
-  bytes[151] = 2 // version
+  view.setBigInt64(149, 1_760_000_000n, true) // flats_updated_at
+  bytes[157] = 255 // bump
+  bytes[158] = 254 // treasury_bump
+  bytes[159] = 3 // version
   return Buffer.from(bytes).toString('base64')
 }
 
@@ -204,29 +205,33 @@ describe('estimateInvoiceCosts against the program math', () => {
 
     expect(sol.invoiceRent).toBe(230_000)
     expect(sol.receiptRent).toBe(48_000)
-    expect(sol.fee).toBe(200_000)
-    // The smallest amount that clears the program's `InvoiceTooSmall` guard at
-    // 230,000 lamports of invoice rent and 48,000 of marker rent.
-    expect(sol.minPayable).toBe(283_674)
+    // 2% of 10,000,000 is 200,000, less the 48,000 of marker rent the seller
+    // pays out of the price directly.
+    expect(sol.fee).toBe(152_000)
+    // The smallest amount that clears the program's `InvoiceTooSmall` guard. At
+    // this size the rent is the larger of the two, so no fee is charged and the
+    // door is the two rents plus one lamport.
+    expect(sol.minPayable).toBe(278_001)
 
     const settles = (amount: number) =>
-      amount > sol.invoiceRent + sol.receiptRent + feeOn(policy, amount)
+      amount > sol.invoiceRent + sol.receiptRent + feeOn(policy, amount, undefined, sol.receiptRent)
     expect(settles(sol.minPayable)).toBe(true)
     expect(settles(sol.minPayable - 1)).toBe(false)
     expect(settles(10_000_000)).toBe(true)
-    // The fee and the permanent marker come out of the seller's side.
-    expect(sol.sellerReceives).toBe(9_800_000 - 48_000)
+    // The seller's total is the rate, marker rent included, as above.
+    expect(sol.sellerReceives).toBe(9_800_000)
     expect(sol.payerPays).toBe(10_000_000)
   })
 
   it('quotes a price the program will actually settle', async () => {
-    // At the floor the program's own numbers are tight: 5,673 of fee and 48,000
-    // of marker rent leave the seller one lamport over the 230,000 invoice rent,
-    // which is the rent they get back when the invoice closes.
-    const sol = await quote.estimateInvoiceCosts(283_674, 'sol')
+    // At the floor the program's own numbers are tight: no fee, and the 48,000
+    // of marker rent leaves the seller one lamport over the 230,000 invoice
+    // rent, which is the rent they get back when the invoice closes.
+    const sol = await quote.estimateInvoiceCosts(278_001, 'sol')
 
     expect(sol.minPayable).toBeLessThanOrEqual(sol.amount)
-    expect(sol.fee).toBe(5_673)
+    expect(sol.fee).toBe(0)
+    expect(sol.feeIsFloor).toBe(true)
     expect(sol.sellerReceives).toBe(230_001)
   })
 })

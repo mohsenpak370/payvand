@@ -27,6 +27,7 @@ export function usePaymentCheckout() {
   const wallet = useSolanaWallet()
   const { publicKey } = wallet
   const { execute } = useSolanaSignAndSendTransaction()
+  const { execute: signTransactions } = useSolanaSignTransactions()
   const budget = useBudget()
 
   const state = useCheckoutState()
@@ -90,6 +91,7 @@ export function usePaymentCheckout() {
     budget,
     client,
     execute,
+    signTransactions,
     payer: () => publicKey.value,
     payload,
     record,
@@ -113,6 +115,7 @@ export function usePaymentCheckout() {
     priceAmount,
     payableAmount,
     selected,
+    buyer: () => publicKey.value?.toString() ?? null,
     stopHold,
     refreshCosts,
     refreshBudget,

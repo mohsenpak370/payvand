@@ -54,3 +54,5 @@ which is part of why opening an allowance costs slightly more than the limit its
 
 Fees are not something to worry about or budget for. Keep a small amount of SOL in the wallet you
 pay from, and the cost of a payment stays so small that it is easier to ignore than to calculate.
+
+The network fee is only the smallest part of what a payment costs. Where the rest goes — the protocol's cut, the permanent record on chain, and the bills that keep the service running — is laid out in [what a payment costs, and why](/learn/what-a-payment-costs).

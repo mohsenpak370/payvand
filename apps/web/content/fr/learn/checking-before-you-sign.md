@@ -26,7 +26,8 @@ Lisez quatre choses à chaque fois :
    vous attendez. Si vous payez un commerce, ce doit être l'adresse du commerce figurant sur la
    facture que vous venez de scanner, pas une adresse collée depuis une conversation.
 4. **Les frais** — faibles sur Solana, mais des frais démesurés sont le signe que la transaction
-   n'est pas ce que vous croyez.
+   n'est pas ce que vous croyez. Ce qu'un paiement coûte au-delà de ces frais est décrit dans
+   [ce que coûte un paiement, et pourquoi](/learn/what-a-payment-costs).
 
 ## Envoyer n'est pas la même chose qu'autoriser
 

@@ -2,6 +2,7 @@ import { address } from '@vue-solana/nuxt/kit'
 import { vi } from 'vitest'
 import { invoiceCosts, type InvoiceCosts } from '~/utils/invoiceCost'
 import { usePaymentCheckout } from '~/composables/usePaymentCheckout'
+import type { SponsoredSettleInput } from '~/composables/usePaymentApi'
 
 /**
  * Shared scaffolding for the `usePaymentCheckout` suites. The composable leans
@@ -26,6 +27,21 @@ export const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
 export const reference = address('A8yxpWod2xrPd6YbXnaKWCTkk2WduzQKdKPUANZFQpft')
 
 export const execute = vi.fn(async () => 'SIGNATURE')
+/** What the wallet signs when a relayer pays the fee; it hands the input back. */
+export const signTransactions = vi.fn(async (transactions: Uint8Array[]) => transactions)
+/** The relayer's own key, named as fee payer when the buyer cannot pay it. */
+export const sponsor = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')
+export const getSponsor = vi.fn(async () => ({
+  available: false,
+  address: null as string | null,
+  needs_lamports: 3_944_360,
+  per_wallet_daily: 10
+}))
+export const sponsorSettle = vi.fn(async (_body: SponsoredSettleInput) => ({
+  signature: 'SPONSORED_SIGNATURE'
+}))
+/** What the wallet holds, in lamports: a funded wallet by default. */
+export const walletLamports = { value: 5_000_000 }
 export const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
 /** The transfers a spent float needs; most payments here need none. */
 export const tokenFloatTopUpInstructions = vi.fn(async () => [] as unknown[])
@@ -123,6 +139,18 @@ export function setupCheckout() {
   sendSilentTokenPayment.mockClear()
   tokenFloatTopUpInstructions.mockClear()
   tokenFloatTopUpInstructions.mockImplementation(async () => [])
+  signTransactions.mockClear()
+  signTransactions.mockImplementation(async (transactions: Uint8Array[]) => transactions)
+  getSponsor.mockClear()
+  getSponsor.mockImplementation(async () => ({
+    available: false,
+    address: null,
+    needs_lamports: 3_944_360,
+    per_wallet_daily: 10
+  }))
+  sponsorSettle.mockClear()
+  sponsorSettle.mockImplementation(async () => ({ signature: 'SPONSORED_SIGNATURE' }))
+  walletLamports.value = 5_000_000
   wallet.canSign = true
 
   vi.stubGlobal('ref', ref)
@@ -132,11 +160,24 @@ export function setupCheckout() {
   vi.stubGlobal('appT', (key: string) => key)
   vi.stubGlobal('buildInstruction', buildInstructionMock)
   vi.stubGlobal('compileWireTransaction', async () => ({}))
+  vi.stubGlobal('compileTransactionForSigning', async () => ({}))
+  vi.stubGlobal('signableWireTransaction', () => new Uint8Array())
+  vi.stubGlobal('base64WireTransaction', () => 'BASE64_WIRE')
   vi.stubGlobal('usePaymentApi', () => ({
     getPayment: async () => null,
-    validateDiscount: async () => null
+    validateDiscount: async () => null,
+    getSponsor,
+    sponsorSettle
   }))
-  vi.stubGlobal('useSolanaClient', () => ({ client: { rpc: {} } }))
+  // The balance read is the one chain call the sponsored branch makes before it
+  // builds anything, so it is what decides between the two paths.
+  vi.stubGlobal('useSolanaClient', () => ({
+    client: {
+      rpc: {
+        getBalance: () => ({ send: async () => ({ value: walletLamports.value }) })
+      }
+    }
+  }))
   // The factory reads `wallet` when the composable is set up, so a test can
   // flip the signer before constructing its checkout.
   vi.stubGlobal('useSolanaWallet', () => ({
@@ -145,6 +186,7 @@ export function setupCheckout() {
     canSignTransaction: ref(wallet.canSign)
   }))
   vi.stubGlobal('useSolanaSignAndSendTransaction', () => ({ execute }))
+  vi.stubGlobal('useSolanaSignTransactions', () => ({ execute: signTransactions }))
   vi.stubGlobal('useBudget', () => ({ sendSilentTokenPayment, tokenFloatTopUpInstructions }))
   vi.stubGlobal('useInvoiceCosts', () => ({ estimateInvoiceCosts: async () => null }))
 }

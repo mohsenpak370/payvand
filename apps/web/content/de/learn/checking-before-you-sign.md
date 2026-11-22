@@ -26,7 +26,8 @@ Lies jedes Mal vier Dinge:
    erwartest. Wenn du einem Laden zahlst, sollte es die Adresse aus der gerade gescannten Rechnung
    sein, nicht eine, die du aus einem Chat kopiert hast.
 4. **Die Gebühr** — auf Solana klein, aber eine absurd hohe Gebühr ist ein Signal, dass die
-   Transaktion nicht das ist, was du denkst.
+   Transaktion nicht das ist, was du denkst. Was eine Zahlung über diese Gebühr hinaus kostet, steht
+   in [was eine Zahlung kostet, und warum](/learn/what-a-payment-costs).
 
 ## Senden ist nicht dasselbe wie Bestätigen
 

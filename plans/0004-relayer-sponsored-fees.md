@@ -1,40 +1,100 @@
 # 0004 — Relayer and sponsored fees (gasless payments)
 
-Status: `Draft`. Follow-up to `0002`, whose out-of-scope note reads: "Payer-side
-gasless/relayer support: the payer still needs SOL for the network fee and the
-temporary invoice rent on token invoices until a sponsor exists." This file is
-where that sponsor is designed; it is not approved for implementation.
+Status: `In Progress` (2026-11-22). Follow-up to `0002`, whose out-of-scope note
+reads: "Payer-side gasless/relayer support: the payer still needs SOL for the
+network fee and the temporary invoice rent on token invoices until a sponsor
+exists." This file is where that sponsor is designed.
 
-## What exists today (`0002`, revision 17)
+Increment 1 (2026-11-22): Task A decided and recorded below, Task B shipped in
+the program, and the two harness tests of Task E written. `cargo build-sbf`
+clean, `cargo test --test settle` 59 passed (the 57 before plus the two
+sponsored ones), the IDL rebuilt and copied to
+`apps/web/app/assets/payvand.idl.json`, and the web client's token settle now
+passes `sponsor: payerAddress` — the funded path, unchanged in cost.
 
-- Every settle path makes the **payer its own fee payer and rent payer**.
-  `SettlePayment.payer` and the token settle's `payer` are `Signer` and the
-  `init` payer of both the invoice and the receipt (`instructions/sol.rs`,
-  `instructions/token.rs`). The buyer's wallet therefore needs lamports before
-  it can buy anything, even when the invoice is priced in USDC.
-- The money flow on a token invoice: the payer advances `payment_rent`
-  (`Payment` 230 bytes) and `receipt_rent` (301 bytes), the treasury refunds
-  `receipt_rent` to the payer, and the invoice account closes to the **seller**,
-  which is why the seller is paid `amount - payment_rent - fee` at settle time.
-  A payer's net cost is the price; the transient rents only have to exist for
-  the life of the transaction.
+Increment 2 (2026-11-22): Task C shipped as `apps/api/src/sponsor.rs`
+(`GET /api/sponsor` plus `POST /api/sponsor/settle`, the byte match, the two
+libSQL caps and the `sponsored_settlements` table), and Task D's choice shipped
+in the checkout: the buyer's balance decides whether the relayer is asked, the
+buyer signs a sponsor-paid message when it is, and a funded wallet still sends
+exactly what it sent before. `cargo test sponsor::` 5 passed, web `vitest run`
+over the checkout suites and `nuxt typecheck` clean. Left: Task E's devnet run
+and the two Task D items this increment did not take (the session-key case, and
+a client-side refusal that names the missing lamports).
+
+## Model (Task A, decided 2026-11-22)
+
+- **In-house sponsor**, not Kora. The sponsor is one keypair the API holds, and
+  `apps/api` already has what a paymaster needs around it: sessions (`auth.rs`),
+  rate limits (`rate_limit.rs`), a database for metering, and a Vercel
+  deployment. Kora would add a second service, its own policy engine and its own
+  operator for exactly one instruction; nothing in the program needs an external
+  paymaster, and the policy (who may be sponsored, for how much) is the
+  product's. Revisit only if sponsorship grows beyond the settle instruction.
+- **Token invoices only.** A SOL invoice is paid with the payer's own lamports,
+  so sponsoring it means buying the goods. Token invoices are the case where the
+  buyer holds the value and the fee is the only obstacle.
+- **The sponsor pays the network fee and advances both record rents**, and the
+  treasury's refund of those rents goes to the sponsor (Task B). That is the
+  whole anti-faucet decision: a sponsor that topped the buyer up would leave it
+  holding 3,939,360 lamports a settlement at mainnet's rate.
+- **Caps are the API's**: a per-wallet daily sponsored settlement count and a
+  daily total, both persisted in libSQL. When the sponsor is empty or a cap is
+  reached, the answer is an explicit refusal naming the missing lamports — a
+  caller that holds SOL still settles exactly as it does today, without the
+  sponsor.
+- **The allowance path keeps its float.** A budget's session key still fronts
+  and is refunded by the treasury, so nothing changes there; letting it borrow a
+  sponsor's fee when the float is drained is deferred, because
+  `pay_from_token_budget` would need the same refund-to-sponsor account first.
+
+## What exists today (2026-11-22)
+
+- Every SOL path and every allowance path makes the **payer its own fee payer
+  and rent payer**: `SettlePayment.payer` is `Signer` and the `init` payer of
+  both the invoice and the receipt (`instructions/sol.rs`). The buyer's wallet
+  therefore needs lamports before it can buy anything in SOL, and a token
+  invoice used to need them too — the bullet below is what changed that.
+- The money flow on a token invoice: the payer (or the session key) advances
+  `payment_rent` (the 262-byte `TokenPayment`) and `receipt_rent` (the 48-byte
+  marker), the treasury refunds **both** in the same instruction, and the
+  invoice account closes to the treasury pool that funded it — never to the
+  seller. The seller receives `amount − fee_t`, and `fee_t = max(rate, flat)`
+  is where the marker's rent comes back from. A payer's net cost is the price;
+  the transient rents only have to exist for the life of the transaction.
+- Since increment 1, `settle_token_payment` names a `sponsor` — its last
+  account — that advances both record rents and receives the treasury's refund
+  of them, while `payer` stays the signer that authorises the buyer's token
+  account. A funded wallet passes itself as the sponsor, so one key still signs
+  once and its cost is unchanged; a buyer with no SOL can instead pass a
+  relayer's key. The two allowance paths are unchanged: the session key fronts
+  the rents and the treasury refunds it.
+- A SOL invoice is different on both counts: the payer is refunded the marker's
+  rent by the treasury, and the seller absorbs it out of the price
+  (`fee = max(0, rate − receipt_rent)`), so the seller's total is
+  `amount − max(rate, receipt rent)`.
 - The allowance paths hide the wallet but not the fee: the session key's float
   (`Config::session_fee_float`, 12,000,000 lamports) pays the network fee and
-  advances the rents, and the pot makes it whole. That float is a **pre-paid
-  sponsor inside the buyer's own budget**, funded by the buyer at open time —
-  the reason the budget feature already works without a wallet popup.
+  advances the rents, and the **treasury pool** refunds both — the token budget
+  holds its own rent and nothing more. That float is a **pre-paid sponsor inside
+  the buyer's own budget**, funded by the buyer at open time — the reason the
+  budget feature already works without a wallet popup.
 - `pnpm smoke:silent-payment` and `pnpm smoke:guards` sign and submit from a
   funded key; nothing in the repo submits a transaction whose fee payer is not
   also the payer (or the session key).
 
 ## Why it is not just "let a server pay the fee"
 
-1. **The refund is a faucet if the sponsor funds the rents.** `receipt_rent`
-   (2,179,320 lamports at devnet's 5,080 per byte) goes back to the payer while
-   `payment_rent` (1,818,640) comes out of it and goes to the seller, so a
-   sponsored payer nets **+355,680 lamports per token settlement** after the
-   5,000-lamport network fee. A sponsor that tops the payer up has to fund
-   exactly the fee, or the program has to send the refund to the sponsor.
+1. **The refund is a faucet if the sponsor funds the rents.** On a token
+   settlement the treasury refunds the payer `payment_rent` (262 bytes,
+   2,714,400 lamports at mainnet's 6,960 a byte) **and** `receipt_rent`
+   (48 bytes, 1,224,960) — 3,939,360 together — so a sponsored payer nets
+   **+3,939,360 lamports per token settlement** after the 5,000-lamport network
+   fee. The treasury recovers the invoice rent when the invoice closes and the
+   marker's cost as the seller's flat, but a payer that began with no lamports
+   ends the settlement holding both rents — roughly eleven times the 355,680 the
+   301-byte receipt leaked. A sponsor that tops the payer up has to fund exactly
+   the fee, or the program has to send the refund to the sponsor.
 2. **The payer still signs.** `settle_token_payment` proves the payer's
    authority over `payer_token_account` (`token::authority = payer`), so a
    sponsor cannot sign for the buyer. Any design here is a second signature, not
@@ -50,67 +110,143 @@ where that sponsor is designed; it is not approved for implementation.
 
 ### Task A: Decide the model before the code
 
-- [ ] Choose between an **in-house sponsor** (a small service holding a keypair
+- [x] Choose between an **in-house sponsor** (a small service holding a keypair
       that co-signs as fee payer, behind the API's auth and rate limits) and
       **Kora** (an external paymaster with its own policy engine and signer).
-      Record which one here, with the reason, before any code.
-- [ ] Decide whether the sponsor pays only the network fee, or also fronts the
+      Record which one here, with the reason, before any code. — 2026-11-22:
+      in-house; see *Model* above.
+- [x] Decide whether the sponsor pays only the network fee, or also fronts the
       transient rents — and if the latter, whether the program sends the
       receipt-rent refund to the sponsor instead of the payer (Task B), so a
-      settlement cannot be farmed for lamports.
-- [ ] Decide the caps: per-wallet daily sponsored settlements, a maximum total
+      settlement cannot be farmed for lamports. — 2026-11-22: it fronts both
+      rents and the whole refund goes to it.
+- [x] Decide the caps: per-wallet daily sponsored settlements, a maximum total
       spend, and what happens when the sponsor is empty (the payment should
-      still be sendable by a payer who holds SOL).
+      still be sendable by a payer who holds SOL). — 2026-11-22: per-wallet and
+      global daily counts in the API's database; refusal when empty or capped,
+      and the funded path never calls the sponsor.
 
 ### Task B: Program — a sponsor the program knows
 
-- [ ] Add an optional `sponsor` account to `settle_token_payment` (and to
-      `settle_payment` only if Task A admits SOL invoices) that is the `init`
-      payer and receives the treasury's receipt-rent refund, keeping `payer` as
-      the signer that authorises the token account. No seeds, no account list
-      order change for existing callers: the account is the payer when none is
-      given, which keeps today's instruction byte-identical in behaviour.
-- [ ] Or, if Task A chooses the pre-funding shape instead, prove in a test that
-      the sponsored path cannot leave the payer better off than before the
-      settlement (the +355,680-lamport case above).
-- [ ] Keep the receipt's `payer` field meaning "who signed", and decide where
-      the sponsor is recorded (a new field, an event field, or not at all).
+- [x] Add a `sponsor` account to `settle_token_payment` that is the `init` payer
+      and receives the treasury's **whole** refund — the invoice and marker
+      rents, 3,939,360 lamports at mainnet's rate — keeping `payer` as the
+      signer that authorises the token account. `settle_payment` is untouched:
+      Task A refused SOL invoices. — 2026-11-22: done. The account is **required
+      and last** rather than optional: Anchor cannot make an `init` payer
+      optional, and an account that sometimes exists would be two instruction
+      layouts anyway. A funded wallet passes itself, so the semantics are the
+      old ones; the transaction gains one duplicate account (the cost in bytes
+      is a length byte and 32 bytes of account key) and every caller uses the
+      new IDL — `apps/web`, the harness, and any script built from the old one.
+- [x] The pre-funding shape is not taken, so nothing is owed here. — 2026-11-22:
+      the refund-to-sponsor shape is the anti-faucet proof, and
+      `a_sponsored_settle_pays_with_a_wallet_that_holds_no_sol` asserts the
+      buyer's zero balance stays zero.
+- [x] Keep the receipt's `payer` field meaning "who signed", and decide where
+      the sponsor is recorded (a new field, an event field, or not at all). —
+      2026-11-22: `PaymentReceipt` is unchanged and `PaymentSettled` keeps its
+      shape, because the SOL paths emit that event too and every decoder reads
+      it; the sponsor is named in the settle transaction's `msg!` log and is the
+      transaction's own fee payer on chain.
 
 ### Task C: API — the sponsor endpoint
 
-- [ ] A route that takes an unsigned transaction (or the parameters), checks the
+**Design (2026-11-22).** `POST /api/sponsor/settle` takes the **buyer-signed
+transaction**, not a list of instructions: the API rebuilds the one
+`settle_token_payment` message it expects from `(buyer, seller, reference, mint,
+amount, memo)` — sponsor as fee payer, the derived invoice, receipt, config,
+treasury and token accounts — compares the message bytes with the received
+transaction's, and only on an exact match adds the sponsor's signature and
+submits. A different instruction, account, amount or mint is a byte mismatch and
+is never signed, so the sponsor signs exactly one shape instead of trusting a
+parser. The builder mirrors `usePaymentProgram`'s IDL-driven one, and a test
+pins the two to each other.
+
+- [x] A route that takes an unsigned transaction (or the parameters), checks the
       allowed instruction set and the invoice's price against the chain, signs
       as fee payer, and submits. `apps/api` already has `auth.rs`,
-      `rate_limit.rs` and per-user sessions to hang this on.
-- [ ] Reject anything that is not one of the settle/allowance instructions, or
+      `rate_limit.rs` and per-user sessions to hang this on. — 2026-11-22:
+      `POST /api/sponsor/settle` takes the buyer-signed base64 transaction, and
+      `GET /api/sponsor` answers whether a sponsor exists, its address, and the
+      lamports a wallet needs before asking for one (`needs_lamports`, the
+      262-byte invoice's rent + the 48-byte marker's + one signature =
+      3,944,360 at mainnet's rate).
+- [x] Reject anything that is not one of the settle/allowance instructions, or
       whose accounts do not match the invoice the API knows — a sponsor that
-      signs arbitrary instructions is a wallet, not a sponsor.
-- [ ] Meter spend per user and globally, persist it in D1, and return a clear
-      refusal the client can show ("this payment needs SOL for the network
-      fee") instead of a silent failure.
+      signs arbitrary instructions is a wallet, not a sponsor. — 2026-11-22:
+      the module rebuilds the single expected `settle_token_payment` message
+      from the request's fields and refuses a byte mismatch before signing; it
+      never parses the received instruction. The price is the request's, which
+      is safe because it is also in the invoice's seeds: a different amount is a
+      different invoice, so the message cannot match.
+- [x] Meter spend per user and globally, persist it in the API's libSQL
+      database (`apps/api/src/db.rs` — this repo does not use D1), and return a
+      clear refusal the client can show ("this payment needs SOL for the network
+      fee") instead of a silent failure. — 2026-11-22:
+      `sponsored_settlements` counts a rolling 24 hours per account
+      (`SPONSOR_DAILY_PER_WALLET`, 10) and for the deployment
+      (`SPONSOR_DAILY_TOTAL`, 200); the caps are checked before the transaction
+      is even decoded, and both refusals are 429s with the reason and the
+      remaining-lamports hint in the message. A row is written only for a
+      transaction the cluster accepted. `cargo test sponsor::` covers the two
+      caps and the keypair parsing.
 
 ### Task D: Client
 
-- [ ] Send through the sponsor only when the payer's balance is below what the
-      transaction needs (fee + rents), so funded wallets keep today's path.
+- [x] Send through the sponsor only when the payer's balance is below what the
+      transaction needs (fee + rents), so funded wallets keep today's path. —
+      2026-11-22: the token wallet path reads the payer's balance and compares it
+      with what that settle advances (`invoiceRent + receiptRent + networkFee`,
+      which is the endpoint's `needs_lamports` plus the client's fee estimate).
+      Below it, `GET /api/sponsor` is asked and, if it answers yes, the
+      instruction is built with the sponsor as its fee payer and its `sponsor`
+      account, the buyer signs with `useSolanaSignTransactions`, the fee payer's
+      slot is left empty, and the base64 wire bytes go to `POST
+      /api/sponsor/settle`. Above it nothing is asked of the endpoint at all and
+      the same `execute()` send runs as before. Pinned by
+      `pays its own fee and rents when the wallet holds them` (no sponsor call)
+      and `asks the relayer to front them when the wallet cannot` in
+      `usePaymentCheckout.test.ts`.
 - [ ] Show the sponsored case honestly: the checkout already says the payer
       pays the price and nothing else; confirm no new line appears and that the
-      refusal path names the missing lamports.
+      refusal path names the missing lamports. — Half done, 2026-11-22, by
+      inspection: no template or `InvoiceCosts` field changed, so the sponsored
+      path shows the same price and the same fee note, and the buyer's own
+      lamport cost is zero
+      by the program's refund to the sponsor (`0002` Task 3.5's rule). A refusal
+      from the endpoint arrives as its own message through `failure` — the 429
+      text names the daily limit and asks for a little SOL. *Not done:* when
+      `GET /api/sponsor` simply reports `available: false`, the client falls back
+      to the wallet's own send and the refusal the buyer sees is the chain's,
+      not a lamport count (`keeps the wallet’s own path when no relayer is
+      available`).
 - [ ] Cover the session-key case too: a budget whose float has been drained
       (`0002` Task 2.3's warning) should be able to borrow the sponsor's fee.
+      *Deferred by the Model decision above: it needs the same refund-to-sponsor
+      account on `pay_from_token_budget`.*
 
 ### Task E: Tests and devnet
 
-- [ ] Harness: a token settle with a zero-lamport payer and a sponsor as fee
-      payer and rent payer, asserting the payer's lamport delta is zero (or
-      zero minus nothing), the seller still receives `amount - fee`, the
-      treasury's refund goes to the sponsor, and a second settlement is refused
-      by the receipt.
-- [ ] Harness: a sponsored settle with a lamport-less payer fails cleanly with
+- [x] Harness: a token settle with a zero-lamport payer and a sponsor as fee
+      payer and rent payer, asserting the payer's lamport delta is zero, the
+      seller still receives `amount - fee`, the treasury's refund goes to the
+      sponsor, and the receipt is written. — 2026-11-22:
+      `a_sponsored_settle_pays_with_a_wallet_that_holds_no_sol`; the sponsor ends
+      10,000 lamports down, the two signatures' fee and nothing else, and the
+      treasury's lamports fall by exactly the marker's rent.
+      *(The "second settlement refused" half is already covered for every token
+      settle by `settle_token_payment_replay_is_rejected_as_already_settled`, so
+      the sponsored test does not repeat it.)*
+- [x] Harness: a sponsored settle with a lamport-less payer fails cleanly with
       `TreasuryUnderfunded` when the treasury cannot refund, exactly as an
-      unsponsored one does.
+      unsponsored one does. — 2026-11-22:
+      `a_sponsored_settle_is_refused_when_the_treasury_cannot_refund`.
 - [ ] Devnet: one sponsored settle through the real endpoint, recorded here with
-      its signature and the sponsor's balance change.
+      its signature and the sponsor's balance change. This is also the first
+      time a real wallet signs a transaction whose fee payer is not its own
+      account (`useSolanaSignTransactions` over the wire bytes with the fee
+      payer's slot empty), which no test here can stand in for.
 
 ## Acceptance criteria
 
@@ -120,7 +256,10 @@ where that sponsor is designed; it is not approved for implementation.
 - [ ] The sponsor cannot be induced to pay for anything outside the allowlist,
       and its total spend is bounded by configuration, not by client behaviour.
 - [ ] A funded payer's transaction is unchanged (same instructions, same fee
-      payer) when the sponsor is not used.
+      payer) when the sponsor is not used. *(Amended 2026-11-22: the instruction
+      now carries a final `sponsor` account, which a funded payer fills with its
+      own key — so the transaction is not byte-identical, but the signer, the
+      fee payer, the splits and the buyer's cost are.)*
 - [ ] `README.md` and `DEV.md` state who pays the network fee in each case.
 
 ## Verification
@@ -137,13 +276,15 @@ where that sponsor is designed; it is not approved for implementation.
 
 `0002` Task 4.1 (the float sweep), Task 3.2 (float sizing) and revision 12
 (pool-funded rents on the budget paths) — the last is the closest existing
-precedent for a third party paying a payer's costs.
+precedent for a third party paying a payer's costs. `0006`'s compressed receipts
+would remove the marker and its rent, which re-prices the refund this plan
+routes to the sponsor, so do not size the sponsor's cap before that decision.
 
 ## Risks And Mitigations
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Sponsored refunds become a lamport faucet | High | Fund only the fee, or route the receipt-rent refund to the sponsor (Task B). |
+| Sponsored refunds become a lamport faucet | High | Fund only the fee, or route the whole rent refund (invoice + marker) to the sponsor (Task B). |
 | Sponsor key is compromised | Critical | Instruction allowlist, per-user and global caps, key held in the API's secret store, rotation documented. |
 | Sponsor silently fails, payment looks broken | Medium | Explicit refusal the client renders, plus a funded-wallet fallback path. |
 | Sponsored flow diverges from the normal one | Medium | One program instruction with an optional account; the funded path keeps its exact account list. |

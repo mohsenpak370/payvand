@@ -152,6 +152,17 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
           description: settled.description || current.description
         }
         paidCode.value = targets[settledIndex]?.code ?? null
+        // A code the seller attached is spent by the buyer who paid it: record
+        // the use now, while both the code and the payer are known.
+        if (paidCode.value) {
+          void api.recordDiscountUse({
+            code: paidCode.value,
+            seller: settled.seller || current.seller,
+            invoice: settled.payment_pda
+          }).catch(() => {
+            // The API stores the settlement when it reads it; a later read retries.
+          })
+        }
         // The seller is holding this screen up for the customer, so the payment
         // arriving is worth hearing without having to watch the badge.
         playSuccess()

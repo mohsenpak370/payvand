@@ -414,10 +414,11 @@
     {
       "name": "migrate_config",
       "docs": [
-        "Upgrades the live version 1 config account to version 2 in place. Admin",
-        "only, and only once: the account must be the old 62-byte layout and must",
-        "record the signer as its admin. It carries the admin, fee mode and",
-        "session float over and installs the `FeePolicy` passed here."
+        "Upgrades the live config account — version 1 or 2 — to version 3 in place. Admin",
+        "only, and only once: the account must be one of the two older layouts and",
+        "must record the signer as its admin. It carries the admin, fee mode and",
+        "session float over and installs the `FeePolicy` passed here, except both",
+        "token flats, which it zeroes until `set_fee_price_anchor` prices them."
       ],
       "discriminator": [
         92,
@@ -1129,6 +1130,46 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "shop_policy",
+          "docs": [
+            "The shop that priced this invoice: optional and trailing, exactly as on",
+            "`settle_payment`. The allowance path is where a shop rate matters most —",
+            "a buyer paying silently from a pot still pays the shop's rate, because the",
+            "policy travels with the invoice's seller."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  111,
+                  112,
+                  45,
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.seller",
+                "account": "ShopPolicy"
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.shop_key",
+                "account": "ShopPolicy"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1323,93 +1364,14 @@
         },
         {
           "name": "seller_token_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "path": "seller"
-              },
-              {
-                "kind": "const",
-                "value": [
-                  6,
-                  221,
-                  246,
-                  225,
-                  215,
-                  101,
-                  161,
-                  147,
-                  217,
-                  203,
-                  225,
-                  70,
-                  206,
-                  235,
-                  121,
-                  172,
-                  28,
-                  180,
-                  133,
-                  237,
-                  95,
-                  91,
-                  55,
-                  145,
-                  58,
-                  140,
-                  245,
-                  133,
-                  126,
-                  255,
-                  0,
-                  169
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                140,
-                151,
-                37,
-                143,
-                78,
-                36,
-                137,
-                241,
-                187,
-                61,
-                16,
-                41,
-                20,
-                142,
-                13,
-                131,
-                11,
-                90,
-                19,
-                153,
-                218,
-                255,
-                16,
-                132,
-                4,
-                142,
-                123,
-                216,
-                219,
-                233,
-                248,
-                89
-              ]
-            }
-          }
+          "docs": [
+            "The seller's own token account, which must already exist — the same rule",
+            "`settle_token_payment` applies. Creating it here would spend the session",
+            "float, and that float is the buyer's money: the rent would be a fee the",
+            "buyer pays, and nobody refunds it. Opening the account is the seller's",
+            "setup step, like having a wallet at all."
+          ],
+          "writable": true
         },
         {
           "name": "payment",
@@ -1554,6 +1516,45 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "shop_policy",
+          "docs": [
+            "The shop that priced this invoice: optional and trailing, as on the other",
+            "three settle paths, so an allowance payment from a pot pays the shop's",
+            "rate when the invoice names one and `Config`'s when it does not."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  111,
+                  112,
+                  45,
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.seller",
+                "account": "ShopPolicy"
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.shop_key",
+                "account": "ShopPolicy"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1564,6 +1565,275 @@
         {
           "name": "memo",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "refresh_fee_price",
+      "docs": [
+        "Re-pegs the two token flats — the marker's rent expressed in USDC and in",
+        "EURC — to a live SOL price. Permissionless and bounded: a plausible price",
+        "only, one within `PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one",
+        "call a minute. The band is measured from the anchor rather than the flat",
+        "it rewrites, so repeated calls cannot walk the flats anywhere."
+      ],
+      "discriminator": [
+        214,
+        84,
+        145,
+        166,
+        150,
+        161,
+        208,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone may call this and pays the network fee for it; the bounds inside",
+            "are the protection, not the key. The app refreshes the flats from its",
+            "rate feed on the same five-minute cache it prices invoices with."
+          ],
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "anchor",
+          "docs": [
+            "The admin's price the supplied one is measured against. Required rather",
+            "than optional: a deployment whose admin has not priced it yet has no",
+            "band, so there is nothing to refresh within."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  45,
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "sol_usd_micros",
+          "type": "u64"
+        },
+        {
+          "name": "sol_eur_micros",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_fee_price_anchor",
+      "docs": [
+        "Writes the SOL price the permissionless refresh is measured against —",
+        "`[\"fee-anchor\"]`, created on the first call — and prices both token flats",
+        "at it from the cluster's current rent. Admin only: it is the one price a",
+        "permissionless caller cannot choose."
+      ],
+      "discriminator": [
+        84,
+        244,
+        251,
+        236,
+        156,
+        235,
+        89,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The recorded admin: the only key whose price the band is measured from."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "anchor",
+          "docs": [
+            "Created on the first call and rewritten on every later one."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  45,
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "sol_usd_micros",
+          "type": "u64"
+        },
+        {
+          "name": "sol_eur_micros",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_shop_policy",
+      "docs": [
+        "Sets a shop's multiplier on the global fee policy — its own rate, in",
+        "basis points on `Config`'s two rates, `10_000` being `Config` unchanged.",
+        "",
+        "Signed by the seller and seeded by the seller plus the key the API keeps",
+        "beside its `shops` row, so a shop is priced on chain by the wallet that",
+        "owns it and two shops of one wallet can charge differently. The cap is",
+        "enforced here rather than at settle time: a shop may discount itself and",
+        "never surcharge a buyer, and no settlement has an out-of-band rate to",
+        "handle. The account is optional on every settle path — an invoice that",
+        "names none pays `Config`'s rate, which is what keeps every QR printed",
+        "before this landed working."
+      ],
+      "discriminator": [
+        120,
+        171,
+        36,
+        196,
+        241,
+        54,
+        245,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "docs": [
+            "The shop's seller: the only key that may write this shop's rate, and the",
+            "one that pays the account's rent. It is also the first seed, so no",
+            "caller can write a policy attributed to a wallet that did not sign."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "shop_key",
+          "docs": [
+            "only ever a PDA seed — the program never reads it — so it needs no data",
+            "and no owner, and it must not be a signer (a shop is not a wallet)."
+          ]
+        },
+        {
+          "name": "shop_policy",
+          "docs": [
+            "Created on the first write and rewritten on every later one, so a seller",
+            "changing a rate does not need a second instruction or a close."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  111,
+                  112,
+                  45,
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "shop_key"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "multiplier_bps",
+          "type": "u16"
         }
       ]
     },
@@ -1735,6 +2005,48 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "shop_policy",
+          "docs": [
+            "The shop that priced this invoice, when its seller has one. Optional and",
+            "trailing, so every invoice printed before shop rates existed settles",
+            "exactly as it did: no account means `Config`'s rate. The seeds derive it",
+            "from the seller and shop key it records, so a stand-in address is refused",
+            "here; whether it belongs to *this* invoice's seller is the handler's",
+            "named check."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  111,
+                  112,
+                  45,
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.seller",
+                "account": "ShopPolicy"
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.shop_key",
+                "account": "ShopPolicy"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1757,7 +2069,14 @@
         "so an invoice can only ever be settled for the exact price its QR",
         "shows. The mint is in the seeds too, so a USDC invoice and a SOL",
         "invoice that happen to share a reference and a price are different",
-        "accounts and cannot pay for each other."
+        "accounts and cannot pay for each other.",
+        "",
+        "The buyer signs for its own token account, and a `sponsor` pays for the",
+        "settlement's two record rents and receives the treasury's refund of",
+        "them. A funded wallet passes itself as the sponsor — one signature, no",
+        "change in cost — and a wallet holding only the token passes a relayer's",
+        "key, which turns a zero-lamport buyer into a payer without being a",
+        "lamport faucet for it."
       ],
       "discriminator": [
         236,
@@ -1773,9 +2092,9 @@
         {
           "name": "payer",
           "docs": [
-            "Advances the invoice and receipt rents and the network fee; the treasury",
-            "refunds both rents in this same instruction, so the buyer's lamports",
-            "loss is the network fee alone and the price is all they pay."
+            "The buyer. Its signature proves it owns `payer_token_account` — which is",
+            "all a sponsor cannot do for it — and its wallet loses nothing: every",
+            "lamport this settlement advances belongs to `sponsor` below."
           ],
           "writable": true,
           "signer": true
@@ -1949,6 +2268,65 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "sponsor",
+          "docs": [
+            "Who pays for this settlement's records. It advances the invoice's rent",
+            "and the marker's (`init`, above) and receives the treasury's refund of",
+            "both in this same instruction, so its net cost is the network fee — the",
+            "fee it signs as — and nothing else. A funded wallet passes its own key",
+            "here and is therefore its own sponsor; a wallet holding only the token",
+            "passes a relayer's, which turns a zero-lamport buyer into a payer.",
+            "",
+            "The refund goes to this account and never to `payer` on purpose: a",
+            "sponsor that topped a buyer up would otherwise hand it both rents —",
+            "3,939,360 lamports per settlement at mainnet's rate — for the price of",
+            "one signature."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "shop_policy",
+          "docs": [
+            "The shop that priced this invoice, when its seller has one: optional and",
+            "trailing, so a funded or sponsored settle that names none pays `Config`'s",
+            "rate exactly as before. The seeds prove the account is the canonical PDA",
+            "for its own contents; the handler refuses one recorded under another",
+            "seller by name."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  111,
+                  112,
+                  45,
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.seller",
+                "account": "ShopPolicy"
+              },
+              {
+                "kind": "account",
+                "path": "shop_policy.shop_key",
+                "account": "ShopPolicy"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -2031,7 +2409,9 @@
     {
       "name": "withdraw_treasury",
       "docs": [
-        "Moves treasury surplus to the admin, leaving its rent-exempt minimum.",
+        "Moves treasury surplus to the admin. It always leaves the account's",
+        "rent-exempt minimum plus `TREASURY_RESERVE_SETTLEMENTS` settlements' worth",
+        "of refunds, so a withdrawal cannot be what stops the next token payment.",
         "No payment path can touch the treasury this way."
       ],
       "discriminator": [
@@ -2133,6 +2513,19 @@
       ]
     },
     {
+      "name": "FeeAnchor",
+      "discriminator": [
+        212,
+        238,
+        93,
+        41,
+        89,
+        181,
+        19,
+        219
+      ]
+    },
+    {
       "name": "Payment",
       "discriminator": [
         227,
@@ -2156,6 +2549,19 @@
         235,
         126,
         109
+      ]
+    },
+    {
+      "name": "ShopPolicy",
+      "discriminator": [
+        137,
+        252,
+        106,
+        25,
+        11,
+        191,
+        217,
+        83
       ]
     },
     {
@@ -2321,6 +2727,26 @@
       "code": 6018,
       "name": "InvalidConfigVersion",
       "msg": "This config account is not the version this migration upgrades"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidFeePrice",
+      "msg": "That SOL price is not a price the program will write"
+    },
+    {
+      "code": 6020,
+      "name": "FeePriceTooSoon",
+      "msg": "The flats were refreshed a moment ago"
+    },
+    {
+      "code": 6021,
+      "name": "ShopFeeTooHigh",
+      "msg": "A shop's multiplier cannot exceed 100%"
+    },
+    {
+      "code": 6022,
+      "name": "ShopPolicySellerMismatch",
+      "msg": "This shop policy belongs to another seller"
     }
   ],
   "types": [
@@ -2419,8 +2845,9 @@
         "change the policy, and the fee destination is derived from a seed here",
         "rather than named by a caller, so no settlement can redirect it.",
         "",
-        "Version 2 carries the tiered `FeePolicy`; version 1 was one rate plus a flat",
-        "lamport fee, and `migrate_config` reallocates the account it left behind."
+        "Version 3 carries the tiered `FeePolicy` and the refresh cooldown; version 2",
+        "was the same policy without `flats_updated_at`, and version 1 one rate plus a",
+        "flat lamport fee. `migrate_config` reallocates whichever it finds."
       ],
       "type": {
         "kind": "struct",
@@ -2462,6 +2889,16 @@
               "their own network fees. Replaces the old hardcoded float."
             ],
             "type": "u64"
+          },
+          {
+            "name": "flats_updated_at",
+            "docs": [
+              "When `policy`'s two token flats were last recomputed from a live SOL",
+              "price. Zero on a fresh or migrated config, so the first refresh is never",
+              "made to wait; `refresh_fee_price` sets it and refuses another within",
+              "`FLATS_REFRESH_SECS`."
+            ],
+            "type": "i64"
           },
           {
             "name": "bump",
@@ -2517,6 +2954,47 @@
       }
     },
     {
+      "name": "FeeAnchor",
+      "docs": [
+        "The SOL price the admin has blessed, in micros per SOL, for the two currencies",
+        "the flats are priced in.",
+        "",
+        "`refresh_fee_price` is permissionless, so its band cannot be measured from the",
+        "flat it is about to rewrite: a caller could move that flat a band's worth",
+        "every cooldown, and a flat that drifts far enough from the rent stops covering",
+        "the receipt the treasury refunds, or overcharges a seller. The anchor is a",
+        "separate account the admin writes, so every permissionless refresh is bound to",
+        "the same price no matter how many of them ran before it.",
+        "",
+        "It lives beside `Config` rather than inside it because it arrived after",
+        "version 3 was live: a new account needs no layout migration, and the app's",
+        "fixed-offset `Config` reader keeps working."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sol_usd_micros",
+            "docs": [
+              "The USD price of one SOL the admin last set, in micros."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sol_eurc_micros",
+            "docs": [
+              "The EUR price of one SOL, from the same decision."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "FeeMode",
       "type": {
         "kind": "enum",
@@ -2547,9 +3025,14 @@
         "non-signing seller lamports, so the treasury — not the seller — funds the",
         "permanent marker's 1,224,960-lamport rent on that path. Charging the seller",
         "that same cost in the currency they are paid in is what keeps the treasury",
-        "whole. `usdc_mint` and `eurc_mint` select them: the program has no oracle, so",
-        "the flat is stated per currency by the admin rather than converted at settle",
-        "time. A mint that names neither pays no flat."
+        "whole. `usdc_mint` and `eurc_mint` select them, and a mint that names neither",
+        "pays no flat.",
+        "",
+        "The program has no oracle, so the flats cannot be derived at settle time.",
+        "They are instead kept *live*: `refresh_fee_price` recomputes both from the",
+        "cluster's current marker rent and a SOL price in micros, so what a token",
+        "seller is charged tracks what the record actually costs today rather than",
+        "what SOL was worth when the policy was written."
       ],
       "type": {
         "kind": "struct",
@@ -2586,15 +3069,16 @@
             "name": "flat_usdc_base_units",
             "docs": [
               "Flat charged on a USDC invoice, in base units: the marker's rent at the",
-              "SOL price the admin priced it at (1,224,960 lamports ≈ 89,400 base units",
-              "at $73)."
+              "SOL price the last `refresh_fee_price` wrote. A token settle charges the",
+              "larger of this and the percentage, so a small invoice pays the record",
+              "and nothing more."
             ],
             "type": "u64"
           },
           {
             "name": "flat_eurc_base_units",
             "docs": [
-              "Flat charged on a EURC invoice, in base units."
+              "Flat charged on a EURC invoice, in base units, from the same refresh."
             ],
             "type": "u64"
           },
@@ -2821,6 +3305,60 @@
           },
           {
             "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ShopPolicy",
+      "docs": [
+        "A shop's multiplier on `Config`'s rates.",
+        "",
+        "A shop is an API row, not an account, so the on-chain identity is the seller",
+        "that owns it plus a key the API generates when the row is created —",
+        "`[\"shop-policy\", seller, shop_key]`. The account is optional: an invoice that",
+        "names none settles at `Config`'s rate, which is what keeps every QR printed",
+        "before this landed working.",
+        "",
+        "The multiplier is the whole policy, not a second copy of one. It scales the",
+        "two rates and leaves the boundaries and the per-currency flats to `Config`,",
+        "so every shop is priced from the same live numbers and a refresh still has",
+        "one place to write. `10_000` is `Config` unchanged, `0` charges no",
+        "percentage at all — the marker's flat still applies on a token invoice, so a",
+        "free shop cannot make the treasury pay for the record.",
+        "",
+        "A multiplier cannot exceed `10_000`: the band is the type's range plus the",
+        "program's own check on write, which is why this needs no `Config` field and",
+        "no version bump. A shop can discount itself, never surcharge a buyer."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "seller",
+            "docs": [
+              "The wallet that owns the shop. Every settle compares this against the",
+              "invoice's seller, so one shop's policy cannot price another's invoice."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "shop_key",
+            "docs": [
+              "The key the API stores beside its `shops` row; part of the PDA seeds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "multiplier_bps",
+            "docs": [
+              "Basis points applied to `Config`'s two rates: `10_000` is unchanged."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

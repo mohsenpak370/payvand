@@ -75,6 +75,10 @@ puede saltarse o retrasarse, y por eso los clientes siguen `lastValidBlockHeight
   **micro-lamports por CU**, con el total igual a `ceil(precio × límite de CU solicitado / 1.000.000)`.
   Ojo a *solicitado*: pagas por el límite que pides, no por el cómputo que usas. Va entera al validador.
 
+Esas son las comisiones de la red, y son solo una parte de la factura. [Lo que cuesta un pago, y
+por qué](/learn/what-a-payment-costs) cubre el resto — la parte del protocolo y el recibo permanente
+en la cadena — y de qué se saca el precio de cada parte.
+
 ## Cómputo: el presupuesto real
 
 - Una instrucción que no es del sistema recibe **200.000 unidades de cómputo** por defecto; una del

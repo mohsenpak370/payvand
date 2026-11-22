@@ -26,7 +26,8 @@ Read four things every time:
    is who you expect. If you are paying a shop, it should be the shop's address from the invoice
    you just scanned, not one you pasted from a chat.
 4. **The fee** — small on Solana, but a wildly high fee is a signal that the transaction is not
-   what you think.
+   what you think. What a payment costs beyond that fee is in
+   [what a payment costs, and why](/learn/what-a-payment-costs).
 
 ## Sending is not the same as approving
 

@@ -10,6 +10,9 @@ export function useSellDiscountCodes() {
   const codeBusy = ref(false)
   const codeFailure = ref('')
   const discountsOpen = ref(false)
+  // Whether this payment lets the buyer apply one of the seller's codes. Off
+  // by default: a seller who attached a code has already decided the price.
+  const allowDiscounts = ref(false)
 
   // A code carried by the invoice itself: written into its QR, priced here from
   // the seller's own list, and applied by the buyer's screen without typing.
@@ -84,6 +87,7 @@ export function useSellDiscountCodes() {
     codeBusy,
     codeFailure,
     discountsOpen,
+    allowDiscounts,
     discountCode,
     selectedDiscount,
     discountOptions,

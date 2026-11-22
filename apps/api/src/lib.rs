@@ -10,6 +10,8 @@ pub mod rate_limit;
 pub mod saved;
 pub mod shops;
 pub mod solana_pay;
+pub mod sponsor;
+pub mod subscription;
 pub mod waitlist;
 pub mod wallet;
 
@@ -67,6 +69,12 @@ pub fn build_router(state: AppState) -> Router {
             get(solana_pay::info).post(solana_pay::transaction),
         )
         .route("/api/saved-payments", get(saved::list).post(saved::save))
+        // The relayer that pays a token invoice's network fee and record rents
+        // for a buyer who holds only the token. `info` is what the checkout
+        // asks before it builds anything; `settle` signs only a message it has
+        // rebuilt byte for byte.
+        .route("/api/sponsor", get(sponsor::info))
+        .route("/api/sponsor/settle", post(sponsor::settle))
         .route("/api/admin/stats", get(admin::stats))
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
@@ -81,12 +89,22 @@ pub fn build_router(state: AppState) -> Router {
             get(discounts::list).post(discounts::create),
         )
         .route("/api/discounts/validate", post(discounts::validate))
+        .route("/api/discounts/use", post(discounts::use_code))
         .route("/api/discounts/{id}", delete(discounts::delete))
         // Sellers who want to take real payments, before they have an account.
         .route("/api/waitlist", post(waitlist::join))
         // The seller's shops and their catalogues. A shop id is part of every
         // product path, and ownership is checked on each one.
         .route("/api/shops", get(shops::list).post(shops::create))
+        // The shops subscription: the plan's three prices and the account's
+        // period, the invoice that pays for one, and the confirmation that
+        // records it once the cluster says the invoice settled.
+        .route("/api/subscription", get(subscription::status))
+        .route(
+            "/api/subscription/invoice",
+            post(subscription::create_invoice),
+        )
+        .route("/api/subscription/confirm", post(subscription::confirm))
         .route("/api/shops/{id}", get(shops::get).patch(shops::update))
         .route("/api/shops/{id}/products", post(shops::create_product))
         .route(
@@ -126,6 +144,9 @@ fn throttle_for(path: &str) -> Option<Throttle> {
         // Low on purpose: a person applies a code or two, while guessing one
         // is the only way to find another seller's discount.
         "/api/discounts/validate" => ("discount", 12, rate_limit::MINUTE),
+        // Recording a use follows a payment, so it is bounded by real invoices
+        // rather than by guessing, and it is cheap to answer either way.
+        "/api/discounts/use" => ("discount-use", 30, rate_limit::MINUTE),
         "/api/waitlist" => ("waitlist", 10, rate_limit::HOUR),
         _ => return None,
     };
@@ -174,8 +195,11 @@ async fn index() -> Json<serde_json::Value> {
             "/api/payments/{id}",
             "/api/solana-pay/{token}",
             "/api/saved-payments",
+            "/api/sponsor",
+            "/api/sponsor/settle",
             "/api/discounts",
             "/api/discounts/validate",
+            "/api/discounts/use",
             "/api/discounts/{id}",
             "/api/waitlist",
             "/api/shops",

@@ -1,6 +1,6 @@
 {
   "name": "payvand",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm -C apps/web dev",
@@ -12,6 +12,7 @@
     "anchor:build": "cd apps/contracts && anchor build && cp target/idl/payvand.json ../web/app/assets/payvand.idl.json",
     "anchor:deploy": "cd apps/contracts && anchor deploy",
     "anchor:keys": "cd apps/contracts && anchor keys list",
+    "anchor:idl": "cd apps/contracts && anchor idl build -o target/idl/payvand.json && npx -y @solana-program/program-metadata --rpc https://api.devnet.solana.com -k ~/.config/solana/id.json write idl 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J target/idl/payvand.json && anchor idl fetch 4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J -o /tmp/payvand-idl-live.json && python3 -c 'import json,sys; live=json.load(open(\"/tmp/payvand-idl-live.json\")); built=json.load(open(\"target/idl/payvand.json\")); sys.exit(0 if live==built else \"the on-chain IDL differs from target/idl/payvand.json\")'",
     "treasury:open": "pnpm -C apps/web treasury:open",
     "prepare": "husky",
     "test:web": "pnpm -C apps/web test"

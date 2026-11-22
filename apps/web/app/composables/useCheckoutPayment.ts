@@ -17,6 +17,7 @@ export function useCheckoutPayment(deps: {
   budget: ReturnType<typeof useBudget>
   client: ReturnType<typeof useSolanaClient>['client']
   execute: ReturnType<typeof useSolanaSignAndSendTransaction>['execute']
+  signTransactions: ReturnType<typeof useSolanaSignTransactions>['execute']
   payer: () => Address | null
   payload: Ref<PaymentQrPayload | null>
   record: Ref<PaymentRecord | null>
@@ -34,10 +35,25 @@ export function useCheckoutPayment(deps: {
   addressFor: (option: PaymentOption, amount: number) => Promise<Address>
 }) {
   const {
-    api, budget, client, execute, payer, payload, record, busy, signature, failure,
-    settled, canPaySilently, canPayFromAllowance, selected, payableAmount,
-    costs, costsError, refreshCosts, addressFor
+    api, budget, client, execute, signTransactions, payer, payload, record, busy,
+    signature, failure, settled, canPaySilently, canPayFromAllowance, selected,
+    payableAmount, costs, costsError, refreshCosts, addressFor
   } = deps
+
+  /**
+   * The relayer to hand this settlement to, or null when the wallet has to pay
+   * for it itself. The endpoint answers with its key and whether it will take
+   * this payment; a request that fails is not a failed payment, so it answers
+   * null and leaves the wallet's own path in place.
+   */
+  async function relayerAddress(): Promise<Address | null> {
+    try {
+      const info = await api.getSponsor()
+      return info.available && info.address ? address(info.address) : null
+    } catch {
+      return null
+    }
+  }
 
   /** 0..1 while the allowance button is held, 0 when it is not. */
   const holdProgress = ref(0)
@@ -159,10 +175,10 @@ export function useCheckoutPayment(deps: {
       } else {
         const mint = address(option.mint)
         if (fromAllowance) {
-          // A fresh seller's account and this payment's two records come out of
-          // the floats the session key and the budget keep, so a third such
-          // payment in a row runs out of lamports. One approval refills just the
-          // gap and the payment follows it, still without a second prompt.
+          // This payment's two records come out of the session float, which the
+          // program refunds in the same transaction, so the key spends only its
+          // signature. One approval refills whatever gap is left before the
+          // advance, and the payment follows it without a second prompt.
           const refill = await budget.tokenFloatTopUpInstructions(payerAddress, mint)
           if (refill.length > 0) {
             const wire = await compileWireTransaction({ instruction: refill, payer: payerAddress, rpc: client.rpc })
@@ -183,6 +199,20 @@ export function useCheckoutPayment(deps: {
           // The fee leaves the buyer's account for the treasury's own token
           // account and the pool refunds the record rents, so the price is all
           // the buyer spends. The seller's account is theirs to have opened.
+          //
+          // Settling fronts two things before the same transaction refunds
+          // them: the network fee and the two record rents. A wallet holding
+          // them pays them itself and is its own sponsor, exactly as before.
+          // Below that it cannot sign a settle at all, so the relayer's key
+          // pays and the buyer only signs. Nothing is asked of the relayer
+          // while the wallet can pay.
+          const advances = quote.invoiceRent + quote.receiptRent + quote.networkFee
+          const held = Number(
+            (await client.rpc.getBalance(payerAddress, { commitment: 'confirmed' }).send()).value
+          )
+          const relayer = held < advances ? await relayerAddress() : null
+          const feePayer = relayer ?? payerAddress
+
           const instruction = buildInstruction(
             'settle_token_payment',
             { amount, memo },
@@ -197,14 +227,43 @@ export function useCheckoutPayment(deps: {
               reference,
               config: await deriveConfigPda(),
               treasury: await deriveTreasuryPda(),
-              treasury_token_account: await deriveTreasuryTokenAccount(mint)
+              treasury_token_account: await deriveTreasuryTokenAccount(mint),
+              // The key that pays the network fee and advances both record
+              // rents, and gets the pool's refund of them.
+              sponsor: feePayer
             }
           )
-          const wire = await compileWireTransaction({ instruction, payer: payerAddress, rpc: client.rpc })
-          sent = await execute(wire, {
-            confirm: true,
-            confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
-          })
+
+          if (relayer) {
+            // The buyer signs the transaction the relayer will submit, and the
+            // relayer's own slot is left empty: the endpoint rebuilds this
+            // message, compares it byte for byte, and only then signs its half.
+            const transaction = await compileTransactionForSigning({
+              instruction,
+              payer: feePayer,
+              rpc: client.rpc
+            })
+            // The fee payer's slot is empty on purpose, and the wallet hands
+            // back these same bytes with the buyer's signature on them.
+            const [signed] = await signTransactions([signableWireTransaction(transaction, feePayer)])
+            sent = (await api.sponsorSettle({
+              transaction: base64WireTransaction(signed!),
+              buyer: payerAddress,
+              seller,
+              reference,
+              mint,
+              amount,
+              memo,
+              cluster: current.cluster,
+              endpoint: current.endpoint
+            })).signature
+          } else {
+            const wire = await compileWireTransaction({ instruction, payer: feePayer, rpc: client.rpc })
+            sent = await execute(wire, {
+              confirm: true,
+              confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
+            })
+          }
         }
       }
       signature.value = sent

@@ -4,33 +4,32 @@ import { describe, expect, it } from 'vitest'
 import { tokenFloatNeed, tokenFloatTopUp, tokenOpenCost } from './useBudget'
 
 /**
- * The allowance's two floats are what pay for a seller who has no token account.
- * They are sized for three such payments, not for ever: the budget's 18,000,000
- * refunds 3,939,360 of records a payment, so a fourth needs a refill. The refill
- * is a plain transfer because the program refunds from the budget's lamports and
- * hands the remainder back on close, so the only question is how much.
+ * The allowance's two floats front one payment: both records, which the pool
+ * refunds in the same transaction, and the signature. A seller's token account is
+ * not in the sum — it must exist before the payment, so no float pays its rent.
+ * The budget parks no float at all; only the session key is ever refilled, by the
+ * difference between that advance and what it holds.
  */
 describe('the token float', () => {
   /** The harness's rent at 6,960 lamports a byte, to the lamport. */
-  const rents = { invoice: 2_714_400, receipt: 1_224_960, account: 2_039_280 }
+  const rents = { invoice: 2_714_400, receipt: 1_224_960 }
   const fee = 5_000
 
-  it('asks nothing of the budget and the whole peak of the session key', () => {
-    // The session key advances both records on top of the seller's account and
-    // gets the records back from the pool in the same transaction; the seller's
-    // account is the one thing nobody refunds. The budget parks no float at all.
+  it('asks nothing of the budget and one payment\'s advance of the session key', () => {
+    // The session key advances both records and gets them back from the pool in
+    // the same transaction, so what it must hold is that peak plus its signature.
     expect(tokenFloatNeed(rents, fee)).toEqual({
       budget: 0,
-      session: rents.invoice + rents.receipt + rents.account + fee
+      session: rents.invoice + rents.receipt + fee
     })
   })
 
   it('refills only the session key, by the difference that makes the next payment go', () => {
-    // A worn-down key: 4,520,960 against the 5,983,640 — both records, the
-    // seller's account and the fee — it has to front before the refund comes
-    // back. The budget is never part of a refill, however little it holds.
-    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 0, session: 4_520_960 }))
-      .toEqual({ budget: 0, session: 1_462_680, total: 1_462_680 })
+    // A worn-down key: 1,000,000 against the 3,944,360 — both records and the
+    // fee — it has to front before the refund comes back. The budget is never
+    // part of a refill, however little it holds.
+    expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 0, session: 1_000_000 }))
+      .toEqual({ budget: 0, session: 2_944_360, total: 2_944_360 })
   })
 
   it('is the same rule the contract harness applies, from the shared vectors', () => {
@@ -53,9 +52,9 @@ describe('the token float', () => {
       .map(line => line.split(/\s+/).map(Number))
 
     expect(rows.length).toBeGreaterThan(0)
-    for (const [invoice, receipt, account, fee, budgetHeld, sessionHeld, toBudget, toSession] of rows) {
+    for (const [invoice, receipt, fee, budgetHeld, sessionHeld, toBudget, toSession] of rows) {
       const topUp = tokenFloatTopUp(
-        tokenFloatNeed({ invoice: invoice!, receipt: receipt!, account: account! }, fee!),
+        tokenFloatNeed({ invoice: invoice!, receipt: receipt! }, fee!),
         { budget: budgetHeld!, session: sessionHeld! }
       )
 
@@ -68,7 +67,7 @@ describe('the token float', () => {
       .toEqual({ budget: 0, session: 0, total: 0 })
     // And nothing for the side that is short of nothing, even if the other is.
     expect(tokenFloatTopUp(tokenFloatNeed(rents, fee), { budget: 3_939_360, session: 1_000 }))
-      .toEqual({ budget: 0, session: 5_982_640, total: 5_982_640 })
+      .toEqual({ budget: 0, session: 3_943_360, total: 3_943_360 })
   })
 })
 

@@ -6,13 +6,15 @@ import {
   createTransactionMessage,
   getAddressDecoder,
   getAddressEncoder,
+  getBase64Decoder,
   getProgramDerivedAddress,
   getTransactionEncoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   type AccountMeta,
   type Address,
-  type Instruction
+  type Instruction,
+  type Transaction
 } from '@vue-solana/nuxt/kit'
 import idl from '~/assets/payvand.idl.json'
 
@@ -83,6 +85,8 @@ interface IdlAccountDef {
   writable?: boolean
   signer?: boolean
   address?: string
+  /** Anchor marks a trailing `Option<Account<..>>` here. */
+  optional?: boolean
 }
 
 interface IdlArgDef {
@@ -174,10 +178,16 @@ export function buildInstruction(
 ): Instruction {
   const instruction = findInstruction(name)
 
-  const metas: AccountMeta[] = instruction.accounts.map((account) => {
+  const metas: AccountMeta[] = []
+  for (const account of instruction.accounts) {
     const resolved = accounts[account.name]
       ?? (account.address ? address(account.address) : undefined)
     if (!resolved) {
+      // Anchor's optional accounts are trailing, and the program reads the
+      // shorter list as "none" — a shop invoice with no `ShopPolicy`, say, is
+      // the same transaction it always was. Anything missing that the IDL does
+      // not mark optional is a caller mistake.
+      if (account.optional) break
       throw new Error(`Missing account "${account.name}" for ${instruction.name}`)
     }
 
@@ -186,8 +196,8 @@ export function buildInstruction(
     else if (account.signer) role = AccountRole.READONLY_SIGNER
     else if (account.writable) role = AccountRole.WRITABLE
 
-    return { address: resolved, role }
-  })
+    metas.push({ address: resolved, role })
+  }
 
   return {
     programAddress: PAYVAND_PROGRAM_ID,
@@ -340,13 +350,9 @@ export function describeProgramErrorCode(code: number): string | null {
   return known?.msg ?? known?.name ?? null
 }
 
-/**
- * Compiles `instruction` (or a list of them, e.g. the instruction plus a
- * memo) into wire bytes, which is what
- * `useSolanaSignAndSendTransaction()` accepts.
- */
-export async function compileWireTransaction(params: {
+export interface WireTransactionParams {
   instruction: Instruction | Instruction[]
+  /** The account that pays the network fee: the buyer, or its sponsor. */
   payer: Address
   rpc: {
     getLatestBlockhash: () => {
@@ -355,7 +361,15 @@ export async function compileWireTransaction(params: {
       }>
     }
   }
-}) {
+}
+
+/**
+ * Compiles `instruction` (or a list of them, e.g. the instruction plus a
+ * memo) into the version 0 transaction a wallet signs, before any signature is
+ * on it. `payer` is its fee payer, which is also the address the wallet's
+ * signature joins — a sponsored settle names the sponsor there instead.
+ */
+export async function compileTransactionForSigning(params: WireTransactionParams) {
   const { value: latestBlockhash } = await params.rpc.getLatestBlockhash().send()
 
   const instructions = Array.isArray(params.instruction)
@@ -370,5 +384,41 @@ export async function compileWireTransaction(params: {
     )
   )
 
-  return getTransactionEncoder().encode(compileTransaction(message))
+  return compileTransaction(message)
+}
+
+/**
+ * The same transaction as wire bytes, which is what
+ * `useSolanaSignAndSendTransaction()` accepts.
+ */
+export async function compileWireTransaction(params: WireTransactionParams) {
+  return getTransactionEncoder().encode(await compileTransactionForSigning(params))
+}
+
+/** The bytes `getTransactionEncoder()` produces: a transaction as it goes on the wire. */
+export type WireBytes = ReturnType<ReturnType<typeof getTransactionEncoder>['encode']>
+
+/**
+ * Wire bytes as base64: what `POST /api/sponsor/settle` takes. The copy into a
+ * plain `Uint8Array` is only to satisfy the decoder's buffer generic — the bytes
+ * are the ones the wallet handed back, unchanged.
+ */
+export function base64WireTransaction(wire: ArrayLike<number>): string {
+  return getBase64Decoder().decode(new Uint8Array(wire))
+}
+
+/**
+ * The transaction a relayer is handed, as wire bytes the buyer's wallet can
+ * sign: the fee payer's signature slot is left empty, which the encoder writes
+ * as sixty-four zero bytes. That is the shape the endpoint checks for — it
+ * fills the slot itself, and only after the message matches the one it expects.
+ */
+export function signableWireTransaction(
+  transaction: Transaction,
+  feePayer: Address
+): WireBytes {
+  return getTransactionEncoder().encode({
+    ...transaction,
+    signatures: { ...transaction.signatures, [feePayer]: null }
+  })
 }

@@ -2,7 +2,10 @@
 
 ## Status
 
-In Progress — new (2026-11-12), split from the 2026-11-09 contract security
+Completed — archived 2026-11-22. The fee model, the treasury, the budgets and
+the events shipped (see *Current State*); the verification still owed is in
+[`plans/REMAINING.md`](../REMAINING.md), so the plan does not have to be
+reopened for it. New (2026-11-12), split from the 2026-11-09 contract security
 draft; revision 2 (2026-11-13) notes the receipt consolidation that landed in
 `0001`; revision 3 (2026-11-13) records Phase 1 Tasks 1.1 and 1.2 as built and
 tested on the program, with the client half (Tasks 1.3–1.5) and any deployment
@@ -49,6 +52,57 @@ account closes to the pool that funds it, never to the seller, and
 `pay_from_token_budget` gains the treasury accounts and the same fee split
 `settle_token_payment` already has. The program change that implies is not
 built.
+
+## Current State (2026-11-22)
+
+This plan's model shipped and then moved on. The single rate and the 301-byte
+receipt described below are the revision-22 state; two later commits, and the
+uncommitted work that follows them, replaced both. Read the tables and task text
+as history, and this section as what the program does now:
+
+- **The receipt is a 48-byte marker** (`760053b`, 2026-11-20):
+  `PaymentReceipt { invoice, settled_at }` at 1,224,960 lamports of rent
+  (mainnet, 6,960 a byte), down from 301 bytes and 2,985,840. Everything a
+  receipt used to copy — the split, payer, memo, reference — is in the
+  `PaymentSettled` event, which the API now reads from the settle transaction's
+  own logs.
+- **Its rent is the fee's floor, charged in the currency** (`760053b`): a SOL
+  seller is charged `max(rate, R_r)` (`fee_for` returns `max(0, proportional −
+  receipt_rent)`), a token seller `max(proportional, flat)` where the flat is
+  that rent in the token. The treasury refunds the marker's rent to the payer on
+  the SOL path and both rents — invoice and marker — on the token paths, where
+  the invoice closes back to the treasury pool.
+- **The policy is tiered** (`1c0600d`, 2026-11-21): `Config` v2 carries a
+  `FeePolicy` — `fee_bps_below` / `fee_bps_above`, a SOL and a token boundary,
+  and per-mint flats for USDC and EURC — in place of `fee_bps` +
+  `fixed_fee_lamports`. The default is 100 bps up to 0.1 SOL (10 token units)
+  and 50 bps above it, so "2%" appears nowhere in the program any more.
+- **The flats are live and refreshed in public** (uncommitted at the time of
+  writing): `Config` v3 adds `flats_updated_at`, a separate `FeeAnchor` PDA holds
+  the admin's blessed SOL price, and `refresh_fee_price` recomputes both flats
+  within ±1,000 bps of that anchor at most once a minute. `migrate_config`
+  upgrades v1 and v2 in place. `withdraw_treasury` keeps
+  `TREASURY_RESERVE_SETTLEMENTS` (one token settle's refund) back, plus the next
+  rotation's rent once `0006`'s flag exists.
+- **The seller's token account is the seller's cost**: no settle or budget path
+  opens it any more, and `SESSION_FEE_FLOAT` (12,000,000) is sized from one
+  settlement's two records (3,939,360) instead of three fresh sellers.
+  `MIN_SESSION_FEE_FLOAT` is 3,716,640.
+- **Shops are sold by subscription** (€1.70 / 30 days, paid as an ordinary
+  invoice from the platform seller, `apps/api/src/subscription.rs`). It grew out
+  of this work but is outside this plan's scope and has no plan of its own.
+- **What is still owed:** Task 5.2's `fQadYNyE…` budget and the browser
+  click-through of `/budget` (revision 20), and `anchor test`'s full form, which
+  would upgrade devnet to prove what the harness already proves (revision 22).
+  Those are checks, not building, so they live in
+  [`plans/REMAINING.md`](../REMAINING.md) — the same place this plan's other
+  unrun checks are — and they do not reopen it. Task 5.3's other complaint is
+  settled: the follow-ups it named are written (`0003`, `0004`, `0005`, plus
+  `0006` for compressed receipts), and the plan is archived.
+- The numbered tables under **Fee And Rent Numbers**, and every `fee_bps` /
+  `fixed_fee_lamports` / 2% reference in the task text, describe the pre-tier
+  model. Price a reopened task from `helpers::fee_for` and `Config::policy`, not
+  from those tables.
 
 ## Remaining Work
 
@@ -126,19 +180,23 @@ line says where it stands, so a later pass does not have to re-derive it.
   in `Config` and charges nothing. The charging half was never built and no
   product asks for it.
 - Token-2022 migration (`token_interface`) — written out in
-  [0003-token-interface-migration.md](0003-token-interface-migration.md) — and
+  [0003-token-interface-migration.md](../0003-token-interface-migration.md) — and
   merging the two float constants onto `Config::session_fee_float` (revision 8).
 - Payer-side gasless/relayer support —
-  [0004-relayer-sponsored-fees.md](0004-relayer-sponsored-fees.md) — and
-  per-shop fee overrides — [0005-per-shop-fees.md](0005-per-shop-fees.md). Both
+  [0004-relayer-sponsored-fees.md](../0004-relayer-sponsored-fees.md) — and
+  per-shop fee overrides — [0005-per-shop-fees.md](../0005-per-shop-fees.md). Both
   are drafts, and both wait on this plan's global policy being deployed.
 
 ### Archival
 
-- **Task 5.3** — `plans/README.md` still lists this plan as `Draft`, the file has
-  not moved to `plans/archive/`, and the follow-ups (Token-2022, relayer/sponsor,
-  per-shop fees) are not written out. Everything here is ready for that step once
-  4.3/4.4 are decided; nothing in the archive flow depends on code.
+- **Task 5.3 — closed (2026-11-22).** The follow-ups this plan named are written
+  out (`0003`, `0004`, `0005`, plus `0006`), and the plan moved to
+  `plans/archive/0002-fee-model-and-treasury.md`. `plans/README.md` lists it
+  under **Archived** with a `Completed` status, and the checks it still owes —
+  the two open items in **Current State**, `task verify`, `cargo clippy`, the
+  manual localnet pass and the Definition of Done's stale bullets — are tracked
+  in [`plans/REMAINING.md`](../REMAINING.md) instead of keeping a shipped plan
+  open. Every link into this file was rewritten for its new directory.
 
 ## Revision Notes
 
@@ -647,12 +705,12 @@ Out of scope:
 - Payer-side gasless/relayer support: the payer still needs SOL for the network
   fee and the temporary invoice rent on token invoices until a sponsor exists —
   designed in
-  [0004-relayer-sponsored-fees.md](0004-relayer-sponsored-fees.md).
+  [0004-relayer-sponsored-fees.md](../0004-relayer-sponsored-fees.md).
 - Token-2022 migration (documented as unsupported, tracked in
-  [0003-token-interface-migration.md](0003-token-interface-migration.md)).
+  [0003-token-interface-migration.md](../0003-token-interface-migration.md)).
 - Mainnet deployment, discounts, a full event indexer.
 - Per-shop fee overrides — designed in
-  [0005-per-shop-fees.md](0005-per-shop-fees.md). One global policy ships here.
+  [0005-per-shop-fees.md](../0005-per-shop-fees.md). One global policy ships here.
 
 ## Dependencies
 
@@ -707,6 +765,11 @@ Open questions (do not block Phase 1, but decide before Phase 3/5):
   the protocol has one?
 
 ## Fee And Rent Numbers
+
+> **Historical (revision 22 and earlier).** These tables price a single
+> `fee_bps` and a 301-byte receipt; the program now charges `Config::policy`'s
+> two marginal rates with the 48-byte marker's rent as the floor. See
+> **Current State** for the live model.
 
 Rent uses Solana's rent-exempt formula, `(bytes + 128) × lamports_per_byte`.
 These values are what the program and the client must agree on; tests assert
@@ -2828,9 +2891,9 @@ Acceptance criteria:
 - [ ] The plan file moves to `plans/archive/`.
 - [ ] Follow-ups (Token-2022, relayer/sponsor, per-shop fees) are captured as
       issues or new plans. All three are plans as of 2026-11-19:
-      [0003](0003-token-interface-migration.md),
-      [0004](0004-relayer-sponsored-fees.md) and
-      [0005](0005-per-shop-fees.md), each listed in `plans/README.md`; only the
+      [0003](../0003-token-interface-migration.md),
+      [0004](../0004-relayer-sponsored-fees.md) and
+      [0005](../0005-per-shop-fees.md), each listed in `plans/README.md`; only the
       `plans/README.md` status change and the move to `plans/archive/` remain in
       this criterion.
 
@@ -2904,7 +2967,9 @@ Estimated scope: Small.
 - [ ] `task verify`, `anchor test`, and
       `cargo clippy -p payvand -- -D warnings` pass.
 - [ ] The payer pays exactly the displayed price for SOL invoices; the seller
-      receives the price minus `fee_bps`; the treasury pays the receipt rent.
+      receives the price less `max(rate, receipt rent)`; the treasury takes only
+      the fee. (This bullet's original wording — `fee_bps` and a
+      treasury-funded receipt — is revision-22 history; see **Current State**.)
 - [ ] No path can send the fee anywhere but the treasury PDA.
 - [ ] Token sellers need no SOL; token fees reach the treasury ATA; the float is
       sized, topped up on demand, and swept on close/rotate.
@@ -2917,10 +2982,12 @@ Estimated scope: Small.
 
 ## Open Questions
 
-- Is 2% the launch rate, or should the devnet config use a smaller pilot value?
+- ~~Is 2% the launch rate?~~ Decided (`1c0600d`): 100 bps up to 0.1 SOL / 10
+  token units and 50 bps above, with the receipt rent as the floor.
 - Initial treasury funding amount and the alert threshold before a top-up is
   required?
-- Per-shop fee overrides now, later, or never?
+- Per-shop fee overrides now, later, or never? Deferred; designed in
+  [0005-per-shop-fees.md](../0005-per-shop-fees.md).
 - Should `Config.admin` (and therefore `update_config` and
   `withdraw_treasury`) move to a multisig before mainnet? The treasury itself
   stays a PDA; only the authority over it would change.

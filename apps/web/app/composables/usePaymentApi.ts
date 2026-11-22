@@ -37,6 +37,8 @@ export interface PaymentRecord {
   items?: PaymentItem[]
   /** The code attached while creating the invoice; null on chain reads. */
   discount?: PaymentDiscount | null
+  /** Whether the buyer may apply one of the seller's codes themselves. */
+  allow_discounts?: boolean
   cluster: string
   endpoint: string
   seller_user: string | null
@@ -57,6 +59,35 @@ export interface PaymentItem {
   amount_lamports: number
 }
 
+export interface SponsorInfo {
+  /** False when the relayer has no key, is out of budget, or this account hit its cap. */
+  available: boolean
+  /** The fee payer to name; null when there is no relayer at all. */
+  address: string | null
+  /** Lamports a wallet needs before it can settle a token invoice itself. */
+  needs_lamports: number
+  per_wallet_daily: number
+}
+
+export interface SponsoredSettleInput {
+  /** Base64 wire transaction: fee payer is the sponsor, buyer signature present. */
+  transaction: string
+  buyer: string
+  seller: string
+  reference: string
+  mint: string
+  amount: number
+  memo: string
+  /**
+   * The shop's `ShopPolicy`, when the invoice was priced by one. The relayer
+   * rebuilds the settle message with it as its trailing account, so omitting it
+   * for a shop invoice means the rebuild is a slot short and is refused.
+   */
+  shopPolicy?: string
+  cluster: string
+  endpoint?: string
+}
+
 export interface CreatePaymentInput {
   seller: string
   reference: string
@@ -69,6 +100,11 @@ export interface CreatePaymentInput {
   items?: PaymentItem[]
   /** Code to bake into the invoice, priced against the seller's own codes. */
   discount_code?: string
+  /**
+   * Let the buyer pick one of the seller's codes on their own screen. An
+   * invoice carries a code or offers the choice, never both.
+   */
+  allow_discounts?: boolean
   cluster: string
   endpoint?: string
 }
@@ -105,6 +141,8 @@ export interface PaymentQrPayload {
   items?: PaymentItem[]
   /** Attached at creation: the buyer's screen applies it without typing. */
   discount?: PaymentDiscount | null
+  /** The seller lets the buyer apply one of their codes. */
+  allow_discounts?: boolean
   cluster: string
   endpoint: string
   /** The seller's account id, so the buyer's screen can price their codes. */
@@ -136,6 +174,8 @@ export interface ValidateDiscountInput {
    */
   seller: string
   price_lamports: number
+  /** The wallet asking, so a code already spent by it is refused. */
+  buyer?: string
 }
 
 export interface DiscountPreview {
@@ -419,15 +459,59 @@ export function usePaymentApi() {
     })
   }
 
+  /**
+   * Records that a buyer spent a code, once the invoice they paid has settled.
+   * Only the seller's own session may: the API reads the buyer off the
+   * settlement, and a stranger must not be able to burn someone else's code.
+   */
+  async function recordDiscountUse(body: {
+    code: string
+    seller: string
+    invoice: string
+  }): Promise<{ recorded: boolean }> {
+    return await $fetch(`${base}/api/discounts/use`, {
+      method: 'POST',
+      body,
+      headers: authHeaders()
+    })
+  }
+
+  /**
+   * Whether a relayer will pay this payment's network fee and its two record
+   * rents, and the address to name as the fee payer when it will. A wallet with
+   * enough SOL never asks, so the funded path stays exactly as it was.
+   */
+  async function getSponsor(): Promise<SponsorInfo> {
+    return await $fetch(`${base}/api/sponsor`, { headers: authHeaders() })
+  }
+
+  /**
+   * Hands the buyer-signed transaction to the relayer. The transaction's fee
+   * payer is the sponsor and its message is the one the relayer rebuilds from
+   * these same fields; anything else is refused without a signature.
+   */
+  async function sponsorSettle(
+    body: SponsoredSettleInput
+  ): Promise<{ signature: string }> {
+    return await $fetch(`${base}/api/sponsor/settle`, {
+      method: 'POST',
+      body,
+      headers: authHeaders()
+    })
+  }
+
   return {
     createPayment,
     getPayment,
+    getSponsor,
+    sponsorSettle,
     savePayment,
     listSavedPayments,
     watchPayments,
     listDiscounts,
     createDiscount,
     deleteDiscount,
-    validateDiscount
+    validateDiscount,
+    recordDiscountUse
   }
 }

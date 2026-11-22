@@ -42,4 +42,12 @@ pub enum PaymentError {
     Token2022Unsupported,
     #[msg("This config account is not the version this migration upgrades")]
     InvalidConfigVersion,
+    #[msg("That SOL price is not a price the program will write")]
+    InvalidFeePrice,
+    #[msg("The flats were refreshed a moment ago")]
+    FeePriceTooSoon,
+    #[msg("A shop's multiplier cannot exceed 100%")]
+    ShopFeeTooHigh,
+    #[msg("This shop policy belongs to another seller")]
+    ShopPolicySellerMismatch,
 }

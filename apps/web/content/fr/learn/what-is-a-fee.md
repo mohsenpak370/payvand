@@ -58,3 +58,5 @@ elle-même.
 Les frais ne sont ni à craindre ni à budgéter. Gardez un peu de SOL dans le portefeuille avec
 lequel vous payez, et le coût d'un paiement reste si petit qu'il est plus facile à ignorer qu'à
 calculer.
+
+Les frais de réseau ne sont que la plus petite part de ce que coûte un paiement. Où va le reste — la part du protocole, le reçu permanent sur la chaîne et les coûts qui font tourner le service — est décrit dans [ce que coûte un paiement](/learn/what-a-payment-costs).

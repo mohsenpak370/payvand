@@ -29,6 +29,8 @@ pub const MAX_SHOP_DESCRIPTION_LEN: usize = 160;
 /// a cart's worth of them still has to fit a scannable QR.
 pub const MAX_PRODUCT_NAME_LEN: usize = 32;
 pub const MAX_PRODUCT_DETAILS_LEN: usize = 160;
+/// A category is a heading on the menu — "Drinks", "Bakery" — not a label.
+pub const MAX_PRODUCT_CATEGORY_LEN: usize = 32;
 /// 10,000 SOL — a product priced above that is a typo, not a price.
 pub const MAX_PRICE_LAMPORTS: u64 = 10_000_000_000_000;
 
@@ -47,6 +49,8 @@ pub struct Product {
     pub name: String,
     /// Free text — what is in it, the size, the allergen. Never in the code.
     pub details: String,
+    /// Optional heading the product is listed under, empty for no category.
+    pub category: String,
     pub price_lamports: u64,
     pub created_at_unix: i64,
 }
@@ -73,6 +77,8 @@ pub struct SaveProductRequest {
     pub name: String,
     #[serde(default)]
     pub details: String,
+    #[serde(default)]
+    pub category: String,
     pub price_lamports: u64,
 }
 
@@ -112,15 +118,16 @@ fn valid_price(price_lamports: u64) -> ApiResult<u64> {
 }
 
 fn read_product(row: &libsql::Row) -> ApiResult<Product> {
-    let price: i64 = row.get(4).map_err(auth::internal)?;
+    let price: i64 = row.get(5).map_err(auth::internal)?;
     Ok(Product {
         id: row.get(0).map_err(auth::internal)?,
         shop_id: row.get(1).map_err(auth::internal)?,
         name: row.get(2).map_err(auth::internal)?,
         details: row.get(3).map_err(auth::internal)?,
+        category: row.get(4).map_err(auth::internal)?,
         price_lamports: u64::try_from(price)
             .map_err(|_| crate::payments::ApiError::Internal("stored price out of range".into()))?,
-        created_at_unix: row.get(5).map_err(auth::internal)?,
+        created_at_unix: row.get(6).map_err(auth::internal)?,
     })
 }
 
@@ -155,7 +162,7 @@ async fn products_for_shop(
     // Oldest first: a catalogue that keeps its order reads like a menu.
     let mut rows = connection
         .query(
-            "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+            "SELECT id, shop_id, name, details, category, price_lamports, created_at FROM products \
              WHERE user_id = ?1 AND shop_id = ?2 ORDER BY created_at ASC, rowid ASC",
             (user_id, shop_id),
         )
@@ -203,7 +210,7 @@ pub async fn list(
     if !shops.is_empty() {
         let mut rows = connection
             .query(
-                "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+                "SELECT id, shop_id, name, details, category, price_lamports, created_at FROM products \
                  WHERE user_id = ?1 ORDER BY created_at ASC, rowid ASC",
                 [user.id],
             )
@@ -256,6 +263,7 @@ pub async fn create(
         MAX_SHOP_DESCRIPTION_LEN,
         "The shop description",
     )?;
+    crate::subscription::require_active(&state, &user.id).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
 
     let mut rows = connection
@@ -314,6 +322,7 @@ pub async fn update(
     )?;
     let connection = state.db.connect().map_err(auth::internal)?;
     require_shop(&connection, &user.id, &id).await?;
+    crate::subscription::require_active(&state, &user.id).await?;
 
     connection
         .execute(
@@ -343,9 +352,15 @@ pub async fn create_product(
         MAX_PRODUCT_DETAILS_LEN,
         "The product details",
     )?;
+    let category = optional_text(
+        &request.category,
+        MAX_PRODUCT_CATEGORY_LEN,
+        "The product category",
+    )?;
     let price_lamports = valid_price(request.price_lamports)?;
     let connection = state.db.connect().map_err(auth::internal)?;
     require_shop(&connection, &user.id, &shop_id).await?;
+    crate::subscription::require_active(&state, &user.id).await?;
 
     let mut rows = connection
         .query(
@@ -368,14 +383,16 @@ pub async fn create_product(
     let created_at = auth::unix_now();
     connection
         .execute(
-            "INSERT INTO products (id, user_id, shop_id, name, details, price_lamports, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO products \
+                (id, user_id, shop_id, name, details, category, price_lamports, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             (
                 id.clone(),
                 user.id,
                 shop_id.clone(),
                 name.clone(),
                 details.clone(),
+                category.clone(),
                 i64::try_from(price_lamports).map_err(|_| bad("That price is too large."))?,
                 created_at,
             ),
@@ -388,6 +405,7 @@ pub async fn create_product(
         shop_id,
         name,
         details,
+        category,
         price_lamports,
         created_at_unix: created_at,
     }))
@@ -408,17 +426,24 @@ pub async fn update_product(
         MAX_PRODUCT_DETAILS_LEN,
         "The product details",
     )?;
+    let category = optional_text(
+        &request.category,
+        MAX_PRODUCT_CATEGORY_LEN,
+        "The product category",
+    )?;
     let price_lamports = valid_price(request.price_lamports)?;
     let connection = state.db.connect().map_err(auth::internal)?;
     require_shop(&connection, &user.id, &shop_id).await?;
+    crate::subscription::require_active(&state, &user.id).await?;
 
     let updated = connection
         .execute(
-            "UPDATE products SET name = ?1, details = ?2, price_lamports = ?3 \
-             WHERE id = ?4 AND shop_id = ?5 AND user_id = ?6",
+            "UPDATE products SET name = ?1, details = ?2, category = ?3, price_lamports = ?4 \
+             WHERE id = ?5 AND shop_id = ?6 AND user_id = ?7",
             (
                 name.clone(),
                 details.clone(),
+                category.clone(),
                 i64::try_from(price_lamports).map_err(|_| bad("That price is too large."))?,
                 product_id.clone(),
                 shop_id.clone(),
@@ -433,7 +458,7 @@ pub async fn update_product(
 
     let mut rows = connection
         .query(
-            "SELECT id, shop_id, name, details, price_lamports, created_at FROM products \
+            "SELECT id, shop_id, name, details, category, price_lamports, created_at FROM products \
              WHERE id = ?1 AND shop_id = ?2 AND user_id = ?3",
             (product_id, shop_id, user.id),
         )
@@ -455,6 +480,7 @@ pub async fn delete_product(
     let user = auth::require_user(&state.db, &headers).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
     require_shop(&connection, &user.id, &shop_id).await?;
+    crate::subscription::require_active(&state, &user.id).await?;
     let deleted = connection
         .execute(
             "DELETE FROM products WHERE id = ?1 AND shop_id = ?2 AND user_id = ?3",
@@ -499,7 +525,13 @@ mod tests {
     }
 
     async fn signup(state: &crate::AppState, email: &str) -> String {
-        crate::auth::signup(
+        signup_with_id(state, email).await.0
+    }
+
+    /// The token and the account id: a shop mutation needs a subscription, and
+    /// that is keyed by the account.
+    async fn signup_with_id(state: &crate::AppState, email: &str) -> (String, String) {
+        let token = crate::auth::signup(
             StateExtractor(state.clone()),
             JsonExtractor(SignupRequest {
                 email: email.to_string(),
@@ -509,13 +541,27 @@ mod tests {
         .await
         .expect("signup")
         .0
-        .token
+        .token;
+        let connection = state.db.connect().expect("connection");
+        let mut rows = connection
+            .query("SELECT id FROM users WHERE email = ?1", [email.to_string()])
+            .await
+            .expect("user read");
+        let id: String = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("user")
+            .get(0)
+            .expect("id");
+        (token, id)
     }
 
     fn product(name: &str, price_lamports: u64) -> SaveProductRequest {
         SaveProductRequest {
             name: name.to_string(),
             details: String::new(),
+            category: String::new(),
             price_lamports,
         }
     }
@@ -538,7 +584,9 @@ mod tests {
     #[tokio::test]
     async fn keeps_several_shops_per_account_apart() {
         let (state, path) = test_state().await;
-        let mine = bearer(&signup(&state, "seller@example.com").await);
+        let (mine_token, mine_id) = signup_with_id(&state, "seller@example.com").await;
+        crate::subscription::activate_for_tests(&state.db, &mine_id).await;
+        let mine = bearer(&mine_token);
         let theirs = bearer(&signup(&state, "other@example.com").await);
 
         let anonymous = list(StateExtractor(state.clone()), HeaderMap::new()).await;
@@ -553,6 +601,22 @@ mod tests {
             .expect("read")
             .0;
         assert!(empty.is_empty());
+
+        // Without a paid period the other account cannot open one, while the
+        // subscribed seller can.
+        let unsubscribed = create(
+            StateExtractor(state.clone()),
+            theirs.clone(),
+            JsonExtractor(SaveShopRequest {
+                name: "Corner Shop".into(),
+                description: String::new(),
+            }),
+        )
+        .await;
+        assert!(matches!(
+            unsubscribed,
+            Err(crate::payments::ApiError::Forbidden(_))
+        ));
 
         let cafe = create(
             StateExtractor(state.clone()),
@@ -591,14 +655,34 @@ mod tests {
         .0;
         assert_eq!(coffee.shop_id, cafe.id);
 
-        create_product(
+        let croissant = create_product(
             StateExtractor(state.clone()),
             mine.clone(),
             Path(bakery.id.clone()),
-            JsonExtractor(product("Croissant", 8_000_000)),
+            JsonExtractor(SaveProductRequest {
+                category: "Pastry".into(),
+                ..product("Croissant", 8_000_000)
+            }),
         )
         .await
-        .expect("bakery product");
+        .expect("bakery product")
+        .0;
+        assert_eq!(croissant.category, "Pastry");
+
+        // The category is a heading, not a label: editing a product moves it.
+        let moved = update_product(
+            StateExtractor(state.clone()),
+            mine.clone(),
+            Path((bakery.id.clone(), croissant.id.clone())),
+            JsonExtractor(SaveProductRequest {
+                category: "Bread".into(),
+                ..product("Croissant", 8_000_000)
+            }),
+        )
+        .await
+        .expect("re-categorised")
+        .0;
+        assert_eq!(moved.category, "Bread");
 
         let shops = list(StateExtractor(state.clone()), mine.clone())
             .await
@@ -610,7 +694,7 @@ mod tests {
         assert_eq!(cafe_row.products[0].name, "Flat white");
 
         // Renaming one shop leaves the other alone.
-        update(
+        let _ = update(
             StateExtractor(state.clone()),
             mine.clone(),
             Path(cafe.id.clone()),
@@ -676,7 +760,7 @@ mod tests {
         assert_eq!(edited.price_lamports, 15_000_000);
         assert_eq!(edited.created_at_unix, coffee.created_at_unix);
 
-        delete_product(
+        let _ = delete_product(
             StateExtractor(state.clone()),
             mine.clone(),
             Path((cafe.id.clone(), coffee.id.clone())),

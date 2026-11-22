@@ -3,9 +3,12 @@
 
 use anchor_lang::prelude::*;
 
-use crate::constants::{MIN_SESSION_FEE_FLOAT, TREASURY_SEED};
+use crate::constants::{
+    MAX_SOL_PRICE_MICROS, MICROS, MINT_DECIMALS_OFFSET, MIN_SESSION_FEE_FLOAT,
+    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, TREASURY_SEED,
+};
 use crate::errors::PaymentError;
-use crate::state::{Config, FeePolicy};
+use crate::state::{Config, FeePolicy, ShopPolicy};
 
 /// `year * 12 + month` (month 1-based) for the current clock, so a monthly
 /// allowance resets on a real calendar-month boundary rather than every 30
@@ -31,14 +34,34 @@ pub fn current_month_index() -> Result<u64> {
 /// boundary is a change of slope and not a cliff — an invoice crossing it costs
 /// one lamport's worth of rate more, never twice the fee.
 ///
-/// A token invoice then adds its currency's flat, which is what pays the
-/// permanent marker's rent that the treasury advances on that path. A SOL
-/// invoice adds nothing: its seller already carries that rent directly.
+/// The record's rent is the floor of what a seller pays, expressed in the
+/// currency they are charged in. A token seller cannot be charged lamports, so
+/// the marker's rent is the currency's flat and the fee is the larger of that
+/// flat and the percentage: a payment too small for the percentage to cover the
+/// record is charged the record and nothing else, and the treasury neither
+/// loses on it nor takes a fee for it. A SOL seller pays that rent directly out
+/// of the price instead, so the same floor is applied by taking it off the
+/// percentage — the seller's total is the larger of the two either way, and the
+/// two currencies cost a seller the same.
+///
+/// `multiplier_bps` is the shop's own policy when the invoice named one, and
+/// `SHOP_FEE_BASE_BPS` otherwise. It scales the percentage only — the
+/// boundaries, the flats and the cap are `Config`'s, so a shop is priced from
+/// the same live numbers as every other and a refresh still has one place to
+/// write. A `0` multiplier therefore charges no percentage while a token invoice
+/// still pays the marker's flat: a free shop cannot make the treasury fund the
+/// record.
 ///
 /// Capped at `amount - 1` so the guard on the price (`amount > rent + fee`) can
 /// never be satisfied by taking the whole invoice; the cap is a safety net, not
 /// a policy.
-pub fn fee_for(config: &Config, amount: u64, mint: Option<&Pubkey>) -> Result<u64> {
+pub fn fee_for(
+    config: &Config,
+    amount: u64,
+    mint: Option<&Pubkey>,
+    receipt_rent: u64,
+    multiplier_bps: u16,
+) -> Result<u64> {
     let policy = &config.policy;
     let (boundary, flat) = match mint {
         None => (policy.sol_tier_lamports as u128, 0u128),
@@ -65,9 +88,121 @@ pub fn fee_for(config: &Config, amount: u64, mint: Option<&Pubkey>) -> Result<u6
         })
         .ok_or(PaymentError::FeeOverflow)?
         / 10_000;
+    // The shop's discount, applied to the rate before the carriers below read
+    // it: the flat is the marker's rent and is never scaled, and the SOL path's
+    // rent subtraction is not either, so a shop can reach zero percentage but
+    // not shift the record onto the treasury.
+    let proportional = proportional
+        .checked_mul(multiplier_bps.min(SHOP_FEE_BASE_BPS) as u128)
+        .ok_or(PaymentError::FeeOverflow)?
+        / SHOP_FEE_BASE_BPS as u128;
 
-    let fee = proportional.saturating_add(flat);
+    let fee = match mint {
+        Some(_) => proportional.max(flat),
+        None => proportional.saturating_sub(receipt_rent as u128),
+    };
     Ok(fee.min(amount.saturating_sub(1)) as u64)
+}
+
+/// The multiplier a settlement charges: the shop's own when the invoice named
+/// its policy, `SHOP_FEE_BASE_BPS` when it did not.
+///
+/// The account is optional, which is the whole reason every invoice printed
+/// before shop rates existed still settles: an invoice that names none pays
+/// `Config`'s rate exactly as it always did. A policy whose recorded seller is
+/// not the invoice's seller is refused by name — the seeds prove an account is
+/// the canonical PDA for its own contents, not that it belongs to this
+/// settlement's seller, so that comparison is what stops one shop pricing
+/// another's invoice at its own discount.
+pub fn shop_multiplier(shop_policy: Option<&ShopPolicy>, seller: &Pubkey) -> Result<u16> {
+    match shop_policy {
+        None => Ok(SHOP_FEE_BASE_BPS),
+        Some(policy) => {
+            require_keys_eq!(
+                policy.seller,
+                *seller,
+                PaymentError::ShopPolicySellerMismatch
+            );
+            Ok(policy.multiplier_bps)
+        }
+    }
+}
+
+/// The multiplier `set_shop_policy` accepts: `0..=10_000`.
+///
+/// The cap is checked on write rather than at settle time, so there is no
+/// out-of-band state to handle: a shop can discount itself to nothing and can
+/// never surcharge a buyer above `Config`'s rate, and every settlement reads a
+/// number that is already known to be in range.
+pub fn validate_shop_multiplier(multiplier_bps: u16) -> Result<()> {
+    require!(
+        multiplier_bps <= SHOP_FEE_BASE_BPS,
+        PaymentError::ShopFeeTooHigh
+    );
+    Ok(())
+}
+
+/// The decimals of the mint an invoice is priced in.
+///
+/// Every token context keeps its mint an `UncheckedAccount`, so that an
+/// unsupported mint is refused with the program's own error instead of Anchor's
+/// generic deserialization failure — which means the transfer CPIs cannot read
+/// decimals from a checked account, and this is the one place they do. Both
+/// token programs keep the base mint layout, `SPL_MINT_LEN` already pins the
+/// length, and `MINT_DECIMALS_OFFSET` is where `decimals` sits in it.
+pub fn mint_decimals(mint: &UncheckedAccount) -> Result<u8> {
+    let data = mint.try_borrow_data()?;
+    data.get(MINT_DECIMALS_OFFSET)
+        .copied()
+        .ok_or_else(|| error!(PaymentError::Token2022Unsupported))
+}
+
+/// The flat a marker's rent implies at a SOL price in micros, in the mint's base
+/// units.
+///
+/// `receipt_rent` lamports are `receipt_rent / 1e9` SOL, which at
+/// `price_micros` a unit is `receipt_rent * price_micros / 1e9` whole units, and
+/// a six-decimal stablecoin is a million base units a unit — so the two
+/// millions cancel and nothing else has to be assumed about the mint. That last
+/// step is why only the named, six-decimal currencies carry a flat.
+pub fn flat_for_rent(receipt_rent: u64, price_micros: u64) -> Result<u64> {
+    let product = (receipt_rent as u128)
+        .checked_mul(price_micros as u128)
+        .ok_or(PaymentError::FeeOverflow)?;
+    let flat = product / (MICROS * 1_000);
+    u64::try_from(flat).map_err(|_| PaymentError::FeeOverflow.into())
+}
+
+/// A price `refresh_fee_price` will accept: positive, and under a ceiling that
+/// only a unit mistake would cross.
+pub fn validate_price(price_micros: u64) -> Result<()> {
+    require!(
+        price_micros > 0 && price_micros <= MAX_SOL_PRICE_MICROS,
+        PaymentError::InvalidFeePrice
+    );
+    Ok(())
+}
+
+/// Bounds a permissionless refresh against the admin's anchor price.
+///
+/// The band is measured from `anchor_micros`, the price the admin wrote, and
+/// never from the flat the last refresh left behind. That is the whole point: a
+/// band relative to the current flat can be walked, one call per cooldown, so a
+/// caller could ratchet the flats until the record fee no longer matched the rent
+/// the treasury refunds. Anchored, every accepted price lies in the same window
+/// and the flats it writes stay within `PRICE_ANCHOR_BAND_BPS` of the admin's
+/// price however many refreshes run.
+///
+/// An anchor of zero means the admin has not priced this deployment yet, and
+/// nothing may be written against it.
+pub fn ensure_anchor_band(anchor_micros: u64, price_micros: u64) -> Result<()> {
+    require!(anchor_micros > 0, PaymentError::InvalidFeePrice);
+    let anchor = anchor_micros as u128;
+    let price = price_micros as u128;
+    let low = anchor * (10_000 - PRICE_ANCHOR_BAND_BPS as u128) / 10_000;
+    let high = anchor * (10_000 + PRICE_ANCHOR_BAND_BPS as u128) / 10_000;
+    require!(price >= low && price <= high, PaymentError::InvalidFeePrice);
+    Ok(())
 }
 
 /// Policy validation shared by `initialize_config`, `update_config` and

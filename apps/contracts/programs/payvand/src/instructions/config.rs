@@ -11,8 +11,11 @@ use anchor_lang::solana_program::bpf_loader_upgradeable::{self, UpgradeableLoade
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::ConfigUpdated;
-use crate::helpers::{pay_from_treasury, validate_fee_policy, validate_session_float};
-use crate::state::{Config, FeeMode, FeePolicy};
+use crate::helpers::{
+    ensure_anchor_band, flat_for_rent, pay_from_treasury, validate_fee_policy, validate_price,
+    validate_session_float,
+};
+use crate::state::{Config, FeeAnchor, FeeMode, FeePolicy};
 
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
@@ -57,14 +60,55 @@ pub struct UpdateConfig<'info> {
     pub config: Account<'info, Config>,
 }
 
-/// Upgrades the version 1 config account in place.
+/// Re-pegs the flats to a live price a permissionless caller supplies, within a
+/// band measured from the admin's anchor.
+#[derive(Accounts)]
+pub struct RefreshFeePrice<'info> {
+    /// Anyone may call this and pays the network fee for it; the bounds inside
+    /// are the protection, not the key. The app refreshes the flats from its
+    /// rate feed on the same five-minute cache it prices invoices with.
+    pub caller: Signer<'info>,
+
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+
+    /// The admin's price the supplied one is measured against. Required rather
+    /// than optional: a deployment whose admin has not priced it yet has no
+    /// band, so there is nothing to refresh within.
+    #[account(seeds = [FEE_ANCHOR_SEED], bump = anchor.bump)]
+    pub anchor: Account<'info, FeeAnchor>,
+}
+
+#[derive(Accounts)]
+pub struct SetFeePriceAnchor<'info> {
+    /// The recorded admin: the only key whose price the band is measured from.
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump, has_one = admin)]
+    pub config: Account<'info, Config>,
+
+    /// Created on the first call and rewritten on every later one.
+    #[account(
+        init_if_needed,
+        payer = admin,
+        space = FEE_ANCHOR_SPACE,
+        seeds = [FEE_ANCHOR_SEED],
+        bump
+    )]
+    pub anchor: Account<'info, FeeAnchor>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Upgrades the version 1 or 2 config account in place.
 ///
 /// The account cannot be typed as `Account<'info, Config>`: it is still the old,
 /// shorter layout, and deserializing it as `Config` would fail before the
 /// handler could migrate it. It is a raw account here, pinned to the config seed
 /// and checked by hand: the program must own it, `admin` must be the admin it
-/// records, and it must be a version 1 account of exactly
-/// `CONFIG_SPACE_V1` bytes. Anything else is refused rather than overwritten.
+/// records, and it must be a version 1 or 2 account of exactly its layout's
+/// length. Anything else is refused rather than overwritten.
 #[derive(Accounts)]
 pub struct MigrateConfig<'info> {
     /// The recorded admin. Pays the rent the taller account now needs.
@@ -125,8 +169,23 @@ fn upgrade_authority(program_data: &AccountInfo) -> Result<Option<Pubkey>> {
     }
 }
 
+/// The version 2 `Config` body — everything version 3 has but the refresh
+/// cooldown. Read only by `migrate_config`, which carries the fields over and
+/// leaves `flats_updated_at` at zero so the first refresh need not wait.
+#[derive(AnchorSerialize, AnchorDeserialize)]
+struct ConfigV2 {
+    admin: Pubkey,
+    policy: FeePolicy,
+    fee_mode: FeeMode,
+    session_fee_float: u64,
+    bump: u8,
+    treasury_bump: u8,
+    #[allow(dead_code)]
+    version: u8,
+}
+
 /// The version 1 `Config` body, read only by `migrate_config` so it can carry
-/// the fields that outlive the layout change over to version 2.
+/// the fields that outlive the layout change over to version 3.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 struct ConfigV1 {
     admin: Pubkey,
@@ -163,6 +222,9 @@ pub fn initialize_config_handler(
     config.policy = policy;
     config.fee_mode = fee_mode;
     config.session_fee_float = session_fee_float;
+    // No refresh has happened yet, and the first one should not have to wait for
+    // a cooldown that guards against a caller the config has never had.
+    config.flats_updated_at = 0;
     config.bump = ctx.bumps.config;
     config.treasury_bump = ctx.bumps.treasury;
     config.version = CONFIG_VERSION;
@@ -192,6 +254,11 @@ pub fn update_config_handler(
     config.policy = policy;
     config.fee_mode = fee_mode;
     config.session_fee_float = session_fee_float;
+    // A policy written by the admin counts as freshly priced, so
+    // `refresh_fee_price` cannot immediately overwrite the flats the admin just
+    // chose. Zero rather than the clock would let it, and the admin's own number
+    // is the more deliberate one.
+    config.flats_updated_at = Clock::get()?.unix_timestamp;
 
     msg!(
         "config updated: {} / {} bps at {} lamports and {} base units, mode {:?}, float {}",
@@ -211,35 +278,176 @@ pub fn update_config_handler(
     Ok(())
 }
 
-/// Upgrades the live version 1 config account to version 2 in place.
+/// Re-pegs the two token flats to a live SOL price.
+///
+/// A token settle cannot charge its seller lamports, so the marker's rent is
+/// collected in the currency as `flat_usdc_base_units` / `flat_eurc_base_units`.
+/// Those numbers are only true at the SOL price they were written at: SOL moves,
+/// the rent does not, and a flat left alone drifts — charging a token seller for
+/// a record that has become cheaper in their currency, or leaving the treasury
+/// to fund the difference once SOL has risen. This recomputes both from the
+/// cluster's own rent and a price the caller supplies, so the only price in the
+/// fee is the one passed here.
+///
+/// Permissionless on purpose: the app is already the party that fetches rates,
+/// and requiring the admin key would put a second copy of it in a server's
+/// environment. What keeps it safe is inside — a price must be plausible, it must
+/// sit within `PRICE_ANCHOR_BAND_BPS` of the price the admin anchored, and a
+/// second call within `FLATS_REFRESH_SECS` is refused. The band is measured from
+/// the admin's anchor, not from the flat this call would rewrite, so a caller
+/// cannot compound one accepted move into the next: however many refreshes run,
+/// the flats stay within that band of the admin's price.
+pub fn refresh_fee_price_handler(
+    ctx: Context<RefreshFeePrice>,
+    sol_usd_micros: u64,
+    sol_eur_micros: u64,
+) -> Result<()> {
+    validate_price(sol_usd_micros)?;
+    validate_price(sol_eur_micros)?;
+
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    let now = Clock::get()?.unix_timestamp;
+
+    let anchor = &ctx.accounts.anchor;
+    ensure_anchor_band(anchor.sol_usd_micros, sol_usd_micros)?;
+    ensure_anchor_band(anchor.sol_eurc_micros, sol_eur_micros)?;
+
+    let config = &mut ctx.accounts.config;
+
+    if config.flats_updated_at != 0 {
+        require!(
+            now >= config.flats_updated_at.saturating_add(FLATS_REFRESH_SECS),
+            PaymentError::FeePriceTooSoon
+        );
+    }
+
+    config.policy.flat_usdc_base_units = flat_for_rent(receipt_rent, sol_usd_micros)?;
+    config.policy.flat_eurc_base_units = flat_for_rent(receipt_rent, sol_eur_micros)?;
+    config.flats_updated_at = now;
+
+    msg!(
+        "flats refreshed at {} / {} micros: {} USDC and {} EURC base units",
+        sol_usd_micros,
+        sol_eur_micros,
+        config.policy.flat_usdc_base_units,
+        config.policy.flat_eurc_base_units
+    );
+    emit!(ConfigUpdated {
+        admin: config.admin,
+        policy: config.policy,
+        fee_mode: config.fee_mode,
+        session_fee_float: config.session_fee_float,
+    });
+    Ok(())
+}
+
+/// Writes the price the permissionless `refresh_fee_price` is measured against,
+/// and prices the flats at it in the same call.
+///
+/// Admin only, like every other policy write: the band exists so a caller cannot
+/// choose the price, which means the price has to come from somewhere only the
+/// admin can write. Setting it here also writes both flats from the cluster's
+/// current rent at that price, so a deliberate admin re-peg takes effect without
+/// waiting for the cooldown or for a second transaction, and the anchor is never
+/// out of step with what the policy charges.
+pub fn set_fee_price_anchor_handler(
+    ctx: Context<SetFeePriceAnchor>,
+    sol_usd_micros: u64,
+    sol_eur_micros: u64,
+) -> Result<()> {
+    validate_price(sol_usd_micros)?;
+    validate_price(sol_eur_micros)?;
+
+    let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
+    let config = &mut ctx.accounts.config;
+    config.policy.flat_usdc_base_units = flat_for_rent(receipt_rent, sol_usd_micros)?;
+    config.policy.flat_eurc_base_units = flat_for_rent(receipt_rent, sol_eur_micros)?;
+    config.flats_updated_at = Clock::get()?.unix_timestamp;
+
+    let anchor = &mut ctx.accounts.anchor;
+    anchor.sol_usd_micros = sol_usd_micros;
+    anchor.sol_eurc_micros = sol_eur_micros;
+    anchor.bump = ctx.bumps.anchor;
+
+    msg!(
+        "fee price anchored at {} / {} micros: {} USDC and {} EURC base units",
+        sol_usd_micros,
+        sol_eur_micros,
+        config.policy.flat_usdc_base_units,
+        config.policy.flat_eurc_base_units
+    );
+    emit!(ConfigUpdated {
+        admin: config.admin,
+        policy: config.policy,
+        fee_mode: config.fee_mode,
+        session_fee_float: config.session_fee_float,
+    });
+    Ok(())
+}
+
+/// Upgrades the live config account — version 1 or version 2 — to version 3 in
+/// place.
 ///
 /// Only the layout changes: the admin, the fee mode and the session float the
 /// account already records are carried over, and the new `FeePolicy` is the one
-/// the admin passes. The account grows, so the admin tops its rent up first —
-/// the runtime refuses a realloc that leaves an account below its rent-exempt
-/// minimum.
+/// the admin passes — bar its two token flats, which are zeroed.
+///
+/// The flats are zeroed on purpose. Whatever numbers the old account (or the
+/// admin's arguments) carried were priced for a rent and a SOL rate from before
+/// this upgrade, and a stale floor would overcharge or undercharge every token
+/// seller until the admin re-pegs it. Zero is the program's "not priced yet",
+/// and the admin's next `set_fee_price_anchor` writes both flats from the
+/// current rent and its own price; `flats_updated_at` also starts at zero, so
+/// nothing waits for a cooldown either.
+///
+/// A deployment migrated by this instruction has no price anchor yet — that
+/// account postdates the layouts this migration upgrades — so the admin's
+/// `set_fee_price_anchor` is required before any permissionless
+/// `refresh_fee_price` can run. Between the migration and that call a token
+/// settlement is charged the percentage alone, with no record floor, so anchor
+/// the price immediately afterwards, before taking a token payment. The account
+/// grows to `CONFIG_SPACE`, so the admin tops its rent up first — the runtime
+/// refuses a realloc that leaves an account below its rent-exempt minimum.
 pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
     validate_fee_policy(&policy)?;
+    let policy = FeePolicy {
+        flat_usdc_base_units: 0,
+        flat_eurc_base_units: 0,
+        ..policy
+    };
 
     let info = ctx.accounts.config.to_account_info();
     require_keys_eq!(*info.owner, crate::ID, PaymentError::InvalidConfigAdmin);
 
     let (admin, fee_mode, session_fee_float, bump, treasury_bump) = {
         let data = info.try_borrow_data()?;
-        require!(
-            data.len() == CONFIG_SPACE_V1,
-            PaymentError::InvalidConfigVersion
-        );
-        let old = ConfigV1::try_from_slice(&data[8..])
-            .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
-        require!(old.version == 1, PaymentError::InvalidConfigVersion);
-        (
-            old.admin,
-            old.fee_mode,
-            old.session_fee_float,
-            old.bump,
-            old.treasury_bump,
-        )
+        match data.len() {
+            CONFIG_SPACE_V1 => {
+                let old = ConfigV1::try_from_slice(&data[8..])
+                    .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
+                require!(old.version == 1, PaymentError::InvalidConfigVersion);
+                (
+                    old.admin,
+                    old.fee_mode,
+                    old.session_fee_float,
+                    old.bump,
+                    old.treasury_bump,
+                )
+            }
+            CONFIG_SPACE_V2 => {
+                let old = ConfigV2::try_from_slice(&data[8..])
+                    .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
+                require!(old.version == 2, PaymentError::InvalidConfigVersion);
+                (
+                    old.admin,
+                    old.fee_mode,
+                    old.session_fee_float,
+                    old.bump,
+                    old.treasury_bump,
+                )
+            }
+            _ => return Err(PaymentError::InvalidConfigVersion.into()),
+        }
     };
 
     require!(
@@ -271,6 +479,7 @@ pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) ->
         policy,
         fee_mode,
         session_fee_float,
+        flats_updated_at: 0,
         bump,
         treasury_bump,
         version: CONFIG_VERSION,
@@ -297,10 +506,27 @@ pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) ->
     Ok(())
 }
 
+/// Moves treasury surplus to the admin, keeping enough behind for the refunds a
+/// token settlement draws from the pool.
+///
+/// The treasury already holds the rent-exempt minimums of the records it has
+/// funded; what it must not lose is the next one. A withdrawal that stopped at
+/// the empty account's own rent would leave the pool short of what
+/// `ensure_treasury_funded` refunds — the token invoice's rent and the marker's —
+/// and every token payment would be refused until someone topped it up, so the
+/// reserve is that refund plus the account's rent. It is a floor on the
+/// withdrawal, not on the treasury: a settlement may still spend it, and then
+/// the guard refuses the next one until the pool is refunded.
 pub fn withdraw_treasury_handler(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
     let treasury = ctx.accounts.treasury.to_account_info();
-    let floor = Rent::get()?.minimum_balance(0);
-    let available = treasury.lamports().saturating_sub(floor);
+    let rent = Rent::get()?;
+    let settlement_refund = rent
+        .minimum_balance(TOKEN_PAYMENT_SPACE)
+        .saturating_add(rent.minimum_balance(PAYMENT_RECEIPT_SPACE));
+    let reserve = settlement_refund
+        .saturating_mul(TREASURY_RESERVE_SETTLEMENTS)
+        .saturating_add(rent.minimum_balance(0));
+    let available = treasury.lamports().saturating_sub(reserve);
     require!(amount <= available, PaymentError::TreasuryUnderfunded);
 
     pay_from_treasury(

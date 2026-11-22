@@ -20,6 +20,8 @@ export interface Product {
   name: string
   /** What is in it, the size, the allergens — never sent with a payment. */
   details: string
+  /** The heading the menu lists it under, empty for no category. */
+  category: string
   /** The canonical price: every receipt line is built from it. */
   price_lamports: number
   created_at_unix: number
@@ -33,7 +35,30 @@ export interface ShopWithProducts extends Shop {
 export interface ProductInput {
   name: string
   details: string
+  category: string
   price_lamports: number
+}
+
+/** One heading's worth of a menu, in the order the products keep. */
+export interface MenuGroup {
+  /** Empty for products that have no category. */
+  category: string
+  products: Product[]
+}
+
+/**
+ * A catalogue as a menu: products grouped under their category, headings in the
+ * order they first appear. Uncategorised products keep their place rather than
+ * being swept into a group at the end.
+ */
+export function menuGroups(products: Product[]): MenuGroup[] {
+  const groups: MenuGroup[] = []
+  for (const product of products) {
+    const found = groups.find(group => group.category === product.category)
+    if (found) found.products.push(product)
+    else groups.push({ category: product.category, products: [product] })
+  }
+  return groups
 }
 
 /** One product and how many of it the seller is charging for. */

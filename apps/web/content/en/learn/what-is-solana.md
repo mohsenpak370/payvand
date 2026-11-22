@@ -24,7 +24,8 @@ designed for the other case: a great many small payments, quickly.
   [That number is worth its own guide](/learn/when-is-a-payment-final), because "final" is the word
   that matters at a shop counter.
 - **The fee is 0.000005 SOL**, a fraction of a cent, whatever the size of the payment
-  ([why it works that way](/learn/what-is-a-fee)).
+  ([why it works that way](/learn/what-is-a-fee)); the rest of what a payment costs is in
+  [what a payment costs, and why](/learn/what-a-payment-costs).
 
 ## Who keeps it honest
 

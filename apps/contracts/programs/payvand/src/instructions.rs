@@ -3,5 +3,6 @@
 //! stays readable in one place while each body lives next to its accounts.
 
 pub mod config;
+pub mod shop;
 pub mod sol;
 pub mod token;

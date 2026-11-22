@@ -26,7 +26,8 @@ Lee cuatro cosas siempre:
    quien esperas. Si le pagas a un comercio, debe ser la dirección de la factura que acabas de escanear,
    no una que pegaste de un chat.
 4. **La comisión** — pequeña en Solana, pero una comisión desproporcionada es una señal de que la
-   transacción no es lo que crees.
+   transacción no es lo que crees. Lo que cuesta de verdad un pago, más allá de esa comisión, está en
+   [lo que cuesta un pago, y por qué](/learn/what-a-payment-costs).
 
 ## Enviar no es lo mismo que aprobar
 

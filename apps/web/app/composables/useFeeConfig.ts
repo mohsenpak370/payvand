@@ -33,10 +33,14 @@ export interface FeeConfig extends FeePolicy {
 /**
  * `CONFIG_SPACE` from the program: 8 (discriminator) + 32 (admin) + 100 (the
  * `FeePolicy`: two rates, their two boundaries, the two per-currency flats and
- * the two mints) + 1 (fee_mode) + 8 (session_fee_float) + 1 (bump) + 1
- * (treasury_bump) + 1 (version).
+ * the two mints) + 1 (fee_mode) + 8 (session_fee_float) + 8 (flats_updated_at)
+ * + 1 (bump) + 1 (treasury_bump) + 1 (version).
+ *
+ * The flats read here are the record's rent at the SOL price the last
+ * `refresh_fee_price` wrote, which is why a quote is only as stale as the last
+ * refresh and not as stale as the last policy change.
  */
-const CONFIG_SIZE = 152
+const CONFIG_SIZE = 160
 
 /**
  * How long a read stays fresh. Long enough that a checkout does not re-read the

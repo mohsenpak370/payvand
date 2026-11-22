@@ -779,7 +779,9 @@
     "addDiscountFailure": "Der Rabattcode konnte nicht hinzugefügt werden.",
     "deleteDiscountFailure": "Der Rabattcode konnte nicht gelöscht werden.",
     "presentFallbackTitle": "Zahlungscode",
-    "scanToPay": "Scanne das mit einer Handykamera, um zu zahlen."
+    "scanToPay": "Scanne das mit einer Handykamera, um zu zahlen.",
+    "allowDiscountsLabel": "Käufer dürfen deine Codes nutzen",
+    "allowDiscountsHelp": "Käufer können auf eine Zahlung aus deinen Produkten einen deiner Codes anwenden. Jede Wallet kann einen Code einmal nutzen."
   },
   "productPicker": {
     "fromYourShops": "Aus deinen Shops",
@@ -788,23 +790,6 @@
     "increaseAria": "Eins mehr {name}",
     "total": "Gesamt",
     "limit": "Eine Rechnung fasst {max} verschiedene Produkte — erstelle für mehr eine zweite Zahlung."
-  },
-  "shopPayment": {
-    "title": "Zahlung erstellen",
-    "newPayment": "Neue Zahlung",
-    "loadingMenu": "Speisekarte dieses Shops wird geladen…",
-    "emptyMenu": "Füge oben ein Produkt hinzu, dann wird daraus eine bezahlbare Karte.",
-    "scanHint": "Jede Handykamera öffnet das — und die Seite nimmt die Zahlung an.",
-    "openPage": "Zahlungsseite öffnen",
-    "copyLink": "Link kopieren",
-    "linkCopied": "Link kopiert",
-    "connectFirst": "Verbinde zuerst dein Verkäufer-Wallet.",
-    "pickSomething": "Wähle zuerst etwas aus dem Shop.",
-    "createFailure": "Die Zahlung konnte nicht erstellt werden.",
-    "alertTitle": "Zahlung konnte nicht erstellt werden",
-    "createCode": "Zahlungscode erstellen",
-    "connectHint": "Verbinde dein Verkäufer-Wallet, um den Code zu erstellen.",
-    "costUnavailable": "Die Gebühr konnte gerade nicht vom Cluster gelesen werden."
   },
   "shopsList": {
     "title": "Deine Shops",
@@ -856,7 +841,23 @@
     "readingRate": "Tageskurs wird gelesen…",
     "productFailureTitle": "Produkt konnte nicht gespeichert werden",
     "saveChanges": "Änderungen speichern",
-    "addProduct": "Produkt hinzufügen"
+    "addProduct": "Produkt hinzufügen",
+    "categoryLabel": "Kategorie",
+    "categoryHelp": "Optional — die Überschrift, unter der das hier steht, etwa „Getränke“.",
+    "categoryPlaceholder": "Getränke"
+  },
+  "subscription": {
+    "title": "Shop-Abo",
+    "description": "Für 1,70 € im Monat bleiben Shops und Produkte in diesem Konto verfügbar.",
+    "active": "Aktiv",
+    "inactive": "Nicht aktiv",
+    "loading": "Abo wird geladen…",
+    "renewsOn": "Bezahlt bis {date}.",
+    "price": "1,70 € für {days} Tage, zahlbar in einer dieser Währungen.",
+    "rateNote": "Preise umgerechnet zum Kurs vom {date}.",
+    "errorTitle": "Abo",
+    "loadFailure": "Das Abo konnte nicht geladen werden.",
+    "payFailure": "Die Abo-Zahlung konnte nicht gestartet werden."
   },
   "shops": {
     "metaTitle": "Shops — Payvand",
@@ -866,7 +867,10 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Deine Produkte, die Preise, die die Zahlungsseite berechnet, und die Codes, die du hier gespeichert hast.",
-    "backToShops": "Zurück zu deinen Shops"
+    "backToShops": "Zurück zu deinen Shops",
+    "createPaymentTitle": "Zahlung erstellen",
+    "createPaymentDescription": "Das ganze Zahlungsformular, bepreist aus der Karte dieses Shops, mit deinen Rabattcodes.",
+    "createPayment": "Zahlung erstellen"
   },
   "settings": {
     "metaTitle": "Einstellungen — Payvand",
@@ -938,7 +942,7 @@
     },
     "fees": {
       "title": "Gebühren",
-      "body": "Ein Zahlungscode kostet Kundinnen und Kunden nichts über den angezeigten Betrag hinaus: Sie zahlen den Preis, den sie sehen, plus die Netzwerkgebühr von Solana. Verkäufer zahlen die Protokollgebühr — derzeit 2 % des Preises, abgezogen von dem, was sie erhalten, nicht obendrauf — und die App zeigt den genauen Betrag, bevor ein Code geteilt wird. Die dauerhafte Aufzeichnung einer Zahlung auf der Chain zahlt das Protokoll, und die vorübergehende Miete, die eine Zahlung vorstreckt, kommt in derselben Transaktion zurück."
+      "body": "Ein Code zu erstellen oder zu scannen ist für den Kunden kostenlos über den angezeigten Betrag hinaus: er zahlt den sichtbaren Preis plus die Netzwerkgebühr von Solana für die Transaktion, sonst nichts. Verkäufer zahlen die Protokollgebühr, die aus zwei Teilen besteht. Der eine ist ein Prozentsatz des Preises, der vom Betrag des Verkäufers abgezogen wird. Der andere ist eine Beleggebühr bei Rechnungen, die in einem Token bezahlt werden, und deckt den dauerhaften Nachweis dieser Zahlung auf der Blockchain; bei einer SOL-Rechnung wird dieser Betrag stattdessen aus dem Preis genommen. Die Gebühr wird in der Währung der Zahlung berechnet, ist nie im Betrag des Kunden enthalten, und die App zeigt vor dem Teilen eines Codes den genauen Betrag, den der Verkäufer erhält. Prozentsätze und Beleggebühr legt die Plattform fest; sie können sich mit den Kosten des Betriebs ändern. Es gilt die Gebühr, die beim Bezahlen in Kraft ist, und der Preis eines Codes ändert sich nie."
     },
     "testMoney": {
       "title": "Testgeld",
@@ -991,8 +995,20 @@
     "open": "Öffnen"
   },
   "invoiceSplit": {
-    "netReceive": "Du erhältst {net} nach der Gebühr von {percent} %",
-    "rentNote": "Die Miete des Codes ({rent} SOL) kommt beim Bezahlen zu dir zurück; den Zahlungsbeleg zahlt das Protokoll.",
-    "rentNoteToken": "Ein Token-Code braucht kein SOL von dir: die Miete zahlt der Käufer und bekommt sie zurück, und die dauerhafte Zahlungsaufzeichnung zahlt das Protokoll."
+    "netReceive": "Sie erhalten {net}",
+    "detailsAria": "So wird die Gebühr berechnet",
+    "feeLine": "Protokollgebühr: {percent} % des Preises, {fee}.",
+    "feeFloorLine": "Keine Protokollgebühr auf diese Zahlung: {fee} — die Miete des dauerhaften Belegs — ist alles, was abgezogen wird.",
+    "feeNoneLine": "Keine Protokollgebühr auf diese Zahlung: sie ist klein genug, dass der Prozentsatz entfällt, und die Miete des Belegs, direkt vom Preis genommen, ist alles, was sie kostet.",
+    "recordLine": "Davon sind {fee} die Beleggebühr: der dauerhafte Beleg dieser Zahlung auf der Blockchain.",
+    "rentNote": "Die Miete des Codes ({rent} SOL) geht bei der Zahlung an Sie zurück.",
+    "rentNoteToken": "Ein Token-Code braucht kein SOL von Ihnen: der Zahler legt die Miete beider Konten vor und das Protokoll erstattet sie in derselben Transaktion. Die Beleggebühr oben behält das Protokoll.",
+    "learnMore": "Mehr erfahren"
+  },
+  "shopSell": {
+    "metaTitle": "Zahlung erstellen — Payvand",
+    "pageTitle": "Zahlung erstellen",
+    "pageDescription": "Preis aus der Karte dieses Shops oder ein Betrag, ein Rabattcode oder die Wahl für Käufer — dann den Code zeigen.",
+    "backToShop": "Zurück zu diesem Shop"
   }
 }

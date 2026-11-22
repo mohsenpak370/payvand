@@ -25,7 +25,13 @@ custom-panic = []
 # program could disagree about the framework version.
 # `init-if-needed` lets the buyer's settle transaction create the invoice
 # account itself, so opening a payment code never requires a seller signature.
-anchor-lang = { version = "=1.2.1", features = ["init-if-needed"] }
+# `allow-missing-optionals` is what makes the shop policy account on the four
+# settle paths optional in the real sense: without it Anchor still demands a
+# slot for a trailing `Option<Account<..>>` (the program id stands in for
+# "none"), so every settle built before shop rates existed — and every QR
+# printed then, settled by a client that knows nothing of them — would fail with
+# `AccountNotEnoughKeys` instead of paying `Config`'s rate.
+anchor-lang = { version = "=1.2.1", features = ["init-if-needed", "allow-missing-optionals"] }
 # Token payments: the SPL transfer CPIs and the mint/token-account checks.
 # `anchor-spl/idl-build` belongs in the `idl-build` feature list above, not in
 # the default feature set (Anchor 1.2 warns about the latter).

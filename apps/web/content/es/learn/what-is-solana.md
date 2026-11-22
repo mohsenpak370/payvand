@@ -23,7 +23,8 @@ transferencias grandes. Solana se diseñó para el caso contrario: muchísimos p
   segundo. [Ese número merece su propia guía](/learn/when-is-a-payment-final), porque «final» es la
   palabra que importa en un mostrador.
 - **La comisión es de 0,000005 SOL**, una fracción de céntimo, sea cual sea el tamaño del pago
-  ([por qué funciona así](/learn/what-is-a-fee)).
+  ([por qué funciona así](/learn/what-is-a-fee)); el resto de lo que cuesta un pago está en
+  [lo que cuesta un pago, y por qué](/learn/what-a-payment-costs).
 
 ## Quién la mantiene honesta
 

@@ -52,6 +52,9 @@ Every transaction pays a small network fee. On Solana the base fee is 5,000 lamp
 0.000005 SOL, a fraction of a cent — plus an optional priority fee when the network is busy. The
 fee goes to the network, not to Payvand and not to the seller.
 
+That is only one line of what a payment costs. [What a payment costs, and why](/learn/what-a-payment-costs)
+lays out the rest — the protocol's cut and the permanent record on chain — and who pays each part.
+
 You do need a little SOL in the wallet to pay it. A wallet with a large stablecoin balance and
 zero SOL cannot move anything, which surprises people the first time.
 

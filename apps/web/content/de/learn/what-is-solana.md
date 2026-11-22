@@ -25,7 +25,8 @@ abzuwickeln. Solana wurde für den anderen Fall entworfen: sehr viele kleine Zah
   Siebtelsekunde. [Diese Zahl verdient eine eigene Anleitung](/learn/when-is-a-payment-final), denn
   „endgültig“ ist das Wort, auf das es an einer Ladentheke ankommt.
 - **Die Gebühr ist 0,000005 SOL**, ein Bruchteil eines Cents, egal wie groß die Zahlung ist
-  ([warum das so funktioniert](/learn/what-is-a-fee)).
+  ([warum das so funktioniert](/learn/what-is-a-fee)); der Rest dessen, was eine Zahlung kostet,
+  steht in [was eine Zahlung kostet, und warum](/learn/what-a-payment-costs).
 
 ## Wer es ehrlich hält
 

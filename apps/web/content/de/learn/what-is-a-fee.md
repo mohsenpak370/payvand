@@ -56,3 +56,5 @@ selbst.
 Gebühren sind nichts, worüber du dir Sorgen machen oder das du einplanen müsstest. Halt ein wenig SOL
 in dem Wallet, aus dem du zahlst, und die Kosten einer Zahlung bleiben so klein, dass sie leichter zu
 ignorieren als auszurechnen sind.
+
+Die Netzwerkgebühr ist nur der kleinste Teil dessen, was eine Zahlung kostet. Wohin der Rest geht — der Anteil des Protokolls, der dauerhafte Beleg auf der Blockchain und die Kosten, die den Dienst am Laufen halten — steht in [Was eine Zahlung kostet](/learn/what-a-payment-costs).
