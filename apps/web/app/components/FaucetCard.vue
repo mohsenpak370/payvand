@@ -2,6 +2,10 @@
 // One claim per account, to the linked wallet: enough SOL for fees and enough
 // USDC/EURC to pay a few invoices, so a first visit never stops at an empty
 // balance. The links are the way to get more once that is spent.
+// The getting-started page numbers this card as a step; the profile page uses
+// it as a plain card beside the wallet, so its title is optional there.
+withDefaults(defineProps<{ heading?: boolean }>(), { heading: true })
+
 const { user } = useAuth()
 const faucet = useFaucet()
 
@@ -27,7 +31,10 @@ onMounted(() => {
           />
         </div>
         <div class="min-w-0">
-          <h3 class="text-base font-semibold">
+          <h3
+            v-if="heading"
+            class="text-base font-semibold"
+          >
             {{ $t('start.faucet.title') }}
           </h3>
           <p class="text-muted mt-1 text-sm leading-relaxed">
@@ -113,8 +120,10 @@ onMounted(() => {
         </template>
       </template>
 
+      <!-- The claim is one per account, so someone who already got theirs is
+           pointed at the links that are not: the official faucets. -->
       <p class="border-default border-t pt-3 text-xs leading-relaxed text-muted">
-        {{ $t('start.faucet.more') }}
+        {{ faucet.status.value?.claimed ? $t('start.faucet.claimedMore') : $t('start.faucet.more') }}
         <ULink
           to="https://faucet.solana.com/"
           target="_blank"

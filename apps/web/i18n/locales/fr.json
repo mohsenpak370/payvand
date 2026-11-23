@@ -1089,10 +1089,11 @@
       "claim": "Obtenir {amounts}",
       "toWallet": "Envoyé au portefeuille lié à ce compte.",
       "claimedTitle": "Jetons de départ reçus",
-      "claimedBody": "Votre portefeuille lié a reçu les jetons de test. Ils ne valent rien et ne peuvent pas être vendus : le but est de s’exercer.",
+      "claimedBody": "Cet airdrop est unique par compte et le vôtre a déjà été versé. Les jetons ne valent rien et ne peuvent pas être vendus : ils servent à s’entraîner.",
       "linkWallet": "Lier un portefeuille",
       "more": "Épuisés ? Obtenez-en d’autres auprès des faucets officiels :",
-      "error": "Impossible de lire vos jetons de départ. Réessayez dans un instant."
+      "error": "Impossible de lire vos jetons de départ. Réessayez dans un instant.",
+      "claimedMore": "Besoin d’autres jetons de test ? Les faucets officiels en envoient quand vous voulez :"
     },
     "next": {
       "title": "4. Essayez",

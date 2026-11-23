@@ -85,7 +85,7 @@ function openBudget() {
 
       <!-- Devnet starter tokens: the natural next step after linking a wallet,
            so the claim lives here as well as on the getting-started page. -->
-      <FaucetCard />
+      <FaucetCard :heading="false" />
 
       <ProfileAllowanceCard
         :has-address="!!allowanceAddress"

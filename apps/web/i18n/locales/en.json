@@ -1089,10 +1089,11 @@
       "claim": "Get {amounts}",
       "toWallet": "Sent to the wallet linked to this account.",
       "claimedTitle": "Starter tokens claimed",
-      "claimedBody": "Your linked wallet received the test tokens. They are worth nothing and cannot be sold — the point is to practise.",
+      "claimedBody": "This is a one-time airdrop, and this account has already received it. The tokens are worth nothing and cannot be sold — the point is to practise.",
       "linkWallet": "Link a wallet",
       "more": "Spent them? Get more from the official faucets:",
-      "error": "Could not read your starter tokens. Try again in a moment."
+      "error": "Could not read your starter tokens. Try again in a moment.",
+      "claimedMore": "Need more test tokens? The official faucets send them whenever you ask:"
     },
     "next": {
       "title": "4. Try it",

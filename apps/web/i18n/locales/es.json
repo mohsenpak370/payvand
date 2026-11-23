@@ -1089,10 +1089,11 @@
       "claim": "Consigue {amounts}",
       "toWallet": "Se envía a la cartera vinculada a esta cuenta.",
       "claimedTitle": "Tokens iniciales reclamados",
-      "claimedBody": "Tu cartera vinculada recibió los tokens de prueba. No valen nada y no se pueden vender: la idea es practicar.",
+      "claimedBody": "Este airdrop es único por cuenta y esta cuenta ya lo ha recibido. Los tokens no valen nada y no se pueden vender: son para practicar.",
       "linkWallet": "Vincular una cartera",
       "more": "¿Se acabaron? Consigue más en los faucets oficiales:",
-      "error": "No se pudieron leer tus tokens iniciales. Inténtalo de nuevo en un momento."
+      "error": "No se pudieron leer tus tokens iniciales. Inténtalo de nuevo en un momento.",
+      "claimedMore": "¿Necesitas más tokens de prueba? Los faucets oficiales los envían cuando los pidas:"
     },
     "next": {
       "title": "4. Pruébalo",

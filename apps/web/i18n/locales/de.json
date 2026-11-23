@@ -1089,10 +1089,11 @@
       "claim": "Hol dir {amounts}",
       "toWallet": "An die mit diesem Konto verknüpfte Wallet gesendet.",
       "claimedTitle": "Start-Token abgeholt",
-      "claimedBody": "Deine verknüpfte Wallet hat die Test-Token erhalten. Sie sind wertlos und nicht verkäuflich — es geht ums Üben.",
+      "claimedBody": "Dieser Airdrop ist einmalig pro Konto und wurde bereits ausgezahlt. Die Token sind wertlos und nicht handelbar — sie sind zum Üben da.",
       "linkWallet": "Wallet verknüpfen",
       "more": "Aufgebraucht? Nachschub gibt es bei den offiziellen Faucets:",
-      "error": "Deine Start-Token konnten nicht gelesen werden. Versuch es gleich noch einmal."
+      "error": "Deine Start-Token konnten nicht gelesen werden. Versuch es gleich noch einmal.",
+      "claimedMore": "Brauchen Sie mehr Test-Token? Die offiziellen Faucets senden jederzeit welche:"
     },
     "next": {
       "title": "4. Ausprobieren",
