@@ -58,15 +58,10 @@ export interface WaitlistPage {
 export function useAdminApi() {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
-  const { token } = useAuth()
-
-  function headers(): Record<string, string> {
-    return token.value ? { authorization: `Bearer ${token.value}` } : {}
-  }
 
   async function fetchStats(): Promise<AdminStats> {
     return await $fetch<AdminStats>(`${base}/api/admin/stats`, {
-      headers: headers()
+      headers: authHeaders()
     })
   }
 
@@ -76,7 +71,7 @@ export function useAdminApi() {
     offset: number
   ): Promise<UserPage> {
     return await $fetch<UserPage>(`${base}/api/admin/users`, {
-      headers: headers(),
+      headers: authHeaders(),
       query: { ...(search ? { search } : {}), limit, offset }
     })
   }
@@ -84,7 +79,7 @@ export function useAdminApi() {
   /** Live invoices, read from the cluster — may fail when the RPC does. */
   async function fetchPayments(limit = 20): Promise<PaymentsPage> {
     return await $fetch<PaymentsPage>(`${base}/api/admin/payments`, {
-      headers: headers(),
+      headers: authHeaders(),
       query: { limit }
     })
   }
@@ -92,7 +87,7 @@ export function useAdminApi() {
   /** Addresses waiting for a live cluster, newest first. */
   async function fetchWaitlist(): Promise<WaitlistPage> {
     return await $fetch<WaitlistPage>(`${base}/api/admin/waitlist`, {
-      headers: headers()
+      headers: authHeaders()
     })
   }
 
@@ -100,14 +95,14 @@ export function useAdminApi() {
     // The address is a path segment, so it is encoded rather than trusted.
     await $fetch(`${base}/api/admin/waitlist/${encodeURIComponent(email)}`, {
       method: 'DELETE',
-      headers: headers()
+      headers: authHeaders()
     })
   }
 
   async function deleteUser(id: string): Promise<void> {
     await $fetch(`${base}/api/admin/users/${id}`, {
       method: 'DELETE',
-      headers: headers()
+      headers: authHeaders()
     })
   }
 

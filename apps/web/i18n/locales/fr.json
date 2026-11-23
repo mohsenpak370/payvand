@@ -31,6 +31,7 @@
       "createPayment": "Créer un paiement",
       "scanAndPay": "Scanner et payer",
       "learn": "Apprendre",
+      "start": "Commencer ici",
       "learnAboutCrypto": "Comprendre la crypto"
     },
     "account": {
@@ -66,7 +67,19 @@
       "title": "Des paiements simples sur Solana",
       "description": "Un vendeur crée un code de paiement en quelques secondes, le client le scanne avec son téléphone et valide le paiement — c'est tout.",
       "createCta": "Créer un QR de paiement",
-      "scanCta": "Scanner et payer"
+      "scanCta": "Scanner et payer",
+      "proof": {
+        "noReader": "Pas de terminal",
+        "noInstall": "Votre client n’installe rien",
+        "ownWallet": "L’argent arrive dans votre portefeuille",
+        "noMarkup": "Votre client ne paie aucun supplément"
+      },
+      "card": {
+        "example": "Reçu d’exemple",
+        "paid": "Payé",
+        "memo": "Un flat white et un croissant",
+        "code": "Code de paiement"
+      }
     },
     "how": {
       "title": "Comment circule un paiement",
@@ -86,7 +99,9 @@
     },
     "cta": {
       "description": "Ouvrez la page vendeur, saisissez un montant et montrez le code à votre client. Cela prend une minute.",
-      "startSelling": "Commencer à vendre"
+      "startSelling": "Commencer à vendre",
+      "startCta": "Nouveau dans la crypto ? Commencez ici",
+      "devnetGuide": "Voir comment passer votre portefeuille sur devnet"
     }
   },
   "admin": {
@@ -428,7 +443,10 @@
       "copyCode": "Copier le code",
       "failed": "Le paiement n'a pas abouti"
     },
-    "poweredBy": "Propulsé par"
+    "poweredBy": "Propulsé par",
+    "qrTitle": "Scannez ce code",
+    "qrHint": "Ouvrez-le sur le téléphone qui paie, ou montrez-le à la personne qui paie.",
+    "qrShow": "Afficher le QR code"
   },
   "status": {
     "paid": "Payé",
@@ -670,6 +688,8 @@
     "txNoMatch": "Aucun paiement ne correspond à ce code. Vérifiez la référence lue par le client, ou élargissez les dates.",
     "referenceCodeLabel": "Code de référence",
     "referencePlaceholder": "Le code lu par le client",
+    "filters": "Filtres",
+    "clearDates": "Effacer les dates",
     "from": "Du",
     "to": "Au",
     "linkToSeeTx": "Associez votre portefeuille pour voir les transactions",
@@ -678,7 +698,28 @@
     "directionFrom": "de",
     "directionTo": "vers",
     "paymentReceived": "Paiement reçu",
-    "paymentSent": "Paiement envoyé"
+    "paymentSent": "Paiement envoyé",
+    "flowTitle": "Argent qui entre et qui sort",
+    "flowDescription": "Ce qui a été réglé dans les paiements récents de ce portefeuille, converti en {currency} au taux du jour. Les factures impayées ne comptent pas.",
+    "flowSpent": "Total dépensé",
+    "flowReceived": "Total reçu",
+    "flowNet": "Flux net",
+    "flowEmpty": "Aucun paiement réglé pour l’instant : dès que de l’argent entre ou sort, le total apparaît ici.",
+    "flowNoRate": "Pas de taux de change pour le moment, donc seuls les montants en jetons sont affichés.",
+    "detailTitle": "Détails du paiement",
+    "detailName": "Nom",
+    "detailDescription": "Description",
+    "detailMemo": "Note",
+    "detailAmount": "Montant",
+    "detailFee": "Frais du protocole",
+    "detailFeeNote": "Les frais sont prélevés sur le prix. Les frais de réseau sont payés séparément par le payeur.",
+    "detailDate": "Payé",
+    "detailCreated": "Créé",
+    "detailPayer": "Payeur",
+    "detailPayee": "Bénéficiaire",
+    "detailStatus": "Statut",
+    "detailReference": "Référence",
+    "detailClose": "Fermer"
   },
   "scan": {
     "metaTitle": "Scanner et payer — Payvand",
@@ -788,7 +829,16 @@
     "presentFallbackTitle": "Code de paiement",
     "scanToPay": "Scannez ceci avec l'appareil photo d'un téléphone pour payer.",
     "allowDiscountsLabel": "Laisser les acheteurs utiliser vos codes",
-    "allowDiscountsHelp": "Les acheteurs peuvent appliquer un de vos codes à un paiement créé à partir de vos produits. Chaque portefeuille peut utiliser un code une fois."
+    "allowDiscountsHelp": "Les acheteurs peuvent appliquer un de vos codes à un paiement créé à partir de vos produits. Chaque portefeuille peut utiliser un code une fois.",
+    "designLabel": "Design de la carte",
+    "designHelp": "La couleur de la page que votre client ouvre.",
+    "designs": {
+      "classic": "Classique",
+      "aurora": "Aurore",
+      "sunset": "Crépuscule",
+      "mint": "Menthe",
+      "ocean": "Océan"
+    }
   },
   "productPicker": {
     "fromYourShops": "Depuis vos boutiques",
@@ -815,7 +865,10 @@
     "descriptionLabel": "Description courte",
     "descriptionHelp": "Facultatif — une ligne sur ce que vend la boutique.",
     "descriptionPlaceholder": "Cafés et pain frais",
-    "createShop": "Créer la boutique"
+    "createShop": "Créer la boutique",
+    "subscriptionNeededTitle": "Un abonnement est nécessaire d’abord",
+    "subscriptionNeededDescription": "Les boutiques se vendent au mois. Payez une période ici ; la boutique attend d’être créée à votre retour.",
+    "subscriptionResume": "Abonnement actif — terminez la création de votre boutique."
   },
   "shopEditor": {
     "loadFailureTitle": "Impossible d'ouvrir cette boutique",
@@ -862,6 +915,8 @@
     "renewsOn": "Payé jusqu’au {date}.",
     "price": "1,70 € pour {days} jours, payable dans l’une de ces devises.",
     "rateNote": "Prix convertis au taux lu le {date}.",
+    "ratesUnavailable": "Les prix ne sont pas disponibles pour l’instant, faute de taux de change lisible. Votre abonnement n’est pas affecté — réessayez dans un instant.",
+    "fromAllowance": "Couvert par votre budget mensuel : ce paiement ne demande aucune approbation du portefeuille.",
     "errorTitle": "Abonnement",
     "loadFailure": "Impossible de lire votre abonnement.",
     "payFailure": "Impossible de lancer le paiement de l’abonnement."
@@ -903,6 +958,20 @@
     "soundsDescription": "Une courte montée quand un paiement passe, un bourdonnement grave quand il échoue.",
     "soundsLabel": "Sons de paiement",
     "soundsSwitch": "Jouer un son à la fin d'un paiement",
+    "notificationsTitle": "Notifications",
+    "notificationsDescription": "Un bref rappel lorsque votre autorisation mensuelle repart à zéro sans être rechargée. Rien d’autre n’est envoyé.",
+    "notificationsLabel": "Notifications push",
+    "notificationsSwitch": "Me prévenir sur cet appareil",
+    "notificationsUnsupported": "Ce navigateur ne peut pas recevoir de notifications.",
+    "notificationsInstallTitle": "Ajoutez Payvand à votre écran d’accueil",
+    "notificationsInstallSteps": "Ouvrez Payvand dans Safari, touchez Partager, puis Sur l’écran d’accueil. Les notifications ne fonctionnent qu’une fois Payvand ouvert depuis cette icône.",
+    "installAppTitle": "Installer Payvand",
+    "installAppDescription": "Ouvrez-le depuis l’écran d’accueil ou le bureau, sans la barre du navigateur.",
+    "installAppAction": "Installer",
+    "notificationsUnconfigured": "Les notifications ne sont pas encore configurées sur le serveur.",
+    "notificationsBlocked": "Les notifications sont bloquées pour ce site. Autorisez-les dans les réglages du navigateur, puis réessayez.",
+    "notificationsFailed": "Le réglage des notifications n’a pas pu être modifié. Réessayez.",
+    "notificationsTest": "Envoyer un test",
     "browserNote": "Tout cela suit ce navigateur, pas votre compte — un téléphone sur lequel vous vous connectez garde ses propres réglages."
   },
   "terms": {
@@ -992,6 +1061,56 @@
     "successTitle": "Vous êtes sur la liste.",
     "successBody": "Nous vous écrirons quand Payvand pourra encaisser de vrais paiements."
   },
+  "start": {
+    "metaTitle": "Commencer ici",
+    "hero": {
+      "headline": "Premiers pas",
+      "title": "Un portefeuille d’essai, de l’argent de test gratuit, aucun risque",
+      "description": "Payvand tourne sur le devnet de Solana, une version de test du réseau où les dollars et les euros ne coûtent rien. Cette page vous mène de zéro portefeuille à une facture payée en quelques minutes."
+    },
+    "wallet": {
+      "title": "1. Obtenir un portefeuille Solana",
+      "body": "Un portefeuille est votre compte sur le réseau : il garde les SOL, USDC et EURC et signe ce que vous approuvez. Solflare existe en extension de navigateur et en application, et change de réseau sans configuration.",
+      "action": "Télécharger Solflare",
+      "note": "Phantom, Backpack et d’autres portefeuilles Solana fonctionnent aussi."
+    },
+    "devnet": {
+      "title": "2. Le passer sur devnet",
+      "body": "Devnet est l’un des réseaux de test de Solana : le même logiciel et les mêmes parcours, mais chaque jeton y est gratuit et sans valeur, donc un mauvais bouton ne coûte que quelques secondes. L’en-tête de l’application affiche un petit badge devnet quand vous y êtes. L’argent réel vit sur mainnet, et rien ne circule entre les deux.",
+      "solflare": "Dans Solflare : ouvrez Réglages, choisissez Réseau, puis Devnet.",
+      "others": "Dans Phantom : Réglages, Réglages développeur, Changer de réseau, Devnet. Dans Backpack : Réglages, Réseau, Devnet. L’extension Solflare affiche le réseau sous le nom du portefeuille.",
+      "guide": "Lire : ce qu’est devnet et pourquoi c’est l’endroit sûr pour apprendre"
+    },
+    "faucet": {
+      "title": "3. Obtenir des jetons de test gratuits",
+      "body": "Liez un portefeuille à votre compte et Payvand lui envoie un solde de départ depuis sa propre trésorerie : assez de SOL pour les frais de réseau et assez d’USDC et d’EURC pour payer quelques factures. Une demande par compte.",
+      "signedOut": "Connectez-vous, liez un portefeuille, et les jetons y vont directement.",
+      "loading": "Vérification de votre demande…",
+      "claim": "Obtenir {amounts}",
+      "toWallet": "Envoyé au portefeuille lié à ce compte.",
+      "claimedTitle": "Jetons de départ reçus",
+      "claimedBody": "Votre portefeuille lié a reçu les jetons de test. Ils ne valent rien et ne peuvent pas être vendus : le but est de s’exercer.",
+      "linkWallet": "Lier un portefeuille",
+      "more": "Épuisés ? Obtenez-en d’autres auprès des faucets officiels :",
+      "error": "Impossible de lire vos jetons de départ. Réessayez dans un instant."
+    },
+    "next": {
+      "title": "4. Essayez",
+      "body": "Avec des jetons dans le portefeuille, vous pouvez payer un code, en imprimer un, ou fixer une autorisation mensuelle pour que les petits paiements passent sans fenêtre de portefeuille.",
+      "allowance": "Fixer une autorisation mensuelle"
+    },
+    "learn": {
+      "title": "Les idées derrière les boutons",
+      "body": "Des guides en langage simple, sans hype : ce qu’est un portefeuille, ce que paie un frais, pourquoi devnet existe et où sont les arnaques.",
+      "devnet": "Pourquoi l’argent d’essai est faux",
+      "wallet": "Ce qu’est un portefeuille crypto",
+      "paying": "Payer avec un portefeuille",
+      "twoWallets": "Pourquoi Payvand utilise deux portefeuilles",
+      "stablecoins": "Pourquoi les dollars et les euros vivent sur une blockchain",
+      "allowance": "Comment fonctionne l’autorisation mensuelle",
+      "scams": "Repérer les arnaques crypto"
+    }
+  },
   "shopCodes": {
     "title": "Codes de paiement",
     "subtitle": "Les liens que vous avez enregistrés dans cette boutique.",
@@ -1005,6 +1124,7 @@
     "netReceive": "Vous recevez {net}",
     "detailsAria": "Comment les frais sont calculés",
     "feeLine": "Frais du protocole : {percent} % du prix, {fee}.",
+    "feeCapLine": "Frais du protocole : {fee} — le maximum. {percent} % d’un prix de cette taille dépasserait {max}.",
     "feeFloorLine": "Aucun frais de protocole sur ce paiement : {fee}, le loyer du reçu permanent, est tout ce qui est prélevé.",
     "feeNoneLine": "Aucun frais de protocole sur ce paiement : il est assez petit pour que le pourcentage soit annulé, et le loyer du reçu, pris sur le prix, en est tout le coût.",
     "recordLine": "Sur ce montant, {fee} sont les frais de reçu : la preuve permanente de ce paiement sur la chaîne.",

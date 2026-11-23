@@ -4,8 +4,9 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{
-    MAX_SOL_PRICE_MICROS, MICROS, MINT_DECIMALS_OFFSET, MIN_SESSION_FEE_FLOAT,
-    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, TREASURY_SEED,
+    MAX_SOL_FEE_LAMPORTS, MAX_SOL_PRICE_MICROS, MAX_TOKEN_FEE_BASE_UNITS, MICROS,
+    MINT_DECIMALS_OFFSET, MIN_SESSION_FEE_FLOAT, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS,
+    TREASURY_SEED,
 };
 use crate::errors::PaymentError;
 use crate::state::{Config, FeePolicy, ShopPolicy};
@@ -52,9 +53,14 @@ pub fn current_month_index() -> Result<u64> {
 /// still pays the marker's flat: a free shop cannot make the treasury fund the
 /// record.
 ///
-/// Capped at `amount - 1` so the guard on the price (`amount > rent + fee`) can
-/// never be satisfied by taking the whole invoice; the cap is a safety net, not
-/// a policy.
+/// The result is capped twice. `MAX_SOL_FEE_LAMPORTS` (0.1 SOL) or
+/// `MAX_TOKEN_FEE_BASE_UNITS` (10 USDC/EURC) is the ceiling a percentage fee may
+/// reach, so a large invoice pays a plausibly-sized fee rather than a slice of
+/// itself that keeps growing — the ceiling is applied last, after the rate, the
+/// multiplier and the rent, so nothing can carry the fee past it. Then
+/// `amount - 1` keeps the guard on the price (`amount > rent + fee`) from being
+/// satisfiable by taking the whole invoice; that one is a safety net, not a
+/// policy.
 pub fn fee_for(
     config: &Config,
     amount: u64,
@@ -101,7 +107,11 @@ pub fn fee_for(
         Some(_) => proportional.max(flat),
         None => proportional.saturating_sub(receipt_rent as u128),
     };
-    Ok(fee.min(amount.saturating_sub(1)) as u64)
+    let ceiling = match mint {
+        None => MAX_SOL_FEE_LAMPORTS as u128,
+        Some(_) => MAX_TOKEN_FEE_BASE_UNITS as u128,
+    };
+    Ok(fee.min(ceiling).min(amount.saturating_sub(1)) as u64)
 }
 
 /// The multiplier a settlement charges: the shop's own when the invoice named

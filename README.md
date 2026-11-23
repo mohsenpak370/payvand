@@ -205,7 +205,31 @@ GET  /api/admin/users        -> one page of accounts; ?search=&limit=&offset= (a
 DELETE /api/admin/users/{id} -> removes an account and everything it owns (admin)
 GET  /api/admin/payments     -> recent on-chain invoices, newest first (admin)
 DELETE /api/discounts/{id}   -> removes a code
+GET  /api/faucet             -> whether the signed-in account can claim starter tokens
+POST /api/faucet             -> sends them to the account's linked wallet (once per account)
 ```
+
+### Starter tokens
+
+`/start` is the way in for someone who has never held a wallet: it links to
+Solflare's download page, explains devnet, shows how to switch networks in
+Solflare, Phantom or Backpack, and links the learning guides under `/learn`.
+
+On that page (and on the profile) a signed-in account can claim a starting
+balance — 1 SOL, 10 USDC and 10 EURC by default — sent from the API's own
+treasury to the wallet the account linked. The claim is recorded in
+`faucet_claims` before anything is signed, so an account can claim once and a
+double tap cannot send twice; a failed transfer releases the claim. The
+amounts and the treasury come from `FAUCET_KEYPAIR`,
+`FAUCET_SOL_LAMPORTS` and `FAUCET_TOKEN_BASE_UNITS`, and nothing is sent when
+the treasury is unset or the cluster is not a test network. The treasury must
+already hold devnet SOL and the USDC/EURC mints' tokens — it cannot mint them.
+Spent tokens can be topped up at `faucet.solana.com` and `faucet.circle.com`.
+
+The devnet treasury the faucet pays from is
+`H4ZxTWkjjgCvuJEcAEv48wJipsE62GJ4WwTBsxiXDj9o` — its secret lives outside the
+repository (Vercel's `FAUCET_KEYPAIR` secret) and it needs its own devnet SOL,
+USDC and EURC before a claim can be sent.
 
 ### Accounts
 
@@ -252,9 +276,14 @@ monthly budget require a session.
 Shops and products are sold by the month: **€1.70 for 30 days**, payable in
 SOL, USDC or EURC. The price is a euro price, so EURC pays at par while USDC and
 SOL are converted at a live rate (`SUBSCRIPTION_RATES_URL`, cached for five
-minutes by the API) and rounded up to the base unit. `GET /api/subscription`
-returns the account's period and all three amounts; the shops page renders them
-and offers a button per currency.
+minutes by the API) and rounded up to the base unit. With no URL configured the
+API reads the same keyless Coinbase feed the payment page's fiat hints come
+from, so the plan's quote and the prices beside a checkout agree; CoinGecko's
+simple-price feed is the fallback behind it, and the quote is refused only when
+both are down. `GET /api/subscription` returns the account's period and, when a
+rate could be read, all three amounts — an outage leaves the period and plan
+intact with `rates_available: false` and no quotes, so the card still shows
+where the subscription stands while the currency buttons wait.
 
 Paying is an ordinary invoice from the platform wallet (`PLATFORM_SELLER`):
 `POST /api/subscription/invoice` quotes the currency, records the invoice for
@@ -468,7 +497,10 @@ on startup.
 | `DEFAULT_FROM_EMAIL`            | api          | SMTP user       | Sender address                           |
 | `ADMIN_EMAILS`                  | api          | — (nobody)      | Comma-separated addresses allowed into `/api/admin/*` |
 | `PLATFORM_SELLER`               | api          | —               | Wallet that sells the shops subscription; unset disables buying one |
-| `SUBSCRIPTION_RATES_URL`        | api          | CoinGecko       | EUR/SOL and EUR/USD price feed the subscription quotes use |
+| `SUBSCRIPTION_RATES_URL`        | api          | Coinbase        | EUR/SOL and EUR/USD price feed the subscription quotes use; CoinGecko is the built-in fallback, and setting this URL replaces both |
+| `FAUCET_KEYPAIR`                | api          | —               | Treasury that sends the devnet starter tokens; a solana CLI `id.json` array or base58. Unset disables claiming |
+| `FAUCET_SOL_LAMPORTS`           | api          | `1000000000`    | Lamports of SOL a claim sends (1 SOL)      |
+| `FAUCET_TOKEN_BASE_UNITS`       | api          | `10000000`      | Base units of USDC and EURC a claim sends (10 tokens) |
 
 Never put a wallet secret key or a seed phrase anywhere in this repository. The
 Nuxt module deliberately strips `payer` and `payerSecretKey` from its public

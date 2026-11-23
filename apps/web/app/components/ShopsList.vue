@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ShopWithProducts } from '~/composables/useShop'
+import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
 // A seller may keep several shops — a café and a bakery. The /shops page lists
 // them; each one opens on its own page, where its catalogue is edited. The
@@ -16,7 +17,72 @@ const description = ref('')
 const creating = ref(false)
 const formOpen = ref(false)
 
+// The same purchase the card above the list shows: one status, one price list.
+const purchase = useSubscriptionPurchase()
+/** The dialog is standing where the subscription offer belongs instead. */
+const needsSubscription = ref(false)
+/** The form came back filled from a payment this browser left to make. */
+const resumed = ref(false)
+
 const canCreate = computed(() => !creating.value && name.value.trim().length > 0)
+
+const SHOP_DRAFT_KEY = 'payvand.shop-draft.v1'
+/** A draft older than this is a form abandoned, not a payment in flight. */
+const DRAFT_TTL_MS = 2 * 60 * 60 * 1000
+interface ShopDraft { name: string, description: string, at: number }
+
+/** The shop being written when the dialog sent the person off to pay. */
+function saveDraft(): void {
+  try {
+    localStorage.setItem(SHOP_DRAFT_KEY, JSON.stringify({
+      name: name.value,
+      description: description.value,
+      at: Date.now()
+    }))
+  } catch {
+    // Private mode without storage: the payment still goes ahead, and the two
+    // fields are typed again when the person comes back.
+  }
+}
+
+function readDraft(): ShopDraft | null {
+  try {
+    const raw = localStorage.getItem(SHOP_DRAFT_KEY)
+    if (!raw) return null
+    const draft = JSON.parse(raw) as ShopDraft
+    if (!draft.name || Date.now() - draft.at > DRAFT_TTL_MS) {
+      localStorage.removeItem(SHOP_DRAFT_KEY)
+      return null
+    }
+    return draft
+  } catch {
+    return null
+  }
+}
+
+function clearDraft(): void {
+  try {
+    localStorage.removeItem(SHOP_DRAFT_KEY)
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+/** A 403 when creating a shop is the subscription gate, and nothing else. */
+function requiresSubscription(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null) {
+    const code = (error as { statusCode?: number, status?: number }).statusCode
+      ?? (error as { status?: number }).status
+    if (code === 403) return true
+  }
+  return apiErrorMessage(error, '').toLowerCase().includes('subscription')
+}
+
+/** Keeps the draft, then opens the wallet through the ordinary checkout. */
+async function startSubscription(currency: SupportedCurrency): Promise<void> {
+  saveDraft()
+  await purchase.pay(currency)
+}
 
 async function load() {
   loading.value = true
@@ -32,6 +98,9 @@ async function load() {
 
 function openForm() {
   failure.value = ''
+  resumed.value = false
+  // A status already read says whether the offer belongs here from the start.
+  needsSubscription.value = purchase.status.value ? !purchase.status.value.active : false
   formOpen.value = true
 }
 
@@ -45,10 +114,15 @@ async function createShop() {
       description: description.value.trim()
     })
     // Straight to the new shop, which is empty and waiting for products.
+    clearDraft()
     formOpen.value = false
     await navigateTo(`/shops/${shop.id}`)
   } catch (error) {
     failure.value = apiErrorMessage(error, t('shopsList.createFailure'))
+    if (requiresSubscription(error)) {
+      needsSubscription.value = true
+      void purchase.load()
+    }
   } finally {
     creating.value = false
   }
@@ -59,7 +133,21 @@ function productCount(count: number) {
   return t('shopsList.products', { count }, count)
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const draft = readDraft()
+  if (!draft) return
+  name.value = draft.name
+  description.value = draft.description
+  // Shared with the card above, and where a payment made in the checkout comes
+  // back: `load` confirms the pending invoice before it answers `active`.
+  await purchase.load()
+  if (!purchase.status.value?.active) return
+  clearDraft()
+  resumed.value = true
+  needsSubscription.value = false
+  formOpen.value = true
+})
 </script>
 
 <template>
@@ -178,13 +266,83 @@ onMounted(load)
           </UFormField>
 
           <UAlert
-            v-if="failure"
+            v-if="resumed"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-circle-check"
+            :description="$t('shopsList.subscriptionResume')"
+          />
+
+          <UAlert
+            v-if="failure && !needsSubscription"
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
             :title="$t('shopsList.createFailure')"
             :description="failure"
           />
+
+          <!-- The offer the subscription gate asks for, in the dialog rather
+               than a trip to another page: price, then the currency, then the
+               wallet. -->
+          <div
+            v-if="needsSubscription"
+            class="border-default flex flex-col gap-3 rounded-lg border p-3"
+          >
+            <div>
+              <p class="text-sm font-medium">
+                {{ $t('shopsList.subscriptionNeededTitle') }}
+              </p>
+              <p class="text-xs text-muted">
+                {{ $t('shopsList.subscriptionNeededDescription') }}
+              </p>
+            </div>
+
+            <p
+              v-if="purchase.status.value"
+              class="text-sm text-muted"
+            >
+              {{ $t('subscription.price', { price: '€1.70', days: purchase.status.value.period_days }) }}
+            </p>
+
+            <p
+              v-if="purchase.status.value && !purchase.status.value.rates_available"
+              class="text-sm text-muted"
+            >
+              {{ $t('subscription.ratesUnavailable') }}
+            </p>
+            <div
+              v-else
+              class="flex flex-wrap gap-2"
+            >
+              <UButton
+                v-for="quote in purchase.quotes.value"
+                :key="quote.currency"
+                :label="purchase.priceLabel(quote)"
+                :loading="purchase.paying.value === quote.currency"
+                :disabled="purchase.paying.value !== '' || !purchase.status.value"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :icon="purchase.covered.value === quote.currency ? 'i-lucide-zap' : 'i-lucide-credit-card'"
+                @click="startSubscription(quote.currency)"
+              />
+            </div>
+
+            <p
+              v-if="purchase.covered.value"
+              class="text-xs text-muted"
+            >
+              {{ $t('subscription.fromAllowance') }}
+            </p>
+
+            <p
+              v-if="purchase.failure.value"
+              class="text-xs text-error"
+            >
+              {{ purchase.failure.value }}
+            </p>
+          </div>
         </div>
       </template>
 
@@ -197,6 +355,7 @@ onMounted(load)
             @click="formOpen = false"
           />
           <UButton
+            v-if="!needsSubscription"
             :label="$t('shopsList.createShop')"
             icon="i-lucide-store"
             :loading="creating"

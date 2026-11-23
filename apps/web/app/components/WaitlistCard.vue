@@ -38,14 +38,18 @@ async function join() {
 </script>
 
 <template>
-  <UCard>
+  <!-- Tinted amber rather than the default surface: this card is the one thing
+       on the page that says the money is not real, and it should not read as
+       another section. `class` is merged after the card's own background and
+       border, so the tint replaces them instead of layering over them. -->
+  <UCard class="border-warning/40 bg-warning/5">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
       <div
-        class="bg-elevated flex size-10 shrink-0 items-center justify-center rounded-full"
+        class="bg-warning/10 flex size-10 shrink-0 items-center justify-center rounded-full"
       >
         <UIcon
           name="i-lucide-flask-conical"
-          class="text-primary size-5"
+          class="text-warning size-5"
         />
       </div>
 

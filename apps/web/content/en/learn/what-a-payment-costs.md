@@ -22,7 +22,9 @@ shared:
 1. **The protocol fee**, a percentage of the price. It is marginal rather than flat: one rate applies
    to the first slice of a price and a lower rate to everything above a boundary, so a large invoice
    is never charged more per unit than a small one. The boundary differs for SOL and for stablecoins,
-   because they are not the same size of money.
+   because they are not the same size of money. A ceiling applies as well: one payment never pays more
+   than 0.1 SOL, 10 USDC or 10 EURC of it, so a very large invoice pays a fee shaped like a rate
+   rather than a share of itself that keeps growing.
 2. **The record fee**, on payments made in a token. Every settled payment leaves a small, permanent
    receipt on the blockchain. Space on the blockchain is paid for up front, in SOL, and that space
    can never be reclaimed. The record fee covers that cost, and it is priced from the live SOL rate,

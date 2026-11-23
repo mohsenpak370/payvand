@@ -5,7 +5,10 @@ pub mod auth;
 pub mod db;
 pub mod discounts;
 pub mod email;
+pub mod faucet;
 pub mod payments;
+pub mod push;
+mod push_budget;
 pub mod rate_limit;
 pub mod saved;
 pub mod shops;
@@ -21,6 +24,7 @@ use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use payments::{ApiError, CreatePaymentRequest, PaymentQuery};
+use solana_sdk::signer::keypair::Keypair;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -30,6 +34,26 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub db: db::SharedDb,
+}
+
+/// A server-held keypair from the environment: the solana CLI's JSON array of
+/// 64 bytes, or the same bytes base58 encoded. Absent or unreadable is `None`,
+/// never a panic — a misconfigured variable disables a feature instead of
+/// taking the API down.
+pub(crate) fn keypair_from_env(name: &str) -> Option<Keypair> {
+    let raw = std::env::var(name).ok()?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.starts_with('[') {
+        let bytes: Vec<u8> = serde_json::from_str(raw).ok()?;
+        return Keypair::try_from(bytes.as_slice()).ok();
+    }
+    // Decoded here rather than with `from_base58_string`, which panics on a
+    // malformed secret.
+    let bytes = bs58::decode(raw).into_vec().ok()?;
+    Keypair::try_from(bytes.as_slice()).ok()
 }
 
 /// Opens the database, runs the idempotent migrations and builds the router.
@@ -75,6 +99,9 @@ pub fn build_router(state: AppState) -> Router {
         // rebuilt byte for byte.
         .route("/api/sponsor", get(sponsor::info))
         .route("/api/sponsor/settle", post(sponsor::settle))
+        // Devnet starter tokens for a newly linked wallet: the balance check
+        // and the one claim per account, from the deployment's own treasury.
+        .route("/api/faucet", get(faucet::status).post(faucet::claim))
         .route("/api/admin/stats", get(admin::stats))
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
@@ -93,6 +120,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discounts/{id}", delete(discounts::delete))
         // Sellers who want to take real payments, before they have an account.
         .route("/api/waitlist", post(waitlist::join))
+        // Push notifications: the VAPID public key the browser subscribes
+        // with, this device's subscription, a test send, and the daily cron
+        // that reminds people their allowance reset unrefilled.
+        .route("/api/push/key", get(push::key))
+        .route("/api/push/subscribe", post(push::subscribe))
+        .route("/api/push/unsubscribe", post(push::unsubscribe))
+        .route("/api/push/test", post(push::test))
+        .route("/api/cron/allowance-nudge", get(push::nudge))
         // The seller's shops and their catalogues. A shop id is part of every
         // product path, and ownership is checked on each one.
         .route("/api/shops", get(shops::list).post(shops::create))
@@ -148,6 +183,13 @@ fn throttle_for(path: &str) -> Option<Throttle> {
         // rather than by guessing, and it is cheap to answer either way.
         "/api/discounts/use" => ("discount-use", 30, rate_limit::MINUTE),
         "/api/waitlist" => ("waitlist", 10, rate_limit::HOUR),
+        // One claim per account is the handler's rule; this is the floor under
+        // a script that retries, and it keeps the treasury from being probed.
+        "/api/faucet" => ("faucet", 6, rate_limit::HOUR),
+        // A subscription is a row per device, and a test send spends a push
+        // service's quota: both are cheap, but neither should be a loop.
+        "/api/push/subscribe" | "/api/push/unsubscribe" => ("push-device", 30, rate_limit::HOUR),
+        "/api/push/test" => ("push-test", 12, rate_limit::HOUR),
         _ => return None,
     };
     Some(Throttle {
@@ -197,6 +239,7 @@ async fn index() -> Json<serde_json::Value> {
             "/api/saved-payments",
             "/api/sponsor",
             "/api/sponsor/settle",
+            "/api/faucet",
             "/api/discounts",
             "/api/discounts/validate",
             "/api/discounts/use",
@@ -211,7 +254,12 @@ async fn index() -> Json<serde_json::Value> {
             "/api/admin/users/{id}",
             "/api/admin/payments",
             "/api/admin/waitlist",
-            "/api/admin/waitlist/{email}"
+            "/api/admin/waitlist/{email}",
+            "/api/push/key",
+            "/api/push/subscribe",
+            "/api/push/unsubscribe",
+            "/api/push/test",
+            "/api/cron/allowance-nudge"
         ]
     }))
 }
@@ -231,6 +279,10 @@ async fn create_payment(
     let user = auth::require_user(&state.db, &headers).await?;
     let discount_code = request.discount_code.clone();
     let mut payment = payments::create_payment(request)?;
+    // The invoice's name and description are the seller's, not the chain's, so
+    // they are remembered here for the history that reads the chain later.
+    payments::remember_invoice(&state.db, &payment).await;
+
     // The buyer's scan-to-pay screen asks the API for this seller's codes.
     payment.seller_user = Some(user.id.clone());
     // A code attached to the invoice is priced here, before the payload is

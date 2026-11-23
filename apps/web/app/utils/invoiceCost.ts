@@ -31,6 +31,16 @@ export const TOKEN_ACCOUNT_SPACE = 165
 export const NETWORK_FEE_LAMPORTS = 10_000
 
 /**
+ * `MAX_SOL_FEE_LAMPORTS`: the most a percentage fee may cost on a SOL invoice —
+ * 0.1 SOL. A large payment pays this instead of a slice of itself that keeps
+ * growing with the price.
+ */
+export const MAX_SOL_FEE_LAMPORTS = 100_000_000
+/** `MAX_TOKEN_FEE_BASE_UNITS`: the same ceiling in a six-decimal token — 10 USDC
+ * or 10 EURC. */
+export const MAX_TOKEN_FEE_BASE_UNITS = 10_000_000
+
+/**
  * The part of `Config` a quote needs: the `FeePolicy` the program settles with.
  *
  * The rate is marginal. The part of the amount at or below the currency's
@@ -78,6 +88,12 @@ export interface InvoiceCosts {
    * a percentage it is not charging.
    */
   feeIsFloor: boolean
+  /**
+   * True when the fee is the program's ceiling — 0.1 SOL, 10 USDC or 10 EURC —
+   * because the rate on this price would have been more. The screen must label
+   * the fee as the maximum rather than with a percentage it did not charge.
+   */
+  feeIsCapped: boolean
   feeBps: number
   /** What the seller keeps, after a seller-paid fee. */
   sellerReceives: number
@@ -144,7 +160,9 @@ export function rateOn(policy: FeePolicy, amount: number, mint?: string): number
 
 /**
  * `fee_for`: the marginal rate, with the permanent record's rent as its floor,
- * capped at `amount - 1` so a payment can never hand over the whole invoice.
+ * ceilinged at 0.1 SOL or 10 token units so a large invoice pays a plausible
+ * fee rather than a multiple of the service, and capped at `amount - 1` so a
+ * payment can never hand over the whole invoice.
  *
  * The floor is expressed in the currency the seller is charged in. A token
  * seller cannot be charged lamports, so the marker's rent is the currency's flat
@@ -163,13 +181,27 @@ export function feeOn(
   mint: string | undefined,
   receiptRent: number
 ): number {
+  return feeCalculation(policy, amount, mint, receiptRent).fee
+}
+
+/**
+ * `feeOn`, plus whether the ceiling is what set the fee. The two answers come
+ * from one calculation so the amount a screen prints and the fact it labels it
+ * with can never disagree.
+ */
+function feeCalculation(
+  policy: FeePolicy,
+  amount: number,
+  mint: string | undefined,
+  receiptRent: number
+): { fee: number, capped: boolean } {
   // The chain holds whole base units, and a price can reach here with a
   // fraction on it (a typed amount times decimals, a percentage). Truncating
   // keeps the quote on the low side of the wire, and it keeps `BigInt` — which
   // throws on a fraction — out of a crash a buyer would see as a failed
   // payment. `NaN` and `Infinity` are not payments either.
   const units = Math.trunc(amount)
-  if (!Number.isFinite(units) || units <= 0) return 0
+  if (!Number.isFinite(units) || units <= 0) return { fee: 0, capped: false }
 
   const { boundary, bpsBelow, bpsAbove, flat } = tierFor(policy, mint)
   const total = BigInt(units)
@@ -183,8 +215,17 @@ export function feeOn(
     : proportional > BigInt(Math.max(0, Math.trunc(flat)))
       ? proportional
       : BigInt(Math.max(0, Math.trunc(flat)))
+  // The ceiling comes first, as in the program: the rate, the rent and the flat
+  // can only read the fee down from here.
+  const ceiling = BigInt(mint === undefined ? MAX_SOL_FEE_LAMPORTS : MAX_TOKEN_FEE_BASE_UNITS)
+  const limited = fee < ceiling ? fee : ceiling
   const cap = BigInt(units - 1)
-  return Number(fee < cap ? fee : cap)
+  return {
+    fee: Number(limited < cap ? limited : cap),
+    // Only the ceiling counts as "capped": `amount - 1` is a safety net that a
+    // real policy never leans on, and calling it the maximum would mislabel it.
+    capped: fee > ceiling
+  }
 }
 
 /**
@@ -244,7 +285,7 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   const mint = input.currency === 'sol' ? undefined : (input.mint ?? '')
   const receiptRent = Math.trunc(input.receiptRent)
   const flat = Math.max(0, Math.trunc(tierFor(policy, mint).flat))
-  const fee = feeOn(policy, amount, mint, receiptRent)
+  const { fee, capped } = feeCalculation(policy, amount, mint, receiptRent)
   // The flat inside `fee`, after the `amount - 1` cap: shown apart from the
   // percentage so the seller can see both parts.
   const recordFee = Math.min(flat, fee)
@@ -271,6 +312,7 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     fee,
     recordFee,
     feeIsFloor,
+    feeIsCapped: capped,
     feeBps: rateOn(policy, amount, mint),
     sellerReceives: Math.max(0, netOfFee - markerRent),
     payerPays: sellerPays ? amount : amount + fee,

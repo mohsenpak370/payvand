@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { InvoiceCosts } from '~/utils/invoiceCost'
+import {
+  MAX_SOL_FEE_LAMPORTS,
+  MAX_TOKEN_FEE_BASE_UNITS,
+  type InvoiceCosts
+} from '~/utils/invoiceCost'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 
 /**
@@ -19,11 +23,17 @@ function money(amount: number, currency: InvoiceCosts['currency']): string {
 
 const labels = computed(() => {
   const costs = props.costs
-  if (!costs) return { net: '', fee: '', record: '' }
+  if (!costs) return { net: '', fee: '', record: '', max: '' }
   return {
     net: money(costs.sellerReceives, costs.currency),
     fee: money(costs.fee, costs.currency),
-    record: money(costs.recordFee, costs.currency)
+    record: money(costs.recordFee, costs.currency),
+    // The ceiling in the invoice's own currency, so the line can say what the
+    // maximum is rather than only that a maximum exists.
+    max: money(
+      costs.currency === 'sol' ? MAX_SOL_FEE_LAMPORTS : MAX_TOKEN_FEE_BASE_UNITS,
+      costs.currency
+    )
   }
 })
 </script>
@@ -49,6 +59,13 @@ const labels = computed(() => {
             {{ costs.currency === 'sol'
               ? $t('invoiceSplit.feeNoneLine')
               : $t('invoiceSplit.feeFloorLine', { fee: labels.fee }) }}
+          </p>
+          <p v-else-if="costs.feeIsCapped">
+            {{ $t('invoiceSplit.feeCapLine', {
+              percent: costs.feeBps / 100,
+              fee: labels.fee,
+              max: labels.max
+            }) }}
           </p>
           <p v-else>
             {{ $t('invoiceSplit.feeLine', { percent: costs.feeBps / 100, fee: labels.fee }) }}

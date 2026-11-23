@@ -445,6 +445,46 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
     })
 }
 
+/// Remembers what an invoice is called, which the chain does not: the name and
+/// the description live only in the code the seller shares, so a history built
+/// from a cluster read would otherwise show an amount with no subject.
+///
+/// Best effort by design. The invoice already exists on chain when this runs,
+/// and a cache that failed to write must never turn a working code into an
+/// error.
+pub async fn remember_invoice(db: &libsql::Database, record: &PaymentRecord) {
+    let name = record.name.trim();
+    let description = record.description.trim();
+    if name.is_empty() && description.is_empty() {
+        return;
+    }
+
+    let written = async {
+        let connection = db.connect()?;
+        connection
+            .execute(
+                "INSERT INTO invoice_meta (id, seller, name, description, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                    name = excluded.name, description = excluded.description",
+                libsql::params![
+                    record.id.clone(),
+                    record.seller.clone(),
+                    name.to_string(),
+                    description.to_string(),
+                    crate::auth::unix_now()
+                ],
+            )
+            .await?;
+        Ok::<(), libsql::Error>(())
+    }
+    .await;
+
+    if let Err(error) = written {
+        tracing::info!(%error, "invoice metadata was not cached");
+    }
+}
+
 /// Turns the requested currencies into priced options, deriving the invoice
 /// address for each one. Addresses are derived here rather than taken from the
 /// request: the seeds (`seller`, `reference`, currency, amount) are the whole
@@ -1045,7 +1085,7 @@ pub async fn fetch_all_payments(
 
 /// Cluster used when a status request omits `?cluster=`: `SOLANA_CLUSTER`
 /// from the shared `.env`, falling back to devnet.
-fn default_cluster() -> String {
+pub(crate) fn default_cluster() -> String {
     std::env::var("SOLANA_CLUSTER").unwrap_or_else(|_| "devnet".to_string())
 }
 

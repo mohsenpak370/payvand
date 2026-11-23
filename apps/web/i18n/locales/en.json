@@ -31,6 +31,7 @@
       "createPayment": "Create a payment",
       "scanAndPay": "Scan and pay",
       "learn": "Learn",
+      "start": "Start here",
       "learnAboutCrypto": "Learn about crypto"
     },
     "account": {
@@ -66,7 +67,19 @@
       "title": "Simple payments on Solana",
       "description": "A seller creates a payment code in seconds, the customer scans it with their phone and approves the payment — that's it.",
       "createCta": "Create a payment QR",
-      "scanCta": "Scan and pay"
+      "scanCta": "Scan and pay",
+      "proof": {
+        "noReader": "No card reader",
+        "noInstall": "Your customer installs nothing",
+        "ownWallet": "Money lands in your wallet",
+        "noMarkup": "Your customer pays no markup"
+      },
+      "card": {
+        "example": "Example receipt",
+        "paid": "Paid",
+        "memo": "Flat white + a croissant",
+        "code": "Payment code"
+      }
     },
     "how": {
       "title": "How a payment moves",
@@ -86,7 +99,9 @@
     },
     "cta": {
       "description": "Open the seller page, enter an amount, and show the code to your customer. It takes about a minute.",
-      "startSelling": "Start selling"
+      "startSelling": "Start selling",
+      "startCta": "New to crypto? Start here",
+      "devnetGuide": "See how to switch to devnet on your wallet"
     }
   },
   "admin": {
@@ -428,7 +443,10 @@
       "copyCode": "Copy code",
       "failed": "Payment did not go through"
     },
-    "poweredBy": "Powered by"
+    "poweredBy": "Powered by",
+    "qrTitle": "Scan this code",
+    "qrHint": "Open it on the phone that is paying, or show it to the person paying.",
+    "qrShow": "Show QR code"
   },
   "status": {
     "paid": "Paid",
@@ -670,6 +688,8 @@
     "txNoMatch": "No payment matches that code. Check the reference the customer read out, or widen the dates.",
     "referenceCodeLabel": "Reference code",
     "referencePlaceholder": "The code the customer read out",
+    "filters": "Filters",
+    "clearDates": "Clear dates",
     "from": "From",
     "to": "To",
     "linkToSeeTx": "Link your wallet to see transactions",
@@ -678,7 +698,28 @@
     "directionFrom": "from",
     "directionTo": "to",
     "paymentReceived": "Payment received",
-    "paymentSent": "Payment sent"
+    "paymentSent": "Payment sent",
+    "flowTitle": "Money in and out",
+    "flowDescription": "What settled in this wallet’s recent payments, converted to {currency} at today’s rate. Unpaid invoices are left out.",
+    "flowSpent": "Total spent",
+    "flowReceived": "Total received",
+    "flowNet": "Net flow",
+    "flowEmpty": "No settled payments yet — spend or receive something and this adds up here.",
+    "flowNoRate": "No exchange rate right now, so only the coin amounts are shown.",
+    "detailTitle": "Payment details",
+    "detailName": "Name",
+    "detailDescription": "Description",
+    "detailMemo": "Memo",
+    "detailAmount": "Amount",
+    "detailFee": "Protocol fee",
+    "detailFeeNote": "The fee comes out of the price. The network fee is paid separately by the payer.",
+    "detailDate": "Paid",
+    "detailCreated": "Created",
+    "detailPayer": "Payer",
+    "detailPayee": "Receiver",
+    "detailStatus": "Status",
+    "detailReference": "Reference",
+    "detailClose": "Close"
   },
   "scan": {
     "metaTitle": "Scan and pay — Payvand",
@@ -788,7 +829,16 @@
     "presentFallbackTitle": "Payment code",
     "scanToPay": "Scan this with a phone camera to pay.",
     "allowDiscountsLabel": "Let buyers use your codes",
-    "allowDiscountsHelp": "Buyers can apply one of your codes to a payment built from your products. Each wallet can use a code once."
+    "allowDiscountsHelp": "Buyers can apply one of your codes to a payment built from your products. Each wallet can use a code once.",
+    "designLabel": "Card design",
+    "designHelp": "The colour of the page your customer opens.",
+    "designs": {
+      "classic": "Classic",
+      "aurora": "Aurora",
+      "sunset": "Sunset",
+      "mint": "Mint",
+      "ocean": "Ocean"
+    }
   },
   "productPicker": {
     "fromYourShops": "From your shops",
@@ -815,7 +865,10 @@
     "descriptionLabel": "Short description",
     "descriptionHelp": "Optional — a line about what the shop sells.",
     "descriptionPlaceholder": "Flat whites and fresh bread",
-    "createShop": "Create shop"
+    "createShop": "Create shop",
+    "subscriptionNeededTitle": "A subscription is needed first",
+    "subscriptionNeededDescription": "Shops are sold by the month. Pay for a period here, and the shop is waiting to be created when you come back.",
+    "subscriptionResume": "Subscription active — finish creating your shop."
   },
   "shopEditor": {
     "loadFailureTitle": "Could not open this shop",
@@ -862,6 +915,8 @@
     "renewsOn": "Paid until {date}.",
     "price": "€1.70 for {days} days, payable in any of these currencies.",
     "rateNote": "Prices converted at the rate read {date}.",
+    "ratesUnavailable": "Prices are unavailable right now because the exchange rate cannot be read. Your subscription is unaffected — try again in a moment.",
+    "fromAllowance": "Covered by your allowance: this one pays without a wallet approval.",
     "errorTitle": "Subscription",
     "loadFailure": "Could not read your subscription.",
     "payFailure": "Could not start the subscription payment."
@@ -903,6 +958,20 @@
     "soundsDescription": "A short rise when a payment goes through, a low buzz when it does not.",
     "soundsLabel": "Payment sounds",
     "soundsSwitch": "Play a sound when a payment finishes",
+    "notificationsTitle": "Notifications",
+    "notificationsDescription": "A short reminder when your monthly allowance resets without being topped up. Nothing else is sent.",
+    "notificationsLabel": "Push notifications",
+    "notificationsSwitch": "Notify me on this device",
+    "notificationsUnsupported": "This browser cannot receive notifications.",
+    "notificationsInstallTitle": "Add Payvand to your Home Screen",
+    "notificationsInstallSteps": "Open Payvand in Safari, tap Share, then Add to Home Screen. Notifications only work once Payvand opens from that icon.",
+    "installAppTitle": "Install Payvand",
+    "installAppDescription": "Open it from your Home Screen or desktop, without the browser bar.",
+    "installAppAction": "Install",
+    "notificationsUnconfigured": "Notifications are not configured on the server yet.",
+    "notificationsBlocked": "Notifications are blocked for this site. Allow them in your browser settings, then try again.",
+    "notificationsFailed": "Could not change the notification setting. Try again.",
+    "notificationsTest": "Send a test",
     "browserNote": "All of these follow this browser, not your account — a phone you sign in on keeps its own."
   },
   "terms": {
@@ -992,6 +1061,56 @@
     "successTitle": "You're on the list.",
     "successBody": "We'll email you when Payvand can take real payments."
   },
+  "start": {
+    "metaTitle": "Start here",
+    "hero": {
+      "headline": "Getting started",
+      "title": "A practice wallet, free test money, no risk",
+      "description": "Payvand runs on Solana's devnet, a test version of the network where the dollars and euros cost nothing. This page takes you from no wallet to a paid invoice in a few minutes."
+    },
+    "wallet": {
+      "title": "1. Get a Solana wallet",
+      "body": "A wallet is your account on the network: it holds the SOL, USDC and EURC, and signs what you approve. Solflare has a browser extension and a mobile app, and it switches networks without any setup.",
+      "action": "Download Solflare",
+      "note": "Phantom, Backpack and other Solana wallets work too."
+    },
+    "devnet": {
+      "title": "2. Switch it to devnet",
+      "body": "Devnet is one of Solana's test networks: the same software and the same flows, but every token on it is free and worth nothing, so a wrong button costs a few seconds and nothing else. The app's header shows a small devnet badge when you are there. Real money lives on mainnet, and nothing moves between the two.",
+      "solflare": "In Solflare: open Settings, choose Network, and pick Devnet.",
+      "others": "In Phantom: Settings, Developer settings, Change network, Devnet. In Backpack: Settings, Network, Devnet. Solflare's extension shows the network under the wallet's name.",
+      "guide": "Read: what devnet is, and why it is the safe place to learn"
+    },
+    "faucet": {
+      "title": "3. Get free test tokens",
+      "body": "Link a wallet to your account and Payvand sends it a starting balance from its own treasury: enough SOL for network fees, and enough USDC and EURC to pay a few invoices. One claim per account.",
+      "signedOut": "Sign in, link a wallet, and the tokens go straight to it.",
+      "loading": "Checking your claim…",
+      "claim": "Get {amounts}",
+      "toWallet": "Sent to the wallet linked to this account.",
+      "claimedTitle": "Starter tokens claimed",
+      "claimedBody": "Your linked wallet received the test tokens. They are worth nothing and cannot be sold — the point is to practise.",
+      "linkWallet": "Link a wallet",
+      "more": "Spent them? Get more from the official faucets:",
+      "error": "Could not read your starter tokens. Try again in a moment."
+    },
+    "next": {
+      "title": "4. Try it",
+      "body": "With tokens in the wallet you can pay a code, print one, or set a monthly allowance so small payments go through without a wallet popup.",
+      "allowance": "Set a monthly allowance"
+    },
+    "learn": {
+      "title": "The ideas behind the buttons",
+      "body": "Plain-language guides, no hype: what a wallet is, what a fee pays for, why devnet exists, and where the scams are.",
+      "devnet": "Why the practice money is fake",
+      "wallet": "What a crypto wallet is",
+      "paying": "Paying with a wallet",
+      "twoWallets": "Why Payvand uses two wallets",
+      "stablecoins": "Why dollars and euros live on a blockchain",
+      "allowance": "How the monthly allowance works",
+      "scams": "Spotting crypto scams"
+    }
+  },
   "shopCodes": {
     "title": "Payment codes",
     "subtitle": "Links you saved to this shop.",
@@ -1005,6 +1124,7 @@
     "netReceive": "You receive {net}",
     "detailsAria": "How the fee is worked out",
     "feeLine": "Protocol fee: {percent}% of the price, {fee}.",
+    "feeCapLine": "Protocol fee: {fee} — the maximum. {percent}% of a price this size would come to more than {max}.",
     "feeFloorLine": "No protocol fee on this payment: {fee}, the permanent record’s rent, is all that is taken.",
     "feeNoneLine": "No protocol fee on this payment: it is small enough that the percentage is waived, and the record’s rent, taken straight from the price, is all it costs.",
     "recordLine": "Of that, {fee} is the record fee: the permanent on-chain receipt of this payment.",

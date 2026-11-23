@@ -211,6 +211,32 @@ html[lang='fa-IR'] {
 }
 
 /*
+ * An alert's description starts on the alert's own content edge, in line with
+ * its icon rather than with the title beside it. Nuxt UI nests the title and
+ * the description in one column next to the icon, so the description inherits
+ * the icon's width plus the root gap as an indent — a gutter down the left of
+ * the box that reads as a mistake, and costs the width on a phone.
+ *
+ * The offset is exactly that column: the icon's `size-5` (1.25rem) and the
+ * root's `gap-2.5` (0.625rem). Pulling the description back by it makes the
+ * text run the full content width while its right edge stays the column's, so
+ * nothing overflows. Three conditions keep the rule honest: an icon (without
+ * one there is no gutter), a title (a description alone already starts on that
+ * edge), and a vertical alert (in the horizontal layout the icon is centred
+ * against both lines, and pulling the description under it would collide).
+ *
+ * `data-slot` is the markup Nuxt UI's own `UAlert` and toast use, so warning,
+ * error, success and every other message box are covered by this one rule.
+ */
+[data-slot='root'][data-orientation='vertical']:has(> [data-slot='icon']):has(
+    > [data-slot='wrapper'] > [data-slot='title']
+  )
+  > [data-slot='wrapper']
+  > [data-slot='description'] {
+  margin-inline-start: -1.875rem;
+}
+
+/*
  * Arrows carry a direction, so in Persian they point the way the page reads:
  * "onward" has to aim left, "back" right, and the two door icons open the same
  * way they would in a Persian interface. Icons are masks here, so a horizontal

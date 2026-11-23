@@ -116,6 +116,27 @@ pub const MICROS: u128 = 1_000_000;
 /// SOL). A number past this is a unit mistake, not a price.
 pub const MAX_SOL_PRICE_MICROS: u64 = 10_000 * 1_000_000;
 
+/// The most a percentage fee may cost in one settlement, in lamports: 0.1 SOL.
+///
+/// The two rates are a percentage, so without a ceiling a large invoice keeps
+/// handing over a larger share of itself however routine the work is: at 2% a
+/// 50 SOL payment would cost 1 SOL, more than the service is worth at that size
+/// and more than a seller can be expected to price into a big sale. The ceiling
+/// makes the fee behave like a rate for the everyday and like a flat cost for the
+/// unusual, so a high-volume payment is never punished for being large.
+///
+/// It bounds the fee actually charged, after the rate, the shop's multiplier and
+/// the marker's rent have all had their say, so no combination of them can carry
+/// the fee past this.
+pub const MAX_SOL_FEE_LAMPORTS: u64 = 100_000_000;
+
+/// The same ceiling in each token currency's base units: 10 USDC or 10 EURC.
+///
+/// One number covers both because the two named currencies are six-decimal
+/// stablecoins — the same assumption the flats already make — and ten units is
+/// the same money as 0.1 SOL's worth at the deployment's own prices.
+pub const MAX_TOKEN_FEE_BASE_UNITS: u64 = 10_000_000;
+
 /// The size of the version 1 `Config` layout: 8 bytes of discriminator, 32 of
 /// admin, 2 of `fee_bps`, 8 of `fixed_fee_lamports`, 1 of `fee_mode`, 8 of
 /// `session_fee_float`, and 1 each of `bump`, `treasury_bump` and `version`.

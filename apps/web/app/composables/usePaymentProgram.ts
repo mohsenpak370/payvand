@@ -168,6 +168,21 @@ function encodeArgs(instruction: IdlInstruction, args: Record<string, unknown>):
 }
 
 /**
+ * The accounts the IDL cannot name, by the name the IDL gives them.
+ *
+ * `Interface<'info, TokenInterface>` lets the program accept the token program
+ * at runtime, so Anchor has no address to write into the IDL: the account is
+ * there with no `address`, and every token instruction — opening, paying from
+ * or closing a token budget, settling a token invoice — fails to build without
+ * one. The mints the app pays in are all classic SPL Token (the program rejects
+ * Token-2022 by name), so the address is a constant rather than a caller's
+ * choice.
+ */
+const IMPLIED_ACCOUNTS: Record<string, Address> = {
+  token_program: TOKEN_PROGRAM_ID
+}
+
+/**
  * Builds a Kit `Instruction` straight from the Anchor IDL. Accounts the
  * program derives itself (PDAs) are passed in through `accounts`.
  */
@@ -182,6 +197,7 @@ export function buildInstruction(
   for (const account of instruction.accounts) {
     const resolved = accounts[account.name]
       ?? (account.address ? address(account.address) : undefined)
+      ?? IMPLIED_ACCOUNTS[account.name]
     if (!resolved) {
       // Anchor's optional accounts are trailing, and the program reads the
       // shorter list as "none" — a shop invoice with no `ShopPolicy`, say, is

@@ -31,6 +31,7 @@
       "createPayment": "Zahlung erstellen",
       "scanAndPay": "Scannen und zahlen",
       "learn": "Lernen",
+      "start": "Hier starten",
       "learnAboutCrypto": "Mehr über Krypto"
     },
     "account": {
@@ -66,7 +67,19 @@
       "title": "Einfache Zahlungen auf Solana",
       "description": "Ein Verkäufer erstellt in Sekunden einen Zahlungscode, der Kunde scannt ihn mit dem Handy und bestätigt die Zahlung — das ist alles.",
       "createCta": "Zahlungs-QR erstellen",
-      "scanCta": "Scannen und zahlen"
+      "scanCta": "Scannen und zahlen",
+      "proof": {
+        "noReader": "Kein Kartenterminal",
+        "noInstall": "Kundinnen installieren nichts",
+        "ownWallet": "Geld landet in deiner Wallet",
+        "noMarkup": "Kundinnen zahlen keinen Aufschlag"
+      },
+      "card": {
+        "example": "Beispielbeleg",
+        "paid": "Bezahlt",
+        "memo": "Flat White + ein Croissant",
+        "code": "Zahlungscode"
+      }
     },
     "how": {
       "title": "So läuft eine Zahlung ab",
@@ -86,7 +99,9 @@
     },
     "cta": {
       "description": "Öffne die Verkäuferseite, gib einen Betrag ein und zeig den Code deiner Kundschaft. Dauert etwa eine Minute.",
-      "startSelling": "Verkaufen starten"
+      "startSelling": "Verkaufen starten",
+      "startCta": "Neu bei Krypto? Hier starten",
+      "devnetGuide": "So stellst du deine Wallet auf Devnet um"
     }
   },
   "admin": {
@@ -428,7 +443,10 @@
       "copyCode": "Code kopieren",
       "failed": "Die Zahlung ging nicht durch"
     },
-    "poweredBy": "Bereitgestellt von"
+    "poweredBy": "Bereitgestellt von",
+    "qrTitle": "Diesen Code scannen",
+    "qrHint": "Öffnen Sie ihn auf dem zahlenden Handy oder zeigen Sie ihn der zahlenden Person.",
+    "qrShow": "QR-Code anzeigen"
   },
   "status": {
     "paid": "Bezahlt",
@@ -670,6 +688,8 @@
     "txNoMatch": "Keine Zahlung passt zu diesem Code. Prüfe die Referenz, die der Kunde vorgelesen hat, oder erweitere den Zeitraum.",
     "referenceCodeLabel": "Referenzcode",
     "referencePlaceholder": "Der Code, den der Kunde vorgelesen hat",
+    "filters": "Filter",
+    "clearDates": "Daten löschen",
     "from": "Von",
     "to": "Bis",
     "linkToSeeTx": "Verknüpfe dein Wallet, um Transaktionen zu sehen",
@@ -678,7 +698,28 @@
     "directionFrom": "von",
     "directionTo": "an",
     "paymentReceived": "Zahlung erhalten",
-    "paymentSent": "Zahlung gesendet"
+    "paymentSent": "Zahlung gesendet",
+    "flowTitle": "Geld rein und raus",
+    "flowDescription": "Was in den letzten Zahlungen dieser Wallet abgewickelt wurde, zum heutigen Kurs in {currency} umgerechnet. Unbezahlte Rechnungen zählen nicht.",
+    "flowSpent": "Insgesamt ausgegeben",
+    "flowReceived": "Insgesamt erhalten",
+    "flowNet": "Netto-Fluss",
+    "flowEmpty": "Noch keine abgewickelten Zahlungen — sobald Geld kommt oder geht, summiert es sich hier.",
+    "flowNoRate": "Gerade kein Wechselkurs, daher nur die Beträge in den Münzen.",
+    "detailTitle": "Zahlungsdetails",
+    "detailName": "Name",
+    "detailDescription": "Beschreibung",
+    "detailMemo": "Notiz",
+    "detailAmount": "Betrag",
+    "detailFee": "Protokollgebühr",
+    "detailFeeNote": "Die Gebühr geht vom Preis ab. Die Netzwerkgebühr zahlt die zahlende Person separat.",
+    "detailDate": "Bezahlt",
+    "detailCreated": "Erstellt",
+    "detailPayer": "Zahler",
+    "detailPayee": "Empfänger",
+    "detailStatus": "Status",
+    "detailReference": "Referenz",
+    "detailClose": "Schließen"
   },
   "scan": {
     "metaTitle": "Scannen und zahlen — Payvand",
@@ -788,7 +829,16 @@
     "presentFallbackTitle": "Zahlungscode",
     "scanToPay": "Scanne das mit einer Handykamera, um zu zahlen.",
     "allowDiscountsLabel": "Käufer dürfen deine Codes nutzen",
-    "allowDiscountsHelp": "Käufer können auf eine Zahlung aus deinen Produkten einen deiner Codes anwenden. Jede Wallet kann einen Code einmal nutzen."
+    "allowDiscountsHelp": "Käufer können auf eine Zahlung aus deinen Produkten einen deiner Codes anwenden. Jede Wallet kann einen Code einmal nutzen.",
+    "designLabel": "Kartendesign",
+    "designHelp": "Die Farbe der Seite, die Ihre Kundschaft öffnet.",
+    "designs": {
+      "classic": "Klassisch",
+      "aurora": "Polarlicht",
+      "sunset": "Sonnenuntergang",
+      "mint": "Minze",
+      "ocean": "Ozean"
+    }
   },
   "productPicker": {
     "fromYourShops": "Aus deinen Shops",
@@ -815,7 +865,10 @@
     "descriptionLabel": "Kurze Beschreibung",
     "descriptionHelp": "Optional — eine Zeile dazu, was der Shop verkauft.",
     "descriptionPlaceholder": "Flat White und frisches Brot",
-    "createShop": "Shop erstellen"
+    "createShop": "Shop erstellen",
+    "subscriptionNeededTitle": "Zuerst brauchst du ein Abonnement",
+    "subscriptionNeededDescription": "Shops werden monatlich verkauft. Bezahle hier einen Zeitraum, dann wartet dein Shop nach der Rückkehr auf dich.",
+    "subscriptionResume": "Abonnement aktiv — schließe das Erstellen deines Shops ab."
   },
   "shopEditor": {
     "loadFailureTitle": "Dieser Shop konnte nicht geöffnet werden",
@@ -862,6 +915,8 @@
     "renewsOn": "Bezahlt bis {date}.",
     "price": "1,70 € für {days} Tage, zahlbar in einer dieser Währungen.",
     "rateNote": "Preise umgerechnet zum Kurs vom {date}.",
+    "ratesUnavailable": "Die Preise sind gerade nicht verfügbar, weil der Wechselkurs nicht gelesen werden kann. Dein Abonnement ist davon nicht betroffen — versuch es gleich noch einmal.",
+    "fromAllowance": "Von deinem Monatsbudget gedeckt: Diese Zahlung braucht keine Freigabe im Wallet.",
     "errorTitle": "Abo",
     "loadFailure": "Das Abo konnte nicht geladen werden.",
     "payFailure": "Die Abo-Zahlung konnte nicht gestartet werden."
@@ -903,6 +958,20 @@
     "soundsDescription": "Ein kurzer Anstieg, wenn eine Zahlung durchgeht, ein tiefes Brummen, wenn nicht.",
     "soundsLabel": "Zahlungstöne",
     "soundsSwitch": "Einen Ton spielen, wenn eine Zahlung endet",
+    "notificationsTitle": "Benachrichtigungen",
+    "notificationsDescription": "Eine kurze Erinnerung, wenn dein Monatsbudget ohne Auffüllen zurückgesetzt wird. Mehr wird nicht gesendet.",
+    "notificationsLabel": "Push-Benachrichtigungen",
+    "notificationsSwitch": "Auf diesem Gerät benachrichtigen",
+    "notificationsUnsupported": "Dieser Browser kann keine Benachrichtigungen empfangen.",
+    "notificationsInstallTitle": "Payvand zum Home-Bildschirm hinzufügen",
+    "notificationsInstallSteps": "Öffne Payvand in Safari, tippe auf Teilen und dann auf Zum Home-Bildschirm. Benachrichtigungen funktionieren erst, wenn Payvand über dieses Symbol geöffnet wird.",
+    "installAppTitle": "Payvand installieren",
+    "installAppDescription": "Öffne es vom Home-Bildschirm oder Desktop, ohne Browserleiste.",
+    "installAppAction": "Installieren",
+    "notificationsUnconfigured": "Benachrichtigungen sind auf dem Server noch nicht eingerichtet.",
+    "notificationsBlocked": "Benachrichtigungen sind für diese Seite blockiert. Erlaube sie in den Website-Einstellungen deines Browsers und versuche es erneut.",
+    "notificationsFailed": "Die Benachrichtigungseinstellung konnte nicht geändert werden. Versuche es erneut.",
+    "notificationsTest": "Test senden",
     "browserNote": "All das folgt diesem Browser, nicht deinem Konto — ein Handy, auf dem du dich anmeldest, behält seine eigenen Einstellungen."
   },
   "terms": {
@@ -992,6 +1061,56 @@
     "successTitle": "Du stehst auf der Liste.",
     "successBody": "Wir schreiben dir, wenn Payvand echte Zahlungen annehmen kann."
   },
+  "start": {
+    "metaTitle": "Hier starten",
+    "hero": {
+      "headline": "Erste Schritte",
+      "title": "Eine Übungswallet, kostenloses Testgeld, kein Risiko",
+      "description": "Payvand läuft auf Solanas Devnet, einer Testversion des Netzwerks, in der Dollar und Euro nichts kosten. Diese Seite führt dich in wenigen Minuten von keiner Wallet zur bezahlten Rechnung."
+    },
+    "wallet": {
+      "title": "1. Eine Solana-Wallet besorgen",
+      "body": "Eine Wallet ist dein Konto im Netzwerk: Sie hält SOL, USDC und EURC und signiert, was du freigibst. Solflare gibt es als Browser-Erweiterung und als App, und sie wechselt das Netzwerk ohne Einrichtung.",
+      "action": "Solflare herunterladen",
+      "note": "Phantom, Backpack und andere Solana-Wallets funktionieren auch."
+    },
+    "devnet": {
+      "title": "2. Auf Devnet umstellen",
+      "body": "Devnet ist eines von Solanas Testnetzwerken: dieselbe Software, dieselben Abläufe, aber jeder Token dort ist kostenlos und wertlos — ein falscher Knopf kostet nur ein paar Sekunden. Im Kopf der App zeigt ein kleines Devnet-Abzeichen, dass du dort bist. Echtes Geld liegt auf Mainnet, und zwischen beiden bewegt sich nichts.",
+      "solflare": "In Solflare: Einstellungen öffnen, Netzwerk wählen, Devnet auswählen.",
+      "others": "In Phantom: Einstellungen, Entwicklereinstellungen, Netzwerk wechseln, Devnet. In Backpack: Einstellungen, Netzwerk, Devnet. Die Solflare-Erweiterung zeigt das Netzwerk unter dem Wallet-Namen.",
+      "guide": "Lesen: was Devnet ist und warum es der sichere Ort zum Lernen ist"
+    },
+    "faucet": {
+      "title": "3. Kostenlose Test-Token holen",
+      "body": "Verknüpfe eine Wallet mit deinem Konto, und Payvand sendet ihr ein Startguthaben aus der eigenen Treasury: genug SOL für Netzwerkgebühren und genug USDC und EURC für ein paar Rechnungen. Ein Anspruch pro Konto.",
+      "signedOut": "Melde dich an, verknüpfe eine Wallet, und die Token gehen direkt dorthin.",
+      "loading": "Anspruch wird geprüft…",
+      "claim": "Hol dir {amounts}",
+      "toWallet": "An die mit diesem Konto verknüpfte Wallet gesendet.",
+      "claimedTitle": "Start-Token abgeholt",
+      "claimedBody": "Deine verknüpfte Wallet hat die Test-Token erhalten. Sie sind wertlos und nicht verkäuflich — es geht ums Üben.",
+      "linkWallet": "Wallet verknüpfen",
+      "more": "Aufgebraucht? Nachschub gibt es bei den offiziellen Faucets:",
+      "error": "Deine Start-Token konnten nicht gelesen werden. Versuch es gleich noch einmal."
+    },
+    "next": {
+      "title": "4. Ausprobieren",
+      "body": "Mit Token in der Wallet kannst du einen Code bezahlen, einen drucken oder ein Monatsbudget setzen, damit kleine Zahlungen ohne Wallet-Popup durchgehen.",
+      "allowance": "Monatsbudget setzen"
+    },
+    "learn": {
+      "title": "Die Ideen hinter den Knöpfen",
+      "body": "Erklärungen in einfacher Sprache, ohne Hype: was eine Wallet ist, wofür eine Gebühr bezahlt wird, warum es Devnet gibt und wo die Betrugsfälle sind.",
+      "devnet": "Warum das Übungsgeld fake ist",
+      "wallet": "Was eine Krypto-Wallet ist",
+      "paying": "Mit einer Wallet bezahlen",
+      "twoWallets": "Warum Payvand zwei Wallets nutzt",
+      "stablecoins": "Warum Dollar und Euro auf einer Blockchain leben",
+      "allowance": "Wie das Monatsbudget funktioniert",
+      "scams": "Krypto-Betrug erkennen"
+    }
+  },
   "shopCodes": {
     "title": "Zahlungscodes",
     "subtitle": "Links, die du in diesem Shop gespeichert hast.",
@@ -1005,6 +1124,7 @@
     "netReceive": "Sie erhalten {net}",
     "detailsAria": "So wird die Gebühr berechnet",
     "feeLine": "Protokollgebühr: {percent} % des Preises, {fee}.",
+    "feeCapLine": "Protokollgebühr: {fee} — das Maximum. {percent} % eines Preises dieser Größe wären mehr als {max}.",
     "feeFloorLine": "Keine Protokollgebühr auf diese Zahlung: {fee} — die Miete des dauerhaften Belegs — ist alles, was abgezogen wird.",
     "feeNoneLine": "Keine Protokollgebühr auf diese Zahlung: sie ist klein genug, dass der Prozentsatz entfällt, und die Miete des Belegs, direkt vom Preis genommen, ist alles, was sie kostet.",
     "recordLine": "Davon sind {fee} die Beleggebühr: der dauerhafte Beleg dieser Zahlung auf der Blockchain.",

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_SOL_FEE_LAMPORTS,
+  MAX_TOKEN_FEE_BASE_UNITS,
   NETWORK_FEE_LAMPORTS,
   PAYMENT_RECEIPT_SPACE,
   PAYMENT_SPACE,
@@ -120,9 +122,28 @@ describe('feeOn', () => {
     expect(feeOn(policyOf(bps, { flat }), amount, mint, 0)).toBe(expected)
   })
 
-  it('takes a large invoice at the rate', () => {
-    // 1,000 SOL at 2%.
-    expect(feeOn(policy, 1_000_000_000_000, undefined, RECEIPT_RENT)).toBe(19_998_775_040)
+  it('takes a large invoice at the rate, up to the ceiling', () => {
+    // 1,000 SOL at 2% is 20 SOL, past the 0.1 SOL ceiling.
+    expect(feeOn(policy, 1_000_000_000_000, undefined, RECEIPT_RENT))
+      .toBe(MAX_SOL_FEE_LAMPORTS)
+    // Three SOL at 2% is 0.06 SOL, under it: the rate still applies, less the
+    // record rent the seller already paid.
+    expect(feeOn(policy, 3_000_000_000, undefined, RECEIPT_RENT)).toBe(58_775_040)
+  })
+
+  it('never charges more than 0.1 SOL, 10 USDC or 10 EURC', () => {
+    // 100 SOL at 2% is 2 SOL of fee; the seller pays 0.1 and no more.
+    expect(feeOn(policy, 100_000_000_000, undefined, RECEIPT_RENT))
+      .toBe(MAX_SOL_FEE_LAMPORTS)
+    // 1,000 USDC at 2% is 20 USDC; ten is the most a token invoice pays.
+    expect(feeOn(policy, 1_000_000_000, USDC, RECEIPT_RENT)).toBe(MAX_TOKEN_FEE_BASE_UNITS)
+    expect(feeOn(policy, 1_000_000_000, EURC, RECEIPT_RENT)).toBe(MAX_TOKEN_FEE_BASE_UNITS)
+    // A mint the policy does not name has the same ceiling: it is the
+    // program's, not a property of the two named currencies.
+    expect(feeOn(policy, 1_000_000_000, UNNAMED_MINT, RECEIPT_RENT))
+      .toBe(MAX_TOKEN_FEE_BASE_UNITS)
+    // Under the ceiling nothing changed: 100 USDC at 2% is 2 USDC.
+    expect(feeOn(policy, 100_000_000, USDC, RECEIPT_RENT)).toBe(2_000_000)
   })
 
   it('truncates a fractional amount instead of throwing', () => {
@@ -140,8 +161,15 @@ describe('feeOn', () => {
   it('multiplies exactly where a float would lose a lamport', () => {
     // The product here is far past 2^53, so `amount * bps` in a float rounds to
     // an odd number; the program's u128 division floors to this value instead.
+    // The ceiling has read the result down by now, so what this pins is that the
+    // product is taken exactly before it applies: a float that rounded the fee
+    // up would still land on the ceiling, but a policy just under it would not.
     expect(feeOn(policyOf(9_354), 2_060_979_503_424_492, undefined, 0))
-      .toBe(1_927_840_227_503_269)
+      .toBe(MAX_SOL_FEE_LAMPORTS)
+    // 106,900,000 lamports at 9,354 bps is 99,994,260: the product is
+    // 999,942,600,000, still exact in `f64`, and the fee sits just under the
+    // ceiling.
+    expect(feeOn(policyOf(9_354), 106_900_000, undefined, 0)).toBe(99_994_260)
   })
 
   it('changes slope at the tier boundary instead of doubling the fee', () => {
@@ -213,13 +241,18 @@ describe('minimumPayable', () => {
     expect(settles(policy, rent, floor - 1, mint, RECEIPT_RENT)).toBe(false)
   })
 
-  it('admits nothing at 10,000 bps, because the fee is always amount - 1', () => {
+  it('finds a floor at 10,000 bps only because the fee has a ceiling', () => {
+    // A whole-invoice rate would take `amount - 1`, and no payment could pass the
+    // guard. The 0.1 SOL ceiling stops the fee at 100,000,000, so the door is the
+    // rent plus that plus one lamport.
     const policy = sellerPays(10_000)
-    expect(minimumPayable(policy, SOL_RENT, undefined, RECEIPT_RENT))
-      .toBe(Number.POSITIVE_INFINITY)
-    for (const amount of [1, SOL_RENT, SOL_RENT * 10, 1_000_000_000_000]) {
-      expect(settles(policy, SOL_RENT, amount, undefined, RECEIPT_RENT)).toBe(false)
-    }
+    const floor = minimumPayable(policy, SOL_RENT, undefined, RECEIPT_RENT)
+    expect(floor).toBe(SOL_RENT + MAX_SOL_FEE_LAMPORTS + 1)
+    expect(settles(policy, SOL_RENT, floor, undefined, RECEIPT_RENT)).toBe(true)
+    expect(settles(policy, SOL_RENT, floor - 1, undefined, RECEIPT_RENT)).toBe(false)
+    // Below the ceiling the rate still takes nearly the whole invoice, so a
+    // small price admits nothing: three million lamports pays 1,775,040.
+    expect(settles(policy, SOL_RENT, 3_000_000, undefined, RECEIPT_RENT)).toBe(false)
   })
 })
 
@@ -232,6 +265,33 @@ describe('invoiceCosts', () => {
     invoiceRent: SOL_RENT,
     receiptRent: RECEIPT_RENT
   }
+
+  it('marks a fee set by the ceiling, and only then', () => {
+    // 100 SOL at 2% is 2 SOL of fee; the ceiling makes it 0.1 SOL.
+    const sol = invoiceCosts({ ...base, amount: 100_000_000_000 })
+    expect(sol.fee).toBe(MAX_SOL_FEE_LAMPORTS)
+    expect(sol.feeIsCapped).toBe(true)
+    expect(sol.feeIsFloor).toBe(false)
+    // The rate is still the one being labelled, so the note can say what the
+    // percentage would have come to.
+    expect(sol.feeBps).toBe(200)
+
+    // 1,000 USDC at 2% is 20 USDC; ten is the ceiling.
+    const usdc = invoiceCosts({
+      ...base,
+      currency: 'usdc',
+      mint: USDC,
+      amount: 1_000_000_000
+    })
+    expect(usdc.fee).toBe(MAX_TOKEN_FEE_BASE_UNITS)
+    expect(usdc.feeIsCapped).toBe(true)
+
+    // 5 SOL at 2% is 98,775,040 — under the ceiling, so the rate is what the
+    // note must print.
+    const under = invoiceCosts({ ...base, amount: 5_000_000_000 })
+    expect(under.fee).toBe(98_775_040)
+    expect(under.feeIsCapped).toBe(false)
+  })
 
   it('takes the fee out of the seller, leaving the payer with the price', () => {
     const costs = invoiceCosts({ ...base, amount: 1_000_000_000 })

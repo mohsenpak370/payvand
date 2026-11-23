@@ -31,6 +31,7 @@
       "createPayment": "Crear un pago",
       "scanAndPay": "Escanear y pagar",
       "learn": "Aprender",
+      "start": "Empieza aquí",
       "learnAboutCrypto": "Aprender sobre cripto"
     },
     "account": {
@@ -66,7 +67,19 @@
       "title": "Pagos sencillos en Solana",
       "description": "El vendedor crea un código de pago en segundos, el cliente lo escanea con el móvil y aprueba el pago — eso es todo.",
       "createCta": "Crear un QR de pago",
-      "scanCta": "Escanear y pagar"
+      "scanCta": "Escanear y pagar",
+      "proof": {
+        "noReader": "Sin datáfono",
+        "noInstall": "Tu cliente no instala nada",
+        "ownWallet": "El dinero llega a tu cartera",
+        "noMarkup": "Tu cliente no paga recargo"
+      },
+      "card": {
+        "example": "Recibo de ejemplo",
+        "paid": "Pagado",
+        "memo": "Un flat white y un croissant",
+        "code": "Código de pago"
+      }
     },
     "how": {
       "title": "Cómo viaja un pago",
@@ -86,7 +99,9 @@
     },
     "cta": {
       "description": "Abre la página de vendedor, escribe un importe y muestra el código a tu cliente. Se tarda un minuto.",
-      "startSelling": "Empezar a vender"
+      "startSelling": "Empezar a vender",
+      "startCta": "¿Nuevo en cripto? Empieza aquí",
+      "devnetGuide": "Mira cómo cambiar tu cartera a devnet"
     }
   },
   "admin": {
@@ -428,7 +443,10 @@
       "copyCode": "Copiar código",
       "failed": "El pago no ha pasado"
     },
-    "poweredBy": "Con la tecnología de"
+    "poweredBy": "Con la tecnología de",
+    "qrTitle": "Escanea este código",
+    "qrHint": "Ábrelo en el teléfono que va a pagar o muéstraselo a quien paga.",
+    "qrShow": "Mostrar código QR"
   },
   "status": {
     "paid": "Pagado",
@@ -670,6 +688,8 @@
     "txNoMatch": "Ningún pago coincide con ese código. Revisa la referencia que leyó el cliente o amplía las fechas.",
     "referenceCodeLabel": "Código de referencia",
     "referencePlaceholder": "El código que leyó el cliente",
+    "filters": "Filtros",
+    "clearDates": "Borrar fechas",
     "from": "Desde",
     "to": "Hasta",
     "linkToSeeTx": "Vincula tu cartera para ver transacciones",
@@ -678,7 +698,28 @@
     "directionFrom": "de",
     "directionTo": "a",
     "paymentReceived": "Pago recibido",
-    "paymentSent": "Pago enviado"
+    "paymentSent": "Pago enviado",
+    "flowTitle": "Dinero que entra y sale",
+    "flowDescription": "Lo que se liquidó en los pagos recientes de esta cartera, convertido a {currency} al tipo de hoy. Las facturas sin pagar no cuentan.",
+    "flowSpent": "Total gastado",
+    "flowReceived": "Total recibido",
+    "flowNet": "Flujo neto",
+    "flowEmpty": "Aún no hay pagos liquidados: en cuanto entre o salga dinero, se sumará aquí.",
+    "flowNoRate": "Ahora mismo no hay tipo de cambio, así que solo se muestran los importes en monedas.",
+    "detailTitle": "Detalles del pago",
+    "detailName": "Nombre",
+    "detailDescription": "Descripción",
+    "detailMemo": "Nota",
+    "detailAmount": "Importe",
+    "detailFee": "Comisión del protocolo",
+    "detailFeeNote": "La comisión sale del precio. La comisión de red la paga aparte quien paga.",
+    "detailDate": "Pagado",
+    "detailCreated": "Creado",
+    "detailPayer": "Pagador",
+    "detailPayee": "Receptor",
+    "detailStatus": "Estado",
+    "detailReference": "Referencia",
+    "detailClose": "Cerrar"
   },
   "scan": {
     "metaTitle": "Escanear y pagar — Payvand",
@@ -788,7 +829,16 @@
     "presentFallbackTitle": "Código de pago",
     "scanToPay": "Escanea esto con la cámara de un móvil para pagar.",
     "allowDiscountsLabel": "Dejar que los compradores usen tus códigos",
-    "allowDiscountsHelp": "Los compradores pueden aplicar uno de tus códigos a un pago creado con tus productos. Cada cartera puede usar un código una vez."
+    "allowDiscountsHelp": "Los compradores pueden aplicar uno de tus códigos a un pago creado con tus productos. Cada cartera puede usar un código una vez.",
+    "designLabel": "Diseño de la tarjeta",
+    "designHelp": "El color de la página que abre tu cliente.",
+    "designs": {
+      "classic": "Clásico",
+      "aurora": "Aurora",
+      "sunset": "Atardecer",
+      "mint": "Menta",
+      "ocean": "Océano"
+    }
   },
   "productPicker": {
     "fromYourShops": "Desde tus comercios",
@@ -815,7 +865,10 @@
     "descriptionLabel": "Descripción corta",
     "descriptionHelp": "Opcional — una línea sobre lo que vende el comercio.",
     "descriptionPlaceholder": "Cafés y pan fresco",
-    "createShop": "Crear comercio"
+    "createShop": "Crear comercio",
+    "subscriptionNeededTitle": "Primero necesitas una suscripción",
+    "subscriptionNeededDescription": "Los comercios se venden por meses. Paga un periodo aquí y el comercio quedará listo para crear cuando vuelvas.",
+    "subscriptionResume": "Suscripción activa: termina de crear tu comercio."
   },
   "shopEditor": {
     "loadFailureTitle": "No se pudo abrir este comercio",
@@ -862,6 +915,8 @@
     "renewsOn": "Pagada hasta el {date}.",
     "price": "1,70 € por {days} días, pagadero en cualquiera de estas monedas.",
     "rateNote": "Precios convertidos al tipo leído el {date}.",
+    "ratesUnavailable": "Los precios no están disponibles ahora porque no se puede leer el tipo de cambio. Tu suscripción no se ve afectada: inténtalo de nuevo en un momento.",
+    "fromAllowance": "Cubierto por tu límite mensual: este pago no necesita aprobación de la cartera.",
     "errorTitle": "Suscripción",
     "loadFailure": "No se pudo leer tu suscripción.",
     "payFailure": "No se pudo iniciar el pago de la suscripción."
@@ -903,6 +958,20 @@
     "soundsDescription": "Un tono corto que sube cuando un pago pasa y un zumbido grave cuando no.",
     "soundsLabel": "Sonidos de pago",
     "soundsSwitch": "Reproducir un sonido al terminar un pago",
+    "notificationsTitle": "Notificaciones",
+    "notificationsDescription": "Un recordatorio breve cuando tu presupuesto mensual se reinicia sin rellenarse. No se envía nada más.",
+    "notificationsLabel": "Notificaciones push",
+    "notificationsSwitch": "Avísame en este dispositivo",
+    "notificationsUnsupported": "Este navegador no puede recibir notificaciones.",
+    "notificationsInstallTitle": "Añade Payvand a tu pantalla de inicio",
+    "notificationsInstallSteps": "Abre Payvand en Safari, toca Compartir y luego Añadir a pantalla de inicio. Las notificaciones solo funcionan cuando Payvand se abre desde ese icono.",
+    "installAppTitle": "Instala Payvand",
+    "installAppDescription": "Ábrelo desde la pantalla de inicio o el escritorio, sin la barra del navegador.",
+    "installAppAction": "Instalar",
+    "notificationsUnconfigured": "Las notificaciones aún no están configuradas en el servidor.",
+    "notificationsBlocked": "Las notificaciones están bloqueadas para este sitio. Permítelas en los ajustes del navegador y vuelve a intentarlo.",
+    "notificationsFailed": "No se pudo cambiar el ajuste de notificaciones. Inténtalo de nuevo.",
+    "notificationsTest": "Enviar una prueba",
     "browserNote": "Todo esto sigue a este navegador, no a tu cuenta — un móvil donde inicies sesión guarda lo suyo."
   },
   "terms": {
@@ -992,6 +1061,56 @@
     "successTitle": "Estás en la lista.",
     "successBody": "Te escribiremos cuando Payvand pueda cobrar pagos reales."
   },
+  "start": {
+    "metaTitle": "Empieza aquí",
+    "hero": {
+      "headline": "Primeros pasos",
+      "title": "Una cartera de práctica, dinero de prueba gratis, sin riesgo",
+      "description": "Payvand funciona en devnet de Solana, una versión de prueba de la red donde los dólares y los euros no cuestan nada. Esta página te lleva de no tener cartera a pagar una factura en unos minutos."
+    },
+    "wallet": {
+      "title": "1. Consigue una cartera de Solana",
+      "body": "Una cartera es tu cuenta en la red: guarda SOL, USDC y EURC, y firma lo que apruebas. Solflare tiene extensión de navegador y app móvil, y cambia de red sin configuración.",
+      "action": "Descargar Solflare",
+      "note": "Phantom, Backpack y otras carteras de Solana también funcionan."
+    },
+    "devnet": {
+      "title": "2. Cámbiala a devnet",
+      "body": "Devnet es una de las redes de prueba de Solana: el mismo software y los mismos flujos, pero cada token es gratis y no vale nada, así que un botón equivocado cuesta unos segundos. La cabecera de la app muestra una insignia devnet cuando estás allí. El dinero real vive en mainnet, y entre las dos no se mueve nada.",
+      "solflare": "En Solflare: abre Ajustes, elige Red y selecciona Devnet.",
+      "others": "En Phantom: Ajustes, Ajustes de desarrollador, Cambiar red, Devnet. En Backpack: Ajustes, Red, Devnet. La extensión de Solflare muestra la red bajo el nombre de la cartera.",
+      "guide": "Leer: qué es devnet y por qué es el lugar seguro para aprender"
+    },
+    "faucet": {
+      "title": "3. Consigue tokens de prueba gratis",
+      "body": "Vincula una cartera a tu cuenta y Payvand le envía un saldo inicial desde su propia tesorería: SOL suficiente para las comisiones de red y USDC y EURC suficientes para pagar unas cuantas facturas. Una reclamación por cuenta.",
+      "signedOut": "Inicia sesión, vincula una cartera y los tokens irán directos a ella.",
+      "loading": "Comprobando tu reclamación…",
+      "claim": "Consigue {amounts}",
+      "toWallet": "Se envía a la cartera vinculada a esta cuenta.",
+      "claimedTitle": "Tokens iniciales reclamados",
+      "claimedBody": "Tu cartera vinculada recibió los tokens de prueba. No valen nada y no se pueden vender: la idea es practicar.",
+      "linkWallet": "Vincular una cartera",
+      "more": "¿Se acabaron? Consigue más en los faucets oficiales:",
+      "error": "No se pudieron leer tus tokens iniciales. Inténtalo de nuevo en un momento."
+    },
+    "next": {
+      "title": "4. Pruébalo",
+      "body": "Con tokens en la cartera puedes pagar un código, imprimir uno o fijar un límite mensual para que los pagos pequeños pasen sin ventana de la cartera.",
+      "allowance": "Fijar un límite mensual"
+    },
+    "learn": {
+      "title": "Las ideas detrás de los botones",
+      "body": "Guías en lenguaje claro, sin hype: qué es una cartera, qué paga una comisión, por qué existe devnet y dónde están las estafas.",
+      "devnet": "Por qué el dinero de práctica es falso",
+      "wallet": "Qué es una cartera cripto",
+      "paying": "Pagar con una cartera",
+      "twoWallets": "Por qué Payvand usa dos carteras",
+      "stablecoins": "Por qué dólares y euros viven en una blockchain",
+      "allowance": "Cómo funciona el límite mensual",
+      "scams": "Detectar estafas cripto"
+    }
+  },
   "shopCodes": {
     "title": "Códigos de pago",
     "subtitle": "Enlaces que has guardado en este comercio.",
@@ -1005,6 +1124,7 @@
     "netReceive": "Recibes {net}",
     "detailsAria": "Cómo se calcula la comisión",
     "feeLine": "Comisión del protocolo: {percent}% del precio, {fee}.",
+    "feeCapLine": "Comisión del protocolo: {fee}, el máximo. El {percent}% de un precio de este tamaño superaría {max}.",
     "feeFloorLine": "Sin comisión del protocolo en este pago: {fee}, la renta del recibo permanente, es todo lo que se descuenta.",
     "feeNoneLine": "Sin comisión del protocolo en este pago: es lo bastante pequeño para que el porcentaje se anule, y la renta del recibo, tomada del precio, es todo lo que cuesta.",
     "recordLine": "De eso, {fee} es la comisión de registro: el recibo permanente de este pago en la cadena.",

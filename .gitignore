@@ -38,6 +38,9 @@ DEV.md
 # Local dev HTTPS certificates (mkcert) — never commit private keys
 .certs/
 .vercel-token
+
+# Wallet secrets generated for the deployment (the devnet faucet treasury)
+.secrets/
 .turso-credentials
 .email-credentials
 

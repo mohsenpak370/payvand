@@ -325,8 +325,20 @@ pub struct MyTransaction {
     pub direction: String,
     /// Who paid, or who was paid.
     pub counterparty: String,
+    /// `sol`, `usdc` or `eurc`: the currency this invoice was paid in.
+    pub currency: String,
+    /// The amount in that currency's base units, which is what a total per
+    /// coin needs; `amount_lamports` is zero on a token invoice.
+    pub amount: u64,
+    /// Decimals of `amount`: 9 for SOL, 6 for the stablecoins.
+    pub decimals: u8,
     pub amount_lamports: u64,
     pub memo: String,
+    /// What the invoice was called and what it was for, when it was made in
+    /// this app. The chain stores neither, so an invoice made elsewhere — or
+    /// before this was recorded — has empty strings.
+    pub name: String,
+    pub description: String,
     pub status: PaymentStatus,
     pub created_at_unix: i64,
     pub settled_at_unix: i64,
@@ -355,6 +367,7 @@ pub async fn transactions(
     let scan = payments::fetch_program_scan(TRANSACTION_LIMIT, &state.db).await?;
     let mut items = match_transactions(scan.payments, &scan.budgets, &wallet);
     items.truncate(TRANSACTION_LIMIT);
+    fill_invoice_meta(&state.db, &mut items).await;
 
     Ok(Json(TransactionsResponse {
         wallet,
@@ -362,6 +375,65 @@ pub async fn transactions(
         cluster: scan.cluster,
         items,
     }))
+}
+
+/// Fills in the name and description each invoice was made with, from the rows
+/// written when the code was created. The chain keeps neither, so this is the
+/// only place those two can come from; a read that fails leaves them empty
+/// rather than failing the whole history.
+async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
+    if items.is_empty() {
+        return;
+    }
+
+    let ids: Vec<String> = items.iter().map(|item| item.id.clone()).collect();
+    let placeholders = (1..=ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let read = async {
+        let connection = db.connect()?;
+        connection
+            .query(
+                &format!(
+                    "SELECT id, name, description FROM invoice_meta WHERE id IN ({placeholders})"
+                ),
+                libsql::params_from_iter(ids.iter().cloned()),
+            )
+            .await
+    }
+    .await;
+
+    let Ok(mut rows) = read else {
+        return;
+    };
+
+    let mut found: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    while let Ok(Some(row)) = rows.next().await {
+        let Ok(id) = row.get::<String>(0) else {
+            continue;
+        };
+        let Ok(name) = row.get::<String>(1) else {
+            continue;
+        };
+        let Ok(description) = row.get::<String>(2) else {
+            continue;
+        };
+        found.insert(id, (name, description));
+    }
+
+    for item in items {
+        if let Some((name, description)) = found.get(&item.id) {
+            if item.name.is_empty() {
+                item.name = name.clone();
+            }
+            if item.description.is_empty() {
+                item.description = description.clone();
+            }
+        }
+    }
 }
 
 /// Pure part of the transactions feed: keep the invoices this wallet is
@@ -401,12 +473,26 @@ pub(crate) fn match_transactions(
                 record.seller.clone()
             };
 
+            // A settled record carries the one option it was paid with; a
+            // marker read before its settle transaction is resolved carries
+            // none, and then the SOL price is all there is to show.
+            let (currency, amount, decimals) = record
+                .options
+                .first()
+                .map(|option| (option.currency.clone(), option.amount, option.decimals))
+                .unwrap_or_else(|| ("sol".to_string(), record.amount_lamports, 9));
+
             Some(MyTransaction {
                 id: record.id,
                 direction: direction.to_string(),
                 counterparty,
+                currency,
+                amount,
+                decimals,
                 amount_lamports: record.amount_lamports,
                 memo: record.memo,
+                name: record.name,
+                description: record.description,
                 status: record.status,
                 created_at_unix: record.created_at_unix,
                 settled_at_unix: record.settled_at_unix,

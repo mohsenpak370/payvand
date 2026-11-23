@@ -62,6 +62,19 @@ const soundsChoice = computed({
   get: () => soundsEnabled.value,
   set: (next: boolean) => setSoundsEnabled(next)
 })
+
+// A reminder that the monthly allowance reset unrefilled. Both actions need a
+// gesture — the browser will not ask for permission otherwise — so the switch
+// is the trigger, not a page load.
+const notifications = usePushNotifications()
+// Chromium hands over its install offer; the card below is where it is taken.
+const install = useInstallPrompt()
+const notificationsChoice = computed({
+  get: () => notifications.subscribed.value,
+  set: (next: boolean) => {
+    void (next ? notifications.enable() : notifications.disable())
+  }
+})
 </script>
 
 <template>
@@ -70,6 +83,33 @@ const soundsChoice = computed({
     :description="$t('settings.description')"
   >
     <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6">
+      <!-- About the app itself, not about any one setting: Chromium offers
+           installing it, and nothing below needs the app to be installed. -->
+      <UCard
+        v-if="install.canInstall.value"
+        class="min-w-0"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold">
+              {{ $t('settings.installAppTitle') }}
+            </h2>
+            <p class="text-sm text-muted">
+              {{ $t('settings.installAppDescription') }}
+            </p>
+          </div>
+          <UButton
+            :label="$t('settings.installAppAction')"
+            icon="i-lucide-download"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            class="shrink-0"
+            @click="install.install"
+          />
+        </div>
+      </UCard>
+
       <UCard class="min-w-0">
         <template #header>
           <div>
@@ -187,6 +227,68 @@ const soundsChoice = computed({
               :label="$t('settings.soundsSwitch')"
             />
           </UFormField>
+        </div>
+      </UCard>
+
+      <UCard class="min-w-0">
+        <template #header>
+          <div>
+            <h2 class="text-base font-semibold">
+              {{ $t('settings.notificationsTitle') }}
+            </h2>
+            <p class="text-sm text-muted">
+              {{ $t('settings.notificationsDescription') }}
+            </p>
+          </div>
+        </template>
+
+        <div class="flex flex-col gap-3">
+          <UFormField :label="$t('settings.notificationsLabel')">
+            <USwitch
+              v-model="notificationsChoice"
+              :label="$t('settings.notificationsSwitch')"
+              :disabled="!notifications.available.value || notifications.busy.value"
+            />
+          </UFormField>
+
+          <p
+            v-if="!notifications.supported.value && !notifications.needsInstall.value"
+            class="text-sm text-muted"
+          >
+            {{ $t('settings.notificationsUnsupported') }}
+          </p>
+
+          <UAlert
+            v-if="notifications.needsInstall.value"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-square-plus"
+            :title="$t('settings.notificationsInstallTitle')"
+            :description="$t('settings.notificationsInstallSteps')"
+          />
+
+          <UAlert
+            v-if="notifications.failure.value"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :description="notifications.failure.value"
+          />
+
+          <div
+            v-if="notifications.subscribed.value"
+            class="border-default flex justify-end border-t pt-4"
+          >
+            <UButton
+              :label="$t('settings.notificationsTest')"
+              icon="i-lucide-bell-ring"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              :loading="notifications.busy.value"
+              @click="notifications.sendTest"
+            />
+          </div>
         </div>
       </UCard>
 

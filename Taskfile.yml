@@ -135,10 +135,12 @@ tasks:
         python3 -c "import json,sys; live=json.load(open('/tmp/payvand-idl-live.json')); built=json.load(open('target/idl/payvand.json')); sys.exit(0 if live==built else 'the on-chain IDL differs from target/idl/payvand.json')"
 
   # Both Vercel projects carry their own Root Directory, and `vercel deploy`
-  # uploads the tree it is given: running it inside `apps/web` makes Vercel look
-  # for `apps/web/apps/web`. So each task assembles the upload tree the project
-  # expects (the app folder inside its parents for the web project, the API
-  # folder as the root for `api`), deploys that, and deletes it.
+  # uploads the tree it is given. So each task assembles the upload tree the
+  # project expects — the app folder inside its parents for the web project,
+  # `apps/api` inside its parents for the API project — deploys that, and
+  # deletes it. The production API is the `payvand-api` project: its address,
+  # `payvand-api.vercel.app`, is the one the web app and the printed QR codes
+  # point at, and a `.vercel.app` address belongs to the project of that name.
   deploy:web:
     desc: Deploy the web app to Vercel production
     cmds:
@@ -161,7 +163,8 @@ tasks:
         set -e
         tree="$(mktemp -d)"
         trap 'rm -rf "$tree"' EXIT
+        mkdir -p "$tree/apps"
         rsync -a --exclude target --exclude .vercel --exclude '.env*' \
-          --exclude data apps/api/ "$tree"/
+          --exclude data apps/api "$tree/apps/"
         VERCEL_TOKEN="$(tr -d '\n' < .vercel-token)" \
-          vercel deploy "$tree" --prod --yes -p api
+          vercel deploy "$tree" --prod --yes -p payvand-api

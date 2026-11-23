@@ -83,6 +83,10 @@ function openBudget() {
         @unlink="unlinkWalletNow"
       />
 
+      <!-- Devnet starter tokens: the natural next step after linking a wallet,
+           so the claim lives here as well as on the getting-started page. -->
+      <FaucetCard />
+
       <ProfileAllowanceCard
         :has-address="!!allowanceAddress"
         :rows="rows"
@@ -108,6 +112,14 @@ function openBudget() {
         :loading="savedLoading"
         :failure="savedFailure"
         @refresh="refreshSavedPayments"
+      />
+
+      <!-- The three figures first: what the history adds up to, before the rows
+           it adds up. -->
+      <ProfileFlowCard
+        :items="transactions?.items ?? []"
+        :display-currency="displayCurrency"
+        :loading="txLoading"
       />
 
       <ProfileTransactionsCard

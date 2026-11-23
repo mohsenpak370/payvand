@@ -22,7 +22,9 @@ código:
 1. **La comisión del protocolo**, un porcentaje del precio. Es marginal en lugar de plana: un tipo se
    aplica a la primera parte del precio y uno menor a todo lo que supera un umbral, así una factura
    grande nunca cuesta más por unidad que una pequeña. El umbral cambia entre SOL y stablecoins,
-   porque no es el mismo tipo de dinero.
+   porque no es el mismo tipo de dinero. Además hay un tope: un pago nunca paga más de 0,1 SOL,
+   10 USDC o 10 EURC de comisión, así una factura muy grande paga una comisión con forma de tipo, no
+   una parte de sí misma que no deja de crecer.
 2. **La comisión de registro**, en pagos hechos con un token. Cada pago liquidado deja un recibo
    pequeño y permanente en la cadena. El espacio en la cadena se paga por adelantado en SOL y no se
    recupera nunca. La comisión de registro cubre ese coste, y se calcula con el tipo de cambio de SOL

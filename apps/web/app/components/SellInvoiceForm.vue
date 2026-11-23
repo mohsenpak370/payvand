@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SellPageState } from '~/composables/useSellPage'
+import { cardDesignSwatch } from '~/utils/cardDesigns'
 
 const props = defineProps<{
   sell: SellPageState
@@ -23,6 +24,8 @@ const {
   priceCurrency,
   currencyItems,
   calculatorOpen,
+  design,
+  designOptions,
   name,
   description,
   memo,
@@ -197,6 +200,39 @@ const {
           </UFormField>
         </template>
       </div>
+
+      <!-- The look of the page the customer opens. It is part of the code, so
+           it has to be chosen here, before the invoice exists. -->
+      <UFormField
+        :label="t('sell.designLabel')"
+        :help="t('sell.designHelp')"
+      >
+        <div
+          class="flex flex-wrap gap-2"
+          role="radiogroup"
+          :aria-label="t('sell.designLabel')"
+        >
+          <button
+            v-for="option in designOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="design === option.value"
+            class="flex flex-col items-center gap-1 rounded-lg border p-1.5 text-xs transition-colors"
+            :class="design === option.value
+              ? 'border-primary text-highlighted ring-2 ring-primary/30'
+              : 'border-default text-muted hover:border-primary/40'"
+            @click="design = option.value"
+          >
+            <span
+              :class="cardDesignSwatch(option.value)"
+              class="size-8 rounded-md"
+              aria-hidden="true"
+            />
+            {{ option.label }}
+          </button>
+        </div>
+      </UFormField>
 
       <div class="flex items-center justify-between gap-3 text-sm text-muted">
         <span>{{ networkLabel(cluster) }}</span>

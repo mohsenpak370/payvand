@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Shop } from '~/composables/useShop'
+import { cardDesignClass } from '~/utils/cardDesigns'
 
 const props = withDefaults(
   defineProps<{
@@ -75,6 +76,15 @@ const {
 const heading = computed(() => paymentName.value || paymentMemo.value || t('checkout.fallbackHeading'))
 
 const discountOpen = ref(false)
+
+// The buyer can hand the same invoice to another phone — their own wallet's
+// scanner, or the person standing next to them — so the code the link is made
+// of is one tap away rather than only on paper.
+const qrOpen = ref(false)
+
+// The seller chooses this when the code is made and it rides in the payload;
+// an unknown or missing value is the plain card.
+const cardClass = computed(() => cardDesignClass(payload.value?.design))
 
 // The result of this visit's payment, announced over the sheet: a settled
 // invoice or a refusal, with the code the buyer can read back to the seller.
@@ -368,7 +378,8 @@ useSeoMeta({
     <main class="flex flex-1 items-center justify-center px-5 py-10 print:fixed print:inset-0 print:flex print:items-center print:justify-center print:bg-default print:p-[12mm]">
       <div class="w-full max-w-sm">
         <section
-          class="rounded-2xl border border-default bg-default p-6 shadow-sm print:break-inside-avoid print:bg-elevated"
+          class="rounded-2xl p-6 shadow-sm print:break-inside-avoid print:bg-elevated"
+          :class="cardClass"
         >
           <div
             v-if="stage === 'loading'"
@@ -823,6 +834,20 @@ useSeoMeta({
               />
             </div>
 
+            <!-- The buyer's own hand-off: the same link as a code for another
+                 device to scan, without leaving the page. -->
+            <div class="mt-4 print:hidden">
+              <UButton
+                v-if="code"
+                :label="$t('checkout.qrShow')"
+                icon="i-lucide-qr-code"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                @click="qrOpen = true"
+              />
+            </div>
+
             <!-- Paper has nothing to click, so the code and the invoice's
                  identifiers are always printed. -->
             <div class="mt-6 hidden w-full print:block">
@@ -1033,6 +1058,20 @@ useSeoMeta({
             />
           </div>
         </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="qrOpen"
+      :title="$t('checkout.qrTitle')"
+      :description="$t('checkout.qrHint')"
+    >
+      <template #body>
+        <PaymentQr
+          v-if="code"
+          :payload="code"
+          :size="320"
+        />
       </template>
     </UModal>
 

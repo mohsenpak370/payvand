@@ -76,6 +76,12 @@ const accountMenu = computed(() => [
           class="flex items-center gap-6"
         >
           <NuxtLink
+            to="/start"
+            class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {{ $t('app.nav.start') }}
+          </NuxtLink>
+          <NuxtLink
             to="/sell"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
@@ -144,6 +150,15 @@ const accountMenu = computed(() => [
           :aria-label="$t('app.nav.menu')"
           class="flex flex-col gap-1"
         >
+          <UButton
+            to="/start"
+            :label="$t('app.nav.start')"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-rocket"
+            block
+            class="justify-start"
+          />
           <UButton
             to="/sell"
             :label="$t('app.nav.createPayment')"

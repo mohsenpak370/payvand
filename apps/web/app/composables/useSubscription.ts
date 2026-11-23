@@ -28,6 +28,11 @@ export interface SubscriptionStatus {
   period_days: number
   quotes: SubscriptionQuote[]
   rated_at_unix: number
+  /**
+   * False when the API could not read an exchange rate: the period and the plan
+   * still arrive, `quotes` is empty and only the price buttons wait.
+   */
+  rates_available: boolean
 }
 
 export interface SubscriptionInvoice {
@@ -44,11 +49,6 @@ export const PENDING_SUBSCRIPTION_KEY = 'payvand.subscription-pending.v1'
 export function useSubscription() {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
-  const { token } = useAuth()
-
-  function authHeaders(): Record<string, string> {
-    return token.value ? { authorization: `Bearer ${token.value}` } : {}
-  }
 
   /** The account's paid period and the plan's three prices. */
   async function status(): Promise<SubscriptionStatus> {

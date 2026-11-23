@@ -23,7 +23,9 @@ code soit partagé :
 1. **Les frais du protocole**, un pourcentage du prix. Ils sont marginaux et non forfaitaires : un
    taux s’applique à la première tranche du prix et un taux plus bas à tout ce qui dépasse un seuil,
    afin qu’une grosse facture ne coûte jamais plus par unité qu’une petite. Le seuil diffère entre SOL
-   et stablecoins, parce que ce n’est pas la même monnaie.
+   et stablecoins, parce que ce n’est pas la même monnaie. Un plafond s’y ajoute : un paiement ne paie
+   jamais plus de 0,1 SOL, 10 USDC ou 10 EURC de frais, si bien qu’une très grosse facture paie des
+   frais en forme de taux, et non une part d’elle-même qui ne cesse de grandir.
 2. **Les frais de reçu**, pour les paiements en token. Chaque paiement réglé laisse un petit reçu
    permanent sur la chaîne. L’espace sur la chaîne se paie d’avance, en SOL, et ne se récupère jamais.
    Les frais de reçu couvrent ce coût, et ils sont calculés au cours du SOL en direct : ils suivent

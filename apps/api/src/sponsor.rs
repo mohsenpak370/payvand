@@ -106,19 +106,7 @@ fn cap_from_env(name: &str, fallback: u32) -> u32 {
 /// The relayer's keypair, from `SPONSOR_KEYPAIR` — the solana CLI's JSON array
 /// of 64 bytes, or the same bytes base58 encoded. Absent means no sponsorship.
 fn sponsor_keypair() -> Option<Keypair> {
-    let raw = std::env::var("SPONSOR_KEYPAIR").ok()?;
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    if raw.starts_with('[') {
-        let bytes: Vec<u8> = serde_json::from_str(raw).ok()?;
-        return Keypair::try_from(bytes.as_slice()).ok();
-    }
-    // Decoded here rather than with `from_base58_string`, which panics on a
-    // malformed secret: a bad environment value is no sponsor, not a crash.
-    let bytes = bs58::decode(raw).into_vec().ok()?;
-    Keypair::try_from(bytes.as_slice()).ok()
+    crate::keypair_from_env("SPONSOR_KEYPAIR")
 }
 
 fn program_id() -> Pubkey {

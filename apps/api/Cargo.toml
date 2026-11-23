@@ -69,6 +69,10 @@ getrandom = "0.4"
 # rustls (not native-tls/openssl) so the Vercel Linux builder needs no
 # system TLS headers.
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "pool", "builder", "hostname", "rustls-tls"] }
+# Web push: RFC 8188 encryption and the VAPID signature are this crate's job.
+# Its own HTTP clients are switched off — `push.rs` sends the request it builds
+# through the reqwest client above, so the function keeps one TLS stack.
+web-push = { version = "0.11", default-features = false }
 
 [profile.release]
 codegen-units = 1

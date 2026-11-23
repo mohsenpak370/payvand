@@ -76,11 +76,6 @@ export function cartTotalLamports(lines: CartLine[]): number {
 export function useShopApi() {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
-  const { token } = useAuth()
-
-  function authHeaders(): Record<string, string> {
-    return token.value ? { authorization: `Bearer ${token.value}` } : {}
-  }
 
   /** Every shop the account keeps, each with its catalogue. */
   async function list(): Promise<ShopWithProducts[]> {

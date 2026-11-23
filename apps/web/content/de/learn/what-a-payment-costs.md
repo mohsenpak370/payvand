@@ -22,7 +22,9 @@ geteilt wird:
 1. **Die Protokollgebühr**, ein Prozentsatz des Preises. Sie ist gestaffelt statt pauschal: ein Satz
    gilt für den ersten Teil des Preises, ein niedrigerer für alles über einer Grenze, damit eine
    große Rechnung pro Einheit nie teurer ist als eine kleine. Die Grenze unterscheidet sich für SOL
-   und für Stablecoins, weil das nicht dieselbe Art von Geld ist.
+   und für Stablecoins, weil das nicht dieselbe Art von Geld ist. Dazu kommt eine Obergrenze: eine
+   Zahlung zahlt davon nie mehr als 0,1 SOL, 10 USDC oder 10 EURC, sodass eine sehr große Rechnung eine
+   Gebühr in der Größe eines Satzes zahlt statt eines Anteils an sich selbst, der immer weiter wächst.
 2. **Die Beleggebühr** bei Zahlungen in einem Token. Jede abgerechnete Zahlung hinterlässt einen
    kleinen, dauerhaften Beleg auf der Blockchain. Platz dort wird im Voraus in SOL bezahlt und lässt
    sich nie zurückholen. Die Beleggebühr deckt diesen Posten, und sie wird zum aktuellen SOL-Kurs

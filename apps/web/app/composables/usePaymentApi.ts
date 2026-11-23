@@ -152,6 +152,11 @@ export interface PaymentQrPayload {
    * created, so a buyer anywhere sees the fiat figure in that currency.
    */
   currency?: FiatCurrency | null
+  /**
+   * The card design the seller chose, also stamped in at creation. Unknown
+   * values fall back to the plain card — see `cardDesignOf`.
+   */
+  design?: string
 }
 
 export interface DiscountCode {
@@ -377,12 +382,6 @@ export function discountedLamports(priceLamports: number, percentOff: number): n
 export function usePaymentApi() {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
-  const { token } = useAuth()
-
-  /** Creating a payment requires a signed-in account. */
-  function authHeaders(): Record<string, string> {
-    return token.value ? { authorization: `Bearer ${token.value}` } : {}
-  }
 
   async function createPayment(body: CreatePaymentInput): Promise<CreatePaymentResponse> {
     return await $fetch(`${base}/api/payments`, {

@@ -134,6 +134,22 @@ const SCHEMA: &[&str] = &[
     // accepted the transaction, so the count is spend rather than attempts. The
     // signature is the id: one sponsored settle cannot be counted twice.
     "CREATE TABLE IF NOT EXISTS sponsored_settlements (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, wallet TEXT NOT NULL, cluster TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+    // A browser's push subscription: one row per device, keyed by the endpoint
+    // the push service gave it. `locale` is the copy the reminder is written
+    // in, because a notification arrives outside the app where no i18n runs.
+    "CREATE TABLE IF NOT EXISTS push_subscriptions (\n        endpoint   TEXT PRIMARY KEY,\n        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        p256dh     TEXT NOT NULL,\n        auth       TEXT NOT NULL,\n        locale     TEXT NOT NULL DEFAULT 'en',\n        created_at INTEGER NOT NULL\n    )",
+    "CREATE INDEX IF NOT EXISTS push_subscriptions_user_id_idx ON push_subscriptions(user_id)",
+    // One reminder per account per month: the cron runs daily, and this is what
+    // stops a month of mornings from becoming a month of notifications.
+    // One starter-token claim per account. The row is reserved before the
+    // transfer is sent, so a double tap cannot send twice; `signature` stays
+    // empty until the cluster accepted it, and a failed send deletes the row.
+    "CREATE TABLE IF NOT EXISTS faucet_claims (\n        user_id         TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,\n        wallet          TEXT NOT NULL,\n        cluster         TEXT NOT NULL,\n        sol_lamports    INTEGER NOT NULL,\n        token_base_units INTEGER NOT NULL,\n        signature       TEXT NOT NULL,\n        claimed_at      INTEGER NOT NULL\n    )",
+    "CREATE TABLE IF NOT EXISTS push_nudges (\n        user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        month_index INTEGER NOT NULL,\n        sent_at     INTEGER NOT NULL,\n        PRIMARY KEY (user_id, month_index)\n    )",
+    // What an invoice is called and what it is for: the chain stores neither,
+    // so the seller's own words are kept here when the invoice is made, and the
+    // history can show a subject instead of an amount with no story.
+    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        created_at  INTEGER NOT NULL\n    )",
 ];
 
 #[derive(Debug)]

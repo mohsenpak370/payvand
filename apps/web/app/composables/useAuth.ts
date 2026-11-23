@@ -15,8 +15,17 @@ export interface MyTransaction {
   id: string
   direction: 'sent' | 'received'
   counterparty: string
+  /** `sol`, `usdc` or `eurc`: the currency the invoice was paid in. */
+  currency: 'sol' | 'usdc' | 'eurc'
+  /** The amount in `currency`'s base units; lamports are zero on a token invoice. */
+  amount: number
+  decimals: number
   amount_lamports: number
   memo: string
+  /** What the invoice was called and what it was for; empty when the app has
+   *  no record of it, which the chain itself never has. */
+  name: string
+  description: string
   status: 'pending' | 'settled' | 'missing'
   created_at_unix: number
   settled_at_unix: number
@@ -88,7 +97,7 @@ export function useAuth() {
   const token = useState<string | null>('auth:token', () => null)
 
   function headers(): Record<string, string> {
-    return token.value ? { authorization: `Bearer ${token.value}` } : {}
+    return authHeaders()
   }
 
   function persist(next: AuthResponse) {
@@ -297,6 +306,16 @@ export function useAuth() {
     signinWithWallet,
     myTransactions
   }
+}
+
+/**
+ * The `Authorization` header for the signed-in account, or none when signed
+ * out. Every API-facing composable needs it, and a hand-written copy is a 401
+ * waiting to happen, so there is one.
+ */
+export function authHeaders(): Record<string, string> {
+  const token = useState<string | null>('auth:token', () => null)
+  return token.value ? { authorization: `Bearer ${token.value}` } : {}
 }
 
 /**

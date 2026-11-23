@@ -1,6 +1,7 @@
-import { AccountRole, address } from '@vue-solana/nuxt/kit'
+import { AccountRole, address, type Address } from '@vue-solana/nuxt/kit'
 import { describe, expect, it } from 'vitest'
-import { buildInstruction } from './usePaymentProgram'
+import idl from '~/assets/payvand.idl.json'
+import { TOKEN_PROGRAM_ID, buildInstruction } from './usePaymentProgram'
 
 /**
  * The settle paths name a shop's `ShopPolicy` as their last account and mark it
@@ -60,5 +61,44 @@ describe('buildInstruction', () => {
 
     expect(() => buildInstruction('settle_payment', { amount: 1, memo: '' }, withoutTreasury))
       .toThrow('Missing account "treasury" for settle_payment')
+  })
+
+  /**
+   * `token_program` is the one account the IDL cannot give an address: the
+   * program takes the token program as an interface, and Anchor writes no
+   * address for those. Every token instruction has to get it from the builder,
+   * or it refuses to be built — which is what "Missing account \"token_program\"
+   * for pay_from_token_budget" was.
+   */
+  it('fills in the token program the IDL leaves nameless', () => {
+    const instructions = (idl as { instructions: {
+      name: string
+      args: { name: string, type: string }[]
+      accounts: { name: string, optional?: boolean, address?: string }[]
+    }[] }).instructions
+
+    const tokenInstructions = instructions.filter(instruction =>
+      instruction.accounts.some(account => account.name === 'token_program' && !account.address)
+    )
+    expect(tokenInstructions.length).toBeGreaterThan(0)
+
+    for (const instruction of tokenInstructions) {
+      const accounts: Record<string, Address> = {}
+      for (const account of instruction.accounts) {
+        if (account.name === 'token_program') continue
+        // An optional account is trailing: stopping here is "none", as the
+        // program reads the shorter list.
+        if (account.optional) break
+        accounts[account.name] = payer
+      }
+      const args = Object.fromEntries(
+        instruction.args.map(arg => [arg.name, arg.type === 'string' ? '' : 1])
+      )
+
+      const built = buildInstruction(instruction.name, args, accounts)
+      const index = instruction.accounts.findIndex(account => account.name === 'token_program')
+
+      expect(built.accounts![index]?.address, instruction.name).toBe(TOKEN_PROGRAM_ID)
+    }
   })
 })

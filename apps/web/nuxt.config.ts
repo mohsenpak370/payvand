@@ -157,6 +157,12 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/health',
         changeOrigin: true
       },
+      // The settings page's notifications card: the VAPID key, this device's
+      // subscription and the test send.
+      '/api/push': {
+        target: 'http://127.0.0.1:8787/api/push',
+        changeOrigin: true
+      },
       // Admin routes, so /admin and the header's account menu work in dev
       // the same way they do against the deployed API.
       '/api/admin': {
@@ -221,6 +227,13 @@ export default defineNuxtConfig({
     // mid-payment; the update waits instead and app/plugins/update.client.ts
     // offers it.
     registerType: 'prompt',
+    // The worker is ours now, not Workbox's generated one: it has to listen for
+    // `push` and `notificationclick`, which a generated worker has nowhere to
+    // put. It still precaches the build's hashed assets, and it still waits for
+    // the update prompt to say `SKIP_WAITING`.
+    strategies: 'injectManifest',
+    srcDir: 'service-worker',
+    filename: 'sw.js',
     manifest: {
       id: '/',
       // The launch splash prints this under the icon and truncates anything
@@ -245,9 +258,8 @@ export default defineNuxtConfig({
         { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
       ]
     },
-    workbox: {
-      globPatterns: ['**/*.{js,css,png,svg,ico,woff2}'],
-      cleanupOutdatedCaches: true
+    injectManifest: {
+      globPatterns: ['**/*.{js,css,png,svg,ico,woff2}']
     }
   },
 

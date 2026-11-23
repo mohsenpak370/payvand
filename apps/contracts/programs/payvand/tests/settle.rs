@@ -41,10 +41,10 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use payvand::constants::{
     BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, CONFIG_SPACE_V1, CONFIG_SPACE_V2,
-    CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
-    PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE,
-    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, SHOP_POLICY_SEED, SHOP_POLICY_SPACE,
-    TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
+    CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MAX_SOL_FEE_LAMPORTS,
+    MAX_TOKEN_FEE_BASE_UNITS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO, PAYMENT_RECEIPT_SEED,
+    PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS,
+    SHOP_POLICY_SEED, SHOP_POLICY_SPACE, TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
 };
 use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
@@ -1260,7 +1260,7 @@ fn with_shop_policy(mut instruction: Instruction, shop_policy: Pubkey) -> Instru
 fn token_fee_at(amount: u64, multiplier_bps: u16) -> u64 {
     let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
     let scaled = (proportional as u128 * multiplier_bps as u128 / 10_000) as u64;
-    scaled.min(amount - 1)
+    scaled.min(MAX_TOKEN_FEE_BASE_UNITS).min(amount - 1)
 }
 
 /// What `init` puts in a receipt account. The payer fronts it and the seller
@@ -1310,14 +1310,19 @@ fn budget_rent() -> u64 {
 /// payment too small for the rate to cover the record pays no fee at all.
 fn fee(amount: u64) -> u64 {
     let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    proportional.saturating_sub(receipt_rent())
+    proportional
+        .saturating_sub(receipt_rent())
+        .min(MAX_SOL_FEE_LAMPORTS)
 }
 
 /// The same under the token paths, where the record's rent is the currency's
 /// flat and the fee is the larger of it and the rate.
 fn token_fee(amount: u64) -> u64 {
     let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    proportional.max(TEST_FIXED_FEE).min(amount - 1)
+    proportional
+        .max(TEST_FIXED_FEE)
+        .min(MAX_TOKEN_FEE_BASE_UNITS)
+        .min(amount - 1)
 }
 
 /// A `Config` with the layout `initialize_config` writes and the given rate, for
@@ -2276,6 +2281,76 @@ fn a_shop_multiplier_scales_the_rate_and_never_the_record() {
     );
 }
 
+/// The percentage has a ceiling in every currency: a large invoice pays at most
+/// 0.1 SOL, 10 USDC or 10 EURC. Without it the rate would keep scaling with the
+/// price, so a 10 SOL sale would cost 0.2 SOL at 2% however routine the work is.
+/// The ceiling is the program's, so a shop's multiplier can lower the rate but
+/// no policy can raise the maximum.
+#[test]
+fn the_fee_has_a_ceiling_in_every_currency() {
+    let rent = receipt_rent();
+    let policy = test_policy(TEST_FEE_BPS, 89_400);
+
+    // 10 SOL at 2% is 0.2 SOL; the ceiling takes it to 0.1 SOL exactly.
+    let sol_amount = 10 * LAMPORTS_PER_SOL;
+    assert_eq!(
+        fee_for(&policy, sol_amount, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        MAX_SOL_FEE_LAMPORTS
+    );
+    // Below the ceiling the rate is untouched: 1 SOL still costs 2% less the
+    // record rent its seller already paid.
+    assert_eq!(
+        fee_for(&policy, LAMPORTS_PER_SOL, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        20_000_000 - rent
+    );
+
+    // 1,000 USDC or EURC at 2% is 20 units; ten is the most either pays.
+    let token_amount = 1_000_000_000u64;
+    assert_eq!(
+        fee_for(
+            &policy,
+            token_amount,
+            Some(&usdc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        MAX_TOKEN_FEE_BASE_UNITS
+    );
+    assert_eq!(
+        fee_for(
+            &policy,
+            token_amount,
+            Some(&eurc_mint()),
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        MAX_TOKEN_FEE_BASE_UNITS
+    );
+
+    // Halving the rate on 40 SOL still lands on the ceiling: 0.4 SOL of fee is
+    // over it whatever the multiplier did on the way there.
+    assert_eq!(
+        fee_for(&policy, 40 * LAMPORTS_PER_SOL, None, rent, 5_000).expect("fits"),
+        MAX_SOL_FEE_LAMPORTS
+    );
+
+    // A whole-invoice rate on 1 SOL reaches it too, so the ceiling is the cap in
+    // a live policy's whole range, not only above the two rates' usual sizes.
+    assert_eq!(
+        fee_for(
+            &test_policy(10_000, 89_400),
+            LAMPORTS_PER_SOL,
+            None,
+            rent,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        MAX_SOL_FEE_LAMPORTS
+    );
+}
+
 /// The record's rent is the floor of what a seller pays, in both currencies.
 ///
 /// 2% of a price below the rent is less than the rent, so the token path charges
@@ -3045,15 +3120,16 @@ fn fee_floors_rather_than_rounds_at_ninety_nine_lamports() {
     );
 }
 
-/// Task 1.6's cap on the SOL path. `fee_bps = 10_000` is accepted (`10_001` is
-/// refused, in `update_config_requires_the_admin_and_a_valid_policy`), and
-/// `fee_for` then caps the fee at `amount - 1`, so the underflow guard has
-/// nothing left to work with: `amount > invoice_rent + fee` becomes
-/// `1 > invoice_rent`, which no invoice can satisfy. A 100% policy therefore
-/// admits no SOL invoice at all — the cap fails closed rather than letting the
-/// seller receive nothing.
+/// Task 1.6's cap on the SOL path, for an invoice the 0.1 SOL ceiling cannot
+/// rescue. `fee_bps = 10_000` is accepted (`10_001` is refused, in
+/// `update_config_requires_the_admin_and_a_valid_policy`), and `fee_for` then
+/// takes the rate — the whole amount — and subtracts the marker's rent the seller
+/// already paid, leaving a fee larger than this invoice's rent can cover: the
+/// guard `amount > invoice_rent + fee` needs 102,491,680 lamports against this
+/// 100,000,000. A larger invoice pays the ceiling and settles; this one fails
+/// closed rather than letting the seller receive nothing.
 #[tokio::test]
-async fn a_ten_thousand_bps_policy_admits_no_sol_invoice() {
+async fn a_ten_thousand_bps_policy_admits_no_tenth_sol_invoice() {
     let mut context =
         started_with_policy(None, 10_000, 0, FeeMode::SellerPays, TREASURY_LAMPORTS, &[])
             .await
