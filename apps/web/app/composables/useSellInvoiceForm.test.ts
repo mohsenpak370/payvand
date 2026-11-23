@@ -93,20 +93,33 @@ function sellFormIn(currency: SupportedCurrency) {
 }
 
 /**
- * A discount code is offered where it can price something: the shared sell
- * page shows it only when the invoice is built from a cart, while a shop's own
- * payment page attaches one to a typed price too.
+ * A discount code is offered where it can price something: only a payment built
+ * from the shop's products, with products actually on the tray. A typed price,
+ * or an empty cart, hides the discount sections.
  */
 describe('where a discount code may be attached', () => {
-  it('offers one on the shared form only when pricing from products', () => {
+  const product = {
+    id: 'p1',
+    shop_id: 'shop-1',
+    name: 'Flat white',
+    details: '',
+    category: '',
+    price_lamports: 5_000_000,
+    created_at_unix: 0
+  }
+
+  it('offers one on the shared form only for a cart with products', () => {
     const form = sellFormIn('sol')
     expect(form.discountAllowed.value).toBe(false)
 
     form.priceMode.value = 'products'
+    expect(form.discountAllowed.value).toBe(false)
+
+    form.cart.value = [{ product, quantity: 1 }]
     expect(form.discountAllowed.value).toBe(true)
   })
 
-  it('offers one on a shop\'s own page however it is priced', () => {
+  it('offers one on a shop\'s own page only while its menu fills the payment', () => {
     const form = useSellInvoiceForm({
       cluster: 'devnet',
       shopsEnabled: ref(true),
@@ -118,10 +131,13 @@ describe('where a discount code may be attached', () => {
     })
 
     expect(form.priceMode.value).toBe('products')
+    expect(form.discountAllowed.value).toBe(false)
+
+    form.cart.value = [{ product, quantity: 1 }]
     expect(form.discountAllowed.value).toBe(true)
 
     form.priceMode.value = 'amount'
-    expect(form.discountAllowed.value).toBe(true)
+    expect(form.discountAllowed.value).toBe(false)
   })
 })
 

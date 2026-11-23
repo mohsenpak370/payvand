@@ -33,7 +33,10 @@ const sell = useSellPage(shopId.value)
       <div class="grid gap-6 lg:grid-cols-2">
         <SellInvoiceForm :sell="sell" />
         <SellPaymentResult :sell="sell" />
-        <SellDiscountManager :sell="sell" />
+        <SellDiscountManager
+          v-if="sell.discountAllowed"
+          :sell="sell"
+        />
       </div>
 
       <SellPresentDialog :sell="sell" />

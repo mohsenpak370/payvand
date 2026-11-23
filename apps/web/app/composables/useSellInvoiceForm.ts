@@ -81,13 +81,15 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
     { label: t('sell.priceModes.products'), value: 'products' }
   ])
   const sellingFromShops = computed(() => priceMode.value === 'products')
-  // A code prices a basket: on the shared sell page the field belongs to the
-  // cart, as before. A shop's own payment page attaches one to any price.
-  const discountAllowed = computed(() => Boolean(options.shopId) || sellingFromShops.value)
-  // A buyer's own code prices a basket, so only an invoice built from products
-  // offers one, and never beside a code the seller already attached.
+  // A code prices a basket, so the discount sections belong to a payment built
+  // from the shop's products. With an empty tray — or a typed price — there is
+  // nothing for a percentage to price, and the fields would only ask a question
+  // that cannot apply to the code being made.
+  const discountAllowed = computed(() => sellingFromShops.value && cartActive.value)
+  // A buyer's own code prices a basket too, and never sits beside a code the
+  // seller already attached.
   const canInviteBuyerCodes = computed(
-    () => sellingFromShops.value && !options.selectedDiscount.value
+    () => discountAllowed.value && !options.selectedDiscount.value
   )
 
   /**
