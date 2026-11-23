@@ -1,6 +1,0 @@
-Show the discount sections only for a payment built from products
-
-A code prices a basket, so with a typed price or an empty tray the discount
-field and the Discount codes card asked a question that could not apply to the
-code being made. Both now follow the cart, on the shared sell page and on a
-shop's own payment page.
