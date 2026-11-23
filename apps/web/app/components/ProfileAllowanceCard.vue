@@ -7,6 +7,9 @@ import type { ProfileAllowanceRow } from '~/composables/useProfileAllowance'
  * three are separate accounts with their own units, so each row stays in its own
  * currency; the total is the one figure that needs a price, and it is written in
  * the currency the person picked on the settings page.
+ *
+ * Each row's headline is what can be spent now — the month's remainder capped by
+ * the pot — because a new month resets the counter without moving any money.
  */
 defineProps<{
   hasAddress: boolean
@@ -34,6 +37,16 @@ function rowAmount(currency: ProfileAllowanceRow['currency'], amount: number): s
         <p class="text-sm text-muted">
           {{ $t('profile.allowanceDescription') }}
         </p>
+        <NuxtLink
+          to="/learn/monthly-allowance-explained"
+          class="text-primary mt-1 inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"
+        >
+          {{ $t('profile.allowanceLearnMore') }}
+          <UIcon
+            name="i-lucide-arrow-right"
+            class="size-3.5 shrink-0"
+          />
+        </NuxtLink>
       </div>
     </template>
 
@@ -103,7 +116,7 @@ function rowAmount(currency: ProfileAllowanceRow['currency'], amount: number): s
               </UBadge>
             </div>
             <span class="text-xl font-semibold tabular-nums sm:text-2xl">
-              {{ rowAmount(row.currency, row.remaining) }}
+              {{ rowAmount(row.currency, row.spendable) }}
             </span>
             <span class="text-xs text-muted">{{ $t('profile.remaining') }}</span>
             <span class="text-xs text-muted tabular-nums">

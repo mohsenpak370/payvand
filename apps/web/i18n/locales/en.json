@@ -600,6 +600,12 @@
     "termsLink": "terms of use",
     "footerAfter": "."
   },
+  "allowance": {
+    "topUpTitle": "Your allowance reset — the pot did not",
+    "lowPotTitle": "The pot is running low",
+    "topUpBody": "A new month resets what you can spend; it does not move money into the pot. {currencies} can pay only what the pot holds until you top up — one approval, still your funds.",
+    "topUpOnBudget": "Top up on the budget page"
+  },
   "profile": {
     "metaTitle": "Profile — Payvand",
     "title": "Profile",
@@ -627,7 +633,8 @@
     "unlinkHint": "Unlinking stops wallet sign-in; your email and password keep working.",
     "unlink": "Unlink wallet",
     "allowanceTitle": "Monthly allowance",
-    "allowanceDescription": "Set a limit once — payments inside it need no wallet approval at all.",
+    "allowanceDescription": "Set a limit once — payments inside it need no wallet approval. A new month resets what you can spend; it does not move money, so the pot is what pays.",
+    "allowanceLearnMore": "How the allowance works",
     "connectForAllowance": "Connect a wallet to see and set its allowance.",
     "allowanceErrorTitle": "Could not read your allowance",
     "allowanceError": "Could not read your allowance.",

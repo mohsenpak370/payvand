@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { currencySymbol } from '~/composables/usePaymentApi'
+
 const { t } = useI18n()
 
 useSeoMeta({ title: t('budget.metaTitle') })
@@ -34,6 +36,15 @@ const {
 
 /** Every action waits while a signature — or the quote feeding it — is in flight. */
 const working = computed(() => busy.value || txLoading.value)
+
+/** `Refill to 0.1 SOL`: the button the nudge offers on this page. */
+const refillLabel = computed(() =>
+  view.value
+    ? t('budget.refill', {
+        amount: budgetAmountLabel(activeCurrency.value, view.value.limit)
+      })
+    : ''
+)
 </script>
 
 <template>
@@ -59,10 +70,18 @@ const working = computed(() => busy.value || txLoading.value)
         />
 
         <template v-if="connected && view">
+          <AllowanceTopUpBanner
+            v-if="view.needsTopUp"
+            :rolled-over="view.rolledOver"
+            :currencies="currencySymbol(activeCurrency)"
+            :action-label="refillLabel"
+            @top-up="refill"
+          />
+
           <BudgetSummary
             :currency="activeCurrency"
             :limit="view.limit"
-            :remaining="view.remaining"
+            :spendable="view.spendable"
             :pot="view.pot"
             :session-key="view.sessionKey"
             :foreign-device="foreignDevice"

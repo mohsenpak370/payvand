@@ -600,6 +600,12 @@
     "termsLink": "términos de uso",
     "footerAfter": "."
   },
+  "allowance": {
+    "topUpTitle": "El presupuesto se reinició — la reserva no",
+    "lowPotTitle": "La reserva se está quedando sin fondos",
+    "topUpBody": "Un mes nuevo reinicia lo que puedes gastar; no mueve dinero a la reserva. {currencies} solo puede pagar lo que hay en la reserva hasta que la rellenes: una aprobación, y sigue siendo tu dinero.",
+    "topUpOnBudget": "Rellenar en la página del presupuesto"
+  },
   "profile": {
     "metaTitle": "Perfil — Payvand",
     "title": "Perfil",
@@ -627,7 +633,8 @@
     "unlinkHint": "Desvincular detiene el acceso con cartera; tu correo y tu contraseña siguen funcionando.",
     "unlink": "Desvincular cartera",
     "allowanceTitle": "Presupuesto mensual",
-    "allowanceDescription": "Fija un límite una vez — los pagos dentro de él no piden ninguna aprobación en la cartera.",
+    "allowanceDescription": "Fija un límite una vez — los pagos dentro de él no piden aprobación en la cartera. Un mes nuevo reinicia lo que puedes gastar; no mueve dinero, así que paga la reserva.",
+    "allowanceLearnMore": "Cómo funciona el presupuesto",
     "connectForAllowance": "Conecta una cartera para ver y fijar su presupuesto.",
     "allowanceErrorTitle": "No se pudo leer tu presupuesto",
     "allowanceError": "No se pudo leer tu presupuesto.",

@@ -2,6 +2,7 @@ import type { Address } from '@vue-solana/nuxt/kit'
 import type { Ref } from 'vue'
 import type { BudgetState, TokenBudgetState } from './budgetMath'
 import type { SupportedCurrency } from './usePaymentApi'
+import { potNeedsTopUp } from './budgetMath'
 
 interface UseProfileAllowanceOptions {
   linkedWallet: Readonly<Ref<string | null>>
@@ -15,12 +16,59 @@ export interface ProfileAllowanceRow {
   limit: number
   /** What has been spent this month, in the same units; a new month starts at 0. */
   spent: number
-  /** What is left of the ceiling, in the same units. */
+  /** What the ceiling leaves, in the same units, before the pot is considered. */
   remaining: number
+  /**
+   * What a payment can actually draw on right now: the remaining ceiling,
+   * capped by what the pot holds. The month resets the first number, not the
+   * second, so this is the one the card shows as the headline.
+   */
+  spendable: number
   /** What the pot or vault holds right now, in the same units. */
   pot: number
+  /** The pot is low enough that a top-up would change what can be paid. */
+  needsTopUp: boolean
+  /** The month rolled over under this allowance: the counter reset, no money moved. */
+  rolledOver: boolean
   /** False when this wallet has no allowance in this currency at all. */
   set: boolean
+}
+
+/** One row from an allowance account, or the empty row for a currency without one. */
+function rowFor(
+  currency: SupportedCurrency,
+  state: { monthlyLimit: number, spent: number, monthIndex: number } | null,
+  pot: number,
+  now: number
+): ProfileAllowanceRow {
+  if (!state) {
+    return {
+      currency,
+      limit: 0,
+      spent: 0,
+      remaining: 0,
+      spendable: 0,
+      pot,
+      needsTopUp: false,
+      rolledOver: false,
+      set: false
+    }
+  }
+  const rolledOver = state.monthIndex !== now
+  const spent = rolledOver ? 0 : state.spent
+  const remaining = Math.max(0, state.monthlyLimit - spent)
+  const spendable = Math.min(remaining, pot)
+  return {
+    currency,
+    limit: state.monthlyLimit,
+    spent,
+    remaining,
+    spendable,
+    pot,
+    needsTopUp: potNeedsTopUp(state.monthlyLimit, pot, spendable, rolledOver),
+    rolledOver,
+    set: true
+  }
 }
 
 /**
@@ -33,6 +81,10 @@ export interface ProfileAllowanceRow {
  * The three budgets are separate accounts, which is why the card shows them
  * apart and adds them up only in fiat: lamports and token atoms are not one
  * number until a price turns them into one.
+ *
+ * Each row reports what is spendable, not just what the month's ceiling leaves:
+ * a new month resets the counter without moving any money, so a full ceiling
+ * over an empty pot would read as money the person does not have.
  */
 export function useProfileAllowance({
   linkedWallet,
@@ -61,32 +113,29 @@ export function useProfileAllowance({
     const now = currentMonthIndex()
     return currencies.map((currency): ProfileAllowanceRow => {
       if (currency === 'sol') {
-        const state = budget.value
-        const spent = state && state.monthIndex === now ? state.spent : 0
-        return {
-          currency,
-          limit: state?.monthlyLimit ?? 0,
-          spent,
-          remaining: state ? Math.max(0, state.monthlyLimit - spent) : 0,
-          pot: budgetPot.value,
-          set: Boolean(state)
-        }
+        return rowFor(currency, budget.value, budgetPot.value, now)
       }
       const state = tokenBudgets.value[currency] ?? null
-      const spent = state && state.monthIndex === now ? state.spent : 0
-      return {
-        currency,
-        limit: state?.monthlyLimit ?? 0,
-        spent,
-        remaining: state ? Math.max(0, state.monthlyLimit - spent) : 0,
-        pot: state?.amount ?? 0,
-        set: Boolean(state)
-      }
+      return rowFor(currency, state, state?.amount ?? 0, now)
     })
   })
 
   /** Whether any of the three exists: false is the card's "set one" prompt. */
   const hasBudget = computed(() => rows.value.some(row => row.set))
+
+  /** The allowances a top-up would actually change, in the order the card lists them. */
+  const topUpRows = computed(() => rows.value.filter(row => row.needsTopUp))
+
+  /** Whether the profile should offer the top-up nudge at all. */
+  const needsTopUp = computed(() => topUpRows.value.length > 0)
+
+  /** The currencies the nudge names, written as symbols ("SOL, USDC"). */
+  const topUpCurrencies = computed(() =>
+    topUpRows.value.map(row => currencySymbol(row.currency)).join(', ')
+  )
+
+  /** True when the month turned over under a pot that was not refilled. */
+  const rolledOver = computed(() => topUpRows.value.some(row => row.rolledOver))
 
   /**
    * What every remaining allowance is worth together, in the display currency.
@@ -97,7 +146,7 @@ export function useProfileAllowance({
     let total = 0
     for (const row of rows.value) {
       if (!row.set) continue
-      const converted = fiatValueOf(row.currency, row.remaining, rates.value, displayCurrency.value)
+      const converted = fiatValueOf(row.currency, row.spendable, rates.value, displayCurrency.value)
       if (converted === null) return null
       total += converted
     }
@@ -140,6 +189,9 @@ export function useProfileAllowance({
     allowanceAddress,
     rows,
     hasBudget,
+    needsTopUp,
+    topUpCurrencies,
+    rolledOver,
     totalRemainingFiat,
     displayCurrency,
     budgetLoading,

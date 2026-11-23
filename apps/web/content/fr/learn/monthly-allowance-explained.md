@@ -1,6 +1,6 @@
 ---
 title: L'autorisation mensuelle, en mots simples
-description: Valider une fois par mois au lieu d'une fois par café. Ce que l'autorisation permet à l'app, ce qu'elle ne pourra jamais faire, et ce que signifie chaque bouton de la page budget.
+description: Valider une fois par mois au lieu d'une fois par café. Ce que l'autorisation permet à l'app, ce qu'elle ne pourra jamais faire, et ce qui se passe vraiment à la fin d'un mois.
 category: payvand
 order: 1
 ---
@@ -34,13 +34,32 @@ Cette étroitesse est tout l'argument de sécurité. Ce n'est pas « l'app peut 
 argent » ; c'est « l'app peut payer des factures, avec l'argent de poche du mois, jusqu'à
 épuisement ».
 
+## Ce que le mois remet à zéro — et ce qu'il ne fait pas
+
+Le premier jour de chaque mois, le compteur revient à zéro : vous pouvez de nouveau dépenser la
+limite entière. **Aucun argent ne bouge.** Rien ne quitte votre portefeuille, rien n'est débité,
+rien n'est rechargé automatiquement. La cagnotte garde exactement ce qui restait : une limite de
+50 USDC sur une cagnotte de 3 USDC peut donc payer 3, pas 50, tant que vous ne rechargez pas.
+
+Cette retenue est volontaire. Un programme ne peut pas prendre d'argent dans votre portefeuille sans
+votre signature ; une recharge automatique chaque mois serait donc une autorisation permanente de
+puiser dans votre portefeuille quand bon lui semble. L'autorisation existe précisément pour éviter
+cela. Recharger est votre décision, avec la même validation unique que pour fixer la limite, et cela
+ne déplace que l'écart entre la limite et ce que la cagnotte contient déjà.
+
+C'est pourquoi l'app affiche ce qui est **dépensable** — le plus petit entre ce que le mois laisse et
+ce que la cagnotte contient — et non la limite elle-même. Quand un mois change avec une cagnotte non
+rechargée, ou quand la cagnotte approche de zéro, elle le dit et propose la recharge. Il n'y a aucun
+abonnement ni prélèvement récurrent là-dedans.
+
 ## Les boutons
 
 - **Définir / enregistrer la limite** — la seule validation. Elle déplace l'argent dans la
   cagnotte, enregistre cet appareil et démarre le mois.
 - **Recharger** — remet la cagnotte à la limite pleine en cours de mois, par exemple quand il
-  reste 20 sur 50. Même validation unique. Une recharge relance aussi le compteur du mois, donc
-  toute la limite est de nouveau dépensable.
+  reste 20 sur 50. Même validation unique. Elle ne déplace que ce qui manque, et ce que vous avez
+  déjà dépensé ce mois-ci compte toujours : une recharge ne rend pas l'argent dépensé. Le compteur
+  repart de lui-même au changement de mois calendaire.
 - **Utiliser cet appareil à la place** — si l'autorisation a été créée sur un autre téléphone ou
   ordinateur portable, ce bouton la reprend en une validation et empêche l'ancien appareil de
   dépenser.

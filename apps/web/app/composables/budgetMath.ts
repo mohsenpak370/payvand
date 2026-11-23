@@ -210,3 +210,30 @@ export function tokenRemainingThisMonth(budget: TokenBudgetState): number {
   const spent = budget.monthIndex === currentMonthIndex() ? budget.spent : 0
   return Math.max(0, budget.monthlyLimit - spent)
 }
+
+/**
+ * The share of the limit below which the pot counts as running low.
+ *
+ * A pot that merely holds what an ordinary month spent is not worth a prompt —
+ * the nudge is for a refill that would actually change what can be paid today.
+ */
+export const LOW_POT_SHARE = 0.1
+
+/**
+ * Whether an allowance should offer a top-up.
+ *
+ * The month resets the counter, not the money: on the 1st the ceiling is whole
+ * again while the pot still holds only what was left, so a full-looking figure
+ * can pay almost nothing. That case, and a pot that is nearly empty mid-month,
+ * are the two the nudge covers. `spendable` is the remaining ceiling capped by
+ * the pot, which is what a payment can actually draw on.
+ */
+export function potNeedsTopUp(
+  limit: number,
+  pot: number,
+  spendable: number,
+  rolledOver: boolean
+): boolean {
+  if (limit <= 0 || pot >= limit) return false
+  return rolledOver || spendable <= limit * LOW_POT_SHARE
+}

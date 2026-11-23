@@ -2,16 +2,19 @@
 import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
 /**
- * The allowance at a glance: this month's ceiling, what is left of it, what the
- * pot holds, and which key pays. The figures follow the currency switch, so
+ * The allowance at a glance: this month's ceiling, what can be spent now, what
+ * the pot holds, and which key pays. The figures follow the currency switch, so
  * each one is written in the units its allowance is held in.
  */
 const props = defineProps<{
   currency: SupportedCurrency
   /** The month's ceiling, in base units. */
   limit: number
-  /** What is left of the ceiling, in the same units. */
-  remaining: number
+  /**
+   * The pair's minimum — the ceiling's remainder and the pot. A month resets the
+   * first without moving the second, so this is what a payment can actually use.
+   */
+  spendable: number
   /** What the pot or vault holds right now. */
   pot: number
   sessionKey: string
@@ -43,7 +46,7 @@ function shorten(value: string) {
         {{ $t('budget.display.leftThisMonth') }}
       </p>
       <p class="text-lg font-semibold text-success">
-        {{ amountLabel(remaining) }}
+        {{ amountLabel(spendable) }}
       </p>
     </div>
     <div>

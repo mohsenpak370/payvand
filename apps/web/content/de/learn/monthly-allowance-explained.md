@@ -1,6 +1,6 @@
 ---
 title: Das monatliche Budget, einfach erklärt
-description: Einmal im Monat bestätigen statt einmal pro Kaffee. Was das Budget die App tun lässt, was sie nie tun kann und was jeder Button auf der Budgetseite bedeutet.
+description: Einmal im Monat bestätigen statt einmal pro Kaffee. Was das Budget die App tun lässt, was sie nie tun kann und was am Monatsende wirklich passiert.
 category: payvand
 order: 1
 ---
@@ -33,13 +33,32 @@ Zahlung öffentlich ist.
 Genau diese Enge ist das Sicherheitsargument. Es heißt nicht „die App kann dein Geld ausgeben“,
 sondern „die App kann Rechnungen bezahlen, mit dem Taschengeld dieses Monats, bis es aufgebraucht ist“.
 
+## Was der Monat zurücksetzt — und was nicht
+
+Am Ersten jedes Monats geht der Zähler auf null zurück: Du darfst wieder das volle Limit ausgeben.
+**Dabei bewegt sich kein Geld.** Es verlässt nichts dein Wallet, es wird nichts belastet, es wird
+nichts automatisch aufgefüllt. Der Topf behält genau, was übrig war — bei einem Limit von 50 USDC und
+3 USDC im Topf kannst du also 3 ausgeben, nicht 50, bis du auffüllst.
+
+Diese Zurückhaltung ist Absicht. Ein Programm kann ohne deine Unterschrift kein Geld von deinem Wallet
+nehmen; ein automatisches monatliches Auffüllen wäre eine dauerhafte Erlaubnis, jederzeit von deinem
+Wallet abzubuchen. Genau das soll das Budget verhindern. Auffüllen ist deine Entscheidung, mit
+derselben einzelnen Bestätigung wie beim Setzen des Limits, und es bewegt nur die Lücke zwischen dem
+Limit und dem, was schon im Topf liegt.
+
+Deshalb zeigt die App, was **ausgebbar** ist — das Kleinere aus dem, was der Monat übrig lässt, und
+dem, was im Topf liegt —, statt des Limits selbst. Wenn ein Monat wechselt, ohne dass der Topf
+aufgefüllt wurde, oder der Topf fast leer ist, sagt sie es und bietet das Auffüllen an. Ein Abo oder
+eine wiederkehrende Abbuchung gibt es darin nirgends.
+
 ## Die Buttons
 
 - **Limit setzen / speichern** — die eine Bestätigung. Sie bewegt das Geld in den Topf, registriert
   dieses Gerät und startet den Monat.
 - **Auffüllen** — setzt den Topf mitten im Monat wieder auf das volle Limit, etwa wenn von 50 noch 20
-  übrig sind. Dieselbe einzelne Bestätigung. Ein Auffüllen startet außerdem den Monatszähler neu, das
-  ganze Limit ist also wieder ausgebbar.
+  übrig sind. Dieselbe einzelne Bestätigung. Es bewegt nur das Fehlende, und was du diesen Monat schon
+  ausgegeben hast, zählt weiter: Auffüllen gibt ausgegebenes Geld nicht zurück. Der Zähler startet von
+  selbst neu, wenn der Kalendermonat wechselt.
 - **Stattdessen dieses Gerät verwenden** — wurde das Budget auf einem anderen Handy oder Notebook
   eingerichtet, übernimmt dieser Button es mit einer Bestätigung und stoppt das alte Gerät beim
   Ausgeben.

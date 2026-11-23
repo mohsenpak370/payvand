@@ -600,6 +600,12 @@
     "termsLink": "Nutzungsbedingungen",
     "footerAfter": "."
   },
+  "allowance": {
+    "topUpTitle": "Dein Budget ist zurückgesetzt — der Topf nicht",
+    "lowPotTitle": "Der Topf ist fast leer",
+    "topUpBody": "Ein neuer Monat setzt zurück, was du ausgeben kannst; er bewegt kein Geld in den Topf. {currencies} kann nur auszahlen, was im Topf liegt, bis du auffüllst — eine Bestätigung, weiterhin dein Geld.",
+    "topUpOnBudget": "Auf der Budgetseite auffüllen"
+  },
   "profile": {
     "metaTitle": "Profil — Payvand",
     "title": "Profil",
@@ -627,7 +633,8 @@
     "unlinkHint": "Trennen stoppt die Anmeldung per Wallet; deine E-Mail und dein Passwort funktionieren weiter.",
     "unlink": "Wallet trennen",
     "allowanceTitle": "Monatliches Budget",
-    "allowanceDescription": "Setz einmalig ein Limit — Zahlungen darin brauchen keine Bestätigung im Wallet.",
+    "allowanceDescription": "Setz einmalig ein Limit — Zahlungen darin brauchen keine Bestätigung im Wallet. Ein neuer Monat setzt zurück, was du ausgeben kannst; er bewegt kein Geld, bezahlt wird aus dem Topf.",
+    "allowanceLearnMore": "So funktioniert das Budget",
     "connectForAllowance": "Verbinde ein Wallet, um sein Budget zu sehen und festzulegen.",
     "allowanceErrorTitle": "Dein Budget konnte nicht gelesen werden",
     "allowanceError": "Dein Budget konnte nicht gelesen werden.",

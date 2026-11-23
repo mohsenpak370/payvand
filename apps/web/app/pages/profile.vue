@@ -24,6 +24,9 @@ const {
   allowanceAddress,
   rows,
   hasBudget,
+  needsTopUp,
+  topUpCurrencies,
+  rolledOver,
   totalRemainingFiat,
   displayCurrency,
   budgetLoading,
@@ -38,6 +41,11 @@ const {
   txFailure,
   refreshTransactions
 } = useProfilePage()
+
+/** The budget page owns the signature, so the profile's nudge hands over to it. */
+function openBudget() {
+  return navigateTo('/budget')
+}
 </script>
 
 <template>
@@ -83,6 +91,14 @@ const {
         :display-currency="displayCurrency"
         :loading="budgetLoading"
         :error="budgetError"
+      />
+
+      <AllowanceTopUpBanner
+        v-if="needsTopUp"
+        :rolled-over="rolledOver"
+        :currencies="topUpCurrencies"
+        :action-label="$t('allowance.topUpOnBudget')"
+        @top-up="openBudget"
       />
 
       <ProfileSavedPaymentsCard

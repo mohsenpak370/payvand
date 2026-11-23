@@ -1,6 +1,7 @@
 import type { Address } from '@vue-solana/nuxt/kit'
 import type { ComputedRef, Ref } from 'vue'
 import type { TokenBudgetState } from './budgetMath'
+import { potNeedsTopUp } from './budgetMath'
 import { mintForCurrency } from './usePaymentProgram'
 import { peekSessionSigner } from './useSessionKey'
 import type { BudgetPageState } from './useBudgetPageState'
@@ -9,10 +10,16 @@ import type { BudgetPageState } from './useBudgetPageState'
 export interface BudgetAllowanceView {
   /** This month's ceiling, in the currency's base units. */
   limit: number
-  /** What is left of it, in the same units. */
+  /** What the ceiling leaves, in the same units, before the pot is considered. */
   remaining: number
+  /** What a payment can draw on now: the remaining ceiling, capped by the pot. */
+  spendable: number
   /** What the pot or vault holds right now. */
   pot: number
+  /** The month rolled over under this allowance: the counter reset, no money moved. */
+  rolledOver: boolean
+  /** The pot is low enough that a top-up would change what can be paid. */
+  needsTopUp: boolean
   /** The key that pays from it silently. */
   sessionKey: Address
 }
@@ -55,23 +62,26 @@ export function useBudgetAllowances(deps: {
 
   /** The allowance on screen, whichever currency it is held in. */
   const view = computed<BudgetAllowanceView | null>(() => {
+    const now = currentMonthIndex()
     if (activeCurrency.value === 'sol') {
       if (!budget.value) return null
-      return {
-        limit: budget.value.monthlyLimit,
-        remaining: budgetApi.remainingThisMonth(budget.value),
-        pot: budgetPot.value,
-        sessionKey: budget.value.sessionKey
-      }
+      return figureOut(
+        budget.value.monthlyLimit,
+        budgetApi.remainingThisMonth(budget.value),
+        budgetPot.value,
+        budget.value,
+        now
+      )
     }
     const held = tokenBudget.value
     if (!held) return null
-    return {
-      limit: held.monthlyLimit,
-      remaining: budgetApi.tokenRemainingThisMonth(held),
-      pot: held.amount,
-      sessionKey: held.sessionKey
-    }
+    return figureOut(
+      held.monthlyLimit,
+      budgetApi.tokenRemainingThisMonth(held),
+      held.amount,
+      held,
+      now
+    )
   })
 
   /**
@@ -81,6 +91,31 @@ export function useBudgetAllowances(deps: {
   const foreignDevice = computed(
     () => Boolean(view.value && view.value.sessionKey !== deviceKeyAddress.value)
   )
+
+  /**
+   * The figures the summary shows from one account's ceiling, what is left of
+   * it and what the pot holds. `spendable` is the pair's minimum: the month can
+   * reset the ceiling without the pot gaining a lamport.
+   */
+  function figureOut(
+    limit: number,
+    remaining: number,
+    pot: number,
+    account: { monthIndex: number, sessionKey: Address },
+    now: number
+  ): BudgetAllowanceView {
+    const spendable = Math.min(remaining, pot)
+    const rolledOver = account.monthIndex !== now
+    return {
+      limit,
+      remaining,
+      spendable,
+      pot,
+      rolledOver,
+      needsTopUp: potNeedsTopUp(limit, pot, spendable, rolledOver),
+      sessionKey: account.sessionKey
+    }
+  }
 
   /**
    * Every session key an allowance on this page names. A key of ours that is not

@@ -600,6 +600,12 @@
     "termsLink": "conditions d'utilisation",
     "footerAfter": "."
   },
+  "allowance": {
+    "topUpTitle": "L'autorisation est repartie à zéro — pas la cagnotte",
+    "lowPotTitle": "La cagnotte se vide",
+    "topUpBody": "Un nouveau mois remet à zéro ce que vous pouvez dépenser ; il ne déplace pas d'argent dans la cagnotte. {currencies} ne peut payer que ce que la cagnotte contient tant que vous ne rechargez pas — une validation, toujours votre argent.",
+    "topUpOnBudget": "Recharger sur la page budget"
+  },
   "profile": {
     "metaTitle": "Profil — Payvand",
     "title": "Profil",
@@ -627,7 +633,8 @@
     "unlinkHint": "La dissociation arrête la connexion par portefeuille ; votre e-mail et votre mot de passe continuent de fonctionner.",
     "unlink": "Dissocier le portefeuille",
     "allowanceTitle": "Autorisation mensuelle",
-    "allowanceDescription": "Fixez une limite une fois — les paiements dans cette limite ne demandent aucune validation du portefeuille.",
+    "allowanceDescription": "Fixez une limite une fois — les paiements dans cette limite ne demandent aucune validation du portefeuille. Un nouveau mois remet à zéro ce que vous pouvez dépenser ; il ne déplace pas d'argent, c'est donc la cagnotte qui paie.",
+    "allowanceLearnMore": "Comment fonctionne l'autorisation",
     "connectForAllowance": "Connectez un portefeuille pour voir et définir son autorisation.",
     "allowanceErrorTitle": "Impossible de lire votre autorisation",
     "allowanceError": "Impossible de lire votre autorisation.",
