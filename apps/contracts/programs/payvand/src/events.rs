@@ -23,15 +23,20 @@ use crate::state::{FeeMode, FeePolicy};
 ///
 /// All four settle instructions emit this same type, deliberately: `mint`
 /// carries the currency (`Pubkey::default()` for SOL) and `payer` is whoever
-/// signed, wallet or session key. `amount` is the price the QR showed, `fee`
-/// went to the treasury, and `seller_proceeds` is what the seller actually
-/// keeps — the price less the fee, less the receipt rent where the seller
-/// carries it (the SOL paths; a token seller is charged no lamports).
+/// signed, wallet or session key. `amount` is the price the QR showed, `fee` is
+/// the seller's deduction above the marker's rent — on a token invoice the whole
+/// of it, on SOL the part the rent does not already take — and
+/// `seller_proceeds` is what the seller actually keeps: the price less the fee,
+/// less the receipt rent where the seller carries it (the SOL paths; a token
+/// seller is charged no lamports). `fee` is not revenue: the settlement first
+/// pays the sponsor back the network fee it spent, and the treasury keeps what
+/// is left.
 #[event]
 pub struct PaymentSettled {
     /// The invoice price, in lamports or the mint's base units.
     pub amount: u64,
-    /// The seller-side fee that went to the treasury.
+    /// The seller's deduction above the marker's rent: the network fee the sponsor
+    /// is repaid plus the platform's margin.
     pub fee: u64,
     /// `amount - fee` on a token settle, `amount - fee - receipt rent` on SOL:
     /// the receipt rent is a cost the seller now carries, so the event states

@@ -63,14 +63,19 @@ pub const CONFIG_SEED: &[u8] = b"config";
 /// the cooldown `refresh_fee_price` reads, and is `CONFIG_SPACE`.
 pub const CONFIG_SPACE_V2: usize = 8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 1 + 1 + 1;
 
+/// The version 3 `Config` layout: everything version 4 has but the network fee —
+/// v2's `100`-byte `FeePolicy` and the `flats_updated_at` cooldown.
+pub const CONFIG_SPACE_V3: usize = CONFIG_SPACE_V2 + 8;
+
 /// `8` (discriminator) + `32 (admin) + 2 + 2 (the two rates) + 8 + 8 (their
 /// boundaries) + 8 + 8 (the two per-currency flats) + 32 + 32 (the mints they
-/// apply to) + 1 (fee_mode) + 8 (session_fee_float) + 8 (flats_updated_at) + 1
+/// apply to) + 8 + 8 + 8 (the network fee in lamports, USDC base units and EURC
+/// base units) + 1 (fee_mode) + 8 (session_fee_float) + 8 (flats_updated_at) + 1
 /// (bump) + 1 (treasury_bump) + 1 (version)`.
-pub const CONFIG_SPACE: usize = CONFIG_SPACE_V2 + 8;
+pub const CONFIG_SPACE: usize = CONFIG_SPACE_V3 + 3 * 8;
 
 /// The version `initialize_config` and `migrate_config` write.
-pub const CONFIG_VERSION: u8 = 3;
+pub const CONFIG_VERSION: u8 = 4;
 
 /// How long the two token flats must stand before `refresh_fee_price` may move
 /// them again. A minute is shorter than the app's own rate cache, so an
@@ -136,6 +141,19 @@ pub const MAX_SOL_FEE_LAMPORTS: u64 = 100_000_000;
 /// stablecoins — the same assumption the flats already make — and ten units is
 /// the same money as 0.1 SOL's worth at the deployment's own prices.
 pub const MAX_TOKEN_FEE_BASE_UNITS: u64 = 10_000_000;
+
+/// The most a policy may put in `FeePolicy::network_fee_lamports`: 0.01 SOL.
+///
+/// The field is what a policy says one settlement's network fee costs, and a
+/// token settle reimburses that much from the treasury. It is a cost we pay, not
+/// a rate we set, so the ceiling exists only to stop a mistyped policy from
+/// letting a settlement drain the pool one payment at a time.
+pub const MAX_NETWORK_FEE_LAMPORTS: u64 = 10_000_000;
+
+/// The same bound in a six-decimal token: one unit. A network fee's token
+/// equivalent is derived from `network_fee_lamports` and a SOL price, and a
+/// policy that names a larger one than this is a unit mistake, not a fee.
+pub const MAX_NETWORK_FEE_BASE_UNITS: u64 = 1_000_000;
 
 /// The size of the version 1 `Config` layout: 8 bytes of discriminator, 32 of
 /// admin, 2 of `fee_bps`, 8 of `fixed_fee_lamports`, 1 of `fee_mode`, 8 of

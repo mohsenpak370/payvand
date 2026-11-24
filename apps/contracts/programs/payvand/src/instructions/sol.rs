@@ -13,21 +13,24 @@ use anchor_lang::{AccountsClose, Lamports};
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::{BudgetOpened, PaymentSettled};
-use crate::helpers::{current_month_index, fee_for, shop_multiplier};
+use crate::helpers::{current_month_index, fee_for, fee_for_signatures, shop_multiplier};
 use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, ShopPolicy};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct SettlePayment<'info> {
-    /// Pays for the invoice account, the receipt, and the transfer itself.
+    /// Pays the price and nothing else. It owns no lamports beyond the invoice:
+    /// the two records are the sponsor's to advance and the network fee is the
+    /// sponsor's to pay, so a wallet holding exactly the price can settle.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     /// Short-lived: created, settled and closed in this one transaction. Its
-    /// rent goes back to the seller, who fronts no signature for it.
+    /// rent is advanced by the sponsor and returns to the seller when the
+    /// account closes, who fronts no signature for it.
     #[account(
         init,
-        payer = payer,
+        payer = sponsor,
         space = PAYMENT_SPACE,
         seeds = [
             PAYMENT_SEED,
@@ -45,12 +48,12 @@ pub struct SettlePayment<'info> {
     pub seller: UncheckedAccount<'info>,
 
     /// The permanent marker. `settled_at != 0` means this invoice is done, so
-    /// the same invoice can never be settled twice. The payer fronts its rent
-    /// and is made whole through the seller's reduced proceeds, so the seller
-    /// is the one who ends up paying for the record.
+    /// the same invoice can never be settled twice. The sponsor fronts its rent
+    /// and the price repays it, so the seller is the one who ends up paying for
+    /// the record.
     #[account(
         init_if_needed,
-        payer = payer,
+        payer = sponsor,
         space = PAYMENT_RECEIPT_SPACE,
         seeds = [PAYMENT_RECEIPT_SEED, payment.key().as_ref()],
         bump
@@ -71,6 +74,20 @@ pub struct SettlePayment<'info> {
     pub treasury: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
+
+    /// Who fronts what the payment costs in lamports: the invoice's rent, the
+    /// marker's rent and the transaction's own fee. It receives both rents back
+    /// plus `network_fee_lamports` out of the price in this same instruction, so
+    /// its net cost is the fee it paid and nothing else. A funded wallet passes
+    /// itself — one key, one signature — and a wallet holding no SOL passes a
+    /// relayer's key, which turns a payer who cannot afford a signature into a
+    /// payer without renting it the rest.
+    ///
+    /// Required rather than optional, unlike `shop_policy`: an absent sponsor
+    /// would have to mean the payer fronts the records, which is the cost this
+    /// account exists to move off the payer.
+    #[account(mut)]
+    pub sponsor: Signer<'info>,
 
     /// The shop that priced this invoice, when its seller has one. Optional and
     /// trailing, so every invoice printed before shop rates existed settles
@@ -245,12 +262,21 @@ pub fn settle_payment_handler<'info, 'ctx>(
         ctx.accounts.shop_policy.as_deref(),
         &ctx.accounts.seller.key(),
     )?;
-    let fee = fee_for(config, amount, None, receipt_rent, multiplier)?;
+    // The floor is the marker's rent plus the network fee, exactly as on the
+    // token paths: this settlement's sponsor paid the signatures and advanced
+    // both records, and the price is what pays it back. A relayer settlement
+    // carries two signatures — the payer's and the relayer's — and a wallet
+    // sponsoring itself carries one, so the charge and the refund are scaled to
+    // what this path actually spends.
+    let signatures = if ctx.accounts.sponsor.key() != ctx.accounts.payer.key() {
+        2
+    } else {
+        1
+    };
+    let fee = fee_for_signatures(config, amount, None, receipt_rent, multiplier, signatures)?;
     // The seller receives `amount - rent - receipt rent - fee` now, plus the
     // invoice rent when the account closes, so this subtraction must not
-    // underflow. The payer advances the marker's rent at `init` below; paying
-    // the seller less by exactly that amount is what hands it to the seller,
-    // and it keeps the payer's own cost at the price the QR showed.
+    // underflow.
     require!(
         amount
             > payment_rent
@@ -258,6 +284,25 @@ pub fn settle_payment_handler<'info, 'ctx>(
                 .saturating_add(fee),
         PaymentError::InvoiceTooSmall
     );
+
+    // What the price owes the two parties that are not the seller. `fee_for`
+    // keeps `fee` at or above `network_fee`, so `to_treasury` cannot go negative
+    // and the split never pays out more than it charged; the check says so out
+    // loud rather than letting a bad policy underflow.
+    let network_fee = config
+        .policy
+        .network_fee_lamports
+        .checked_mul(signatures)
+        .ok_or(PaymentError::FeeOverflow)?;
+    require!(fee >= network_fee, PaymentError::FeeOverflow);
+    // Both rents and the fee the sponsor paid: the invoice's rent is closed to
+    // the seller below, and the marker's stays with the marker, so the sponsor is
+    // repaid both out of the price in this same instruction.
+    let to_sponsor = payment_rent
+        .saturating_add(receipt_rent)
+        .saturating_add(network_fee);
+    // The platform's margin: what the percentage took above the two costs.
+    let to_treasury = fee - network_fee;
 
     anchor_lang::system_program::transfer(
         CpiContext::new(
@@ -270,7 +315,20 @@ pub fn settle_payment_handler<'info, 'ctx>(
         amount - payment_rent - receipt_rent - fee,
     )?;
 
-    if fee > 0 {
+    // The sponsor's advance comes back to it, not to the payer: the payer paid
+    // the price, and the price is what carries these costs.
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            anchor_lang::system_program::ID,
+            anchor_lang::system_program::Transfer {
+                from: ctx.accounts.payer.to_account_info(),
+                to: ctx.accounts.sponsor.to_account_info(),
+            },
+        ),
+        to_sponsor,
+    )?;
+
+    if to_treasury > 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 anchor_lang::system_program::ID,
@@ -279,7 +337,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
                     to: ctx.accounts.treasury.to_account_info(),
                 },
             ),
-            fee,
+            to_treasury,
         )?;
     }
 
@@ -316,10 +374,12 @@ pub fn settle_payment_handler<'info, 'ctx>(
         .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
-        "payment settled: {} lamports from {}, fee {} to treasury",
+        "payment settled: {} lamports from {}, fee {} to treasury, sponsor {} repaid {}",
         amount,
         payer,
-        fee
+        to_treasury,
+        ctx.accounts.sponsor.key(),
+        to_sponsor
     );
     emit!(PaymentSettled {
         amount,
@@ -462,13 +522,14 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         PaymentError::BudgetExhausted
     );
 
-    // The session key advances both rents and the pot reimburses both. The
-    // seller is paid the price less the invoice rent, the marker's rent and the
-    // fee; the invoice account's close then returns the invoice rent to the
+    // The session key advances both rents and pays the signature; the pot
+    // reimburses both rents and the network fee, so the key's net cost is zero.
+    // The seller is paid the price less the invoice rent, the marker's rent and
+    // the fee; the invoice account's close then returns the invoice rent to the
     // seller, and the marker's rent stays with the marker — which is how the
     // seller, and not the treasury, ends up paying for the permanent record.
-    // The two reimbursements and the seller's reduction cancel out, so the pot
-    // pays exactly the invoice amount.
+    // The reimbursements and the seller's reduction cancel out, so the pot pays
+    // exactly the invoice amount.
     let config = &ctx.accounts.config;
     require!(
         config.fee_mode == FeeMode::SellerPays,
@@ -497,12 +558,22 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .to_account_info()
         .lamports()
         .saturating_sub(budget_rent);
+    // Same split as the wallet path: the price pays the seller less the two
+    // costs and the fee, repays the session key both rents and the signature it
+    // paid, and leaves the platform the margin above the costs.
+    let network_fee = config.policy.network_fee_lamports;
+    require!(fee >= network_fee, PaymentError::FeeOverflow);
     let to_seller = amount - payment_rent - receipt_rent - fee;
-    let to_session = payment_rent.saturating_add(receipt_rent);
-    // `to_seller + fee + to_session` is exactly `amount`, so the pot is asked
-    // for the price and nothing more — the seller's share already carries the
-    // two rents the session key gets back.
-    let outflow = to_seller.saturating_add(fee).saturating_add(to_session);
+    let to_session = payment_rent
+        .saturating_add(receipt_rent)
+        .saturating_add(network_fee);
+    let to_treasury = fee - network_fee;
+    // `to_seller + to_session + to_treasury` is exactly `amount`, so the pot is
+    // asked for the price and nothing more — the seller's share already carries
+    // the costs the session key gets back.
+    let outflow = to_seller
+        .saturating_add(to_session)
+        .saturating_add(to_treasury);
     require!(pot >= outflow, PaymentError::InsufficientBudget);
 
     ctx.accounts
@@ -513,8 +584,11 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .seller
         .to_account_info()
         .add_lamports(to_seller)?;
-    if fee > 0 {
-        ctx.accounts.treasury.to_account_info().add_lamports(fee)?;
+    if to_treasury > 0 {
+        ctx.accounts
+            .treasury
+            .to_account_info()
+            .add_lamports(to_treasury)?;
     }
     ctx.accounts
         .session_key
@@ -560,10 +634,11 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
         .close(ctx.accounts.seller.to_account_info())?;
 
     msg!(
-        "payment settled from budget: {} lamports, fee {} to treasury, session {}",
+        "payment settled from budget: {} lamports, fee {} to treasury, session {} repaid {}",
         amount,
-        fee,
-        ctx.accounts.session_key.key()
+        to_treasury,
+        ctx.accounts.session_key.key(),
+        to_session
     );
     emit!(PaymentSettled {
         amount,

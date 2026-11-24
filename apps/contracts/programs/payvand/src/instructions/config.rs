@@ -169,13 +169,46 @@ fn upgrade_authority(program_data: &AccountInfo) -> Result<Option<Pubkey>> {
     }
 }
 
+/// The `FeePolicy` as version 2 and version 3 wrote it: the two rates, their two
+/// boundaries, the two token flats and the two mints — no network fee. Kept
+/// separate from `FeePolicy` because those accounts are still on chain in that
+/// shape and `migrate_config` has to read them.
+#[derive(AnchorSerialize, AnchorDeserialize)]
+struct FeePolicyV3 {
+    fee_bps_below: u16,
+    fee_bps_above: u16,
+    sol_tier_lamports: u64,
+    token_tier_base_units: u64,
+    flat_usdc_base_units: u64,
+    flat_eurc_base_units: u64,
+    usdc_mint: Pubkey,
+    eurc_mint: Pubkey,
+}
+
+/// The version 3 `Config` body — everything version 4 has but the network fee.
+/// Read only by `migrate_config`, which carries the fields over and zeroes the
+/// price-derived ones so the next anchor reprices them.
+#[derive(AnchorSerialize, AnchorDeserialize)]
+struct ConfigV3 {
+    admin: Pubkey,
+    policy: FeePolicyV3,
+    fee_mode: FeeMode,
+    session_fee_float: u64,
+    #[allow(dead_code)]
+    flats_updated_at: i64,
+    bump: u8,
+    treasury_bump: u8,
+    #[allow(dead_code)]
+    version: u8,
+}
+
 /// The version 2 `Config` body — everything version 3 has but the refresh
 /// cooldown. Read only by `migrate_config`, which carries the fields over and
 /// leaves `flats_updated_at` at zero so the first refresh need not wait.
 #[derive(AnchorSerialize, AnchorDeserialize)]
 struct ConfigV2 {
     admin: Pubkey,
-    policy: FeePolicy,
+    policy: FeePolicyV3,
     fee_mode: FeeMode,
     session_fee_float: u64,
     bump: u8,
@@ -323,14 +356,22 @@ pub fn refresh_fee_price_handler(
 
     config.policy.flat_usdc_base_units = flat_for_rent(receipt_rent, sol_usd_micros)?;
     config.policy.flat_eurc_base_units = flat_for_rent(receipt_rent, sol_eur_micros)?;
+    // The network fee is lamports, and a token seller is charged its equivalent
+    // at this same price — the two costs a token payment carries move together,
+    // so they are priced from one number.
+    let network_fee = config.policy.network_fee_lamports;
+    config.policy.network_fee_usdc_base_units = flat_for_rent(network_fee, sol_usd_micros)?;
+    config.policy.network_fee_eurc_base_units = flat_for_rent(network_fee, sol_eur_micros)?;
     config.flats_updated_at = now;
 
     msg!(
-        "flats refreshed at {} / {} micros: {} USDC and {} EURC base units",
+        "flats refreshed at {} / {} micros: {} USDC and {} EURC base units, network fee {} / {}",
         sol_usd_micros,
         sol_eur_micros,
         config.policy.flat_usdc_base_units,
-        config.policy.flat_eurc_base_units
+        config.policy.flat_eurc_base_units,
+        config.policy.network_fee_usdc_base_units,
+        config.policy.network_fee_eurc_base_units
     );
     emit!(ConfigUpdated {
         admin: config.admin,
@@ -362,6 +403,9 @@ pub fn set_fee_price_anchor_handler(
     let config = &mut ctx.accounts.config;
     config.policy.flat_usdc_base_units = flat_for_rent(receipt_rent, sol_usd_micros)?;
     config.policy.flat_eurc_base_units = flat_for_rent(receipt_rent, sol_eur_micros)?;
+    let network_fee = config.policy.network_fee_lamports;
+    config.policy.network_fee_usdc_base_units = flat_for_rent(network_fee, sol_usd_micros)?;
+    config.policy.network_fee_eurc_base_units = flat_for_rent(network_fee, sol_eur_micros)?;
     config.flats_updated_at = Clock::get()?.unix_timestamp;
 
     let anchor = &mut ctx.accounts.anchor;
@@ -385,12 +429,15 @@ pub fn set_fee_price_anchor_handler(
     Ok(())
 }
 
-/// Upgrades the live config account — version 1 or version 2 — to version 3 in
+/// Upgrades the live config account — version 1, 2 or 3 — to version 4 in
 /// place.
 ///
 /// Only the layout changes: the admin, the fee mode and the session float the
 /// account already records are carried over, and the new `FeePolicy` is the one
-/// the admin passes — bar its two token flats, which are zeroed.
+/// the admin passes — bar its four price-derived fields (the two token flats and
+/// the network fee's two token equivalents), which are zeroed so the next
+/// `set_fee_price_anchor` prices them from the cluster's rent and the admin's
+/// own rate.
 ///
 /// The flats are zeroed on purpose. Whatever numbers the old account (or the
 /// admin's arguments) carried were priced for a rent and a SOL rate from before
@@ -410,9 +457,15 @@ pub fn set_fee_price_anchor_handler(
 /// refuses a realloc that leaves an account below its rent-exempt minimum.
 pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
     validate_fee_policy(&policy)?;
+    // The four price-derived fields are zeroed: whatever the old account or the
+    // admin's arguments carried was priced for a rent and a SOL rate from before
+    // this upgrade. `network_fee_lamports` is not price-derived — it is what one
+    // signature costs — so it is carried over from the policy as passed.
     let policy = FeePolicy {
         flat_usdc_base_units: 0,
         flat_eurc_base_units: 0,
+        network_fee_usdc_base_units: 0,
+        network_fee_eurc_base_units: 0,
         ..policy
     };
 
@@ -422,6 +475,18 @@ pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) ->
     let (admin, fee_mode, session_fee_float, bump, treasury_bump) = {
         let data = info.try_borrow_data()?;
         match data.len() {
+            CONFIG_SPACE_V3 => {
+                let old = ConfigV3::try_from_slice(&data[8..])
+                    .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
+                require!(old.version == 3, PaymentError::InvalidConfigVersion);
+                (
+                    old.admin,
+                    old.fee_mode,
+                    old.session_fee_float,
+                    old.bump,
+                    old.treasury_bump,
+                )
+            }
             CONFIG_SPACE_V1 => {
                 let old = ConfigV1::try_from_slice(&data[8..])
                     .map_err(|_| error!(PaymentError::InvalidConfigVersion))?;
@@ -520,9 +585,12 @@ pub fn migrate_config_handler(ctx: Context<MigrateConfig>, policy: FeePolicy) ->
 pub fn withdraw_treasury_handler(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
     let treasury = ctx.accounts.treasury.to_account_info();
     let rent = Rent::get()?;
+    // The refund a token settlement draws is both rents plus the network fee it
+    // reimburses the sponsor, so the reserve has to carry all three.
     let settlement_refund = rent
         .minimum_balance(TOKEN_PAYMENT_SPACE)
-        .saturating_add(rent.minimum_balance(PAYMENT_RECEIPT_SPACE));
+        .saturating_add(rent.minimum_balance(PAYMENT_RECEIPT_SPACE))
+        .saturating_add(ctx.accounts.config.policy.network_fee_lamports);
     let reserve = settlement_refund
         .saturating_mul(TREASURY_RESERVE_SETTLEMENTS)
         .saturating_add(rent.minimum_balance(0));

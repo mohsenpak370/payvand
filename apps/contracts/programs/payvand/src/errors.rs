@@ -50,4 +50,6 @@ pub enum PaymentError {
     ShopFeeTooHigh,
     #[msg("This shop policy belongs to another seller")]
     ShopPolicySellerMismatch,
+    #[msg("The network fee is larger than this program allows a policy to name")]
+    InvalidNetworkFee,
 }

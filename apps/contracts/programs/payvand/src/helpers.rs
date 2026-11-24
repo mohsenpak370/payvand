@@ -4,9 +4,9 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::{
-    MAX_SOL_FEE_LAMPORTS, MAX_SOL_PRICE_MICROS, MAX_TOKEN_FEE_BASE_UNITS, MICROS,
-    MINT_DECIMALS_OFFSET, MIN_SESSION_FEE_FLOAT, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS,
-    TREASURY_SEED,
+    MAX_NETWORK_FEE_BASE_UNITS, MAX_NETWORK_FEE_LAMPORTS, MAX_SOL_FEE_LAMPORTS,
+    MAX_SOL_PRICE_MICROS, MAX_TOKEN_FEE_BASE_UNITS, MICROS, MINT_DECIMALS_OFFSET,
+    MIN_SESSION_FEE_FLOAT, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, TREASURY_SEED,
 };
 use crate::errors::PaymentError;
 use crate::state::{Config, FeePolicy, ShopPolicy};
@@ -35,15 +35,23 @@ pub fn current_month_index() -> Result<u64> {
 /// boundary is a change of slope and not a cliff — an invoice crossing it costs
 /// one lamport's worth of rate more, never twice the fee.
 ///
-/// The record's rent is the floor of what a seller pays, expressed in the
-/// currency they are charged in. A token seller cannot be charged lamports, so
-/// the marker's rent is the currency's flat and the fee is the larger of that
-/// flat and the percentage: a payment too small for the percentage to cover the
-/// record is charged the record and nothing else, and the treasury neither
-/// loses on it nor takes a fee for it. A SOL seller pays that rent directly out
-/// of the price instead, so the same floor is applied by taking it off the
-/// percentage — the seller's total is the larger of the two either way, and the
-/// two currencies cost a seller the same.
+/// The floor is what the payment costs us, expressed in the currency the seller
+/// is charged in: the permanent record's rent plus the network fee we paid.
+///
+/// A token seller cannot be charged lamports, so both costs are the currency's
+/// `flat` and `network_fee_*_base_units`, the treasury funds them in SOL, and the
+/// fee is the larger of that sum and the percentage. A payment too small for the
+/// percentage to cover the two costs is charged exactly those costs and nothing
+/// else, and the treasury neither loses on it nor takes a margin for it. A
+/// payment big enough for the percentage to cover them is charged the
+/// percentage, and the difference is the protocol's revenue.
+///
+/// A SOL seller is charged in lamports, so its two costs are the marker's rent
+/// (`receipt_rent`, paid straight to the marker by the sponsor) and
+/// `network_fee_lamports`; the floor is their sum, applied the only way a lamport
+/// amount can carry it — by taking both off the percentage. `fee` is therefore
+/// the seller's deduction above the marker's rent, and the settlement splits it
+/// into the sponsor's reimbursement and the platform's margin.
 ///
 /// `multiplier_bps` is the shop's own policy when the invoice named one, and
 /// `SHOP_FEE_BASE_BPS` otherwise. It scales the percentage only — the
@@ -68,18 +76,54 @@ pub fn fee_for(
     receipt_rent: u64,
     multiplier_bps: u16,
 ) -> Result<u64> {
+    fee_for_signatures(config, amount, mint, receipt_rent, multiplier_bps, 1)
+}
+
+/// The network fee a settlement of `signatures` signatures costs, and therefore
+/// what it charges the seller and refunds the sponsor.
+///
+/// `FeePolicy::network_fee_lamports` is one signature's cost. A settle that a
+/// sponsor signs as fee payer carries two — the payer's and the sponsor's — and
+/// one that pays its own way carries one, so the cost is multiplied rather than
+/// guessed. Charging and refunding the same number is what keeps a refund from
+/// handing back more lamports than the path spent.
+pub fn fee_for_signatures(
+    config: &Config,
+    amount: u64,
+    mint: Option<&Pubkey>,
+    receipt_rent: u64,
+    multiplier_bps: u16,
+    signatures: u64,
+) -> Result<u64> {
     let policy = &config.policy;
-    let (boundary, flat) = match mint {
-        None => (policy.sol_tier_lamports as u128, 0u128),
+    let signatures = signatures.max(1);
+    let (boundary, flat, network) = match mint {
+        // The SOL floor's two terms are both lamports, added after the rate is
+        // taken down by the marker's rent rather than before it.
+        None => (
+            policy.sol_tier_lamports as u128,
+            0u128,
+            (policy.network_fee_lamports as u128)
+                .checked_mul(signatures as u128)
+                .ok_or(PaymentError::FeeOverflow)?,
+        ),
         Some(mint) if *mint == policy.usdc_mint => (
             policy.token_tier_base_units as u128,
             policy.flat_usdc_base_units as u128,
+            (policy.network_fee_usdc_base_units as u128)
+                .checked_mul(signatures as u128)
+                .ok_or(PaymentError::FeeOverflow)?,
         ),
         Some(mint) if *mint == policy.eurc_mint => (
             policy.token_tier_base_units as u128,
             policy.flat_eurc_base_units as u128,
+            (policy.network_fee_eurc_base_units as u128)
+                .checked_mul(signatures as u128)
+                .ok_or(PaymentError::FeeOverflow)?,
         ),
-        Some(_) => (policy.token_tier_base_units as u128, 0u128),
+        // A mint the policy does not price has no live conversion to charge a
+        // lamport cost in, so it pays the percentage alone.
+        Some(_) => (policy.token_tier_base_units as u128, 0u128, 0u128),
     };
 
     let amount = amount as u128;
@@ -104,8 +148,15 @@ pub fn fee_for(
         / SHOP_FEE_BASE_BPS as u128;
 
     let fee = match mint {
-        Some(_) => proportional.max(flat),
-        None => proportional.saturating_sub(receipt_rent as u128),
+        // The floor is everything the payment costs us, in this mint's units:
+        // the record's rent and the network fee the sponsor paid.
+        Some(_) => proportional.max(flat.saturating_add(network)),
+        // The rent is already off the percentage (the seller pays it to the
+        // marker through this same split), so the fee only has to carry the
+        // network fee from here.
+        None => proportional
+            .saturating_sub(receipt_rent as u128)
+            .max(network),
     };
     let ceiling = match mint {
         None => MAX_SOL_FEE_LAMPORTS as u128,
@@ -221,6 +272,15 @@ pub fn validate_fee_policy(policy: &FeePolicy) -> Result<()> {
     require!(
         policy.fee_bps_below <= 10_000 && policy.fee_bps_above <= 10_000,
         PaymentError::InvalidFeeBps
+    );
+    // The network fee is a cost we reimburse, so a policy cannot name one the
+    // pool would never recover. Both bounds are unit-mistake guards: a real fee
+    // is a signature's worth of lamports, not a fraction of a SOL.
+    require!(
+        policy.network_fee_lamports <= MAX_NETWORK_FEE_LAMPORTS
+            && policy.network_fee_usdc_base_units <= MAX_NETWORK_FEE_BASE_UNITS
+            && policy.network_fee_eurc_base_units <= MAX_NETWORK_FEE_BASE_UNITS,
+        PaymentError::InvalidNetworkFee
     );
     Ok(())
 }

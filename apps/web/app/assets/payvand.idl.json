@@ -414,11 +414,13 @@
     {
       "name": "migrate_config",
       "docs": [
-        "Upgrades the live config account — version 1 or 2 — to version 3 in place. Admin",
-        "only, and only once: the account must be one of the two older layouts and",
-        "must record the signer as its admin. It carries the admin, fee mode and",
-        "session float over and installs the `FeePolicy` passed here, except both",
-        "token flats, which it zeroes until `set_fee_price_anchor` prices them."
+        "Upgrades the live config account — version 1, 2 or 3 — to version 4 in",
+        "place. Admin only, and only once: the account must be one of the older",
+        "layouts and must record the signer as its admin. It carries the admin, fee",
+        "mode and session float over and installs the `FeePolicy` passed here,",
+        "except the four price-derived fields — both token flats and the network",
+        "fee's two token equivalents — which it zeroes until",
+        "`set_fee_price_anchor` prices them."
       ],
       "discriminator": [
         92,
@@ -948,8 +950,9 @@
       "docs": [
         "Silent payment: the session key settles an invoice straight out of the",
         "buyer's budget — no wallet popup, because the only signature here is",
-        "the local session key's. The pot pays the seller and refunds the",
-        "invoice rent it just advanced from the session key's float.",
+        "the local session key's. The pot pays the seller and refunds the invoice",
+        "rent, the marker's rent and the network fee the session key advanced from",
+        "its float.",
         "",
         "The monthly cap and the pot balance are both enforced here, and the",
         "amount still rides in the payment PDA's seeds, so a QR code can only",
@@ -1572,10 +1575,11 @@
       "name": "refresh_fee_price",
       "docs": [
         "Re-pegs the two token flats — the marker's rent expressed in USDC and in",
-        "EURC — to a live SOL price. Permissionless and bounded: a plausible price",
-        "only, one within `PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one",
-        "call a minute. The band is measured from the anchor rather than the flat",
-        "it rewrites, so repeated calls cannot walk the flats anywhere."
+        "EURC — and the network fee's two token equivalents to a live SOL price.",
+        "Permissionless and bounded: a plausible price only, one within",
+        "`PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one call a minute. The",
+        "band is measured from the anchor rather than the flat it rewrites, so",
+        "repeated calls cannot walk the flats anywhere."
       ],
       "discriminator": [
         214,
@@ -1840,10 +1844,15 @@
     {
       "name": "settle_payment",
       "docs": [
-        "Buyer pays an invoice. The invoice account is created (and funded by",
-        "the buyer) inside this same transaction, so the seller never has to",
-        "sign anything to open a payment code — the QR is just an address plus",
-        "its details.",
+        "Buyer pays an invoice. The invoice account is created inside this same",
+        "transaction, so the seller never has to sign anything to open a payment",
+        "code — the QR is just an address plus its details.",
+        "",
+        "The buyer spends the price and nothing else: a `sponsor` advances the two",
+        "records and pays the transaction's fee, and the price repays it in this",
+        "same instruction. A funded wallet is its own sponsor; a wallet holding no",
+        "SOL passes a relayer's key, which is what makes a SOL invoice payable by",
+        "someone who cannot afford a signature.",
         "",
         "`amount` is part of the PDA seeds, which is what keeps this safe: an",
         "invoice can only ever be settled at the exact amount that was encoded",
@@ -1864,7 +1873,9 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for the invoice account, the receipt, and the transfer itself."
+            "Pays the price and nothing else. It owns no lamports beyond the invoice:",
+            "the two records are the sponsor's to advance and the network fee is the",
+            "sponsor's to pay, so a wallet holding exactly the price can settle."
           ],
           "writable": true,
           "signer": true
@@ -1873,7 +1884,8 @@
           "name": "payment",
           "docs": [
             "Short-lived: created, settled and closed in this one transaction. Its",
-            "rent goes back to the seller, who fronts no signature for it."
+            "rent is advanced by the sponsor and returns to the seller when the",
+            "account closes, who fronts no signature for it."
           ],
           "writable": true,
           "pda": {
@@ -1916,9 +1928,9 @@
           "name": "receipt",
           "docs": [
             "The permanent marker. `settled_at != 0` means this invoice is done, so",
-            "the same invoice can never be settled twice. The payer fronts its rent",
-            "and is made whole through the seller's reduced proceeds, so the seller",
-            "is the one who ends up paying for the record."
+            "the same invoice can never be settled twice. The sponsor fronts its rent",
+            "and the price repays it, so the seller is the one who ends up paying for",
+            "the record."
           ],
           "writable": true,
           "pda": {
@@ -2005,6 +2017,24 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "sponsor",
+          "docs": [
+            "Who fronts what the payment costs in lamports: the invoice's rent, the",
+            "marker's rent and the transaction's own fee. It receives both rents back",
+            "plus `network_fee_lamports` out of the price in this same instruction, so",
+            "its net cost is the fee it paid and nothing else. A funded wallet passes",
+            "itself — one key, one signature — and a wallet holding no SOL passes a",
+            "relayer's key, which turns a payer who cannot afford a signature into a",
+            "payer without renting it the rest.",
+            "",
+            "Required rather than optional, unlike `shop_policy`: an absent sponsor",
+            "would have to mean the payer fronts the records, which is the cost this",
+            "account exists to move off the payer."
+          ],
+          "writable": true,
+          "signer": true
         },
         {
           "name": "shop_policy",
@@ -2747,6 +2777,11 @@
       "code": 6022,
       "name": "ShopPolicySellerMismatch",
       "msg": "This shop policy belongs to another seller"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidNetworkFee",
+      "msg": "The network fee is larger than this program allows a policy to name"
     }
   ],
   "types": [
@@ -2845,9 +2880,10 @@
         "change the policy, and the fee destination is derived from a seed here",
         "rather than named by a caller, so no settlement can redirect it.",
         "",
-        "Version 3 carries the tiered `FeePolicy` and the refresh cooldown; version 2",
-        "was the same policy without `flats_updated_at`, and version 1 one rate plus a",
-        "flat lamport fee. `migrate_config` reallocates whichever it finds."
+        "Version 4 carries the network fee beside the tiered `FeePolicy`; version 3 was",
+        "the same policy without it, version 2 without `flats_updated_at`, and version",
+        "1 one rate plus a flat lamport fee. `migrate_config` reallocates whichever it",
+        "finds."
       ],
       "type": {
         "kind": "struct",
@@ -3038,7 +3074,19 @@
         "They are instead kept *live*: `refresh_fee_price` recomputes both from the",
         "cluster's current marker rent and a SOL price in micros, so what a token",
         "seller is charged tracks what the record actually costs today rather than",
-        "what SOL was worth when the policy was written."
+        "what SOL was worth when the policy was written.",
+        "",
+        "The network fee is the second cost a payment carries. Every settlement spends",
+        "one signature's worth of lamports, and on the token paths a sponsor advances",
+        "it; the treasury pays that sponsor back, and the seller pays the treasury the",
+        "same amount in the currency they were paid in. So the floor a token seller is",
+        "charged is the record's flat *plus* this fee, and the ceiling is the",
+        "percentage — the seller pays whichever is larger, never both. When the",
+        "percentage is the larger, it absorbs the two costs and what is left is the",
+        "protocol's revenue; when the costs are the larger, the protocol charges",
+        "nothing beyond them. The two token figures exist for the same reason the",
+        "flats do: a token amount cannot be priced in lamports without an oracle, so",
+        "they are derived from `refresh_fee_price`'s own SOL price like the flats."
       ],
       "type": {
         "kind": "struct",
@@ -3101,6 +3149,31 @@
               "The mint `flat_eurc_base_units` applies to."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "network_fee_lamports",
+            "docs": [
+              "What one settlement's network fee costs, in lamports: the amount the",
+              "treasury reimburses the account that paid the transaction's fee. A token",
+              "settle charges the seller this plus the record's rent, in the currency",
+              "they are paid in, and keeps the rest of the percentage."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "network_fee_usdc_base_units",
+            "docs": [
+              "`network_fee_lamports` in USDC base units, from the same SOL price the",
+              "last `refresh_fee_price` wrote into the flats."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "network_fee_eurc_base_units",
+            "docs": [
+              "`network_fee_lamports` in EURC base units, from the same refresh."
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -3227,10 +3300,14 @@
         "",
         "All four settle instructions emit this same type, deliberately: `mint`",
         "carries the currency (`Pubkey::default()` for SOL) and `payer` is whoever",
-        "signed, wallet or session key. `amount` is the price the QR showed, `fee`",
-        "went to the treasury, and `seller_proceeds` is what the seller actually",
-        "keeps — the price less the fee, less the receipt rent where the seller",
-        "carries it (the SOL paths; a token seller is charged no lamports)."
+        "signed, wallet or session key. `amount` is the price the QR showed, `fee` is",
+        "the seller's deduction above the marker's rent — on a token invoice the whole",
+        "of it, on SOL the part the rent does not already take — and",
+        "`seller_proceeds` is what the seller actually keeps: the price less the fee,",
+        "less the receipt rent where the seller carries it (the SOL paths; a token",
+        "seller is charged no lamports). `fee` is not revenue: the settlement first",
+        "pays the sponsor back the network fee it spent, and the treasury keeps what",
+        "is left."
       ],
       "type": {
         "kind": "struct",
@@ -3245,7 +3322,8 @@
           {
             "name": "fee",
             "docs": [
-              "The seller-side fee that went to the treasury."
+              "The seller's deduction above the marker's rent: the network fee the sponsor",
+              "is repaid plus the platform's margin."
             ],
             "type": "u64"
           },

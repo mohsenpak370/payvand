@@ -339,6 +339,11 @@ pub struct MyTransaction {
     /// before this was recorded — has empty strings.
     pub name: String,
     pub description: String,
+    /// The receipt lines the invoice was priced from in the seller's shop, in
+    /// the order they were written. Empty for a hand-priced invoice, and for
+    /// one made before the app started keeping them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<payments::PaymentItem>,
     pub status: PaymentStatus,
     pub created_at_unix: i64,
     pub settled_at_unix: i64,
@@ -377,10 +382,10 @@ pub async fn transactions(
     }))
 }
 
-/// Fills in the name and description each invoice was made with, from the rows
-/// written when the code was created. The chain keeps neither, so this is the
-/// only place those two can come from; a read that fails leaves them empty
-/// rather than failing the whole history.
+/// Fills in the name, the description and the receipt lines each invoice was
+/// made with, from the rows written when the code was created. The chain keeps
+/// none of them, so this is the only place they can come from; a read that
+/// fails leaves them empty rather than failing the whole history.
 async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
     if items.is_empty() {
         return;
@@ -397,7 +402,8 @@ async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
         connection
             .query(
                 &format!(
-                    "SELECT id, name, description FROM invoice_meta WHERE id IN ({placeholders})"
+                    "SELECT id, name, description, items FROM invoice_meta \
+                     WHERE id IN ({placeholders})"
                 ),
                 libsql::params_from_iter(ids.iter().cloned()),
             )
@@ -409,7 +415,7 @@ async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
         return;
     };
 
-    let mut found: std::collections::HashMap<String, (String, String)> =
+    let mut found: std::collections::HashMap<String, (String, String, Vec<payments::PaymentItem>)> =
         std::collections::HashMap::new();
     while let Ok(Some(row)) = rows.next().await {
         let Ok(id) = row.get::<String>(0) else {
@@ -421,16 +427,26 @@ async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
         let Ok(description) = row.get::<String>(2) else {
             continue;
         };
-        found.insert(id, (name, description));
+        // A row written before receipts were kept has an empty string here,
+        // and a malformed one is no reason to drop the name beside it.
+        let items = row
+            .get::<String>(3)
+            .ok()
+            .and_then(|json| serde_json::from_str::<Vec<payments::PaymentItem>>(&json).ok())
+            .unwrap_or_default();
+        found.insert(id, (name, description, items));
     }
 
     for item in items {
-        if let Some((name, description)) = found.get(&item.id) {
+        if let Some((name, description, receipt)) = found.get(&item.id) {
             if item.name.is_empty() {
                 item.name = name.clone();
             }
             if item.description.is_empty() {
                 item.description = description.clone();
+            }
+            if item.items.is_empty() {
+                item.items = receipt.clone();
             }
         }
     }
@@ -493,6 +509,9 @@ pub(crate) fn match_transactions(
                 memo: record.memo,
                 name: record.name,
                 description: record.description,
+                // The chain keeps no receipt lines; `fill_invoice_meta` puts
+                // back whatever the seller typed when the code was made.
+                items: Vec::new(),
                 status: record.status,
                 created_at_unix: record.created_at_unix,
                 settled_at_unix: record.settled_at_unix,
@@ -900,5 +919,53 @@ mod tests {
             &wallet,
         );
         assert!(without.is_empty());
+    }
+
+    /// The history reads a payment by the address that was paid, so the name,
+    /// the description and the receipt lines written when the code was made
+    /// have to come back for a token payment too — the modal is the only place
+    /// a seller sees what an invoice was for.
+    #[tokio::test]
+    async fn history_rows_carry_the_name_and_receipt_lines() {
+        let (state, path) = test_state().await;
+        let connection = state.db.connect().expect("connect");
+        connection
+            .execute(
+                "INSERT INTO invoice_meta (id, seller, name, description, items, created_at) \
+                 VALUES ('paid-in-usdc', 'seller', 'Two flat whites', 'Oat milk', \
+                 '[{\"name\":\"Flat white\",\"quantity\":2,\"amount_lamports\":5000000}]', 1)",
+                (),
+            )
+            .await
+            .expect("row");
+        drop(connection);
+
+        let mut items = vec![MyTransaction {
+            id: "paid-in-usdc".into(),
+            direction: "sent".into(),
+            counterparty: "seller".into(),
+            currency: "usdc".into(),
+            amount: 1_500_000,
+            decimals: 6,
+            amount_lamports: 0,
+            memo: String::new(),
+            name: String::new(),
+            description: String::new(),
+            items: Vec::new(),
+            status: PaymentStatus::Pending,
+            created_at_unix: 1,
+            settled_at_unix: 0,
+        }];
+
+        fill_invoice_meta(&state.db, &mut items).await;
+
+        assert_eq!(items[0].name, "Two flat whites");
+        assert_eq!(items[0].description, "Oat milk");
+        assert_eq!(items[0].items.len(), 1, "the receipt line came back");
+        assert_eq!(items[0].items[0].name, "Flat white");
+        assert_eq!(items[0].items[0].quantity, 2);
+        assert_eq!(items[0].items[0].amount_lamports, 5_000_000);
+
+        let _ = std::fs::remove_file(path);
     }
 }

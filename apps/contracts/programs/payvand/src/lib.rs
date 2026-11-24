@@ -64,10 +64,11 @@ pub mod payvand {
     }
 
     /// Re-pegs the two token flats — the marker's rent expressed in USDC and in
-    /// EURC — to a live SOL price. Permissionless and bounded: a plausible price
-    /// only, one within `PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one
-    /// call a minute. The band is measured from the anchor rather than the flat
-    /// it rewrites, so repeated calls cannot walk the flats anywhere.
+    /// EURC — and the network fee's two token equivalents to a live SOL price.
+    /// Permissionless and bounded: a plausible price only, one within
+    /// `PRICE_ANCHOR_BAND_BPS` of the admin's anchor, and one call a minute. The
+    /// band is measured from the anchor rather than the flat it rewrites, so
+    /// repeated calls cannot walk the flats anywhere.
     pub fn refresh_fee_price(
         ctx: Context<RefreshFeePrice>,
         sol_usd_micros: u64,
@@ -88,11 +89,13 @@ pub mod payvand {
         instructions::config::set_fee_price_anchor_handler(ctx, sol_usd_micros, sol_eur_micros)
     }
 
-    /// Upgrades the live config account — version 1 or 2 — to version 3 in place. Admin
-    /// only, and only once: the account must be one of the two older layouts and
-    /// must record the signer as its admin. It carries the admin, fee mode and
-    /// session float over and installs the `FeePolicy` passed here, except both
-    /// token flats, which it zeroes until `set_fee_price_anchor` prices them.
+    /// Upgrades the live config account — version 1, 2 or 3 — to version 4 in
+    /// place. Admin only, and only once: the account must be one of the older
+    /// layouts and must record the signer as its admin. It carries the admin, fee
+    /// mode and session float over and installs the `FeePolicy` passed here,
+    /// except the four price-derived fields — both token flats and the network
+    /// fee's two token equivalents — which it zeroes until
+    /// `set_fee_price_anchor` prices them.
     pub fn migrate_config(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
         instructions::config::migrate_config_handler(ctx, policy)
     }
@@ -120,10 +123,15 @@ pub mod payvand {
         instructions::config::withdraw_treasury_handler(ctx, amount)
     }
 
-    /// Buyer pays an invoice. The invoice account is created (and funded by
-    /// the buyer) inside this same transaction, so the seller never has to
-    /// sign anything to open a payment code — the QR is just an address plus
-    /// its details.
+    /// Buyer pays an invoice. The invoice account is created inside this same
+    /// transaction, so the seller never has to sign anything to open a payment
+    /// code — the QR is just an address plus its details.
+    ///
+    /// The buyer spends the price and nothing else: a `sponsor` advances the two
+    /// records and pays the transaction's fee, and the price repays it in this
+    /// same instruction. A funded wallet is its own sponsor; a wallet holding no
+    /// SOL passes a relayer's key, which is what makes a SOL invoice payable by
+    /// someone who cannot afford a signature.
     ///
     /// `amount` is part of the PDA seeds, which is what keeps this safe: an
     /// invoice can only ever be settled at the exact amount that was encoded
@@ -143,8 +151,9 @@ pub mod payvand {
 
     /// Silent payment: the session key settles an invoice straight out of the
     /// buyer's budget — no wallet popup, because the only signature here is
-    /// the local session key's. The pot pays the seller and refunds the
-    /// invoice rent it just advanced from the session key's float.
+    /// the local session key's. The pot pays the seller and refunds the invoice
+    /// rent, the marker's rent and the network fee the session key advanced from
+    /// its float.
     ///
     /// The monthly cap and the pot balance are both enforced here, and the
     /// amount still rides in the payment PDA's seeds, so a QR code can only

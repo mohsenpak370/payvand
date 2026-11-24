@@ -38,9 +38,18 @@ const INSTRUCTION = 'migrate_config'
 const SYSTEM_PROGRAM_ID = address('11111111111111111111111111111111')
 /** Where `FeePolicy` starts in `Config`: 8 of discriminator, 32 of admin. */
 const POLICY_OFFSET = 40
-const POLICY_LEN = 2 + 2 + 8 + 8 + 8 + 8 + 32 + 32
-/** The sizes the program has written: version 1, version 2, version 3. */
-const KNOWN_SIZES = [62, 152, 160]
+/** v4 added the three per-signature network-fee figures after the flats. */
+const POLICY_LEN = 2 + 2 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 32 + 32
+/** The sizes the program has written: version 1, version 2, version 3, version 4. */
+const KNOWN_SIZES = [62, 152, 160, 184]
+const CURRENT_SIZE = 184
+/**
+ * The network fee a v4 policy starts with on devnet: one signature's base fee,
+ * in lamports, and the same cost expressed in each stablecoin's base units
+ * (0.005 for a six-decimal mint). `fee:anchor` re-prices the flats; these three
+ * are what a settlement charges and refunds per signature.
+ */
+const DEVNET_NETWORK_FEES = { lamports: 5_000n, usdc: 5_000n, eurc: 5_000n }
 
 function fail(message) {
   console.error(`error: ${message}`)
@@ -83,12 +92,27 @@ async function main() {
   if (!info) fail(`no config account at ${config}: initialize it first`)
   const bytes = Uint8Array.from(atob(info.data[0]), char => char.charCodeAt(0))
   if (!KNOWN_SIZES.includes(bytes.length)) fail(`config is ${bytes.length} bytes, which is not a layout this program wrote`)
-  if (bytes.length === 160) {
+  if (bytes.length === CURRENT_SIZE) {
     console.log(`config ${config} is already the current layout (${bytes.length} bytes) — nothing to migrate`)
     return
   }
 
-  const policy = bytes.slice(POLICY_OFFSET, POLICY_OFFSET + POLICY_LEN)
+  // A v1–v3 account has the shorter policy; the v4 fields it never carried are
+  // appended below so the migration installs a priced network fee rather than
+  // zeros.
+  const carried = bytes.slice(POLICY_OFFSET, POLICY_OFFSET + (bytes.length === 160 ? 100 : bytes.length - POLICY_OFFSET))
+  const policy = new Uint8Array(POLICY_LEN)
+  if (bytes.length === 160) {
+    // v3 ran fee_bps, multiplier, two tiers, two flats, then the two mints. v4
+    // puts the three network fees between the flats and the mints.
+    policy.set(carried.slice(0, 100), 0)
+    const view32 = new DataView(policy.buffer)
+    view32.setBigUint64(100, DEVNET_NETWORK_FEES.lamports, true)
+    view32.setBigUint64(108, DEVNET_NETWORK_FEES.usdc, true)
+    view32.setBigUint64(116, DEVNET_NETWORK_FEES.eurc, true)
+  } else {
+    policy.set(carried, 0)
+  }
   const view = new DataView(policy.buffer, policy.byteOffset, policy.byteLength)
   console.log(`cluster   ${args.cluster}`)
   console.log(`admin     ${admin.address}`)

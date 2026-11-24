@@ -445,9 +445,15 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
     })
 }
 
-/// Remembers what an invoice is called, which the chain does not: the name and
-/// the description live only in the code the seller shares, so a history built
-/// from a cluster read would otherwise show an amount with no subject.
+/// Remembers what an invoice is called and what it sells, which the chain does
+/// not: the name, the description and the receipt lines live only in the code
+/// the seller shares, so a history built from a cluster read would otherwise
+/// show an amount with no subject.
+///
+/// A row is written for every currency the invoice accepts, not only for its
+/// primary address: the history is keyed by the address that was actually paid,
+/// so an invoice taking SOL and USDC paid in USDC would otherwise find nothing
+/// under that PDA and lose its name.
 ///
 /// Best effort by design. The invoice already exists on chain when this runs,
 /// and a cache that failed to write must never turn a working code into an
@@ -455,27 +461,42 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
 pub async fn remember_invoice(db: &libsql::Database, record: &PaymentRecord) {
     let name = record.name.trim();
     let description = record.description.trim();
-    if name.is_empty() && description.is_empty() {
+    if name.is_empty() && description.is_empty() && record.items.is_empty() {
         return;
     }
+    let items = serde_json::to_string(&record.items).unwrap_or_default();
+
+    let mut ids: Vec<String> = record
+        .options
+        .iter()
+        .map(|option| option.payment_pda.clone())
+        .filter(|id| !id.is_empty())
+        .collect();
+    ids.push(record.id.clone());
+    ids.sort();
+    ids.dedup();
 
     let written = async {
         let connection = db.connect()?;
-        connection
-            .execute(
-                "INSERT INTO invoice_meta (id, seller, name, description, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5) \
-                 ON CONFLICT(id) DO UPDATE SET \
-                    name = excluded.name, description = excluded.description",
-                libsql::params![
-                    record.id.clone(),
-                    record.seller.clone(),
-                    name.to_string(),
-                    description.to_string(),
-                    crate::auth::unix_now()
-                ],
-            )
-            .await?;
+        for id in &ids {
+            connection
+                .execute(
+                    "INSERT INTO invoice_meta (id, seller, name, description, items, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                     ON CONFLICT(id) DO UPDATE SET \
+                        name = excluded.name, description = excluded.description, \
+                        items = excluded.items",
+                    libsql::params![
+                        id.clone(),
+                        record.seller.clone(),
+                        name.to_string(),
+                        description.to_string(),
+                        items.clone(),
+                        crate::auth::unix_now()
+                    ],
+                )
+                .await?;
+        }
         Ok::<(), libsql::Error>(())
     }
     .await;

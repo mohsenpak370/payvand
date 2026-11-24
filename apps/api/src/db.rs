@@ -93,6 +93,15 @@ const SCHEMA: &[&str] = &[
         created_at     INTEGER NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS products_user_id_idx ON products(user_id)",
+    // The headings a shop has used, kept per shop so the editor can suggest them
+    // the next time rather than asking the seller to remember their own menu.
+    "CREATE TABLE IF NOT EXISTS shop_categories (
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        shop_id    TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (shop_id, name)
+    )",
     "CREATE TABLE IF NOT EXISTS password_resets (
         token_hash TEXT PRIMARY KEY,
         user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -149,7 +158,7 @@ const SCHEMA: &[&str] = &[
     // What an invoice is called and what it is for: the chain stores neither,
     // so the seller's own words are kept here when the invoice is made, and the
     // history can show a subject instead of an amount with no story.
-    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        created_at  INTEGER NOT NULL\n    )",
+    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
 ];
 
 #[derive(Debug)]
@@ -225,6 +234,18 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
     }
     migrate_shops_to_a_list(connection).await?;
     migrate_saved_codes_to_shops(connection).await?;
+    // The receipt lines an invoice was priced from. Additive: an invoice made
+    // before this keeps an empty list, and a database created after it has the
+    // column from the statement above.
+    if !has_column(connection, "invoice_meta", "items").await? {
+        connection
+            .execute(
+                "ALTER TABLE invoice_meta ADD COLUMN items TEXT NOT NULL DEFAULT ''",
+                (),
+            )
+            .await?;
+        eprintln!("[db] migrate: added invoice_meta.items");
+    }
     eprintln!("[db] migrate done");
     Ok(())
 }

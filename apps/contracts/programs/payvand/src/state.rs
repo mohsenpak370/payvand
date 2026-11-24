@@ -150,6 +150,18 @@ pub enum PaymentState {
 /// cluster's current marker rent and a SOL price in micros, so what a token
 /// seller is charged tracks what the record actually costs today rather than
 /// what SOL was worth when the policy was written.
+///
+/// The network fee is the second cost a payment carries. Every settlement spends
+/// one signature's worth of lamports, and on the token paths a sponsor advances
+/// it; the treasury pays that sponsor back, and the seller pays the treasury the
+/// same amount in the currency they were paid in. So the floor a token seller is
+/// charged is the record's flat *plus* this fee, and the ceiling is the
+/// percentage — the seller pays whichever is larger, never both. When the
+/// percentage is the larger, it absorbs the two costs and what is left is the
+/// protocol's revenue; when the costs are the larger, the protocol charges
+/// nothing beyond them. The two token figures exist for the same reason the
+/// flats do: a token amount cannot be priced in lamports without an oracle, so
+/// they are derived from `refresh_fee_price`'s own SOL price like the flats.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FeePolicy {
     /// Basis points on the part of the amount at or below the boundary.
@@ -171,6 +183,16 @@ pub struct FeePolicy {
     pub usdc_mint: Pubkey,
     /// The mint `flat_eurc_base_units` applies to.
     pub eurc_mint: Pubkey,
+    /// What one settlement's network fee costs, in lamports: the amount the
+    /// treasury reimburses the account that paid the transaction's fee. A token
+    /// settle charges the seller this plus the record's rent, in the currency
+    /// they are paid in, and keeps the rest of the percentage.
+    pub network_fee_lamports: u64,
+    /// `network_fee_lamports` in USDC base units, from the same SOL price the
+    /// last `refresh_fee_price` wrote into the flats.
+    pub network_fee_usdc_base_units: u64,
+    /// `network_fee_lamports` in EURC base units, from the same refresh.
+    pub network_fee_eurc_base_units: u64,
 }
 
 /// The program's singleton fee policy and treasury pointers.
@@ -180,9 +202,10 @@ pub struct FeePolicy {
 /// change the policy, and the fee destination is derived from a seed here
 /// rather than named by a caller, so no settlement can redirect it.
 ///
-/// Version 3 carries the tiered `FeePolicy` and the refresh cooldown; version 2
-/// was the same policy without `flats_updated_at`, and version 1 one rate plus a
-/// flat lamport fee. `migrate_config` reallocates whichever it finds.
+/// Version 4 carries the network fee beside the tiered `FeePolicy`; version 3 was
+/// the same policy without it, version 2 without `flats_updated_at`, and version
+/// 1 one rate plus a flat lamport fee. `migrate_config` reallocates whichever it
+/// finds.
 #[account]
 #[derive(Debug)]
 pub struct Config {

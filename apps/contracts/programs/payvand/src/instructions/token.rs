@@ -41,8 +41,8 @@ use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::{BudgetOpened, PaymentSettled};
 use crate::helpers::{
-    current_month_index, ensure_treasury_funded, fee_for, mint_decimals, pay_from_treasury,
-    shop_multiplier,
+    current_month_index, ensure_treasury_funded, fee_for, fee_for_signatures, mint_decimals,
+    pay_from_treasury, shop_multiplier,
 };
 use crate::state::{
     Config, FeeMode, PaymentReceipt, PaymentState, ShopPolicy, TokenBudget, TokenPayment,
@@ -432,18 +432,35 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         ctx.accounts.shop_policy.as_deref(),
         &ctx.accounts.seller.key(),
     )?;
-    let fee = fee_for(
+    // Two signatures when a relayer signs as fee payer, one when the wallet is
+    // its own sponsor: the seller is charged exactly what this path pays, and the
+    // refund hands back exactly that.
+    let signatures = if ctx.accounts.sponsor.key() != ctx.accounts.payer.key() {
+        2
+    } else {
+        1
+    };
+    let fee = fee_for_signatures(
         config,
         amount,
         Some(&ctx.accounts.mint.key()),
         receipt_rent,
         multiplier,
+        signatures,
     )?;
     // The seller must still receive something, as in `settle_payment`.
     require!(amount > fee, PaymentError::InvoiceTooSmall);
-    // The sponsor advanced both rents above; the refund is checked before any
-    // transfer so a settlement cannot start what the treasury cannot finish.
-    let refund = payment_rent.saturating_add(receipt_rent);
+    // The sponsor advanced both rents above and paid the transaction's own fee;
+    // the refund covers all three, so the sponsor's net cost is zero and the
+    // seller's deduction is what funds it. Checked before any transfer so a
+    // settlement cannot start what the treasury cannot finish.
+    let refund = payment_rent.saturating_add(receipt_rent).saturating_add(
+        config
+            .policy
+            .network_fee_lamports
+            .checked_mul(signatures)
+            .ok_or(PaymentError::FeeOverflow)?,
+    );
     ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
     let decimals = mint_decimals(&ctx.accounts.mint)?;
 
@@ -478,10 +495,11 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         )?;
     }
 
-    // Hand back the two rents the sponsor advanced. A CPI, so it runs while no
-    // lamport delta is outstanding; the invoice's close below does the direct
-    // move. The destination is the sponsor and never the payer, which is what
-    // keeps a sponsored settlement from being a lamport faucet for the buyer.
+    // Hand back the two rents the sponsor advanced and the network fee it paid.
+    // A CPI, so it runs while no lamport delta is outstanding; the invoice's
+    // close below does the direct move. The destination is the sponsor and never
+    // the payer, which is what keeps a sponsored settlement from being a lamport
+    // faucet for the buyer.
     pay_from_treasury(
         &ctx.accounts.treasury.to_account_info(),
         &ctx.accounts.sponsor.to_account_info(),
@@ -717,11 +735,14 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
     );
 
     // The session key advanced the invoice and receipt rents to open these
-    // records; the pool refunds both, so the pot pays the price and the records
-    // come out of the fee. Checked before any transfer, so a pool that cannot
-    // refund cannot start a settlement.
+    // records and paid the transaction's own fee — one signature, since it is
+    // the only signer; the pool refunds all three, so the pot pays the price and
+    // those costs come out of the fee. Checked before any transfer, so a pool
+    // that cannot refund cannot start a settlement.
     let invoice_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
-    let refund = invoice_rent.saturating_add(receipt_rent);
+    let refund = invoice_rent
+        .saturating_add(receipt_rent)
+        .saturating_add(config.policy.network_fee_lamports);
     ensure_treasury_funded(&ctx.accounts.treasury.to_account_info(), refund)?;
 
     // The split, signed by the budget PDA: the price less the fee to the seller,
@@ -762,9 +783,9 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
         )?;
     }
 
-    // Hand back the two rents the session key advanced. A CPI, so it runs while no
-    // lamport delta is outstanding; the invoice's close below does the direct
-    // move.
+    // Hand back the two rents the session key advanced and the network fee it
+    // paid. A CPI, so it runs while no lamport delta is outstanding; the
+    // invoice's close below does the direct move.
     pay_from_treasury(
         &ctx.accounts.treasury.to_account_info(),
         &ctx.accounts.session_key.to_account_info(),

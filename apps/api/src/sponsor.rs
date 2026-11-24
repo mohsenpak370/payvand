@@ -1,15 +1,17 @@
-//! The sponsored settle fee: a relayer's keypair pays a token invoice's network
-//! fee and its two record rents, so a wallet holding only USDC or EURC can buy
-//! something.
+//! The sponsored settle fee: a relayer's keypair pays an invoice's network fee
+//! and its two record rents, so a wallet holding only the price can buy
+//! something — in USDC, EURC, or SOL.
 //!
 //! The relayer never signs a transaction a caller chose. `POST
-//! /api/sponsor/settle` rebuilds the one `settle_token_payment` message it
-//! expects from the request's parameters — the invoice, the receipt, the three
-//! token accounts, `Config`, the treasury, the sponsor's own account and, when
-//! the invoice was priced by a shop, that shop's policy as the trailing optional
-//! account — and only if that message is byte-for-byte the one the buyer signed
-//! does it add its fee-payer signature and submit. A different instruction, account, amount
-//! or mint is a mismatch, and a mismatch is refused before anything is signed.
+//! /api/sponsor/settle` rebuilds the one settle message it expects from the
+//! request's parameters — `settle_token_payment` with the invoice, the receipt,
+//! the three token accounts, `Config` and the treasury, or `settle_payment` with
+//! the invoice, the receipt, `Config` and the treasury when the request names no
+//! mint — plus the sponsor's own account and, when the invoice was priced by a
+//! shop, that shop's policy as the trailing optional account. Only if that
+//! message is byte-for-byte the one the buyer signed does it add its fee-payer
+//! signature and submit. A different instruction, account, amount or mint is a
+//! mismatch, and a mismatch is refused before anything is signed.
 //!
 //! The program routes the treasury's refund of both rents back to the sponsor
 //! (`plans/0004-relayer-sponsored-fees.md`), so a sponsored settlement is not a
@@ -59,6 +61,9 @@ pub struct SettleRequest {
     pub buyer: String,
     pub seller: String,
     pub reference: String,
+    /// The invoice's mint. Empty means a SOL invoice, which has no token
+    /// accounts and is settled by `settle_payment` instead.
+    #[serde(default)]
     pub mint: String,
     pub amount: u64,
     #[serde(default)]
@@ -126,7 +131,8 @@ struct Params {
     buyer: Pubkey,
     seller: Pubkey,
     reference: Pubkey,
-    mint: Pubkey,
+    /// `None` is a SOL invoice.
+    mint: Option<Pubkey>,
     amount: u64,
     memo: String,
     /// The shop's policy, absent for a shop that has none — the same absence
@@ -147,10 +153,17 @@ impl Params {
         if request.memo.len() > 96 {
             return Err(bad("The invoice note is too long."));
         }
-        let mint = key(&request.mint, "mint")?;
-        if currency_for_mint(&mint, &request.cluster).is_none() {
-            return Err(bad("Sponsored payments cover USDC and EURC only."));
-        }
+        // No mint is a SOL invoice: the price itself is lamports, so there is
+        // nothing to check against the cluster's stablecoins.
+        let mint = if request.mint.trim().is_empty() {
+            None
+        } else {
+            let mint = key(&request.mint, "mint")?;
+            if currency_for_mint(&mint, &request.cluster).is_none() {
+                return Err(bad("Sponsored payments cover USDC, EURC and SOL only."));
+            }
+            Some(mint)
+        };
         Ok(Self {
             buyer: key(&request.buyer, "buyer")?,
             seller: key(&request.seller, "seller")?,
@@ -191,24 +204,71 @@ fn discriminator(name: &str) -> [u8; 8] {
     out
 }
 
-/// `settle_token_payment` as the IDL declares it, in the IDL's account order,
-/// with `sponsor` last and the shop policy after it only when the invoice names
-/// one — the program's optional account takes the program id in that slot to
-/// mean "none", which is a message the client never builds.
+/// The settle instruction as the IDL declares it, in the IDL's account order,
+/// with `sponsor` after the system program (before the optional shop policy).
+/// A request with no mint is `settle_payment`; anything else is
+/// `settle_token_payment` with the three token accounts the client's own
+/// builder uses. The shop policy trails only when the invoice names one — the
+/// program's optional account takes the program id in that slot to mean "none",
+/// which is a message the client never builds.
 fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
     let program = program_id();
+    let treasury = pda(&[b"treasury"], &program);
+    let config = pda(&[b"config"], &program);
+    let system = Pubkey::from_str(SYSTEM_PROGRAM).expect("the system program id parses");
+
+    // A SOL invoice: no mint, no token accounts, and `sponsor` is the account
+    // that funds both records, as the program requires.
+    if params.mint.is_none() {
+        let invoice = pda(
+            &[
+                b"payment",
+                params.seller.as_ref(),
+                params.reference.as_ref(),
+                &params.amount.to_le_bytes(),
+            ],
+            &program,
+        );
+        let mut data = discriminator("settle_payment").to_vec();
+        data.extend_from_slice(&params.amount.to_le_bytes());
+        data.extend_from_slice(&(params.memo.len() as u32).to_le_bytes());
+        data.extend_from_slice(params.memo.as_bytes());
+
+        let mut accounts = vec![
+            AccountMeta::new(params.buyer, true),
+            AccountMeta::new(invoice, false),
+            AccountMeta::new(params.seller, false),
+            AccountMeta::new(
+                pda(&[b"payment-receipt", invoice.as_ref()], &program),
+                false,
+            ),
+            AccountMeta::new_readonly(params.reference, false),
+            AccountMeta::new_readonly(config, false),
+            AccountMeta::new(treasury, false),
+            AccountMeta::new_readonly(system, false),
+            AccountMeta::new(*sponsor, true),
+        ];
+        if let Some(shop_policy) = params.shop_policy.as_ref() {
+            accounts.push(AccountMeta::new_readonly(*shop_policy, false));
+        }
+        return Instruction {
+            program_id: program,
+            accounts,
+            data,
+        };
+    }
+
+    let mint = params.mint.expect("checked above");
     let invoice = pda(
         &[
             b"token-payment",
             params.seller.as_ref(),
             params.reference.as_ref(),
-            params.mint.as_ref(),
+            mint.as_ref(),
             &params.amount.to_le_bytes(),
         ],
         &program,
     );
-    let treasury = pda(&[b"treasury"], &program);
-    let config = pda(&[b"config"], &program);
     let token = Pubkey::from_str(TOKEN_PROGRAM).expect("the token program id parses");
 
     let mut data = discriminator("settle_token_payment").to_vec();
@@ -220,9 +280,9 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
         AccountMeta::new(params.buyer, true),
         AccountMeta::new(invoice, false),
         AccountMeta::new(params.seller, false),
-        AccountMeta::new(ata(&params.seller, &params.mint), false),
-        AccountMeta::new(ata(&params.buyer, &params.mint), false),
-        AccountMeta::new_readonly(params.mint, false),
+        AccountMeta::new(ata(&params.seller, &mint), false),
+        AccountMeta::new(ata(&params.buyer, &mint), false),
+        AccountMeta::new_readonly(mint, false),
         AccountMeta::new(
             pda(&[b"payment-receipt", invoice.as_ref()], &program),
             false,
@@ -230,12 +290,9 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
         AccountMeta::new_readonly(params.reference, false),
         AccountMeta::new_readonly(config, false),
         AccountMeta::new(treasury, false),
-        AccountMeta::new(ata(&treasury, &params.mint), false),
+        AccountMeta::new(ata(&treasury, &mint), false),
         AccountMeta::new_readonly(token, false),
-        AccountMeta::new_readonly(
-            Pubkey::from_str(SYSTEM_PROGRAM).expect("the system program id parses"),
-            false,
-        ),
+        AccountMeta::new_readonly(system, false),
         AccountMeta::new(*sponsor, true),
     ];
     // Trailing and read-only, exactly as the program declares it: absent for a
@@ -444,7 +501,7 @@ mod tests {
             buyer: Pubkey::new_from_array([1; 32]),
             seller: Pubkey::new_from_array([2; 32]),
             reference: Pubkey::new_from_array([3; 32]),
-            mint: crate::payments::mint_for("usdc", "devnet").expect("USDC on devnet"),
+            mint: Some(crate::payments::mint_for("usdc", "devnet").expect("USDC on devnet")),
             amount: 4_500_000,
             memo: memo.into(),
             shop_policy: None,
@@ -521,6 +578,42 @@ mod tests {
         assert_eq!(&instruction.data[16..20], &0u32.to_le_bytes());
         assert!(instruction.accounts[0].is_signer);
         assert!(instruction.accounts[13].is_signer);
+    }
+
+    #[test]
+    /// A SOL invoice is settled by `settle_payment`, whose account list is the
+    /// program's — and the relayer, not the buyer, is its fee payer, which is
+    /// what keeps the buyer from needing lamports it does not have.
+    #[test]
+    fn rebuilds_the_sol_settle_message() {
+        let sponsor = Pubkey::new_from_array([9; 32]);
+        let params = Params {
+            mint: None,
+            ..params("coffee")
+        };
+        let message = expected_message(&params, &sponsor, Hash::default()).expect("compiles");
+        let instructions = match &message {
+            VersionedMessage::V0(message) => message.instructions.clone(),
+            other => panic!("unexpected message version: {other:?}"),
+        };
+        assert_eq!(instructions.len(), 1);
+        let instruction = &instructions[0];
+        assert_eq!(instruction.data[..8], discriminator("settle_payment"));
+        assert_eq!(
+            instruction.accounts.len(),
+            9,
+            "payer, invoice, seller, receipt, reference, config, treasury, system, sponsor"
+        );
+        let keys = message.static_account_keys();
+        assert_eq!(keys[0], sponsor, "the relayer is the fee payer");
+        let account = |index: usize| keys[instruction.accounts[index] as usize];
+        assert_eq!(account(0), params.buyer);
+        assert_eq!(account(2), params.seller);
+        assert_eq!(
+            account(8),
+            sponsor,
+            "the sponsor is the account that funds the records"
+        );
     }
 
     #[test]

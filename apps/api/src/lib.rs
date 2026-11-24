@@ -143,6 +143,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/shops/{id}", get(shops::get).patch(shops::update))
         .route("/api/shops/{id}/products", post(shops::create_product))
         .route(
+            "/api/shops/{id}/categories",
+            get(shops::categories).post(shops::add_category),
+        )
+        .route(
+            "/api/shops/{id}/categories/{name}",
+            delete(shops::delete_category),
+        )
+        .route(
             "/api/shops/{id}/products/{product_id}",
             patch(shops::update_product).delete(shops::delete_product),
         )

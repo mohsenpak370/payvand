@@ -41,17 +41,18 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use payvand::constants::{
     BUDGET_SEED, BUDGET_SPACE, CONFIG_SEED, CONFIG_SPACE, CONFIG_SPACE_V1, CONFIG_SPACE_V2,
-    CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MAX_SOL_FEE_LAMPORTS,
-    MAX_TOKEN_FEE_BASE_UNITS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO, PAYMENT_RECEIPT_SEED,
-    PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS,
-    SHOP_POLICY_SEED, SHOP_POLICY_SPACE, TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
+    CONFIG_SPACE_V3, CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MAX_NETWORK_FEE_LAMPORTS,
+    MAX_SOL_FEE_LAMPORTS, MAX_TOKEN_FEE_BASE_UNITS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
+    PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE,
+    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, SHOP_POLICY_SEED, SHOP_POLICY_SPACE,
+    TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
 };
 use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
     TOKEN_PAYMENT_SPACE,
 };
 use payvand::events::{BudgetOpened, ConfigUpdated, PaymentSettled};
-use payvand::helpers::fee_for;
+use payvand::helpers::{fee_for, fee_for_signatures};
 use payvand::state::{
     Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, ShopPolicy,
     TokenBudget, TokenPayment,
@@ -105,6 +106,9 @@ const SHOP_FEE_TOO_HIGH: &str = "Custom(6021)";
 /// `PaymentError::ShopPolicySellerMismatch`: a shop policy recorded under a
 /// seller other than the invoice's.
 const SHOP_POLICY_SELLER_MISMATCH: &str = "Custom(6022)";
+/// `PaymentError::InvalidNetworkFee`: a policy whose network fee is larger than
+/// the program will reimburse.
+const INVALID_NETWORK_FEE: &str = "Custom(6023)";
 /// `PaymentError::BudgetExhausted`: the month's limit, not the pot.
 const BUDGET_EXHAUSTED: &str = "Custom(6005)";
 /// `PaymentError::InsufficientBudget`: the pot cannot cover this one.
@@ -482,6 +486,11 @@ fn test_policy_of(fee_bps: u16, fixed_fee_lamports: u64) -> FeePolicy {
         flat_eurc_base_units: fixed_fee_lamports,
         usdc_mint: usdc_mint(),
         eurc_mint: eurc_mint(),
+        // No network fee: the default suite is about the rate and the rents, and
+        // a test that cares about the fee names one.
+        network_fee_lamports: 0,
+        network_fee_usdc_base_units: 0,
+        network_fee_eurc_base_units: 0,
     }
 }
 
@@ -498,6 +507,9 @@ fn tiered_policy() -> FeePolicy {
         flat_eurc_base_units: 89_400,
         usdc_mint: usdc_mint(),
         eurc_mint: eurc_mint(),
+        network_fee_lamports: 0,
+        network_fee_usdc_base_units: 0,
+        network_fee_eurc_base_units: 0,
     }
 }
 
@@ -684,6 +696,58 @@ fn v1_config_account(
     }
 }
 
+/// `update_config` carrying a whole policy, for the fields the `(rate, flat)`
+/// helper shape cannot express — the network fee above all.
+fn update_config_with_policy_instruction(admin: Pubkey, policy: FeePolicy) -> Instruction {
+    let mut args = Vec::new();
+    policy.serialize(&mut args).expect("the policy serializes");
+    args.push(0); // FeeMode::SellerPays
+    args.extend_from_slice(&TEST_SESSION_FLOAT.to_le_bytes());
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new_readonly(admin, true),
+            AccountMeta::new(config_pda(), false),
+        ],
+        data: instruction_data("update_config", &args),
+    }
+}
+
+/// A version 3 `Config` account: the same layout the suite migrates from, with
+/// the `100`-byte `FeePolicy` that predates the network fee.
+fn v3_config_account(
+    admin: Pubkey,
+    bump: u8,
+    treasury_bump: u8,
+    session_fee_float: u64,
+    policy: &FeePolicy,
+) -> Account {
+    let mut data = Config::DISCRIMINATOR.to_vec();
+    data.extend_from_slice(admin.as_ref());
+    data.extend_from_slice(&policy.fee_bps_below.to_le_bytes());
+    data.extend_from_slice(&policy.fee_bps_above.to_le_bytes());
+    data.extend_from_slice(&policy.sol_tier_lamports.to_le_bytes());
+    data.extend_from_slice(&policy.token_tier_base_units.to_le_bytes());
+    data.extend_from_slice(&policy.flat_usdc_base_units.to_le_bytes());
+    data.extend_from_slice(&policy.flat_eurc_base_units.to_le_bytes());
+    data.extend_from_slice(policy.usdc_mint.as_ref());
+    data.extend_from_slice(policy.eurc_mint.as_ref());
+    data.push(0); // FeeMode::SellerPays
+    data.extend_from_slice(&session_fee_float.to_le_bytes());
+    data.extend_from_slice(&0i64.to_le_bytes()); // flats_updated_at
+    data.push(bump);
+    data.push(treasury_bump);
+    data.push(3); // version
+    assert_eq!(data.len(), CONFIG_SPACE_V3);
+    Account {
+        lamports: Rent::default().minimum_balance(data.len()),
+        data,
+        owner: payvand::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
 fn withdraw_treasury_instruction(admin: Pubkey, amount: u64) -> Instruction {
     Instruction {
         program_id: payvand::id(),
@@ -718,6 +782,23 @@ fn settle_instruction_with_treasury(
     memo: &str,
     treasury: Pubkey,
 ) -> Instruction {
+    settle_instruction_with_sponsor(payer, payer, seller, reference, amount, memo, treasury)
+}
+
+/// `settle_payment` with the two roles split: `payer` pays the price, `sponsor`
+/// advances both records and pays the transaction's fee, and the price repays it
+/// in the same instruction. A relayer settlement is this call with a key the
+/// payer does not hold.
+#[allow(clippy::too_many_arguments)]
+fn settle_instruction_with_sponsor(
+    payer: Pubkey,
+    sponsor: Pubkey,
+    seller: Pubkey,
+    reference: Pubkey,
+    amount: u64,
+    memo: &str,
+    treasury: Pubkey,
+) -> Instruction {
     let invoice = payment_pda(&seller, &reference, amount);
     Instruction {
         program_id: payvand::id(),
@@ -730,6 +811,7 @@ fn settle_instruction_with_treasury(
             AccountMeta::new_readonly(config_pda(), false),
             AccountMeta::new(treasury, false),
             AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+            AccountMeta::new(sponsor, true),
         ],
         data: instruction_data("settle_payment", &amount_and_memo(amount, memo)),
     }
@@ -1475,6 +1557,157 @@ async fn settle_payment_writes_a_receipt_and_closes_the_invoice() {
     // the receipt.
     let treasury_delta = lamports(&context, treasury_pda()).await as i128 - treasury_before as i128;
     assert_eq!(treasury_delta, fee(amount) as i128);
+}
+
+/// What the bank charges for one signature, and therefore what a policy names as
+/// `network_fee_lamports`: the per-signature cost, not the settle's total.
+const SOL_SIGNATURE_FEE: u64 = 5_000;
+/// A sponsored settle carries two signatures — the payer's and the relayer's —
+/// so the seller is charged, and the relayer refunded, twice one signature.
+const SPONSORED_SOL_FEE: u64 = 2 * SOL_SIGNATURE_FEE;
+
+/// The small-payment half of the model on the SOL path: the payer spends the
+/// price and not one lamport more, the sponsor gets back both rents and the
+/// signature it paid, and a payment too small for the percentage to cover those
+/// costs charges the seller exactly those costs — the platform keeps nothing.
+#[tokio::test]
+async fn a_small_sol_settle_charges_only_the_rent_and_the_network_fee() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        0,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let mut policy = test_policy_of(TEST_FEE_BPS, 0);
+    policy.network_fee_lamports = SOL_SIGNATURE_FEE;
+    send(
+        &mut context,
+        &[update_config_with_policy_instruction(
+            admin.pubkey(),
+            policy,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    // 2% of this is 80,000, well below the 1,224,960 + 10,000 the costs come to.
+    let amount = 4_000_000;
+    // A payer holding the price and nothing else: no rent, no fee, no float.
+    let buyer = Keypair::new();
+    context.set_account(&buyer.pubkey(), &system_account(amount).into());
+    let seller = Keypair::new().pubkey();
+    let relayer = context.payer.pubkey();
+    let relayer_before = lamports(&context, relayer).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+
+    send(
+        &mut context,
+        &[settle_instruction_with_sponsor(
+            buyer.pubkey(),
+            relayer,
+            seller,
+            Keypair::new().pubkey(),
+            amount,
+            "coffee",
+            treasury_pda(),
+        )],
+        &[&buyer],
+    )
+    .await
+    .expect("a sponsored SOL settle should succeed");
+
+    assert_eq!(
+        lamports(&context, buyer.pubkey()).await,
+        0,
+        "the payer must need no lamports beyond the price"
+    );
+    // The rent is paid, the fee is covered, and no percentage was charged.
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - receipt_rent() - SPONSORED_SOL_FEE
+    );
+    assert_eq!(
+        lamports(&context, treasury_pda()).await as i128 - treasury_before as i128,
+        0,
+        "the platform keeps nothing on a small payment"
+    );
+    // The relayer paid two signatures and got exactly that back out of the
+    // price, plus both rents it advanced: its net cost is zero.
+    assert_eq!(lamports(&context, relayer).await, relayer_before);
+}
+
+/// The large-payment half: when the percentage is larger than the costs, the
+/// seller pays exactly the percentage, the sponsor is still made whole, and the
+/// platform keeps the percentage less the two costs it covered.
+#[tokio::test]
+async fn a_large_sol_settle_charges_only_the_platform_fee() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        0,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+    let mut policy = test_policy_of(TEST_FEE_BPS, 0);
+    policy.network_fee_lamports = SOL_SIGNATURE_FEE;
+    send(
+        &mut context,
+        &[update_config_with_policy_instruction(
+            admin.pubkey(),
+            policy,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    let amount = LAMPORTS_PER_SOL / 10;
+    let buyer = Keypair::new();
+    context.set_account(&buyer.pubkey(), &system_account(amount).into());
+    let seller = Keypair::new().pubkey();
+    let relayer = context.payer.pubkey();
+    let relayer_before = lamports(&context, relayer).await;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+    let rate = amount * TEST_FEE_BPS as u64 / 10_000;
+
+    send(
+        &mut context,
+        &[settle_instruction_with_sponsor(
+            buyer.pubkey(),
+            relayer,
+            seller,
+            Keypair::new().pubkey(),
+            amount,
+            "a big sale",
+            treasury_pda(),
+        )],
+        &[&buyer],
+    )
+    .await
+    .expect("a sponsored SOL settle should succeed");
+
+    assert_eq!(
+        lamports(&context, buyer.pubkey()).await,
+        0,
+        "the payer must need no lamports beyond the price"
+    );
+    assert_eq!(
+        lamports(&context, seller).await,
+        amount - rate,
+        "the seller's bill is the percentage, rent and fee included"
+    );
+    assert_eq!(
+        lamports(&context, treasury_pda()).await as i128 - treasury_before as i128,
+        (rate - receipt_rent() - SPONSORED_SOL_FEE) as i128,
+        "the platform keeps the percentage less the costs it covered"
+    );
+    assert_eq!(lamports(&context, relayer).await, relayer_before);
 }
 
 /// Task 3.1's zero-fee rule on the SOL wallet path: at 0% the settlement runs one
@@ -2487,6 +2720,94 @@ fn the_tier_boundary_is_marginal() {
     );
 }
 
+/// The token floor is the record's rent **plus the network fee**: a payment too
+/// small for the percentage to cover both is charged exactly those costs, one
+/// large enough for the percentage to cover them is charged the percentage, and
+/// the SOL paths are untouched until a relayer pays their fee.
+#[test]
+fn the_token_floor_is_the_record_rent_plus_the_network_fee() {
+    let mut policy = test_policy_of(200, 89_400);
+    policy.network_fee_lamports = 5_000;
+    policy.network_fee_usdc_base_units = 2_000;
+    policy.network_fee_eurc_base_units = 1_800;
+    let config = config_with_policy(policy);
+
+    // 2% of 1,000,000 is 20,000, below the 89,400 + 2,000 the record and the fee
+    // cost, so the seller pays the costs and the protocol takes nothing.
+    assert_eq!(
+        fee_for(&config, 1_000_000, Some(&usdc_mint()), 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        91_400
+    );
+    // The EURC pair is its own: the same rent, its own fee.
+    assert_eq!(
+        fee_for(&config, 1_000_000, Some(&eurc_mint()), 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        91_200
+    );
+    // Ten units of the stablecoin: 2% is 200,000, above the floor, so the seller
+    // pays the percentage and the costs come out of it.
+    assert_eq!(
+        fee_for(
+            &config,
+            10_000_000,
+            Some(&usdc_mint()),
+            0,
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        200_000
+    );
+    // The SOL path's two costs are both lamports: the marker's rent comes off the
+    // percentage and the network fee floors what is left.
+    assert_eq!(
+        fee_for(&config, 10_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        200_000
+    );
+    // With a rent the percentage cannot cover, the SOL fee is the network fee
+    // alone: the seller pays that plus the rent, and no percentage.
+    let mut sol_policy = test_policy_of(200, 89_400);
+    sol_policy.network_fee_lamports = 5_000;
+    let sol_config = config_with_policy(sol_policy);
+    assert_eq!(
+        fee_for(
+            &sol_config,
+            1_000_000,
+            None,
+            receipt_rent(),
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        5_000,
+        "below the costs, the seller pays the network fee and no percentage"
+    );
+    // With a percentage that covers them, the fee is the percentage less the
+    // marker's rent, and the platform keeps what the network fee leaves.
+    assert_eq!(
+        fee_for(
+            &sol_config,
+            LAMPORTS_PER_SOL / 10,
+            None,
+            receipt_rent(),
+            SHOP_FEE_BASE_BPS
+        )
+        .expect("fits"),
+        2_000_000 - receipt_rent()
+    );
+    // The policy names one signature, and a sponsored settle costs two: the
+    // floor a relayer settlement charges (and refunds) is doubled, not guessed.
+    assert_eq!(
+        fee_for_signatures(
+            &sol_config,
+            1_000_000,
+            None,
+            receipt_rent(),
+            SHOP_FEE_BASE_BPS,
+            2
+        )
+        .expect("fits"),
+        2 * 5_000
+    );
+}
+
 /// `migrate_config` upgrades the live version 1 account in place: the layout
 /// grows from 62 to 160 bytes, the fields that outlive it are carried over, and
 /// the admin pays only the rent the taller account now needs.
@@ -2571,6 +2892,14 @@ async fn migrate_config_upgrades_the_v1_layout_in_place() {
     );
     assert_eq!(migrated.policy.flat_usdc_base_units, 0);
     assert_eq!(migrated.policy.flat_eurc_base_units, 0);
+    assert_eq!(
+        migrated.policy.network_fee_usdc_base_units, 0,
+        "the fee's token equivalents are priced, not migrated"
+    );
+    assert_eq!(
+        migrated.policy.network_fee_lamports, policy.network_fee_lamports,
+        "what a signature costs is policy, not a price, so it is carried over"
+    );
     assert_eq!(migrated.fee_mode, FeeMode::SellerPays);
     assert_eq!(migrated.session_fee_float, 30_000_000);
     assert_eq!(migrated.flats_updated_at, 0, "no cooldown after migrating");
@@ -2645,6 +2974,81 @@ async fn migrate_config_upgrades_the_v1_layout_in_place() {
     );
 }
 
+/// A live version 3 config migrates to version 4: the layout grows by the
+/// network fee, the rate the admin passes is installed, and the four
+/// price-derived fields wait for the anchor that prices them.
+#[tokio::test]
+async fn migrate_config_upgrades_the_v3_layout_and_keeps_its_network_fee() {
+    let mut test = program_test();
+    let admin = Keypair::new();
+    test.add_account(admin.pubkey(), system_account(LAMPORTS_PER_SOL / 10));
+    test.add_account(treasury_pda(), system_account(TREASURY_LAMPORTS));
+    let mut context = test.start_with_context().await;
+
+    let (address, bump) = Pubkey::find_program_address(&[CONFIG_SEED], &payvand::id());
+    let old = tiered_policy();
+    context.set_account(
+        &address,
+        &v3_config_account(admin.pubkey(), bump, 254, 30_000_000, &old).into(),
+    );
+
+    // The admin names the network fee the new layout carries; the price-derived
+    // fields it passes are ignored.
+    let mut policy = tiered_policy();
+    policy.network_fee_lamports = 5_000;
+    policy.network_fee_usdc_base_units = 999_999;
+    policy.network_fee_eurc_base_units = 999_999;
+
+    send(
+        &mut context,
+        &[migrate_config_instruction(admin.pubkey(), policy)],
+        &[&admin],
+    )
+    .await
+    .expect("a version 3 config should migrate");
+
+    let migrated = account(&context, address)
+        .await
+        .expect("config account missing");
+    assert_eq!(migrated.data.len(), CONFIG_SPACE);
+    let migrated = config(&context, address).await;
+    assert_eq!(migrated.version, CONFIG_VERSION);
+    assert_eq!(migrated.policy.fee_bps_below, policy.fee_bps_below);
+    assert_eq!(migrated.policy.network_fee_lamports, 5_000);
+    assert_eq!(migrated.policy.network_fee_usdc_base_units, 0);
+    assert_eq!(migrated.policy.network_fee_eurc_base_units, 0);
+    assert_eq!(migrated.session_fee_float, 30_000_000);
+    assert_eq!(migrated.bump, bump);
+
+    // The anchor prices the network fee's token equivalents beside the flats,
+    // from the same SOL price.
+    let rent = receipt_rent();
+    send(
+        &mut context,
+        &[set_fee_price_anchor_instruction(
+            admin.pubkey(),
+            67_000_000,
+            62_000_000,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("the admin anchors the price");
+    let pegged = config(&context, address).await;
+    assert_eq!(
+        pegged.policy.flat_usdc_base_units,
+        flat_at(rent, 67_000_000)
+    );
+    assert_eq!(
+        pegged.policy.network_fee_usdc_base_units,
+        flat_at(5_000, 67_000_000)
+    );
+    assert_eq!(
+        pegged.policy.network_fee_eurc_base_units,
+        flat_at(5_000, 62_000_000)
+    );
+}
+
 /// The token flats track the cluster's rent and a live SOL price, and the call
 /// that rewrites them is bounded by a band measured from the admin's anchor and
 /// a cooldown.
@@ -2716,6 +3120,10 @@ async fn refresh_fee_price_repegs_the_flats_within_its_bounds() {
     let refreshed = config(&context, config_pda()).await;
     assert_eq!(refreshed.policy.flat_usdc_base_units, flat_at(rent, usd));
     assert_eq!(refreshed.policy.flat_eurc_base_units, flat_at(rent, eur));
+    // A zero network fee is priced at zero in both currencies, which is what the
+    // default suite settles at.
+    assert_eq!(refreshed.policy.network_fee_usdc_base_units, 0);
+    assert_eq!(refreshed.policy.network_fee_eurc_base_units, 0);
     assert_eq!(
         refreshed.policy.flat_eurc_base_units, 75_947,
         "the rent at EUR 62 in six-decimal units"
@@ -3629,13 +4037,17 @@ fn account_spaces_match_the_sizes_used_by_the_program() {
     assert_eq!(PAYMENT_RECEIPT_SPACE, 48);
 
     // admin, the policy (two rates, their two boundaries, the two per-currency
-    // flats and the two mints they apply to), fee_mode, session_fee_float,
-    // flats_updated_at, bump, treasury_bump, version.
+    // flats, the two mints they apply to and the network fee in lamports and in
+    // each token), fee_mode, session_fee_float, flats_updated_at, bump,
+    // treasury_bump, version.
     assert_eq!(
         CONFIG_SPACE,
-        8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32) + 1 + 8 + 8 + 1 + 1 + 1
+        8 + 32 + (2 + 2 + 8 + 8 + 8 + 8 + 32 + 32 + 8 + 8 + 8) + 1 + 8 + 8 + 1 + 1 + 1
     );
-    assert_eq!(CONFIG_SPACE, 160);
+    assert_eq!(CONFIG_SPACE, 184);
+    // The version 3 layout `migrate_config` upgrades from: the same account
+    // without the network fee.
+    assert_eq!(CONFIG_SPACE_V3, 160);
     // The version 2 layout `migrate_config` upgrades from: the same account
     // without the refresh cooldown.
     assert_eq!(CONFIG_SPACE_V2, 152);
@@ -3941,6 +4353,133 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
         lamports(&context, treasury_pda()).await,
         treasury_before - receipt_rent()
     );
+}
+
+/// The token seller's floor is the record's rent **and** the network fee, and the
+/// sponsor is refunded the fee it paid as well as both rents it advanced — so the
+/// seller ends up paying what the settlement cost us, and the payer nothing.
+#[tokio::test]
+async fn a_token_settle_charges_the_network_fee_to_the_seller() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // A policy that names both costs: 89,400 base units of record rent and 2,000
+    // of network fee in USDC, against 5,000 lamports actually spent.
+    let mut policy = test_policy_of(TEST_FEE_BPS, 89_400);
+    // The world's mint is the one this policy prices in USDC, so its flat and the
+    // fee's USDC equivalent apply to the invoice below.
+    policy.usdc_mint = world.mint;
+    policy.network_fee_lamports = 5_000;
+    policy.network_fee_usdc_base_units = 2_000;
+    send(
+        &mut context,
+        &[update_config_with_policy_instruction(
+            world.admin.pubkey(),
+            policy,
+        )],
+        &[&world.admin],
+    )
+    .await
+    .expect("update_config failed");
+
+    let seller = Keypair::new().pubkey();
+    let seller_token_account = associated_token_address(seller, world.mint);
+    context.set_account(
+        &seller_token_account,
+        &spl_token_account(world.mint, seller, 0).into(),
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    // 2% of 700,000 is 14,000, below the 91,400 the record and the fee cost.
+    let fee_t = 91_400;
+    let treasury_before = lamports(&context, treasury_pda()).await;
+    let buyer_before = lamports(&context, world.buyer.pubkey()).await;
+
+    // The buyer pays the transaction's own fee here, as the sponsor does on the
+    // wallettess path; the pool's refund makes it whole.
+    send_with_fee_payer(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "spl",
+        )],
+        &world.buyer,
+    )
+    .await
+    .expect("settle_token_payment failed");
+
+    assert_eq!(
+        token_balance(&context, seller_token_account).await,
+        amount - fee_t
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        fee_t
+    );
+    // The seller bore the record and the fee; the payer's 5,000-lamport
+    // transaction fee came back with the refund, so it paid the price only.
+    assert_eq!(lamports(&context, world.buyer.pubkey()).await, buyer_before);
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - receipt_rent() - 5_000,
+        "the pool keeps the record's rent and pays out the network fee"
+    );
+}
+
+/// A policy whose network fee is beyond what the program will reimburse is
+/// refused when it is written, so a settlement never has to find out.
+#[tokio::test]
+async fn update_config_refuses_an_implausible_network_fee() {
+    let (mut context, admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[],
+    )
+    .await;
+
+    let mut policy = test_policy_of(TEST_FEE_BPS, 0);
+    policy.network_fee_lamports = MAX_NETWORK_FEE_LAMPORTS + 1;
+    let attempt = send(
+        &mut context,
+        &[update_config_with_policy_instruction(
+            admin.pubkey(),
+            policy.clone(),
+        )],
+        &[&admin],
+    )
+    .await;
+    let error = attempt.expect_err("an absurd network fee must be refused");
+    assert!(
+        error.contains(INVALID_NETWORK_FEE),
+        "expected {INVALID_NETWORK_FEE}, got {error}"
+    );
+
+    // The same policy with a real fee is accepted.
+    let mut policy = policy;
+    policy.network_fee_lamports = 5_000;
+    send(
+        &mut context,
+        &[update_config_with_policy_instruction(
+            admin.pubkey(),
+            policy,
+        )],
+        &[&admin],
+    )
+    .await
+    .expect("a plausible network fee should be accepted");
+    let stored = config(&context, config_pda()).await;
+    assert_eq!(stored.policy.network_fee_lamports, 5_000);
 }
 
 /// The gasless case: a wallet that holds only the token has never had a lamport,
