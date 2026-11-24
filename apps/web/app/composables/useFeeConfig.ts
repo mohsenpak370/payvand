@@ -31,16 +31,17 @@ export interface FeeConfig extends FeePolicy {
 }
 
 /**
- * `CONFIG_SPACE` from the program: 8 (discriminator) + 32 (admin) + 100 (the
- * `FeePolicy`: two rates, their two boundaries, the two per-currency flats and
- * the two mints) + 1 (fee_mode) + 8 (session_fee_float) + 8 (flats_updated_at)
- * + 1 (bump) + 1 (treasury_bump) + 1 (version).
+ * `CONFIG_SPACE` from the program: 8 (discriminator) + 32 (admin) + 124 (the
+ * `FeePolicy`: two rates, their two boundaries, the two per-currency flats, the
+ * two mints, and the network fee in lamports and in each token) + 1 (fee_mode)
+ * + 8 (session_fee_float) + 8 (flats_updated_at) + 1 (bump) + 1
+ * (treasury_bump) + 1 (version).
  *
- * The flats read here are the record's rent at the SOL price the last
- * `refresh_fee_price` wrote, which is why a quote is only as stale as the last
- * refresh and not as stale as the last policy change.
+ * The flats and the fee's token equivalents are read here at the SOL price the
+ * last `refresh_fee_price` wrote, which is why a quote is only as stale as the
+ * last refresh and not as stale as the last policy change.
  */
-const CONFIG_SIZE = 160
+const CONFIG_SIZE = 184
 
 /**
  * How long a read stays fresh. Long enough that a checkout does not re-read the
@@ -120,8 +121,11 @@ export function useFeeConfig() {
       flatEurcBaseUnits: Number(view.getBigUint64(68, true)),
       usdcMint: addressAt(76),
       eurcMint: addressAt(108),
-      feeMode: bytes[140] === 1 ? 'buyer' : 'seller',
-      sessionFeeFloat: Number(view.getBigUint64(141, true))
+      networkFeeLamports: Number(view.getBigUint64(140, true)),
+      networkFeeUsdcBaseUnits: Number(view.getBigUint64(148, true)),
+      networkFeeEurcBaseUnits: Number(view.getBigUint64(156, true)),
+      feeMode: bytes[164] === 1 ? 'buyer' : 'seller',
+      sessionFeeFloat: Number(view.getBigUint64(165, true))
     }
 
     cache = { readAt: Date.now(), config }
@@ -162,12 +166,14 @@ export function useInvoiceCosts() {
   /**
    * Costs for paying `amount` in `currency`. `mint` and `seller` are optional
    * and only used to tell whether a token payment would have to create the
-   * seller's token account.
+   * seller's token account. `signatures` says how many signatures the path
+   * being quoted will carry — 2 when a relayer signs as fee payer, 1 when the
+   * wallet sponsors itself — because the policy's network fee is per signature.
    */
   async function estimateInvoiceCosts(
     amount: number,
     currency: SupportedCurrency = 'sol',
-    options: { mint?: string, seller?: Address } = {}
+    options: { mint?: string, seller?: Address, signatures?: 1 | 2 } = {}
   ): Promise<InvoiceCosts> {
     const policy = await feeConfig.load()
     const isToken = currency !== 'sol'
@@ -202,7 +208,8 @@ export function useInvoiceCosts() {
       invoiceRent,
       receiptRent,
       sellerTokenAccountRent,
-      treasuryTokenAccountMissing
+      treasuryTokenAccountMissing,
+      signatures: options.signatures
     })
   }
 

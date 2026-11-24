@@ -85,7 +85,13 @@ export default defineNuxtConfig({
     // The allowance card reads the chain through the client-only Solana
     // plugin (useSolanaClient throws during SSR) and the session itself
     // lives in localStorage — there is nothing to render on the server.
-    '/profile': { ssr: false }
+    '/profile': { ssr: false },
+    // The shops pages are the same purchase and catalogue as the profile: the
+    // subscription card reads a budget through `useSolanaClient`, and the
+    // shop's payment page prices an invoice from the chain. Rendered on the
+    // server they throw "Vue Solana plugin is not installed" and answer 500.
+    '/shops': { ssr: false },
+    '/shops/**': { ssr: false }
   },
 
   // Listen on every interface so a phone on the same network can open the
@@ -151,6 +157,13 @@ export default defineNuxtConfig({
       // pages and /sell.
       '/api/shops': {
         target: 'http://127.0.0.1:8787/api/shops',
+        changeOrigin: true
+      },
+      // The shops subscription read by /shops: without this the card's status
+      // request fell through to Nitro and came back 404, so the page could not
+      // be seen working against the local API at all.
+      '/api/subscription': {
+        target: 'http://127.0.0.1:8787/api/subscription',
         changeOrigin: true
       },
       '/api/health': {

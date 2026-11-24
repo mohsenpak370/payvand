@@ -29,7 +29,8 @@ function settleAccounts() {
     reference,
     config: elsewhere,
     treasury: elsewhere,
-    system_program: address('11111111111111111111111111111111')
+    system_program: address('11111111111111111111111111111111'),
+    sponsor: payer
   }
 }
 
@@ -37,8 +38,10 @@ describe('buildInstruction', () => {
   it('ends the account list at the optional shop policy', () => {
     const instruction = buildInstruction('settle_payment', { amount: 1, memo: '' }, settleAccounts())
 
-    expect(instruction.accounts).toHaveLength(8)
-    expect(instruction.accounts!.at(-1)?.address).toBe(settleAccounts().system_program)
+    // v4 puts the required sponsor before the optional shop policy, so a settle
+    // with no shop names nine accounts and stops at the sponsor.
+    expect(instruction.accounts).toHaveLength(9)
+    expect(instruction.accounts!.at(-1)?.address).toBe(settleAccounts().sponsor)
   })
 
   it('adds it when the shop has one', () => {
@@ -49,7 +52,7 @@ describe('buildInstruction', () => {
       { ...settleAccounts(), shop_policy: shopPolicy }
     )
 
-    expect(instruction.accounts).toHaveLength(9)
+    expect(instruction.accounts).toHaveLength(10)
     expect(instruction.accounts!.at(-1)).toEqual({
       address: shopPolicy,
       role: AccountRole.READONLY

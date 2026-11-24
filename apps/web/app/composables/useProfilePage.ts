@@ -1,10 +1,9 @@
 import { useProfileAllowance } from './useProfileAllowance'
-import { useProfileSavedPayments } from './useProfileSavedPayments'
 import { useProfileTransactions } from './useProfileTransactions'
 import { useProfileWallet } from './useProfileWallet'
 
 /**
- * The profile page's four cards, wired once.
+ * The profile page's cards, wired once.
  *
  * This function only coordinates: it owns the linked wallet the other cards
  * follow, passes the history refresh to the wallet actions that change it, and
@@ -13,7 +12,6 @@ import { useProfileWallet } from './useProfileWallet'
  */
 export function useProfilePage() {
   const { user, myTransactions } = useAuth()
-  const { shopsEnabled } = useShopPreference()
   const linkedWallet = computed(() => user.value?.wallet ?? null)
 
   const transactions = useProfileTransactions({ linkedWallet, myTransactions })
@@ -25,14 +23,11 @@ export function useProfilePage() {
     linkedWallet,
     publicKey: wallet.publicKey
   })
-  const saved = useProfileSavedPayments({ shopsEnabled })
 
   return {
     user,
-    shopsEnabled,
     ...wallet,
     ...allowance,
-    ...transactions,
-    ...saved
+    ...transactions
   }
 }

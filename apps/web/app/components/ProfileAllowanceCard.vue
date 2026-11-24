@@ -96,8 +96,24 @@ function rowAmount(currency: ProfileAllowanceRow['currency'], amount: number): s
         />
       </div>
 
-      <!-- The status: one row per currency, then the total in fiat. -->
+      <!-- The status: the total in fiat, then one row per currency. -->
       <template v-else>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-col">
+            <span class="text-sm text-muted">{{ $t('profile.totalThisMonth') }}</span>
+            <span class="text-lg font-semibold tabular-nums">
+              {{ totalFiat === null ? '—' : formatFiat(totalFiat, displayCurrency) }}
+            </span>
+          </div>
+          <UButton
+            :label="$t('profile.manageAllowance')"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            to="/budget"
+          />
+        </div>
+
         <div class="grid gap-3 sm:grid-cols-3">
           <div
             v-for="row in rows"
@@ -132,22 +148,6 @@ function rowAmount(currency: ProfileAllowanceRow['currency'], amount: number): s
               {{ $t('profile.potLine', { amount: rowAmount(row.currency, row.pot) }) }}
             </span>
           </div>
-        </div>
-
-        <div class="border-default flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <div class="flex min-w-0 flex-col">
-            <span class="text-sm text-muted">{{ $t('profile.totalThisMonth') }}</span>
-            <span class="text-lg font-semibold tabular-nums">
-              {{ totalFiat === null ? '—' : formatFiat(totalFiat, displayCurrency) }}
-            </span>
-          </div>
-          <UButton
-            :label="$t('profile.manageAllowance')"
-            color="neutral"
-            variant="soft"
-            size="sm"
-            to="/budget"
-          />
         </div>
       </template>
     </div>

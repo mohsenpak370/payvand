@@ -81,7 +81,8 @@ const guides = computed(() => [
               color="neutral"
               variant="soft"
               size="sm"
-              class="self-start"
+              :ui="{ label: 'min-w-0 truncate' }"
+              class="max-w-full self-start"
             />
           </div>
         </UCard>
@@ -142,7 +143,8 @@ const guides = computed(() => [
           color="neutral"
           variant="soft"
           block
-          class="justify-start"
+          :ui="{ label: 'min-w-0 truncate' }"
+          class="min-w-0 justify-start"
         />
       </div>
     </UPageSection>

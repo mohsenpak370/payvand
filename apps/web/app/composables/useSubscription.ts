@@ -82,15 +82,26 @@ export function useSubscription() {
     }
   }
 
-  function takePending(): string {
+  /**
+   * The payment this browser is still waiting on, without consuming it. The id
+   * is only forgotten once the API has recorded the period: a confirm that runs
+   * before the cluster has finalized the payment must not lose the invoice.
+   */
+  function peekPending(): string {
     try {
-      const id = localStorage.getItem(PENDING_SUBSCRIPTION_KEY) ?? ''
-      if (id) localStorage.removeItem(PENDING_SUBSCRIPTION_KEY)
-      return id
+      return localStorage.getItem(PENDING_SUBSCRIPTION_KEY) ?? ''
     } catch {
       return ''
     }
   }
 
-  return { status, startPayment, confirm, rememberPending, takePending }
+  function clearPending(): void {
+    try {
+      localStorage.removeItem(PENDING_SUBSCRIPTION_KEY)
+    } catch {
+      // Nothing to forget in a browser without storage.
+    }
+  }
+
+  return { status, startPayment, confirm, rememberPending, peekPending, clearPending }
 }

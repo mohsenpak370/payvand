@@ -75,6 +75,8 @@ export interface SponsoredSettleInput {
   buyer: string
   seller: string
   reference: string
+  /** The invoice's mint; empty for a SOL invoice, which the relayer settles
+   * with `settle_payment`. */
   mint: string
   amount: number
   memo: string
@@ -477,8 +479,9 @@ export function usePaymentApi() {
 
   /**
    * Whether a relayer will pay this payment's network fee and its two record
-   * rents, and the address to name as the fee payer when it will. A wallet with
-   * enough SOL never asks, so the funded path stays exactly as it was.
+   * rents, and the address to name as the fee payer when it will. Every token
+   * payment asks: Payvand's fee covers the network fee, so the payer needs no
+   * SOL of their own.
    */
   async function getSponsor(): Promise<SponsorInfo> {
     return await $fetch(`${base}/api/sponsor`, { headers: authHeaders() })

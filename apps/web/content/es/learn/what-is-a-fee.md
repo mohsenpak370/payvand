@@ -1,6 +1,6 @@
 ---
 title: Por qué cada pago cuesta una fracción de céntimo
-description: Quién cobra la comisión, por qué necesitas un poco de SOL aunque pagues en dólares y por qué un pago fallido cuesta algo de todas formas.
+description: Quién cobra la comisión, por qué el precio del código es el coste completo y por qué un pago fallido cuesta algo de todas formas.
 category: basics
 order: 6
 ---
@@ -21,16 +21,24 @@ Una comisión cripto es distinta en dos cosas:
 
 - **Es plana.** Pagar 2 o pagar 2.000 cuesta la misma cantidad minúscula, porque el trabajo es el
   mismo.
-- **La paga quien paga, y el comercio recibe el importe completo.** Sin alquiler de datáfono, sin
-  contrato mensual y sin nada descontado de la venta.
+- **La paga el vendedor, con cargo al precio.** Sin alquiler de datáfono, sin contrato mensual y sin
+  nada añadido: quien paga entrega exactamente el precio del código, y la comisión de red y la renta
+  del recibo salen de la parte del vendedor.
 
-## Por qué necesitas un poco de SOL aunque pagues en USDC
+## Por qué no necesitas nada de SOL aunque pagues en USDC
 
 La comisión se paga siempre en la moneda propia de la red, en SOL. Piénsalo como el sello: la carta
 puede llevar dólares, pero el sello tiene que ser del servicio postal.
 
-Es la parte un poco incómoda del principio: una cartera llena de USDC y con cero SOL no puede mover
-nada. Ten un poco de SOL en la cartera con la que pagas y no volverás a pensarlo.
+Comprar ese sello no tiene por qué correr de tu cuenta. El relé de Payvand paga la comisión de red y
+adelanta las pequeñas rentas del pago y de su recibo en la cadena, y la misma transacción se las
+devuelve con cargo al precio. Una cartera llena de USDC y con cero SOL puede pagar, y su saldo baja
+exactamente el precio.
+
+La comisión se cuenta por firma: una liquidación lleva una cuando la cartera paga por su cuenta y dos
+cuando la envía un relé. El precio se cobra por exactamente ese número de firmas, así que un relé
+nunca se queda con más de lo que gastó. Solo cuando ningún relé acepta el pago adelanta la cartera
+esos costes, y la misma transacción se los devuelve.
 
 ## Cuando la red está cargada
 
@@ -52,7 +60,8 @@ vez, y por eso abrir un presupuesto cuesta algo más que el propio límite.
 
 ## Qué significa para ti
 
-Las comisiones no son algo que preocuparte ni presupuestar. Ten un poco de SOL en la cartera con la que
-pagas y el coste de un pago sigue siendo tan pequeño que es más fácil ignorarlo que calcularlo.
+Las comisiones no son algo que preocuparte ni presupuestar. El precio del código es el coste
+completo: la comisión de red y la renta del recibo ya están dentro, y siguen siendo tan pequeños que
+es más fácil ignorarlos que calcularlos.
 
 La comisión de red es solo la parte más pequeña de lo que cuesta un pago. A dónde va el resto — la parte del protocolo, el recibo permanente en la cadena y los gastos que mantienen el servicio — está en [lo que cuesta un pago](/learn/what-a-payment-costs).

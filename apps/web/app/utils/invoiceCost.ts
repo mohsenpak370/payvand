@@ -31,6 +31,14 @@ export const TOKEN_ACCOUNT_SPACE = 165
 export const NETWORK_FEE_LAMPORTS = 10_000
 
 /**
+ * What the bank charges for one signature. The policy's `network_fee_lamports`
+ * is meant to cover it, but a policy that names no network fee still costs a
+ * self-sponsored payer this much and refunds nothing, so the preflight floors at
+ * it rather than letting the transaction fail after the buyer approved it.
+ */
+export const BASE_SIGNATURE_FEE_LAMPORTS = 5_000
+
+/**
  * `MAX_SOL_FEE_LAMPORTS`: the most a percentage fee may cost on a SOL invoice —
  * 0.1 SOL. A large payment pays this instead of a slice of itself that keeps
  * growing with the price.
@@ -66,6 +74,16 @@ export interface FeePolicy {
   usdcMint: string
   /** The mint `flatEurcBaseUnits` applies to. */
   eurcMint: string
+  /**
+   * The network fee a settlement pays, in lamports: what the sponsor is repaid
+   * out of the price. Optional so a policy written before the field existed
+   * reads as zero.
+   */
+  networkFeeLamports?: number
+  /** The same fee in USDC base units, priced with the flat. */
+  networkFeeUsdcBaseUnits?: number
+  /** The same fee in EURC base units. */
+  networkFeeEurcBaseUnits?: number
   /** `buyer` charges the fee on top of the price; `seller` takes it out. */
   feeMode: 'seller' | 'buyer'
 }
@@ -107,8 +125,15 @@ export interface InvoiceCosts {
    * the treasury funds that one.
    */
   receiptRent: number
-  /** Lamports: the network fee estimate. */
+  /** Lamports: the network fee this path charges the seller and refunds. */
   networkFee: number
+  /**
+   * Lamports a sponsor must hold for this path's signature: the policy's refund
+   * when it prices the network, otherwise the bank's base cost. The checkout's
+   * refusal compares the wallet's balance against this, so it has to be the same
+   * figure the settlement charges and refunds.
+   */
+  sponsorshipFee: number
   /** Lamports: the seller's token account rent, only when it has to be made. */
   sellerTokenAccountRent: number
   /**
@@ -129,23 +154,28 @@ export interface InvoiceCosts {
 function tierFor(
   policy: FeePolicy,
   mint?: string
-): { boundary: number, bpsBelow: number, bpsAbove: number, flat: number } {
+): { boundary: number, bpsBelow: number, bpsAbove: number, flat: number, network: number } {
   if (!mint) {
     return {
       boundary: policy.solTierLamports,
       bpsBelow: policy.feeBpsBelow,
       bpsAbove: policy.feeBpsAbove,
-      flat: 0
+      flat: 0,
+      network: Math.max(0, Math.trunc(policy.networkFeeLamports ?? 0))
     }
   }
   const flat = mint === policy.usdcMint
     ? policy.flatUsdcBaseUnits
     : mint === policy.eurcMint ? policy.flatEurcBaseUnits : 0
+  const network = mint === policy.usdcMint
+    ? policy.networkFeeUsdcBaseUnits ?? 0
+    : mint === policy.eurcMint ? policy.networkFeeEurcBaseUnits ?? 0 : 0
   return {
     boundary: policy.tokenTierBaseUnits,
     bpsBelow: policy.feeBpsBelow,
     bpsAbove: policy.feeBpsAbove,
-    flat
+    flat,
+    network: Math.max(0, Math.trunc(network))
   }
 }
 
@@ -179,9 +209,10 @@ export function feeOn(
   policy: FeePolicy,
   amount: number,
   mint: string | undefined,
-  receiptRent: number
+  receiptRent: number,
+  signatures = 1
 ): number {
-  return feeCalculation(policy, amount, mint, receiptRent).fee
+  return feeCalculation(policy, amount, mint, receiptRent, signatures).fee
 }
 
 /**
@@ -193,7 +224,8 @@ function feeCalculation(
   policy: FeePolicy,
   amount: number,
   mint: string | undefined,
-  receiptRent: number
+  receiptRent: number,
+  signatures = 1
 ): { fee: number, capped: boolean } {
   // The chain holds whole base units, and a price can reach here with a
   // fraction on it (a typed amount times decimals, a percentage). Truncating
@@ -203,18 +235,26 @@ function feeCalculation(
   const units = Math.trunc(amount)
   if (!Number.isFinite(units) || units <= 0) return { fee: 0, capped: false }
 
-  const { boundary, bpsBelow, bpsAbove, flat } = tierFor(policy, mint)
+  const tier = tierFor(policy, mint)
+  const { boundary, bpsBelow, bpsAbove, flat } = tier
+  // The policy names one signature; a sponsored settle carries two (the payer's
+  // and the relayer's) and a self-sponsored one carries a single signature.
+  const network = tier.network * Math.max(1, Math.trunc(signatures))
   const total = BigInt(units)
   const edge = BigInt(Math.max(0, Math.trunc(boundary)))
   const below = total < edge ? total : edge
   const above = total - below
   const proportional = (below * BigInt(bpsBelow) + above * BigInt(bpsAbove)) / 10_000n
   const rent = BigInt(Math.max(0, Math.trunc(receiptRent)))
+  const feeNetwork = BigInt(network)
+  // The floor is what the payment costs: the marker's rent plus the network fee,
+  // both in this currency's units. A SOL seller pays the rent to the marker
+  // through the split, so the fee only has to carry the network fee there.
+  const afterRent = proportional > rent ? proportional - rent : 0n
+  const floor = BigInt(Math.max(0, Math.trunc(flat))) + feeNetwork
   const fee = mint === undefined
-    ? proportional - (proportional < rent ? proportional : rent)
-    : proportional > BigInt(Math.max(0, Math.trunc(flat)))
-      ? proportional
-      : BigInt(Math.max(0, Math.trunc(flat)))
+    ? (afterRent < feeNetwork ? feeNetwork : afterRent)
+    : (proportional > floor ? proportional : floor)
   // The ceiling comes first, as in the program: the rate, the rent and the flat
   // can only read the fee down from here.
   const ceiling = BigInt(mint === undefined ? MAX_SOL_FEE_LAMPORTS : MAX_TOKEN_FEE_BASE_UNITS)
@@ -242,10 +282,12 @@ export function minimumPayable(
   policy: FeePolicy,
   rent: number,
   mint: string | undefined,
-  receiptRent: number
+  receiptRent: number,
+  signatures = 1
 ): number {
   const floor = Math.max(0, Math.trunc(rent))
-  const settles = (amount: number) => amount > floor + feeOn(policy, amount, mint, receiptRent)
+  const settles = (amount: number) =>
+    amount > floor + feeOn(policy, amount, mint, receiptRent, signatures)
 
   let low = 0
   let high = 1
@@ -273,6 +315,13 @@ export interface InvoiceQuoteInput {
   sellerTokenAccountRent?: number
   /** Read on chain by the caller: the treasury's account for this mint. */
   treasuryTokenAccountMissing?: boolean
+  /**
+   * How many signatures this path's settlement carries: 2 when a relayer signs
+   * as fee payer, 1 when the wallet sponsors itself or a session key pays. The
+   * policy's network fee is per signature, so this is what turns it into the
+   * cost of this particular payment.
+   */
+  signatures?: 1 | 2
 }
 
 /** The whole quote, from a policy and rents the caller already read. */
@@ -284,15 +333,18 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
   // token boundary but matches neither currency, so it pays no flat.
   const mint = input.currency === 'sol' ? undefined : (input.mint ?? '')
   const receiptRent = Math.trunc(input.receiptRent)
-  const flat = Math.max(0, Math.trunc(tierFor(policy, mint).flat))
-  const { fee, capped } = feeCalculation(policy, amount, mint, receiptRent)
-  // The flat inside `fee`, after the `amount - 1` cap: shown apart from the
-  // percentage so the seller can see both parts.
-  const recordFee = Math.min(flat, fee)
-  // The record is the whole fee when the flat is what the fee comes to — on a
-  // token invoice, or when the SOL fee has been swallowed by the rent it is
-  // measured against.
-  const feeIsFloor = mint === undefined ? fee === 0 : flat > 0 && fee <= flat
+  const signatures = input.signatures === 2 ? 2 : 1
+  const tier = tierFor(policy, mint)
+  const flat = tier.flat
+  const network = tier.network * signatures
+  const { fee, capped } = feeCalculation(policy, amount, mint, receiptRent, signatures)
+  // The costs inside `fee`, after the `amount - 1` cap: shown apart from the
+  // percentage so the seller can see both parts. On SOL the rent is not in the
+  // fee (the split pays it to the marker directly), so only the network fee is.
+  const floor = mint === undefined ? network : flat + network
+  const recordFee = Math.min(floor, fee)
+  // The costs are the whole fee when the percentage never reached them.
+  const feeIsFloor = mint === undefined ? fee === network : floor > 0 && fee <= floor
   const sellerPays = policy.feeMode === 'seller'
   // The invoice rent is a loan, not a cost: the account closes to the seller in
   // every SOL settle. The marker's rent is a cost, and on a SOL invoice it is
@@ -318,7 +370,19 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
     payerPays: sellerPays ? amount : amount + fee,
     invoiceRent: input.invoiceRent,
     receiptRent: input.receiptRent,
-    networkFee: NETWORK_FEE_LAMPORTS,
+    // The network cost this path's settlement charges the seller and refunds the
+    // sponsor: the policy's per-signature figure times this settle's signatures,
+    // which is exactly what the program computes. A policy that names none
+    // charges none.
+    networkFee: Math.max(0, Math.trunc(policy.networkFeeLamports ?? 0)) * signatures,
+    // What a wallet that pays its own way has to hold for the transaction: the
+    // policy's refund when it prices the network, and otherwise the bank's base
+    // cost, which nothing refunds.
+    sponsorshipFee:
+      Math.max(
+        Math.max(0, Math.trunc(policy.networkFeeLamports ?? 0)),
+        BASE_SIGNATURE_FEE_LAMPORTS
+      ) * signatures,
     sellerTokenAccountRent: Math.trunc(input.sellerTokenAccountRent ?? 0),
     treasuryTokenAccountMissing: input.treasuryTokenAccountMissing === true,
     // Only a SOL settle takes its rents out of the price (`amount > invoice rent
@@ -329,7 +393,8 @@ export function invoiceCosts(input: InvoiceQuoteInput): InvoiceCosts {
       policy,
       input.currency === 'sol' ? input.invoiceRent + markerRent : 0,
       mint,
-      receiptRent
+      receiptRent,
+      signatures
     )
   }
 }

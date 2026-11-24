@@ -9,6 +9,38 @@ const props = defineProps<{ shopId: string }>()
 const { t } = useI18n()
 const api = useShopApi()
 
+/** The shop's saved headings, and whether the suggestion list is showing. */
+const categoryOptions = ref<string[]>([])
+const categoryOpen = ref(false)
+const categorySuggestions = computed(() => {
+  const typed = productCategory.value.trim().toLowerCase()
+  return categoryOptions.value
+    .filter(name => !typed || (name.toLowerCase().includes(typed) && name.toLowerCase() !== typed))
+    .slice(0, 6)
+})
+
+async function loadCategories(): Promise<void> {
+  try {
+    categoryOptions.value = await api.categories(props.shopId)
+  } catch {
+    // A list that cannot be read leaves the input a plain field, not a broken form.
+    categoryOptions.value = []
+  }
+}
+
+async function deleteCategory(name: string): Promise<void> {
+  try {
+    categoryOptions.value = await api.deleteCategory(props.shopId, name)
+  } catch {
+    // The list it came from is still what the shop has.
+  }
+}
+
+function pickCategory(name: string): void {
+  productCategory.value = name
+  categoryOpen.value = false
+}
+
 const shopName = ref('')
 const shopDescription = ref('')
 const products = ref<Product[]>([])
@@ -61,6 +93,7 @@ async function load() {
   loadFailure.value = ''
   try {
     const shop = await api.get(props.shopId)
+    await loadCategories()
     shopName.value = shop.name
     shopDescription.value = shop.description
     products.value = shop.products
@@ -120,6 +153,13 @@ async function submitProduct() {
       details: productDetails.value.trim(),
       category: productCategory.value.trim(),
       price_lamports: priceLamports.value
+    }
+    // A heading the seller typed is remembered for this shop, so the next
+    // product can pick it from the list instead of typing it again.
+    if (body.category) {
+      void api.addCategory(props.shopId, body.category)
+        .then((names) => { categoryOptions.value = names })
+        .catch(() => { /* the product saved; the suggestion can wait */ })
     }
     if (editingId.value) {
       const updated = await api.updateProduct(props.shopId, editingId.value, body)
@@ -355,12 +395,53 @@ onMounted(load)
                 :help="$t('shopEditor.categoryHelp')"
                 class="sm:col-span-2"
               >
-                <UInput
-                  v-model="productCategory"
-                  class="w-full"
-                  :placeholder="$t('shopEditor.categoryPlaceholder')"
-                  :maxlength="32"
-                />
+                <div class="relative">
+                  <UInput
+                    v-model="productCategory"
+                    class="w-full"
+                    :placeholder="$t('shopEditor.categoryPlaceholder')"
+                    :maxlength="32"
+                    :aria-expanded="categoryOpen"
+                    aria-autocomplete="list"
+                    @focus="categoryOpen = true"
+                    @input="categoryOpen = true"
+                    @keydown.esc="categoryOpen = false"
+                  />
+                  <!-- The shop's own headings, filtered as the seller types, each
+                       with the way to stop suggesting it. -->
+                  <ul
+                    v-if="categoryOpen && categorySuggestions.length"
+                    class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-default bg-default shadow-lg"
+                  >
+                    <li
+                      v-for="name in categorySuggestions"
+                      :key="name"
+                      class="flex items-center justify-between gap-2 px-1"
+                    >
+                      <button
+                        type="button"
+                        class="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm hover:bg-elevated"
+                        @click="pickCategory(name)"
+                      >
+                        {{ name }}
+                      </button>
+                      <UButton
+                        icon="i-lucide-trash-2"
+                        color="neutral"
+                        variant="ghost"
+                        size="xs"
+                        :aria-label="$t('shopEditor.categoryDelete', { name })"
+                        @click.stop="deleteCategory(name)"
+                      />
+                    </li>
+                  </ul>
+                  <p
+                    v-else-if="categoryOpen"
+                    class="mt-1 text-xs text-muted"
+                  >
+                    {{ $t('shopEditor.categoryNew') }}
+                  </p>
+                </div>
               </UFormField>
               <UFormField
                 :label="$t('shopEditor.detailsLabel')"

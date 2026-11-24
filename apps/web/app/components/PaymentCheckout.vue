@@ -86,6 +86,22 @@ const qrOpen = ref(false)
 // an unknown or missing value is the plain card.
 const cardClass = computed(() => cardDesignClass(payload.value?.design))
 
+// Whether Payvand will pay this settlement's network fee. The relayer covers
+// the fee on token payments, so the sheet says so instead of quoting a SOL
+// cost the buyer will never be charged; a payment with no relayer is the
+// buyer's own to pay, and keeps the figure.
+const networkFeeCovered = ref(false)
+watch([payload, selected], async ([current, option]) => {
+  networkFeeCovered.value = false
+  if (!current || option?.currency === 'sol') return
+  try {
+    const info = await api.getSponsor()
+    networkFeeCovered.value = info.available
+  } catch {
+    networkFeeCovered.value = false
+  }
+}, { immediate: true })
+
 // The result of this visit's payment, announced over the sheet: a settled
 // invoice or a refusal, with the code the buyer can read back to the seller.
 const resultOpen = ref(false)
@@ -495,10 +511,11 @@ useSeoMeta({
               </p>
 
               <!--
-                What the price does not include: the buyer's own Solana cost.
-                Both settles take the fee out of the seller's side and refund
-                the record rents from the treasury, so the one line left is the
-                network fee the buyer pays to send the transaction.
+                What the price does not include. Both settles take the fee out
+                of the seller's side and refund the record rents from the
+                treasury, and on a token payment the relayer pays the network
+                fee out of Payvand's own cut — so the only line left is the
+                buyer's, and only when nothing will sponsor it.
               -->
               <dl
                 v-if="costs"
@@ -516,7 +533,12 @@ useSeoMeta({
                 </div>
                 <div class="flex items-baseline justify-between gap-4">
                   <dt>{{ $t('checkout.networkFee') }}</dt>
-                  <dd>≈ {{ lamportsToSol(costs.networkFee) }} SOL</dd>
+                  <dd v-if="networkFeeCovered">
+                    {{ $t('checkout.networkFeeCovered') }}
+                  </dd>
+                  <dd v-else>
+                    ≈ {{ lamportsToSol(costs.sponsorshipFee) }} SOL
+                  </dd>
                 </div>
               </dl>
               <!--

@@ -29,7 +29,7 @@ const seller = address('6dQgFZDTkhDMTZv9ftZe4ufU9jG5fvJEw6zpw6WCKjPz')
 const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
 
 /** `CONFIG_SIZE` from `useFeeConfig.ts`: the account the quote will decode. */
-const CONFIG_SIZE = 160
+const CONFIG_SIZE = 184
 
 let asked: string[] = []
 let rentReads = 0
@@ -54,12 +54,12 @@ async function configAccount(): Promise<string> {
   view.setBigUint64(52, 0n, true) // token_tier_base_units
   view.setBigUint64(60, 0n, true) // flat_usdc_base_units
   view.setBigUint64(68, 0n, true) // flat_eurc_base_units
-  bytes[140] = 0 // fee_mode: SellerPays
-  view.setBigUint64(141, 12_000_000n, true)
-  view.setBigInt64(149, 1_760_000_000n, true) // flats_updated_at
-  bytes[157] = 255 // bump
-  bytes[158] = 254 // treasury_bump
-  bytes[159] = 3 // version
+  bytes[164] = 0 // fee_mode: SellerPays
+  view.setBigUint64(165, 12_000_000n, true)
+  view.setBigInt64(173, 1_760_000_000n, true) // flats_updated_at
+  bytes[181] = 255 // bump
+  bytes[182] = 254 // treasury_bump
+  bytes[183] = 4 // version
   return Buffer.from(bytes).toString('base64')
 }
 

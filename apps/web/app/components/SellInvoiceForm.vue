@@ -119,9 +119,9 @@ const {
         class="-mt-2"
       />
 
-      <!-- A code prices a basket, so on the shared sell page the field appears
-           with the cart. A shop's own payment page attaches one to a typed
-           price too. Alternatively the buyer brings one. -->
+      <!-- A code prices a basket, so it appears only for a payment built from
+           shop products. A shop's own payment page attaches one to a typed
+           price itself. -->
       <UFormField
         v-if="discounts.length && discountAllowed"
         :label="t('sell.discountLabel')"
@@ -202,8 +202,11 @@ const {
       </div>
 
       <!-- The look of the page the customer opens. It is part of the code, so
-           it has to be chosen here, before the invoice exists. -->
+           it has to be chosen here, before the invoice exists — and only for a
+           payment built from shop products, where the basket is the point of
+           the page. A typed price is one number and one memo. -->
       <UFormField
+        v-if="sellingFromShops && cartActive"
         :label="t('sell.designLabel')"
         :help="t('sell.designHelp')"
       >

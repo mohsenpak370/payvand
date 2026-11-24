@@ -25,14 +25,13 @@ const heroLinks = computed<ButtonProps[]>(() => [{
   variant: 'subtle'
 }])
 
-// What the hero promises, in the four things a shop owner actually cares
-// about: no extra hardware, no monthly bill, nothing for the customer to
-// install, and the money is theirs.
+// What the hero promises, in the three things a shop owner cares about
+// without knowing any of the words: it is easy, it costs little, and the
+// money is there while the customer is still at the counter.
 const proofs = computed(() => [
-  { key: 'noReader', icon: 'i-lucide-credit-card', label: t('home.hero.proof.noReader') },
-  { key: 'noMarkup', icon: 'i-lucide-receipt-text', label: t('home.hero.proof.noMarkup') },
-  { key: 'noInstall', icon: 'i-lucide-smartphone', label: t('home.hero.proof.noInstall') },
-  { key: 'ownWallet', icon: 'i-lucide-wallet', label: t('home.hero.proof.ownWallet') }
+  { key: 'easy', icon: 'i-lucide-smile', label: t('home.hero.proof.easy') },
+  { key: 'lowFee', icon: 'i-lucide-piggy-bank', label: t('home.hero.proof.lowFee') },
+  { key: 'instant', icon: 'i-lucide-zap', label: t('home.hero.proof.instant') }
 ])
 
 const steps = computed(() => [{
@@ -116,19 +115,19 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
           />
         </div>
 
-        <ul class="text-muted flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
-          <li
+        <!-- Outlined chips rather than a line of loose text: each promise is
+             one thing, and the border says so at a glance. -->
+        <div class="flex flex-wrap items-center justify-center gap-2">
+          <UBadge
             v-for="proof in proofs"
             :key="proof.key"
-            class="flex items-center gap-1.5"
-          >
-            <UIcon
-              :name="proof.icon"
-              class="text-primary size-4"
-            />
-            {{ proof.label }}
-          </li>
-        </ul>
+            :icon="proof.icon"
+            :label="proof.label"
+            color="neutral"
+            variant="outline"
+            size="md"
+          />
+        </div>
       </div>
 
       <!-- The receipt gets its own row under the pitch: on a wide screen it is

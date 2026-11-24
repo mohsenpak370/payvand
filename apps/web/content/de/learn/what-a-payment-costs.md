@@ -76,3 +76,16 @@ Preis eines
 Codes ändert sich nie, die Gebühr ist aber die, die beim Bezahlen gilt — eine Änderung trifft also
 auch schon geteilte, noch unbezahlte Codes. Die App zeigt die Aufteilung zu den gerade gültigen
 Sätzen.
+
+## Was sich geändert hat
+
+Der Zahler bezahlt genau den Preis auf dem Code — nichts darüber hinaus. Die Netzgebühr von Solana und
+die zwei kleinen Mieten, die Zahlung und Beleg auf der Kette benötigen, stecken bereits in diesem Preis:
+Payvands Relayer legt sie vor und dieselbe Transaktion erstattet sie ihm aus dem gezahlten Betrag. Selbst
+eine Wallet ganz ohne SOL kann zahlen.
+
+Die Untergrenze der Verkäufergebühr ist „Beleg-Miete plus Netzgebühr“: ist der Prozentsatz geringer als
+diese Kosten, zahlt der Verkäufer nur die Kosten und das Protokoll nimmt nichts. Die Netzgebühr zählt pro
+Signatur: eine vom Relayer gesendete Abrechnung trägt zwei (die des Zahlers und seine eigene), eine
+selbst finanzierte eine einzige; der Preis wird für genau diese Anzahl berechnet, und die Erstattung an
+den, der sie vorgestreckt hat, ist derselbe Betrag.

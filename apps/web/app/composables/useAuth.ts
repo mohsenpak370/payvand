@@ -26,6 +26,9 @@ export interface MyTransaction {
    *  no record of it, which the chain itself never has. */
   name: string
   description: string
+  /** The receipt lines the invoice was priced from in the seller's shop, when
+   *  it has any; empty for a hand-priced invoice. */
+  items?: { name: string, quantity: number, amount_lamports: number }[]
   status: 'pending' | 'settled' | 'missing'
   created_at_unix: number
   settled_at_unix: number

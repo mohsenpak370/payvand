@@ -1,6 +1,6 @@
 ---
 title: Why every payment costs a fraction of a cent
-description: Who gets the fee, why you need a little SOL even when you pay in dollars, and why a failed payment still costs something.
+description: Who gets the fee, why the price on the code is the whole cost, and why a failed payment still costs something.
 category: basics
 order: 6
 ---
@@ -20,17 +20,24 @@ why small shops sometimes refuse cards under a minimum amount.
 A crypto fee is different in two ways:
 
 - **It is flat.** Paying 2 or paying 2,000 costs the same tiny amount, because the work is the same.
-- **The payer pays it, and the shop receives the full amount.** There is no terminal rental, no
-  monthly contract, and nothing deducted from the sale.
+- **The seller pays it, out of the price.** There is no terminal rental, no monthly contract, and
+  nothing added on top: the customer pays exactly the price on the code, and the network fee and the
+  record's rent come out of the seller's side.
 
-## Why you need a little SOL even to pay in USDC
+## Why you do not need any SOL, even to pay in USDC
 
 The fee is always paid in the network's own coin, SOL. Think of it as the postage stamp: the letter
 can contain dollars, but the stamp has to be the postal service's own.
 
-That is the one slightly awkward part of getting started: a wallet full of USDC and zero SOL cannot
-move anything. Keep a small amount of SOL in the wallet you pay from, and you will never think about
-it again.
+Someone still has to buy that stamp, and it does not have to be you. Payvand's relayer pays the
+network fee and advances the small rents for the payment and its receipt on chain, and the same
+transaction repays it out of the price. A wallet full of USDC and zero SOL can therefore pay, and its
+balance moves by exactly the price.
+
+The fee is counted per signature, and a settlement carries one signature when the wallet pays its own
+way and two when a relayer submits it. The price is charged for exactly the signatures that payment
+used, so a relayer never keeps more than it spent. Only when no relayer takes a payment does the
+wallet front those costs itself, and even then it is repaid in the same transaction.
 
 ## When the network is busy
 
@@ -52,7 +59,8 @@ which is part of why opening an allowance costs slightly more than the limit its
 
 ## What this means for you
 
-Fees are not something to worry about or budget for. Keep a small amount of SOL in the wallet you
-pay from, and the cost of a payment stays so small that it is easier to ignore than to calculate.
+Fees are not something to worry about or budget for. The price on the code is the whole cost: the
+network fee and the record's rent are already inside it, and they stay so small that they are easier
+to ignore than to calculate.
 
 The network fee is only the smallest part of what a payment costs. Where the rest goes — the protocol's cut, the permanent record on chain, and the bills that keep the service running — is laid out in [what a payment costs, and why](/learn/what-a-payment-costs).

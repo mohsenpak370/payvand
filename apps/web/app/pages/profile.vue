@@ -6,7 +6,6 @@ definePageMeta({ middleware: 'auth' })
 
 const {
   user,
-  shopsEnabled,
   linkedWallet,
   showWelcome,
   switchNeeded,
@@ -31,11 +30,6 @@ const {
   displayCurrency,
   budgetLoading,
   budgetError,
-  savedCards,
-  savedCount,
-  savedLoading,
-  savedFailure,
-  refreshSavedPayments,
   transactions,
   txLoading,
   txFailure,
@@ -83,10 +77,6 @@ function openBudget() {
         @unlink="unlinkWalletNow"
       />
 
-      <!-- Devnet starter tokens: the natural next step after linking a wallet,
-           so the claim lives here as well as on the getting-started page. -->
-      <FaucetCard :heading="false" />
-
       <ProfileAllowanceCard
         :has-address="!!allowanceAddress"
         :rows="rows"
@@ -103,15 +93,6 @@ function openBudget() {
         :currencies="topUpCurrencies"
         :action-label="$t('allowance.topUpOnBudget')"
         @top-up="openBudget"
-      />
-
-      <ProfileSavedPaymentsCard
-        v-if="shopsEnabled"
-        :cards="savedCards"
-        :count="savedCount"
-        :loading="savedLoading"
-        :failure="savedFailure"
-        @refresh="refreshSavedPayments"
       />
 
       <!-- The three figures first: what the history adds up to, before the rows

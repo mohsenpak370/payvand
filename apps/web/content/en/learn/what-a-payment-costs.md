@@ -10,9 +10,16 @@ each cost and who pays it, so the number on your screen is never a surprise.
 
 ## What the customer pays
 
-Exactly the price on the code, plus the Solana network fee for the transaction — a few thousandths of
-a cent, paid to the network itself, not to us. There is no markup, no service charge and no handling
-fee on top. If a code says 4 EURC, the customer's wallet shows 4 EURC.
+Exactly the price on the code — nothing added. No markup, no service charge, no handling fee, and no
+network fee on top either: the Solana network fee is already inside the price the seller named, and
+so are the two small rents Payvand's relayer fronts to write the payment and its receipt on chain. If
+a code says 4 EURC, the customer's wallet shows 4 EURC and the customer's balance falls by exactly
+4 EURC.
+
+That holds even for a wallet holding no SOL at all. The relayer pays the transaction's signatures and
+advances the record rents, and the same transaction pays it back out of the price, so nothing is left
+for the customer to front. Only when no relayer takes a payment does the wallet advance those rents
+for the length of its own transaction, and even then the price repays it in the same instruction.
 
 ## What the seller pays
 
@@ -33,9 +40,15 @@ shared:
    SOL invoice does not carry it separately, because the seller already hands over that rent out of
    the price.
 
-When a payment is small enough that the percentage comes to less than that record, the percentage is
-not charged at all: the seller pays the record and nothing else. The protocol takes no fee on such a
-payment rather than a fee too small to cover its own record.
+The record and the network fee together are the floor: the seller's deduction is whichever is larger
+of the percentage and that cost, so when a payment is small enough that the percentage comes to less
+than the record plus the signature, the percentage is not charged at all — the seller pays the costs
+and nothing else, and the protocol takes no fee rather than one too small to cover its own record.
+
+The network fee is counted per signature. A settlement a relayer submits carries two signatures, the
+customer's and the relayer's; one that pays its own way carries a single signature. The price is
+charged for exactly the signatures that payment used, and the refund to whoever fronted them is the
+same figure, so a sponsor never gets back more or less than it spent.
 
 The seller's screen shows the exact amount they will receive, and the fee breaks down into those two
 parts, before a customer ever sees the code.

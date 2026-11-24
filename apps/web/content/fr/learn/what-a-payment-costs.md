@@ -77,3 +77,16 @@ l’absorber. Le prix
 d’un code ne change jamais, mais les frais sont ceux en vigueur au moment du paiement : un changement
 de taux s’applique donc aussi aux codes déjà partagés et pas encore payés. L’app montre la décomposition
 aux taux en vigueur.
+
+## Ce qui a changé
+
+L'acheteur paie exactement le prix affiché sur le code — rien de plus. Les frais de réseau Solana et les
+deux petits loyers nécessaires pour écrire le paiement et son reçu sur la chaîne sont déjà compris dans
+ce prix : le relais de Payvand les avance et la même transaction les lui rend sur le montant payé. Même
+un portefeuille sans aucun SOL peut payer.
+
+Le plancher de la commission du vendeur est « le loyer du reçu plus les frais de réseau » : si le
+pourcentage est inférieur à ces coûts, le vendeur ne paie que les coûts et le protocole ne prend rien.
+Les frais de réseau se comptent par signature : un règlement envoyé par le relais en porte deux (celle de
+l'acheteur et la sienne), un règlement autofinancé une seule ; le prix est facturé pour exactement ce
+nombre de signatures, et le remboursement à celui qui les a avancées est le même montant.

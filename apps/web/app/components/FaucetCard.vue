@@ -2,9 +2,6 @@
 // One claim per account, to the linked wallet: enough SOL for fees and enough
 // USDC/EURC to pay a few invoices, so a first visit never stops at an empty
 // balance. The links are the way to get more once that is spent.
-// The getting-started page numbers this card as a step; the profile page uses
-// it as a plain card beside the wallet, so its title is optional there.
-withDefaults(defineProps<{ heading?: boolean }>(), { heading: true })
 
 const { user } = useAuth()
 const faucet = useFaucet()
@@ -31,10 +28,7 @@ onMounted(() => {
           />
         </div>
         <div class="min-w-0">
-          <h3
-            v-if="heading"
-            class="text-base font-semibold"
-          >
+          <h3 class="text-base font-semibold">
             {{ $t('start.faucet.title') }}
           </h3>
           <p class="text-muted mt-1 text-sm leading-relaxed">

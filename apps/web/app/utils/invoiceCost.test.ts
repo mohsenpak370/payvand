@@ -304,7 +304,11 @@ describe('invoiceCosts', () => {
     expect(costs.payerPays).toBe(1_000_000_000)
     expect(costs.invoiceRent).toBe(SOL_RENT)
     expect(costs.receiptRent).toBe(RECEIPT_RENT)
-    expect(costs.networkFee).toBe(NETWORK_FEE_LAMPORTS)
+    // This fixture's policy names no network fee, so the seller is charged none
+    // and nothing is refunded; the payer still needs one signature's base cost,
+    // which is what the checkout's refusal compares against.
+    expect(costs.networkFee).toBe(0)
+    expect(costs.sponsorshipFee).toBe(NETWORK_FEE_LAMPORTS / 2)
     expect(costs.sellerTokenAccountRent).toBe(0)
     // The floor clears both rents, as `settle_payment` requires, and at that
     // size the fee is nothing.

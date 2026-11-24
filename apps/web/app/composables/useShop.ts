@@ -132,5 +132,43 @@ export function useShopApi() {
     })
   }
 
-  return { list, get, createShop, updateShop, createProduct, updateProduct, deleteProduct }
+  /** The headings this shop has used, for the editor's suggestions. */
+  async function categories(shopId: string): Promise<string[]> {
+    const answer: { categories: string[] } = await $fetch(`${base}/api/shops/${shopId}/categories`, {
+      headers: authHeaders()
+    })
+    return answer.categories
+  }
+
+  /** Remembers a heading the seller typed, whether or not a product used it. */
+  async function addCategory(shopId: string, name: string): Promise<string[]> {
+    const answer: { categories: string[] } = await $fetch(`${base}/api/shops/${shopId}/categories`, {
+      method: 'POST',
+      body: { name },
+      headers: authHeaders()
+    })
+    return answer.categories
+  }
+
+  /** Forgets a heading; products keep the text they were saved with. */
+  async function deleteCategory(shopId: string, name: string): Promise<string[]> {
+    const answer: { categories: string[] } = await $fetch(
+      `${base}/api/shops/${shopId}/categories/${encodeURIComponent(name)}`,
+      { method: 'DELETE', headers: authHeaders() }
+    )
+    return answer.categories
+  }
+
+  return {
+    list,
+    get,
+    createShop,
+    updateShop,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    categories,
+    addCategory,
+    deleteCategory
+  }
 }

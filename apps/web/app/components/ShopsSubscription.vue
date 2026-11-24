@@ -1,14 +1,49 @@
 <script setup lang="ts">
+import type { SupportedCurrency } from '~/composables/usePaymentApi'
+
 // The shops feature is sold by the month: €1.70 for 30 days, in SOL, USDC or
 // EURC. The purchase lives in `useSubscriptionPurchase` because the New shop
 // dialog offers the same one; this card is its full-page face.
 const purchase = useSubscriptionPurchase()
+const { t } = useI18n()
 
 const expiry = computed(() => {
   const seconds = purchase.status.value?.expires_at_unix ?? 0
   if (!seconds) return ''
   return new Date(seconds * 1000).toLocaleDateString()
 })
+
+const quotes = computed(() => purchase.quotes.value)
+/** The currency an allowance already pays for, if this device has one. */
+const covered = computed(() => purchase.covered.value)
+
+/**
+ * What the buy button will charge. It opens on the currency an allowance covers
+ * — the one that needs no wallet approval — and otherwise on the first price.
+ * Prices arrive with the status, so an empty pick is filled when they land, but
+ * a pick already made is never overridden.
+ */
+const selected = ref<SupportedCurrency | ''>('')
+
+watch([quotes, covered], ([list, free]) => {
+  if (selected.value && list.some(quote => quote.currency === selected.value)) return
+  selected.value = free ?? list[0]?.currency ?? ''
+}, { immediate: true })
+
+const selectedQuote = computed(
+  () => quotes.value.find(quote => quote.currency === selected.value) ?? null
+)
+
+/** The one button says both what it buys and what it costs. */
+const buyLabel = computed(() => {
+  const quote = selectedQuote.value
+  return quote ? t('subscription.buy', { price: purchase.priceLabel(quote) }) : ''
+})
+
+function buy(): void {
+  if (!selected.value || purchase.paying.value) return
+  void purchase.pay(selected.value)
+}
 
 onMounted(() => {
   void purchase.load()
@@ -69,8 +104,8 @@ onMounted(() => {
           {{ $t('subscription.price', { price: '€1.70', days: purchase.status.value.period_days }) }}
         </p>
 
-        <!-- No rate, no price: the status above still stands, and only these
-             buttons are unavailable until the next read answers. -->
+        <!-- No rate, no price: the status above still stands, and only the
+             purchase waits until the next read answers. -->
         <p
           v-if="!purchase.status.value.rates_available"
           class="text-sm text-muted"
@@ -78,37 +113,83 @@ onMounted(() => {
           {{ $t('subscription.ratesUnavailable') }}
         </p>
 
-        <div
-          v-if="purchase.status.value.rates_available"
-          class="flex flex-wrap gap-2"
-        >
+        <template v-else>
+          <!-- A choice, not three buttons: each currency is a card that is
+               picked, and the one button below pays whatever is picked. -->
+          <fieldset class="flex flex-col">
+            <legend class="mb-2 text-xs font-medium tracking-wide text-muted uppercase">
+              {{ $t('subscription.chooseCurrency') }}
+            </legend>
+            <div class="grid gap-2 sm:grid-cols-3">
+              <label
+                v-for="quote in quotes"
+                :key="quote.currency"
+                class="relative flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition"
+                :class="selected === quote.currency
+                  ? 'border-primary bg-primary/5 ring-primary/30 ring-2'
+                  : 'border-default hover:border-primary/40'"
+              >
+                <input
+                  v-model="selected"
+                  type="radio"
+                  name="subscription-currency"
+                  :value="quote.currency"
+                  class="sr-only"
+                  :disabled="purchase.paying.value !== ''"
+                >
+                <span
+                  aria-hidden="true"
+                  class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2"
+                  :class="selected === quote.currency ? 'border-primary' : 'border-muted'"
+                >
+                  <span
+                    v-if="selected === quote.currency"
+                    class="bg-primary size-2 rounded-full"
+                  />
+                </span>
+                <span class="flex min-w-0 flex-col">
+                  <span class="text-sm font-medium">
+                    {{ currencySymbol(quote.currency) }}
+                  </span>
+                  <span class="text-xs whitespace-nowrap text-muted">
+                    {{ purchase.priceLabel(quote) }}
+                  </span>
+                  <span
+                    v-if="covered === quote.currency"
+                    class="text-primary mt-1 inline-flex items-center gap-1 text-[11px] font-medium"
+                  >
+                    <UIcon
+                      name="i-lucide-zap"
+                      class="size-3"
+                    />
+                    {{ $t('subscription.allowanceBadge') }}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
           <UButton
-            v-for="quote in purchase.quotes.value"
-            :key="quote.currency"
-            :label="purchase.priceLabel(quote)"
-            :loading="purchase.paying.value === quote.currency"
-            :disabled="purchase.paying.value !== ''"
-            color="neutral"
-            variant="soft"
-            size="sm"
-            :icon="purchase.covered.value === quote.currency ? 'i-lucide-zap' : 'i-lucide-credit-card'"
-            @click="purchase.pay(quote.currency)"
+            :label="buyLabel"
+            size="lg"
+            block
+            :icon="covered === selected ? 'i-lucide-zap' : 'i-lucide-credit-card'"
+            :loading="purchase.paying.value !== ''"
+            :disabled="!selectedQuote || purchase.paying.value !== ''"
+            @click="buy"
           />
-        </div>
 
-        <p
-          v-if="purchase.covered.value"
-          class="text-xs text-muted"
-        >
-          {{ $t('subscription.fromAllowance') }}
-        </p>
+          <p
+            v-if="covered && covered === selected"
+            class="text-xs text-muted"
+          >
+            {{ $t('subscription.fromAllowance') }}
+          </p>
 
-        <p
-          v-if="purchase.status.value.rates_available"
-          class="text-xs text-muted"
-        >
-          {{ $t('subscription.rateNote', { date: new Date(purchase.status.value.rated_at_unix * 1000).toLocaleString() }) }}
-        </p>
+          <p class="text-xs text-muted">
+            {{ $t('subscription.rateNote', { date: new Date(purchase.status.value.rated_at_unix * 1000).toLocaleString() }) }}
+          </p>
+        </template>
       </template>
     </div>
   </UCard>

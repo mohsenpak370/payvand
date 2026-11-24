@@ -12,6 +12,15 @@ import { coveredCurrency, orderedQuotes } from '~/utils/subscriptionQuotes'
  * the New shop dialog. One status, one invoice, one navigation, whichever of the
  * two the person uses.
  */
+/**
+ * A confirm is worth retrying only while the cluster may still be finalizing the
+ * payment. A refusal that says the amount or the invoice is wrong is final.
+ */
+function subscriptionRetryable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /not settled|not been found|not found|still confirming/i.test(message)
+}
+
 const status = shallowRef<SubscriptionStatus | null>(null)
 const loading = ref(false)
 const failure = ref('')
@@ -95,15 +104,39 @@ export function useSubscriptionPurchase() {
     silent.value = found
   }
 
-  /** The status, confirming a payment this browser left behind on the way back. */
+  /**
+   * The status, confirming a payment this browser left behind on the way back.
+   *
+   * The confirm is retried: paying sends the seller to the checkout, and coming
+   * back a second later the cluster may not have finalized the invoice yet, which
+   * the API answers as "not settled yet". Giving up there is what left a paid
+   * subscription looking inactive and lost the invoice id with it, so the id is
+   * kept until the API has actually recorded the period.
+   */
   async function read(): Promise<void> {
     loading.value = true
     failure.value = ''
     try {
-      const pending = api.takePending()
-      status.value = pending
-        ? await api.confirm(pending).catch(() => api.status())
-        : await api.status()
+      const pending = api.peekPending()
+      if (!pending) {
+        status.value = await api.status()
+        return
+      }
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          status.value = await api.confirm(pending)
+          api.clearPending()
+          return
+        } catch (error) {
+          // A refusal that is not about settlement is final: no retry can fix it.
+          if (attempt === 7 || !subscriptionRetryable(error)) {
+            if (attempt === 7) status.value = await api.status()
+            return
+          }
+          await new Promise(resolve => setTimeout(resolve, 1_500))
+        }
+      }
     } catch (error) {
       failure.value = apiErrorMessage(error, t('subscription.loadFailure'))
     } finally {

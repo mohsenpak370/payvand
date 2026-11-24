@@ -26,9 +26,10 @@ import {
  * goes away, `pay()` builds and sends the transaction and this fails.
  *
  * The other subject here is who pays the settle's lamports. A token settle
- * fronts the network fee and both record rents, and a wallet that holds them
- * must keep paying them itself; below that the relayer does, and the buyer only
- * signs. The balance is the only thing that decides between the two.
+ * fronts the network fee and both record rents, and Payvand's own fee is what
+ * pays for them: every token payment asks the relayer first, so a payer holding
+ * no SOL can pay. Only a payment no relayer will take falls back to the wallet
+ * paying them itself — and when it cannot, the refusal comes before a signature.
  */
 
 beforeEach(setupCheckout)
@@ -63,27 +64,7 @@ describe('pay()', () => {
 })
 
 describe('who pays the settle', () => {
-  it('pays its own fee and rents when the wallet holds them', async () => {
-    const checkout = checkoutFor(quoteFor(false))
-
-    await checkout.pay()
-
-    // Today's path, unchanged: the buyer is its own fee payer, its own sponsor,
-    // and the relayer is never asked for anything.
-    expect(execute).toHaveBeenCalledTimes(1)
-    expect(checkout.signature.value).toBe('SIGNATURE')
-    expect(getSponsor).not.toHaveBeenCalled()
-    expect(sponsorSettle).not.toHaveBeenCalled()
-    expect(signTransactions).not.toHaveBeenCalled()
-    expect(buildInstructionMock).toHaveBeenCalledWith(
-      'settle_token_payment',
-      expect.anything(),
-      expect.objectContaining({ sponsor: payer })
-    )
-  })
-
-  it('asks the relayer to front them when the wallet cannot', async () => {
-    walletLamports.value = 0
+  it('lets the relayer pay even when the wallet could', async () => {
     getSponsor.mockResolvedValueOnce({
       available: true,
       address: sponsor,
@@ -95,7 +76,8 @@ describe('who pays the settle', () => {
     await checkout.pay()
 
     // The relayer's key is the fee payer and the instruction's sponsor; the
-    // buyer signs its half and nothing is sent from this device.
+    // buyer signs its half and nothing is sent from this device. The wallet's
+    // own balance is not consulted: paying from Payvand's fee is the point.
     expect(execute).not.toHaveBeenCalled()
     expect(signTransactions).toHaveBeenCalledTimes(1)
     expect(buildInstructionMock).toHaveBeenCalledWith(
@@ -116,17 +98,37 @@ describe('who pays the settle', () => {
     expect(checkout.failure.value).toBe('')
   })
 
-  it('keeps the wallet’s own path when no relayer is available', async () => {
+  it('pays its own fee and rents when no relayer takes the payment', async () => {
+    const checkout = checkoutFor(quoteFor(false))
+
+    await checkout.pay()
+
+    // Asked first, refused, and the funded wallet pays exactly as it always
+    // did: the chain's answer is worth more than a client-side dead end.
+    expect(getSponsor).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SIGNATURE')
+    expect(sponsorSettle).not.toHaveBeenCalled()
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(buildInstructionMock).toHaveBeenCalledWith(
+      'settle_token_payment',
+      expect.anything(),
+      expect.objectContaining({ sponsor: payer })
+    )
+  })
+
+  it('refuses before a signature when there is no relayer and no SOL', async () => {
     walletLamports.value = 0
 
     const checkout = checkoutFor(quoteFor(false))
     await checkout.pay()
 
-    // Asked, refused, and the buyer's own transaction is built anyway: the
-    // chain's answer is worth more than a client-side dead end.
-    expect(getSponsor).toHaveBeenCalledTimes(1)
-    expect(sponsorSettle).not.toHaveBeenCalled()
-    expect(execute).toHaveBeenCalledTimes(1)
-    expect(checkout.signature.value).toBe('SIGNATURE')
+    // Nothing can front the fee, so the payment stops here and says why
+    // instead of failing inside a wallet prompt the buyer already approved.
+    expect(checkout.failure.value).toBe('errors.paymentNeedsSol')
+    expect(checkout.signature.value).toBeNull()
+    expect(execute).not.toHaveBeenCalled()
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(buildInstructionMock).not.toHaveBeenCalled()
   })
 })

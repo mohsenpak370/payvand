@@ -74,14 +74,19 @@ const detailRows = computed(() => {
     value: `${item.direction === 'received' ? '+' : '−'}${formatTokenAmount(item.amount, item.decimals)} ${currencySymbol(item.currency)}`
   })
   rows.push({ label: t('profile.detailFee'), value: detailFee.value ?? '—' })
+  // Both are wallet addresses: one unbroken base58 string, so they carry the
+  // same `mono` treatment as the reference code and break anywhere rather than
+  // running off the side of the modal on a phone.
   rows.push({
     label: t('profile.detailPayer'),
+    mono: true,
     value: item.direction === 'received'
       ? item.counterparty
       : (props.linkedWallet ?? item.counterparty)
   })
   rows.push({
     label: t('profile.detailPayee'),
+    mono: true,
     value: item.direction === 'received'
       ? (props.linkedWallet ?? item.counterparty)
       : item.counterparty
@@ -94,6 +99,24 @@ const detailRows = computed(() => {
   }
   rows.push({ label: t('profile.detailReference'), value: item.id, mono: true })
   return rows
+})
+
+/**
+ * The receipt lines, priced in the currency this payment was actually made in.
+ * Each line is stored as a unit price in lamports — the unit the invoice is
+ * priced in — so a token payment scales every line by the share the paid amount
+ * represents, the same arithmetic the checkout shows the buyer.
+ */
+const detailItems = computed(() => {
+  const item = selected.value
+  const lines = item?.items ?? []
+  if (!item || !lines.length) return []
+  const total = lines.reduce((sum, line) => sum + line.amount_lamports * line.quantity, 0)
+  const share = total ? item.amount / total : 1
+  return lines.map(line => ({
+    label: `${line.quantity} × ${line.name}`,
+    value: `${formatTokenAmount(Math.round(line.amount_lamports * line.quantity * share), item.decimals)} ${currencySymbol(item.currency)}`
+  }))
 })
 
 /** The day input as unix seconds, at the start or the end of that day. */
@@ -429,6 +452,30 @@ function paymentCount(count: number, shown?: number) {
               </dd>
             </div>
           </dl>
+
+          <!--
+            What the code was made of, for one priced from the seller's shop:
+            each product with the quantity and what it cost, in the currency
+            this payment was made in.
+          -->
+          <div
+            v-if="detailItems.length"
+            class="rounded-xl border border-default"
+          >
+            <p class="border-b border-default px-3 py-2 text-xs font-medium text-muted">
+              {{ $t('profile.detailItems') }}
+            </p>
+            <ul class="divide-y divide-default">
+              <li
+                v-for="line in detailItems"
+                :key="line.label"
+                class="flex items-baseline justify-between gap-3 px-3 py-2 text-sm"
+              >
+                <span class="min-w-0 truncate">{{ line.label }}</span>
+                <span class="shrink-0 tabular-nums">{{ line.value }}</span>
+              </li>
+            </ul>
+          </div>
 
           <p class="text-xs text-muted">
             {{ $t('profile.detailFeeNote') }}

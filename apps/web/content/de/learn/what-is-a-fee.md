@@ -1,6 +1,6 @@
 ---
 title: Warum jede Zahlung einen Bruchteil eines Cents kostet
-description: Wer die Gebühr bekommt, warum du ein wenig SOL brauchst, auch wenn du in Dollar zahlst, und warum eine fehlgeschlagene Zahlung trotzdem etwas kostet.
+description: Wer die Gebühr bekommt, warum der Preis auf dem Code die vollen Kosten sind, und warum eine fehlgeschlagene Zahlung trotzdem etwas kostet.
 category: basics
 order: 6
 ---
@@ -21,16 +21,24 @@ Eine Krypto-Gebühr unterscheidet sich in zwei Punkten:
 
 - **Sie ist pauschal.** 2 zu zahlen oder 2.000 kostet denselben winzigen Betrag, weil die Arbeit
   dieselbe ist.
-- **Der Zahler zahlt sie, und der Laden bekommt den vollen Betrag.** Keine Terminalmiete, kein
-  Monatsvertrag, nichts vom Verkauf abgezogen.
+- **Der Verkäufer zahlt sie, aus dem Preis.** Keine Terminalmiete, kein Monatsvertrag und nichts
+  obendrauf: Der Zahler zahlt genau den Preis auf dem Code, und Netzgebühr wie Miete des Belegs
+  gehen von der Seite des Verkäufers ab.
 
-## Warum du ein wenig SOL brauchst, auch wenn du in USDC zahlst
+## Warum du kein SOL brauchst, auch wenn du in USDC zahlst
 
 Die Gebühr wird immer in der eigenen Coin des Netzwerks bezahlt, in SOL. Denk an die Briefmarke: Der
 Brief kann Dollar enthalten, aber die Marke muss von der Post selbst sein.
 
-Das ist der eine etwas unbequeme Teil beim Einstieg: Ein Wallet voller USDC und null SOL kann nichts
-bewegen. Halt ein wenig SOL in dem Wallet, aus dem du zahlst, und du denkst nie wieder darüber nach.
+Diese Marke musst aber nicht du kaufen. Payvands Relayer zahlt die Netzgebühr und legt die kleinen
+Mieten für die Zahlung und ihren Beleg auf der Kette vor, und dieselbe Transaktion erstattet sie ihm
+aus dem Preis. Ein Wallet voller USDC und ohne SOL kann also zahlen, und sein Guthaben sinkt genau um
+den Preis.
+
+Die Gebühr zählt pro Signatur: Eine Abrechnung trägt eine, wenn das Wallet selbst zahlt, und zwei,
+wenn ein Relayer sie einreicht. Der Preis wird für genau diese Anzahl berechnet, ein Relayer behält
+also nie mehr, als er ausgegeben hat. Nur wenn kein Relayer die Zahlung übernimmt, legt das Wallet
+diese Kosten selbst vor — und dieselbe Transaktion gibt sie zurück.
 
 ## Wenn das Netzwerk ausgelastet ist
 
@@ -53,8 +61,8 @@ selbst.
 
 ## Was das für dich bedeutet
 
-Gebühren sind nichts, worüber du dir Sorgen machen oder das du einplanen müsstest. Halt ein wenig SOL
-in dem Wallet, aus dem du zahlst, und die Kosten einer Zahlung bleiben so klein, dass sie leichter zu
-ignorieren als auszurechnen sind.
+Gebühren sind nichts, worüber du dir Sorgen machen oder das du einplanen müsstest. Der Preis auf dem
+Code sind die vollen Kosten: Netzgebühr und Miete des Belegs stecken bereits darin und bleiben so
+klein, dass sie leichter zu ignorieren als auszurechnen sind.
 
 Die Netzwerkgebühr ist nur der kleinste Teil dessen, was eine Zahlung kostet. Wohin der Rest geht — der Anteil des Protokolls, der dauerhafte Beleg auf der Blockchain und die Kosten, die den Dienst am Laufen halten — steht in [Was eine Zahlung kostet](/learn/what-a-payment-costs).

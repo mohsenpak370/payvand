@@ -1,6 +1,6 @@
 ---
 title: Pourquoi chaque paiement coûte une fraction de centime
-description: Qui reçoit les frais, pourquoi il vous faut un peu de SOL même si vous payez en euros, et pourquoi un paiement échoué coûte quand même quelque chose.
+description: Qui reçoit les frais, pourquoi le prix affiché est le coût complet, et pourquoi un paiement échoué coûte quand même quelque chose.
 category: basics
 order: 6
 ---
@@ -22,17 +22,24 @@ Les frais crypto sont différents sur deux points :
 
 - **Ils sont fixes.** Payer 2 ou payer 2 000 coûte la même somme minuscule, parce que le travail
   est le même.
-- **C'est le payeur qui les paie, et le commerce reçoit le montant plein.** Aucune location de
-  terminal, aucun contrat mensuel, rien de déduit de la vente.
+- **C'est le vendeur qui les paie, sur le prix.** Aucune location de terminal, aucun contrat
+  mensuel, rien ajouté au-dessus : l'acheteur paie exactement le prix affiché, et les frais de réseau
+  comme le loyer du reçu sortent de la part du vendeur.
 
-## Pourquoi il faut un peu de SOL même pour payer en USDC
+## Pourquoi aucun SOL n'est nécessaire, même pour payer en USDC
 
 Les frais sont toujours payés dans la monnaie propre au réseau, le SOL. Voyez cela comme le
 timbre : la lettre peut contenir des billets, mais le timbre doit être celui de la poste.
 
-C'est le seul point un peu délicat au démarrage : un portefeuille rempli d'USDC et sans aucun SOL
-ne peut rien déplacer. Gardez un peu de SOL dans le portefeuille depuis lequel vous payez, et vous
-n'y penserez plus.
+Ce n'est pas pour autant à vous d'acheter ce timbre. Le relais de Payvand paie les frais de réseau et
+avance les petits loyers du paiement et de son reçu sur la chaîne, et la même transaction les lui rend
+sur le prix. Un portefeuille rempli d'USDC et sans aucun SOL peut donc payer, et son solde baisse
+exactement du prix.
+
+Les frais se comptent par signature : un règlement en porte une quand le portefeuille paie lui-même et
+deux quand un relais le soumet. Le prix est facturé pour exactement ce nombre de signatures, si bien
+qu'un relais ne garde jamais plus qu'il n'a dépensé. C'est seulement si aucun relais ne prend le
+paiement que le portefeuille avance ces coûts, et la même transaction les lui rend.
 
 ## Quand le réseau est chargé
 
@@ -55,8 +62,8 @@ elle-même.
 
 ## Ce que cela signifie pour vous
 
-Les frais ne sont ni à craindre ni à budgéter. Gardez un peu de SOL dans le portefeuille avec
-lequel vous payez, et le coût d'un paiement reste si petit qu'il est plus facile à ignorer qu'à
-calculer.
+Les frais ne sont ni à craindre ni à budgéter. Le prix affiché est le coût complet : les frais de
+réseau et le loyer du reçu y sont déjà compris, et ils restent si petits qu'il est plus facile de les
+ignorer que de les calculer.
 
 Les frais de réseau ne sont que la plus petite part de ce que coûte un paiement. Où va le reste — la part du protocole, le reçu permanent sur la chaîne et les coûts qui font tourner le service — est décrit dans [ce que coûte un paiement](/learn/what-a-payment-costs).

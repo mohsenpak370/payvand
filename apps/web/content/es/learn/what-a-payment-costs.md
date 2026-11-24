@@ -75,3 +75,16 @@ sigue en vez de absorberse.
 El precio de un código nunca cambia, pero la comisión es la vigente al pagar, así que un cambio de
 tipos afecta también a códigos ya compartidos y aún sin pagar. La app muestra el desglose con los
 tipos vigentes.
+
+## Qué ha cambiado
+
+El pagador paga exactamente el precio del código, nada más. La comisión de red de Solana y las dos rentas
+pequeñas que necesitan el pago y su recibo en la cadena ya están dentro de ese precio: el relé de Payvand
+las adelanta y la misma transacción se las devuelve del importe pagado. Incluso una cartera sin nada de
+SOL puede pagar.
+
+El suelo de la comisión del vendedor es «la renta del recibo más la comisión de red»: si el porcentaje es
+menor que esos costes, el vendedor paga solo los costes y el protocolo no cobra nada. La comisión de red
+se cuenta por firma: una liquidación enviada por el relé lleva dos (la del pagador y la suya), y una que
+se financia sola lleva una; el precio se cobra por exactamente ese número de firmas, y el reembolso a
+quien las adelantó es esa misma cifra.

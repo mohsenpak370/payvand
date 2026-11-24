@@ -19,9 +19,15 @@ export function useCheckoutCosts(
   async function refreshCosts(): Promise<InvoiceCosts | null> {
     const option = selected.value
     try {
+      // One signature: this figure is what the payment costs the wallet when it
+      // pays its own way, which is the only case the checkout shows it. A
+      // settlement a relayer fee-pays carries two, and there the fee line reads
+      // that the fee is included in the price instead — `estimateInvoiceCosts`
+      // takes `signatures: 2` from a caller that knows a relayer will submit.
       const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
         mint: option.mint || undefined,
-        seller: payload.value?.seller ? address(payload.value.seller) : undefined
+        seller: payload.value?.seller ? address(payload.value.seller) : undefined,
+        signatures: 1
       })
       costs.value = quote
       costsError.value = ''
