@@ -334,32 +334,44 @@ printed before this existed, pays `Config`'s rate exactly as it did. A policy
 recorded under another seller is refused with `ShopPolicySellerMismatch`, so one
 shop cannot price another's invoice.
 
-**The receipt's rent is the floor of the fee.** A token seller cannot be charged
-lamports, so on that path the treasury funds the receipt and collects it back as
-a flat in the currency (`flat_usdc_base_units`, `flat_eurc_base_units`); the fee
-is `max(rate, flat)`. A SOL seller hands the rent over out of the price directly,
-so the rate has it taken off instead: `max(0, rate − receipt rent)`. Either way
-the seller's total is `max(rate, receipt rent)` — a payment too small for the
-rate to cover the record is charged the record and nothing else, so the
-treasury neither takes a fee on it nor pays for it.
+**The record and the signature are the floor of the fee.** A seller's deduction
+is `max(platform rate, record rent + network fee)`: a payment too small for the
+rate to cover them is charged the costs and nothing else, so the treasury neither
+takes a fee on it nor pays for it. A token seller cannot be charged lamports, so
+there the costs arrive as a flat in the currency (`flat_usdc_base_units`,
+`flat_eurc_base_units` plus `network_fee_usdc_base_units` /
+`network_fee_eurc_base_units`). A SOL seller hands the receipt's rent over out of
+the price directly, so the rate has the rent taken off instead.
+
+**The network fee is per signature.** `network_fee_lamports` and its two token
+equivalents are what one signature costs. A settlement that a relayer fee-pays
+carries two — the payer's and the relayer's — and one that pays its own way
+carries a single signature, so `fee_for_signatures` multiplies the policy figure
+by the count the path actually uses, and the settlement charges the seller and
+refunds the sponsor that same figure. Priority fees above the base fee remain the
+relayer's own cost.
 
 | Who | Pays | Ends up with |
 | --- | --- | --- |
-| Buyer | the price, plus the Solana network fee (only the price, when a sponsor pays it) | out exactly `amount` plus that fee, and the receipt on chain |
-| Seller | the larger of the rate and the receipt's rent, out of the price | `amount − max(rate, receipt rent)` |
-| Treasury | the receipt's rent on the token path, nothing on SOL | `max(rate, receipt rent) − receipt rent` |
+| Buyer | the price, and nothing else in either currency; Payvand's relayer pays the network fee and fronts both record rents, and a buyer pays them itself only when no relayer takes the payment | out exactly `amount`, and the receipt on chain |
+| Seller | the larger of the rate and the record plus the network fee, out of the price | `amount − max(rate, costs)` |
+| Relayer (sponsor) | the transaction's signatures and both record rents, for the length of the transaction | whole: the refund is `invoice rent + receipt rent + network fee × signatures` |
+| Treasury | the network fee it recharges | `fee − network fee × signatures` |
 
-How a SOL settlement gets there, in one signature: the payer funds the invoice
-account and the receipt; `amount − invoice rent − receipt rent − fee` goes to the
-seller; `fee` goes to the treasury; the invoice account closes to the seller with
-its rent; and the treasury pays the payer back the receipt rent. The payer's
-balance therefore moves by exactly `amount` plus the network fee, and the only
-lasting cost is the receipt, which the seller paid for and which nobody can
-close.
+A SOL settlement does it in one instruction with a required trailing `sponsor`:
+the sponsor funds the invoice account and the receipt and pays the signatures;
+`amount − invoice rent − receipt rent − fee` goes to the seller, the record rents
+plus the network fee go back to the sponsor, `fee − network fee` goes to the
+treasury, and the invoice account closes to the seller with its rent. The payer's
+balance moves by exactly `amount`, and every lamport a sponsor fronted comes
+back in the same transaction. The budget path keeps the session key as its only
+signer, so it fronts one signature and the refund is one signature's worth.
 
 Token invoices take the fee in the token: `amount − fee_t` to the seller and
-`fee_t` to the treasury's own account for that mint. **Sellers need no SOL** to
-be paid in a token, and the payer's SOL exposure is the network fee alone: the
+`fee_t` to the treasury's own account for that mint, with the sponsor refunded
+`invoice rent + receipt rent + network fee × signatures` in lamports. **Sellers
+need no SOL** to be paid in a token, and the payer's SOL exposure is the network
+fee alone — and none of it when a relayer takes the payment: the
 seller's token account must already exist, on both the wallet and the allowance
 path, because its rent would be a cost nobody refunds and the buyer's money
 would be paying it. The treasury must
@@ -371,9 +383,10 @@ That network fee is the one thing a wallet must hold SOL for, and on a token
 invoice it can be someone else's. `settle_token_payment` takes a `sponsor`: it
 advances the invoice's rent and the receipt's and receives the treasury's refund
 of both, so its net cost is the network fee it signs for, and the buyer's wallet
-ends where it began. A wallet holding SOL passes itself as its own sponsor — one
-signature, no change in cost — and a wallet holding only the token passes a
-relayer's key instead, which is what makes a USDC-only buyer able to pay. The
+ends where it began. The fee Payvand takes is what pays for it, so the checkout
+asks the relayer for every token payment and a USDC-only buyer can pay with an
+empty SOL balance; a wallet fronts the fee itself only when no relayer will take
+the payment. The
 refund goes to the sponsor and never to the buyer on purpose: a sponsor that
 funded the buyer's wallet would leave it holding both rents, 3,939,360 lamports
 per settlement at mainnet's rate, which is a faucet. A SOL invoice cannot be

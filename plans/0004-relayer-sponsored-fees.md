@@ -22,6 +22,24 @@ over the checkout suites and `nuxt typecheck` clean. Left: Task E's devnet run
 and the two Task D items this increment did not take (the session-key case, and
 a client-side refusal that names the missing lamports).
 
+Increment 3 (2026-11-24): the balance gate is gone. The product's rule is that
+the network fee comes out of Payvand's fee, not out of the payer's wallet, so
+every token payment now asks the relayer first — a funded wallet no longer
+spends its own lamports on a settle, and a payer holding no SOL at all can pay.
+Only a payment no relayer will take falls back to the wallet fronting the fee
+and rents itself, and a wallet that cannot is refused with
+`errors.paymentNeedsSol` before it signs instead of failing inside an approved
+wallet prompt. The checkout's cost panel shows the network fee as covered by
+Payvand whenever the relayer answers yes, and `profile.detailFeeNote`, `README`
+and `DEV` say the same. Tests: `lets the relayer pay even when the wallet
+could`, `pays its own fee and rents when no relayer takes the payment`,
+`refuses before a signature when there is no relayer and no SOL`. Still open:
+the sponsor key on the deployed API (`SPONSOR_KEYPAIR`), Task E's devnet run,
+the learn articles and terms copy that still says a payer needs SOL, and gasless
+**SOL** invoices, which need the program to take a sponsor on `settle_payment`.
+Note also that sponsorship is behind `auth::require_user`, so a buyer who is not
+signed in falls back to paying the fee from their own wallet.
+
 ## Model (Task A, decided 2026-11-22)
 
 - **In-house sponsor**, not Kora. The sponsor is one keypair the API holds, and
@@ -204,10 +222,12 @@ pins the two to each other.
       account, the buyer signs with `useSolanaSignTransactions`, the fee payer's
       slot is left empty, and the base64 wire bytes go to `POST
       /api/sponsor/settle`. Above it nothing is asked of the endpoint at all and
-      the same `execute()` send runs as before. Pinned by
-      `pays its own fee and rents when the wallet holds them` (no sponsor call)
-      and `asks the relayer to front them when the wallet cannot` in
-      `usePaymentCheckout.test.ts`.
+      the same `execute()` send runs as before. *(Superseded 2026-11-24: the
+      balance threshold is gone and the relayer is asked for every token
+      payment, so the fee is Payvand's cost rather than the payer's — see
+      Increment 3. Pinned now by `lets the relayer pay even when the wallet
+      could`, `pays its own fee and rents when no relayer takes the payment` and
+      `refuses before a signature when there is no relayer and no SOL`.)*
 - [ ] Show the sponsored case honestly: the checkout already says the payer
       pays the price and nothing else; confirm no new line appears and that the
       refusal path names the missing lamports. — Half done, 2026-11-22, by
