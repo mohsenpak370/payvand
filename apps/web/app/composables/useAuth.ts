@@ -235,9 +235,19 @@ export function useAuth() {
     return response.user
   }
 
-  /** This account's on-chain transactions, for its linked wallet. */
-  async function myTransactions(): Promise<TransactionsResponse> {
-    return await $fetch<TransactionsResponse>(`${base}/api/me/transactions`, {
+  /**
+   * This account's on-chain transactions, for its linked wallet.
+   *
+   * The server lists them from the invoices it recorded and asks the cluster
+   * only whether each settled. `scan` asks for the full program scan as well —
+   * the fallback that finds a code another client made, or a payment from an
+   * allowance whose session key the API has no invoice for.
+   */
+  async function myTransactions(
+    options: { scan?: boolean } = {}
+  ): Promise<TransactionsResponse> {
+    const query = options.scan ? '?scan=1' : ''
+    return await $fetch<TransactionsResponse>(`${base}/api/me/transactions${query}`, {
       headers: headers()
     })
   }

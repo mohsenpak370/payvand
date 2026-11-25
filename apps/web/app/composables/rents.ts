@@ -37,6 +37,24 @@ export async function rentMinimum(
   return lamports
 }
 
+/**
+ * Seeds the cache from one answer that already carries every size a quote asks
+ * for — `GET /api/config` returns the cluster's minimums beside the policy.
+ * A quote served from it then reads the cluster no rent at all; a size the
+ * answer did not name is still asked for on demand.
+ */
+export function primeRentCache(
+  spaces: Record<string, number>,
+  rent: Record<string, number>
+): void {
+  const readAt = Date.now()
+  for (const [name, space] of Object.entries(spaces)) {
+    const lamports = rent[name]
+    if (typeof space !== 'number' || typeof lamports !== 'number') continue
+    rentCache.set(space, { readAt, lamports })
+  }
+}
+
 /** Drops the cached rents, so the next quote asks the cluster again. */
 export function clearRentCache(): void {
   rentCache.clear()

@@ -142,7 +142,11 @@ const SCHEMA: &[&str] = &[
     // `sponsor.rs` read this table, and a row is written only after the cluster
     // accepted the transaction, so the count is spend rather than attempts. The
     // signature is the id: one sponsored settle cannot be counted twice.
-    "CREATE TABLE IF NOT EXISTS sponsored_settlements (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, wallet TEXT NOT NULL, cluster TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+    //
+    // The wallet is the key the caps count, not the account: a buyer who scanned
+    // a printed code has no account here, and the cap has to hold for them too.
+    // `user_id` is what we happen to know about them, never a requirement.
+    "CREATE TABLE IF NOT EXISTS sponsored_settlements (\n        id         TEXT PRIMARY KEY,\n        wallet     TEXT NOT NULL,\n        user_id    TEXT,\n        cluster    TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        created_at INTEGER NOT NULL\n    )",
     // A browser's push subscription: one row per device, keyed by the endpoint
     // the push service gave it. `locale` is the copy the reminder is written
     // in, because a notification arrives outside the app where no i18n runs.
@@ -158,7 +162,28 @@ const SCHEMA: &[&str] = &[
     // What an invoice is called and what it is for: the chain stores neither,
     // so the seller's own words are kept here when the invoice is made, and the
     // history can show a subject instead of an amount with no story.
-    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
+    // The invoices this API made, one row per address the invoice can be paid
+    // at. It began as the seller's own copy of a name and description — the
+    // chain keeps neither — and the feed lists from it now: `amount` and
+    // `reference` are what a status read needs, so the history asks the cluster
+    // whether an invoice settled rather than for every payment ever made.
+    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        reference   TEXT NOT NULL DEFAULT '',\n        cluster     TEXT NOT NULL DEFAULT '',\n        endpoint    TEXT NOT NULL DEFAULT '',\n        currency    TEXT NOT NULL DEFAULT '',\n        mint        TEXT NOT NULL DEFAULT '',\n        amount      INTEGER NOT NULL DEFAULT 0,\n        memo        TEXT NOT NULL DEFAULT '',\n        seller_user TEXT,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
+    // Which wallet a session key spends for. A payment made from an allowance is
+    // signed by that key, not by the buyer's wallet, so the settle leaves a payer
+    // the feed would not otherwise recognise as this buyer. The chain keeps the
+    // pair — a budget account holds the buyer and its session key — and this is
+    // what one look at it learned, so a later load matches the payment to the
+    // wallet with a row read instead of another scan.
+    "CREATE TABLE IF NOT EXISTS session_keys (\n        session_key TEXT NOT NULL,\n        wallet      TEXT NOT NULL,\n        endpoint    TEXT NOT NULL,\n        cluster     TEXT NOT NULL,\n        first_seen  INTEGER NOT NULL,\n        PRIMARY KEY (session_key, endpoint, cluster)\n    )",
+    "CREATE INDEX IF NOT EXISTS session_keys_wallet_idx ON session_keys(wallet, endpoint, cluster)",
+    // When this wallet's allowances were last looked up on chain. A wallet with
+    // none would otherwise ask the cluster to confirm that on every feed load.
+    "CREATE TABLE IF NOT EXISTS allowance_checks (\n        wallet     TEXT NOT NULL,\n        endpoint   TEXT NOT NULL,\n        cluster    TEXT NOT NULL,\n        checked_at INTEGER NOT NULL,\n        PRIMARY KEY (wallet, endpoint, cluster)\n    )",
+    // An invoice row written before rows carried an amount is filled from the
+    // chain once, the first time its seller opens the feed. This records the ids
+    // the chain had nothing to say about, so a dead testnet invoice is not asked
+    // about on every load afterwards.
+    "CREATE TABLE IF NOT EXISTS invoice_backfill (\n        id       TEXT PRIMARY KEY,\n        endpoint TEXT NOT NULL,\n        tried_at INTEGER NOT NULL\n    )",
 ];
 
 #[derive(Debug)]
@@ -234,6 +259,8 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
     }
     migrate_shops_to_a_list(connection).await?;
     migrate_saved_codes_to_shops(connection).await?;
+    migrate_settlements_to_wallets(connection).await?;
+    migrate_invoice_columns(connection).await?;
     // The receipt lines an invoice was priced from. Additive: an invoice made
     // before this keeps an empty list, and a database created after it has the
     // column from the statement above.
@@ -357,6 +384,114 @@ async fn migrate_saved_codes_to_shops(connection: &libsql::Connection) -> Result
         .execute(
             "CREATE INDEX IF NOT EXISTS saved_payments_shop_id_idx ON saved_payments(shop_id)",
             (),
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// A sponsored settlement used to belong to an account: the row carried a
+/// `NOT NULL REFERENCES users` column, so anything paid by a buyer without one
+/// could not be recorded at all. The cap is keyed by the wallet now, and the
+/// account is only what we happen to know.
+///
+/// SQLite cannot drop a NOT NULL or a foreign key in place, so the table is
+/// rebuilt with the rows it already has — the same shape of upgrade the shops
+/// table got. Runs after `SCHEMA`, so a fresh database has nothing to do.
+async fn migrate_settlements_to_wallets(connection: &libsql::Connection) -> Result<(), DbError> {
+    let definition: Option<String> = {
+        let mut rows = connection
+            .query(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' \
+                 AND name = 'sponsored_settlements'",
+                (),
+            )
+            .await?;
+        // The cursor is finished and dropped before any DDL runs: an open read
+        // on sqlite_master keeps the schema locked on this connection.
+        match rows.next().await? {
+            Some(row) => row.get(0).ok(),
+            None => None,
+        }
+    };
+    let Some(definition) = definition else {
+        return Ok(());
+    };
+
+    if definition.contains("REFERENCES users") {
+        connection
+            .execute_batch(
+                "ALTER TABLE sponsored_settlements RENAME TO sponsored_settlements_legacy;
+                 CREATE TABLE sponsored_settlements (
+                    id         TEXT PRIMARY KEY,
+                    wallet     TEXT NOT NULL,
+                    user_id    TEXT,
+                    cluster    TEXT NOT NULL,
+                    amount     INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                 );
+                 INSERT INTO sponsored_settlements (id, wallet, user_id, cluster, amount, created_at)
+                    SELECT id, wallet, user_id, cluster, amount, created_at
+                    FROM sponsored_settlements_legacy;
+                 DROP TABLE sponsored_settlements_legacy;",
+            )
+            .await?;
+        eprintln!("[db] migrate: sponsored_settlements keyed by wallet");
+    }
+
+    // The caps count one wallet's last day and the whole deployment's, which are
+    // the two reads this table serves.
+    connection
+        .execute_batch(
+            "CREATE INDEX IF NOT EXISTS sponsored_settlements_wallet_idx \
+                ON sponsored_settlements(wallet, created_at);
+             CREATE INDEX IF NOT EXISTS sponsored_settlements_created_idx \
+                ON sponsored_settlements(created_at);",
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// An invoice row began as a name and a description: the seller's own copy of
+/// what the chain cannot hold. It is the invoice list now — who made it, at
+/// which address, for which currency and how much — which is what lets the feed
+/// read our rows instead of the program's whole account table.
+///
+/// Additive on purpose: a row written before this keeps its name and gains
+/// empty facts, and `recorded_invoices` skips those (`amount = 0`) so the scan
+/// still answers for them and fills them in.
+async fn migrate_invoice_columns(connection: &libsql::Connection) -> Result<(), DbError> {
+    let additions = [
+        ("reference", "TEXT NOT NULL DEFAULT ''"),
+        ("cluster", "TEXT NOT NULL DEFAULT ''"),
+        ("endpoint", "TEXT NOT NULL DEFAULT ''"),
+        ("currency", "TEXT NOT NULL DEFAULT ''"),
+        ("mint", "TEXT NOT NULL DEFAULT ''"),
+        ("amount", "INTEGER NOT NULL DEFAULT 0"),
+        ("memo", "TEXT NOT NULL DEFAULT ''"),
+        ("seller_user", "TEXT"),
+    ];
+    for (column, definition) in additions {
+        if !has_column(connection, "invoice_meta", column).await? {
+            connection
+                .execute(
+                    &format!("ALTER TABLE invoice_meta ADD COLUMN {column} {definition}"),
+                    (),
+                )
+                .await?;
+            eprintln!("[db] migrate: added invoice_meta.{column}");
+        }
+    }
+
+    // The two reads the feed makes: one wallet's invoices, newest first, and one
+    // account's.
+    connection
+        .execute_batch(
+            "CREATE INDEX IF NOT EXISTS invoice_meta_seller_idx \
+                ON invoice_meta(seller, created_at);
+             CREATE INDEX IF NOT EXISTS invoice_meta_user_idx \
+                ON invoice_meta(seller_user, created_at);",
         )
         .await?;
 
@@ -494,6 +629,85 @@ mod tests {
             .expect("migrated again");
         let mut rows = connection
             .query("SELECT COUNT(*) FROM shops", ())
+            .await
+            .expect("count");
+        let count: i64 = rows
+            .next()
+            .await
+            .expect("row")
+            .expect("count")
+            .get(0)
+            .expect("value");
+        assert_eq!(count, 2);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Sponsored settlements used to require an account. A row written under
+    /// that rule keeps its place, and a buyer with no account can now be
+    /// recorded at all — which is what sponsorship for a printed code needs.
+    #[tokio::test]
+    async fn upgrades_sponsored_settlements_to_wallet_keys() {
+        let path = std::env::temp_dir().join(format!(
+            "payvand-settle-migrate-test-{}.db",
+            crate::auth::random_id()
+        ));
+        let db = Builder::new_local(&path).build().await.expect("temp db");
+        let connection = db.connect().expect("connect");
+        connection
+            .execute_batch(
+                "CREATE TABLE users (
+                    id            TEXT PRIMARY KEY,
+                    email         TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    wallet        TEXT,
+                    created_at    INTEGER NOT NULL
+                );
+                CREATE TABLE sponsored_settlements (
+                    id         TEXT PRIMARY KEY,
+                    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    wallet     TEXT NOT NULL,
+                    cluster    TEXT NOT NULL,
+                    amount     INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
+                INSERT INTO users (id, email, password_hash, wallet, created_at)
+                    VALUES ('user-1', 'seller@example.com', 'x', NULL, 1);
+                INSERT INTO sponsored_settlements (id, user_id, wallet, cluster, amount, created_at)
+                    VALUES ('sig-1', 'user-1', 'wallet-1', 'devnet', 42, 2);",
+            )
+            .await
+            .expect("old schema");
+
+        migrate_connection(&connection).await.expect("migrated");
+
+        let mut rows = connection
+            .query(
+                "SELECT wallet, user_id FROM sponsored_settlements WHERE id = 'sig-1'",
+                (),
+            )
+            .await
+            .expect("read row");
+        let row = rows.next().await.expect("row").expect("settlement");
+        assert_eq!(row.get::<String>(0).expect("wallet"), "wallet-1");
+        assert_eq!(row.get::<String>(1).expect("account"), "user-1");
+
+        // No account, and the row fits: this is the anonymous buyer.
+        connection
+            .execute(
+                "INSERT INTO sponsored_settlements (id, wallet, user_id, cluster, amount, created_at) \
+                 VALUES ('sig-2', 'wallet-2', NULL, 'devnet', 7, 3)",
+                (),
+            )
+            .await
+            .expect("a wallet with no account can be recorded");
+
+        // Re-running is a no-op, as every cold start does.
+        migrate_connection(&connection)
+            .await
+            .expect("migrated again");
+        let mut rows = connection
+            .query("SELECT COUNT(*) FROM sponsored_settlements", ())
             .await
             .expect("count");
         let count: i64 = rows

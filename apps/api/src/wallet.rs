@@ -7,11 +7,13 @@
 //! checks the purpose, and consumes the row — so a signature can never be
 //! replayed, nor reused for a different request.
 //!
-//! `GET /api/me/transactions` reads the program's accounts and returns the
-//! invoices that involve the linked wallet — as seller, as payer, or as the
-//! buyer behind a budget's session key.
+//! `GET /api/me/transactions` lists the invoices that involve the linked wallet
+//! — as seller, as payer, or as the buyer behind a budget's session key. It lists
+//! them from the rows this API wrote when it made each invoice, asks the cluster
+//! only whether they settled, and falls back to the program scan for anything it
+//! did not record.
 
-use axum::extract::{Json, State};
+use axum::extract::{Json, Query, State};
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 
@@ -358,19 +360,165 @@ pub struct TransactionsResponse {
     pub cluster: String,
 }
 
+/// `?scan=1` asks for the program scan even when our rows could answer.
+#[derive(Debug, Deserialize)]
+pub struct FeedQuery {
+    /// Only the allowance needs it today: a payment signed by a session key is
+    /// one this API never wrote an invoice row for, and which wallet owns that
+    /// key is knowable only from the chain.
+    #[serde(default)]
+    pub scan: Option<String>,
+}
+
+fn wants_scan(query: &FeedQuery) -> bool {
+    query
+        .scan
+        .as_deref()
+        .is_some_and(|value| value == "1" || value == "true")
+}
+
 pub async fn transactions(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
+    Query(query): Query<FeedQuery>,
 ) -> ApiResult<Json<TransactionsResponse>> {
     let user = auth::require_user(&state.db, &headers).await?;
     let wallet = user.wallet.ok_or_else(|| {
         ApiError::BadRequest("Link your wallet on the profile page first.".into())
     })?;
 
-    // Only `TRANSACTION_LIMIT` rows survive the truncation below, so that is
-    // how many settled invoices are worth resolving from history.
-    let scan = payments::fetch_program_scan(TRANSACTION_LIMIT, &state.db).await?;
-    let mut items = match_transactions(scan.payments, &scan.budgets, &wallet);
+    let cluster = payments::default_cluster();
+    let endpoint = payments::resolve_endpoint(None, &cluster)?;
+
+    // A row from before this API kept amounts cannot be listed — it has nothing
+    // to show and no currency to say — so a seller returning to such a history
+    // would fall back to the program scan on every load. Filling the page from
+    // the chain once ends that: the rows then answer like any other.
+    payments::backfill_invoice_rows(&state.db, &wallet, &cluster, &endpoint).await;
+
+    // Our own rows answer most of this: the invoices this wallet made, and the
+    // settlements it paid. The cluster is asked only what a row cannot say —
+    // whether each invoice has settled — and that is one batched read for the
+    // page instead of a scan of every account the program owns.
+    let own = payments::recorded_invoices(&state.db, &wallet, &cluster, TRANSACTION_LIMIT).await;
+    // What only the cluster knows: whether each of those invoices has settled,
+    // and by whom. One batched read for the page, and a row that survives the
+    // cluster not answering at all.
+    let ids: Vec<String> = own.iter().map(|record| record.id.clone()).collect();
+    let settled = if ids.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        payments::fetch_many(
+            payments::WatchRequest {
+                pdas: ids,
+                cluster: Some(cluster.clone()),
+                endpoint: Some(endpoint.clone()),
+            },
+            &state.db,
+        )
+        .await
+        .map(|records| {
+            records
+                .into_iter()
+                .map(|record| (record.id.clone(), record))
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+        .unwrap_or_default()
+    };
+    let mut records: Vec<PaymentRecord> = own
+        .into_iter()
+        .map(|row| match settled.get(&row.id) {
+            // A settlement is the whole record: it names the payer and the time.
+            Some(chain) if chain.status == PaymentStatus::Settled => chain.clone(),
+            Some(chain) => PaymentRecord {
+                status: chain.status,
+                ..row
+            },
+            None => row,
+        })
+        .collect();
+    // A payment from an allowance is signed by its session key, so its settle
+    // names a payer that is not the wallet. Which key spends for which wallet is
+    // on chain — the budget account holds both — so it is looked up once and
+    // kept; every load after that matches the payments with a row read.
+    let mut session_keys =
+        payments::session_keys_for(&state.db, &wallet, &cluster, &endpoint).await;
+    let mut found_allowance = false;
+    if session_keys.is_empty()
+        && payments::allowance_check_due(&state.db, &wallet, &cluster, &endpoint).await
+    {
+        if let Ok(buyer) = payments::parse_pubkey(&wallet, "wallet") {
+            if let Some(found) =
+                payments::detect_allowance(&state.db, &endpoint, &cluster, &buyer).await
+            {
+                payments::mark_allowance_checked(&state.db, &wallet, &cluster, &endpoint).await;
+                session_keys = found;
+                found_allowance = !session_keys.is_empty();
+            }
+        }
+    }
+
+    let mut payers = vec![wallet.clone()];
+    payers.extend(session_keys.iter().map(|key| key.to_string()));
+    records.extend(
+        payments::settlements_paid_by_any(
+            &state.db,
+            &endpoint,
+            &cluster,
+            &payers,
+            TRANSACTION_LIMIT,
+        )
+        .await,
+    );
+
+    // The allowances this wallet is known to have, in the shape the matcher
+    // reads: a payment whose payer is one of these keys is this buyer's.
+    let mut budgets: Vec<payments::BudgetAccount> = match payments::parse_pubkey(&wallet, "wallet")
+    {
+        Ok(buyer) => session_keys
+            .iter()
+            .map(|key| payments::BudgetAccount {
+                buyer,
+                session_key: *key,
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+
+    // The fallback: the program scan, for anything we did not record — a code
+    // another client made, an invoice from before this API kept rows, or a
+    // payment from an allowance it has no invoice for. It also backfills what it
+    // finds, so this is the cold path rather than the usual one.
+    //
+    // An allowance that was just found is scanned for once: its payments are not
+    // ours to have rows for until a scan has read them.
+    if wants_scan(&query) || records.is_empty() || found_allowance {
+        let scan = payments::fetch_program_scan(TRANSACTION_LIMIT, &state.db).await?;
+        for record in scan.payments {
+            if !records.iter().any(|known| known.id == record.id) {
+                records.push(record);
+            }
+        }
+        payments::remember_budgets(&state.db, &scan.budgets, &cluster, &endpoint).await;
+        budgets.extend(scan.budgets);
+        payments::remember_scanned(&state.db, &records).await;
+    }
+
+    // One row per invoice: an invoice this wallet both made and paid is one
+    // payment, and the settled copy is the one worth showing.
+    let mut unique: Vec<PaymentRecord> = Vec::with_capacity(records.len());
+    for record in records {
+        match unique.iter().position(|known| known.id == record.id) {
+            Some(index) => {
+                if record.status == PaymentStatus::Settled {
+                    unique[index] = record;
+                }
+            }
+            None => unique.push(record),
+        }
+    }
+
+    let mut items = match_transactions(unique, &budgets, &wallet);
     // The count the card shows is everything the wallet has, which is not the
     // page it was cut down to.
     let total = items.len();
@@ -380,7 +528,7 @@ pub async fn transactions(
     Ok(Json(TransactionsResponse {
         wallet,
         total,
-        cluster: scan.cluster,
+        cluster,
         items,
     }))
 }
@@ -536,7 +684,7 @@ pub(crate) fn match_transactions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::extract::{Json as JsonExtractor, State as StateExtractor};
+    use axum::extract::{Json as JsonExtractor, Query as QueryExtractor, State as StateExtractor};
     use ed25519_dalek::{Signer, SigningKey};
 
     async fn test_state() -> (crate::AppState, std::path::PathBuf) {
@@ -741,7 +889,12 @@ mod tests {
         // 9. A signed-in account with no linked wallet is refused the feed
         //    before any RPC happens.
         let stranger_token = signup(&state, "no-wallet@example.com").await;
-        let feed = transactions(StateExtractor(state.clone()), bearer(&stranger_token)).await;
+        let feed = transactions(
+            StateExtractor(state.clone()),
+            bearer(&stranger_token),
+            QueryExtractor(FeedQuery { scan: None }),
+        )
+        .await;
         assert!(matches!(feed, Err(ApiError::BadRequest(_))));
 
         // 10. Switching: linking a different wallet replaces the first one,

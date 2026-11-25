@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod config;
 pub mod db;
 pub mod discounts;
 pub mod email;
@@ -82,6 +83,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/wallet/signin", post(wallet::signin))
         .route("/api/auth/wallet/unlink", post(wallet::unlink))
         .route("/api/me/transactions", get(wallet::transactions))
+        // The numbers a quote needs — the fee policy, the mint addresses and the
+        // cluster's rent minimums — read from the cluster once and cached for a
+        // minute, so a browser tab does not read devnet for its own pricing.
+        .route("/api/config", get(config::config))
         .route("/api/payments", post(create_payment))
         .route("/api/payments/watch", post(watch_payments))
         .route("/api/payments/{id}", get(get_payment))
@@ -191,6 +196,10 @@ fn throttle_for(path: &str) -> Option<Throttle> {
         // rather than by guessing, and it is cheap to answer either way.
         "/api/discounts/use" => ("discount-use", 30, rate_limit::MINUTE),
         "/api/waitlist" => ("waitlist", 10, rate_limit::HOUR),
+        // The relayer takes a settle from anyone whose signature matches, so the
+        // only protection in front of its SOL is a caller's pace. The handler
+        // bounds each wallet; this bounds each address, whatever wallet it names.
+        "/api/sponsor/settle" => ("sponsor-settle", 30, rate_limit::MINUTE),
         // One claim per account is the handler's rule; this is the floor under
         // a script that retries, and it keeps the treasury from being probed.
         "/api/faucet" => ("faucet", 6, rate_limit::HOUR),
@@ -287,9 +296,10 @@ async fn create_payment(
     let user = auth::require_user(&state.db, &headers).await?;
     let discount_code = request.discount_code.clone();
     let mut payment = payments::create_payment(request)?;
-    // The invoice's name and description are the seller's, not the chain's, so
-    // they are remembered here for the history that reads the chain later.
-    payments::remember_invoice(&state.db, &payment).await;
+    // The invoice is recorded here, with its name, its facts and the account
+    // that made it: the feed lists these rows and asks the cluster only whether
+    // each one settled.
+    payments::remember_invoice(&state.db, &payment, Some(&user.id)).await;
 
     // The buyer's scan-to-pay screen asks the API for this seller's codes.
     payment.seller_user = Some(user.id.clone());

@@ -1,6 +1,6 @@
 import { address } from '@vue-solana/nuxt/kit'
 import type { ComputedRef, Ref } from 'vue'
-import { chainReadGapAfter } from '~/utils/chainReadGap'
+import { chainReadGapAfter, chainReadWanted } from '~/utils/chainReadGap'
 import type { PaymentOption, PaymentQrPayload, PaymentRecord } from './usePaymentApi'
 import { derivePaymentReceiptPda } from './usePaymentProgram'
 import { STATUS_POLL_MS } from './checkoutVerification'
@@ -32,8 +32,9 @@ export function useCheckoutChain(deps: {
    * confirming a send and the API's node voting it `confirmed`. Reading at
    * `confirmed` narrowed that window from a dozen seconds to about one; this read
    * closes the rest. It runs at load, on a currency switch, and then beside the
-   * poll on the slower schedule `chainReadGapAfter` keeps — the poll's own answer
-   * still comes from the API, every tick.
+   * poll on the schedule `chainReadGapAfter` keeps — for the first minute after
+   * any of those, and no longer: the poll's own answer comes from the API, every
+   * tick, and carries the page once the chain has had its say.
    *
    * Every `settle_*` instruction closes its invoice in the same transaction, so
    * the receipt is the only account a settled invoice leaves behind. One read per
@@ -101,24 +102,27 @@ export function useCheckoutChain(deps: {
 
   /**
    * The page's own reads of the chain, beside the poll's API read: how many it has
-   * made since the schedule started, when the last one went out, and whether one
-   * is owed whatever the gap says. Only the chain read is spaced by these — the
-   * API is asked on every tick as before, so the record still settles from the
-   * API alone.
+   * made since the schedule started, when the last one went out, whether one is
+   * owed whatever the gap says, and when the window those reads live in began. Only
+   * the chain read is spaced by these — the API is asked on every tick as before,
+   * so the record still settles from the API alone.
    */
   let chainReads = 0
   let lastChainReadAt = 0
   let chainReadPending = true
+  let chainReadStartedAt = Date.now()
 
   /**
    * A chain read when the schedule says one is due: the wait after the last read
-   * grows with every read, so an invoice nobody has paid costs the buyer's RPC a
-   * read a minute rather than one every tick. A pending read owes one now, which
-   * is how a restarted schedule reaches the tick after it. There is no settled
-   * check here — `settleFromChain` refuses a settled record, so a paid page costs
-   * nothing whichever tick the schedule reaches next.
+   * grows with every read, and the whole schedule ends a minute after it started,
+   * so an invoice nobody has paid costs the buyer's RPC four reads and then
+   * nothing — the API poll carries the page from there. A pending read owes one
+   * now, which is how a restarted schedule reaches the tick after it. There is no
+   * settled check here — `settleFromChain` refuses a settled record, so a paid
+   * page costs nothing whichever tick the schedule reaches next.
    */
   async function readChainIfDue(): Promise<void> {
+    if (!chainReadWanted(Date.now() - chainReadStartedAt)) return
     if (!chainReadPending && Date.now() - lastChainReadAt < chainReadGapAfter(chainReads)) {
       return
     }
@@ -129,14 +133,18 @@ export function useCheckoutChain(deps: {
   }
 
   /**
-   * Starts the schedule over: no reads yet, and the first one owed, so the next
-   * poll tick reads however far into a tick's worth of time this call lands. A
-   * currency switch arrives between ticks, and a wait measured from the switch
-   * would miss the tick after it by a few milliseconds.
+   * Starts the schedule over: no reads yet, a fresh minute of them, and the first
+   * one owed, so the next poll tick reads however far into a tick's worth of time
+   * this call lands. A currency switch arrives between ticks, and a wait measured
+   * from the switch would miss the tick after it by a few milliseconds.
+   *
+   * A send restarts it too: that is the other moment the chain leads the API, and
+   * a page open for longer than a minute still deserves the reads that cover it.
    */
   function restartChainReads() {
     chainReads = 0
     chainReadPending = true
+    chainReadStartedAt = Date.now()
   }
 
   let poll: ReturnType<typeof setInterval> | undefined

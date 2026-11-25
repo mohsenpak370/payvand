@@ -43,7 +43,7 @@ const { t } = useI18n()
 const api = usePaymentApi()
 const { user, ensureSession } = useAuth()
 const { wallets, selectedWallet, selectWallet } = useSolanaWallets()
-const { connect, connecting, canConnect, connected } = useSolanaWallet()
+const { connect, connecting, canConnect, connected, publicKey } = useSolanaWallet()
 
 const {
   payload,
@@ -110,7 +110,9 @@ watch([payload, selected], async ([current, option]) => {
   networkFeeCovered.value = false
   if (!current || option?.currency === 'sol') return
   try {
-    const info = await api.getSponsor()
+    // The wallet, when there is one, names whose allowance this is; a buyer who
+    // has not connected yet still gets the deployment's own answer.
+    const info = await api.getSponsor(publicKey.value ?? undefined)
     networkFeeCovered.value = info.available
   } catch {
     networkFeeCovered.value = false

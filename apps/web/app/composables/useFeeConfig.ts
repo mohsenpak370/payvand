@@ -15,7 +15,7 @@ import {
   deriveConfigPda,
   deriveTreasuryTokenAccount
 } from './usePaymentProgram'
-import { clearRentCache, rentMinimum } from './rents'
+import { clearRentCache, primeRentCache, rentMinimum } from './rents'
 
 /**
  * The fee policy the program reads at settlement time.
@@ -91,6 +91,14 @@ export function useFeeConfig() {
       return cache.config
     }
 
+    // The API's answer is the one every tab shares; the chain read below is the
+    // fallback for a deployment whose API cannot reach the cluster.
+    const fromApi = await loadFromApi()
+    if (fromApi) {
+      cache = { readAt: Date.now(), config: fromApi }
+      return fromApi
+    }
+
     const pda = await deriveConfigPda()
     const info = await client.rpc
       .getAccountInfo(pda, { commitment: 'confirmed', encoding: 'base64' })
@@ -130,6 +138,40 @@ export function useFeeConfig() {
 
     cache = { readAt: Date.now(), config }
     return config
+  }
+
+  /**
+   * The policy, the mints and the rent minimums as `GET /api/config` answers
+   * them: one read a minute on the API's side instead of one per tab here. The
+   * rents arrive with it and prime the shared cache, so the quote that follows
+   * asks the cluster nothing for them. Null when the API does not answer or
+   * answers something a quote cannot use, and then the account is read directly.
+   */
+  async function loadFromApi(): Promise<FeeConfig | null> {
+    if (typeof usePaymentApi !== 'function') return null
+    try {
+      const payload = await usePaymentApi().getConfig()
+      if (!payload?.mints?.usdc || !payload?.mints?.eurc || !payload?.fees) return null
+      primeRentCache(payload.spaces, payload.rent)
+      return {
+        admin: address(payload.admin),
+        feeBpsBelow: payload.fees.fee_bps_below,
+        feeBpsAbove: payload.fees.fee_bps_above,
+        solTierLamports: payload.fees.sol_tier_lamports,
+        tokenTierBaseUnits: payload.fees.token_tier_base_units,
+        flatUsdcBaseUnits: payload.fees.flat_usdc_base_units,
+        flatEurcBaseUnits: payload.fees.flat_eurc_base_units,
+        usdcMint: address(payload.mints.usdc),
+        eurcMint: address(payload.mints.eurc),
+        networkFeeLamports: payload.fees.network_fee_lamports,
+        networkFeeUsdcBaseUnits: payload.fees.network_fee_usdc_base_units,
+        networkFeeEurcBaseUnits: payload.fees.network_fee_eurc_base_units,
+        feeMode: payload.fee_mode === 'buyer' ? 'buyer' : 'seller',
+        sessionFeeFloat: payload.session_fee_float
+      }
+    } catch {
+      return null
+    }
   }
 
   return { load }

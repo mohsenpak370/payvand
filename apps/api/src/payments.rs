@@ -13,6 +13,7 @@ use solana_signature::Signature;
 use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 /// Mirrors `PAYMENT_MAX_MEMO` in `apps/contracts/programs/payvand`.
@@ -445,54 +446,89 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
     })
 }
 
-/// Remembers what an invoice is called and what it sells, which the chain does
-/// not: the name, the description and the receipt lines live only in the code
-/// the seller shares, so a history built from a cluster read would otherwise
-/// show an amount with no subject.
+/// Remembers an invoice this API made: what it is called, what it sells, and
+/// everything a status read or a history row needs to rebuild it — the seller,
+/// the reference, the cluster, and per address the currency, mint and amount.
+///
+/// The name, the description and the receipt lines exist only in the code the
+/// seller shares, so the chain cannot supply them. Everything else could be read
+/// back from the cluster, one `getProgramAccounts` for the whole program; this
+/// row is what lets a feed ask about its own invoices instead.
 ///
 /// A row is written for every currency the invoice accepts, not only for its
 /// primary address: the history is keyed by the address that was actually paid,
 /// so an invoice taking SOL and USDC paid in USDC would otherwise find nothing
-/// under that PDA and lose its name.
+/// under that PDA.
 ///
 /// Best effort by design. The invoice already exists on chain when this runs,
 /// and a cache that failed to write must never turn a working code into an
 /// error.
-pub async fn remember_invoice(db: &libsql::Database, record: &PaymentRecord) {
-    let name = record.name.trim();
-    let description = record.description.trim();
-    if name.is_empty() && description.is_empty() && record.items.is_empty() {
-        return;
-    }
+pub async fn remember_invoice(
+    db: &libsql::Database,
+    record: &PaymentRecord,
+    seller_user: Option<&str>,
+) {
+    let name = record.name.trim().to_string();
+    let description = record.description.trim().to_string();
     let items = serde_json::to_string(&record.items).unwrap_or_default();
+    let now = crate::auth::unix_now();
 
-    let mut ids: Vec<String> = record
+    let mut rows: Vec<(String, String, String, u64)> = record
         .options
         .iter()
-        .map(|option| option.payment_pda.clone())
-        .filter(|id| !id.is_empty())
+        .filter(|option| !option.payment_pda.is_empty())
+        .map(|option| {
+            (
+                option.payment_pda.clone(),
+                option.currency.clone(),
+                option.mint.clone(),
+                option.amount,
+            )
+        })
         .collect();
-    ids.push(record.id.clone());
-    ids.sort();
-    ids.dedup();
+    // A request with no options is the older one-address shape: the record's own
+    // id is the invoice, priced in SOL.
+    if rows.is_empty() {
+        rows.push((
+            record.id.clone(),
+            SOL_CURRENCY.to_string(),
+            String::new(),
+            record.amount_lamports,
+        ));
+    }
 
     let written = async {
         let connection = db.connect()?;
-        for id in &ids {
+        for (id, currency, mint, amount) in &rows {
             connection
                 .execute(
-                    "INSERT INTO invoice_meta (id, seller, name, description, items, created_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                    "INSERT INTO invoice_meta \
+                        (id, seller, reference, cluster, endpoint, currency, mint, amount, \
+                         memo, seller_user, name, description, items, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
                      ON CONFLICT(id) DO UPDATE SET \
+                        seller = excluded.seller, reference = excluded.reference, \
+                        cluster = excluded.cluster, endpoint = excluded.endpoint, \
+                        currency = excluded.currency, mint = excluded.mint, \
+                        amount = excluded.amount, memo = excluded.memo, \
+                        seller_user = COALESCE(excluded.seller_user, invoice_meta.seller_user), \
                         name = excluded.name, description = excluded.description, \
                         items = excluded.items",
                     libsql::params![
                         id.clone(),
                         record.seller.clone(),
-                        name.to_string(),
-                        description.to_string(),
+                        record.reference.clone(),
+                        record.cluster.clone(),
+                        record.endpoint.clone(),
+                        currency.clone(),
+                        mint.clone(),
+                        *amount as i64,
+                        record.memo.clone(),
+                        seller_user.map(str::to_owned),
+                        name.clone(),
+                        description.clone(),
                         items.clone(),
-                        crate::auth::unix_now()
+                        now
                     ],
                 )
                 .await?;
@@ -502,7 +538,658 @@ pub async fn remember_invoice(db: &libsql::Database, record: &PaymentRecord) {
     .await;
 
     if let Err(error) = written {
-        tracing::info!(%error, "invoice metadata was not cached");
+        tracing::info!(%error, "invoice row was not written");
+    }
+}
+
+/// The invoices this wallet made, newest first, as far as our own rows can
+/// say — no cluster read at all.
+///
+/// Each row is one address the invoice can be paid at, so an invoice priced in
+/// SOL and USDC is two entries — the same shape a chain read returns. The facts
+/// come from the row rather than from a `pending_record`, on purpose: the chain
+/// answering nothing (a hiccup, an invoice not yet created) must not make an
+/// invoice disappear from its own seller's history.
+///
+/// `amount > 0` is the line between an invoice this API recorded and a row from
+/// before it did: those carry only a name and were filled from the program scan,
+/// so they keep the scan as their answer until it backfills them.
+pub async fn recorded_invoices(
+    db: &libsql::Database,
+    wallet: &str,
+    cluster: &str,
+    limit: usize,
+) -> Vec<PaymentRecord> {
+    let read = async {
+        let connection = db.connect()?;
+        connection
+            .query(
+                // The limit is a number this module owns, so it is written into
+                // the statement rather than bound: a bound LIMIT is read as a
+                // string by some drivers, which is an error rather than a page.
+                &format!(
+                    "SELECT id, seller, reference, endpoint, currency, mint, amount, memo, created_at \
+                     FROM invoice_meta \
+                     WHERE seller = ?1 AND cluster = ?2 AND amount > 0 \
+                     ORDER BY created_at DESC LIMIT {}",
+                    limit.min(MAX_WATCH_PDAS * 4)
+                ),
+                (wallet.to_string(), cluster.to_string()),
+            )
+            .await
+    }
+    .await;
+
+    let mut rows = match read {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::info!(%error, "recorded invoices were not readable");
+            return Vec::new();
+        }
+    };
+    let mut records = Vec::new();
+    while let Ok(Some(row)) = rows.next().await {
+        let Ok(id) = row.get::<String>(0) else {
+            continue;
+        };
+        let seller = row.get::<String>(1).unwrap_or_default();
+        let reference = row.get::<String>(2).unwrap_or_default();
+        let endpoint = row.get::<String>(3).unwrap_or_default();
+        let currency = row.get::<String>(4).unwrap_or_default();
+        let mint = row.get::<String>(5).unwrap_or_default();
+        let amount = row.get::<i64>(6).unwrap_or(0).max(0) as u64;
+        let memo = row.get::<String>(7).unwrap_or_default();
+        let created_at = row.get::<i64>(8).unwrap_or(0);
+        let is_sol = currency == SOL_CURRENCY;
+        records.push(PaymentRecord {
+            id: id.clone(),
+            status: PaymentStatus::Pending,
+            payment_pda: id.clone(),
+            seller,
+            seller_user: None,
+            reference,
+            amount_lamports: if is_sol { amount } else { 0 },
+            options: vec![PaymentOption {
+                currency,
+                mint,
+                decimals: if is_sol {
+                    SOL_DECIMALS
+                } else {
+                    STABLE_DECIMALS
+                },
+                amount,
+                payment_pda: id,
+            }],
+            memo,
+            name: String::new(),
+            description: String::new(),
+            items: Vec::new(),
+            discount: None,
+            allow_discounts: false,
+            cluster: cluster.to_string(),
+            endpoint,
+            settled_by: None,
+            created_at_unix: created_at,
+            settled_at_unix: 0,
+        });
+    }
+    records
+}
+
+/// The settlements this wallet paid, newest first.
+///
+/// These are rows history already resolved: the payer is only known from the
+/// settle transaction, so an invoice this wallet bought is here rather than in
+/// the invoice rows it did not make. No cluster read is needed to answer.
+pub async fn settlements_paid_by(
+    db: &libsql::Database,
+    endpoint: &str,
+    cluster: &str,
+    wallet: &str,
+    limit: usize,
+) -> Vec<PaymentRecord> {
+    settlements_paid_by_any(db, endpoint, cluster, &[wallet.to_string()], limit).await
+}
+
+/// The same rows for every key that can stand for one buyer: the wallet itself,
+/// and the session keys its allowances pay with.
+///
+/// A silent payment is signed by the session key, so its row is keyed by that
+/// address. The mapping behind the extra keys is in `session_keys` — learned
+/// from a budget account once, never scanned for on the usual request.
+pub async fn settlements_paid_by_any(
+    db: &libsql::Database,
+    endpoint: &str,
+    cluster: &str,
+    payers: &[String],
+    limit: usize,
+) -> Vec<PaymentRecord> {
+    if payers.is_empty() {
+        return Vec::new();
+    }
+    // One placeholder per payer: the wallet first, then its session keys.
+    let placeholders = (0..payers.len())
+        .map(|index| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at \
+         FROM settled_payments WHERE endpoint = ?1 AND payer IN ({placeholders}) \
+         ORDER BY settled_at DESC LIMIT {}",
+        limit.min(MAX_WATCH_PDAS * 4)
+    );
+    let read = async {
+        let connection = db.connect()?;
+        let mut values: Vec<libsql::Value> = Vec::with_capacity(payers.len() + 1);
+        values.push(libsql::Value::Text(endpoint.to_string()));
+        values.extend(
+            payers
+                .iter()
+                .map(|payer| libsql::Value::Text(payer.clone())),
+        );
+        connection.query(&sql, values).await
+    }
+    .await;
+
+    let mut rows = match read {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::info!(%error, "stored settlements were not readable");
+            return Vec::new();
+        }
+    };
+    let mut records = Vec::new();
+    while let Ok(Some(row)) = rows.next().await {
+        let Ok(invoice) = row.get::<String>(0) else {
+            continue;
+        };
+        let Ok(invoice) = Pubkey::from_str(&invoice) else {
+            continue;
+        };
+        let seller = row.get::<String>(1).unwrap_or_default();
+        let reference = row.get::<String>(2).unwrap_or_default();
+        let mint = row.get::<String>(3).unwrap_or_default();
+        let amount = row.get::<i64>(4).unwrap_or(0);
+        let memo = row.get::<String>(5).unwrap_or_default();
+        let payer = row.get::<String>(6).unwrap_or_default();
+        let created_at = row.get::<i64>(7).unwrap_or(0);
+        let settled_at = row.get::<i64>(8).unwrap_or(0);
+        records.push(receipt_record(
+            OnchainReceipt {
+                invoice,
+                seller: Pubkey::from_str(&seller).unwrap_or_default(),
+                reference: Pubkey::from_str(&reference).unwrap_or_default(),
+                mint: Pubkey::from_str(&mint).unwrap_or_default(),
+                amount: amount.max(0) as u64,
+                memo,
+                payer: Pubkey::from_str(&payer).unwrap_or_default(),
+                created_at,
+                settled_at,
+            },
+            cluster.to_string(),
+            endpoint.to_string(),
+        ));
+    }
+    records
+}
+
+/// How long a wallet's allowances are trusted to be what they were when this
+/// instance last looked.
+///
+/// The lookup is one bounded `getMultipleAccounts` on the addresses a buyer's
+/// budgets live at, so it is cheap — but it is still a cluster read, and a feed
+/// load is not the place to spend one every time. An hour is short enough that
+/// an allowance opened mid-session is found on its own, and the refresh button
+/// asks for a scan immediately regardless.
+const ALLOWANCE_CHECK_SECS: i64 = 60 * 60;
+
+/// The session keys the allowances of this wallet pay with, newest first.
+///
+/// Rows written when a budget account was read — by a scan, or by the one
+/// lookup `detect_allowance` does. Empty is the normal answer for a wallet with
+/// no allowance.
+pub async fn session_keys_for(
+    db: &libsql::Database,
+    wallet: &str,
+    cluster: &str,
+    endpoint: &str,
+) -> Vec<Pubkey> {
+    let read = async {
+        let connection = db.connect()?;
+        connection
+            .query(
+                "SELECT session_key FROM session_keys \
+                 WHERE wallet = ?1 AND cluster = ?2 AND endpoint = ?3 \
+                 ORDER BY first_seen DESC LIMIT 8",
+                libsql::params![
+                    wallet.to_string(),
+                    cluster.to_string(),
+                    endpoint.to_string()
+                ],
+            )
+            .await
+    }
+    .await;
+
+    let Ok(mut rows) = read else {
+        return Vec::new();
+    };
+    let mut keys = Vec::new();
+    while let Ok(Some(row)) = rows.next().await {
+        let Ok(key) = row.get::<String>(0) else {
+            continue;
+        };
+        if let Ok(key) = Pubkey::from_str(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
+/// Remembers that one session key spends for one wallet. `INSERT OR IGNORE`:
+/// a budget is created once, so the pair cannot change, and a repeated look at
+/// the same account costs nothing.
+pub async fn remember_session_key(
+    db: &libsql::Database,
+    session_key: &str,
+    wallet: &str,
+    cluster: &str,
+    endpoint: &str,
+) {
+    let now = crate::auth::unix_now();
+    let written = async {
+        let connection = db.connect()?;
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO session_keys \
+                     (session_key, wallet, endpoint, cluster, first_seen) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![
+                    session_key.to_string(),
+                    wallet.to_string(),
+                    endpoint.to_string(),
+                    cluster.to_string(),
+                    now
+                ],
+            )
+            .await?;
+        Ok::<(), crate::db::DbError>(())
+    }
+    .await;
+    if let Err(error) = written {
+        tracing::info!(%error, "a session key was not remembered");
+    }
+}
+
+/// Remembers every budget a scan read, for whichever buyer it belongs to: the
+/// next feed load then matches that buyer's silent payments without scanning.
+pub async fn remember_budgets(
+    db: &libsql::Database,
+    budgets: &[BudgetAccount],
+    cluster: &str,
+    endpoint: &str,
+) {
+    for budget in budgets {
+        if budget.session_key == budget.buyer {
+            continue;
+        }
+        remember_session_key(
+            db,
+            &budget.session_key.to_string(),
+            &budget.buyer.to_string(),
+            cluster,
+            endpoint,
+        )
+        .await;
+    }
+}
+
+/// Whether this wallet's allowances are worth looking up again.
+///
+/// True when it has never been looked up, or when the last look is older than
+/// [`ALLOWANCE_CHECK_SECS`]. A database that cannot answer says no: a feed load
+/// is the wrong place to invent a cluster read.
+pub async fn allowance_check_due(
+    db: &libsql::Database,
+    wallet: &str,
+    cluster: &str,
+    endpoint: &str,
+) -> bool {
+    let read = async {
+        let connection = db.connect()?;
+        let mut rows = connection
+            .query(
+                "SELECT checked_at FROM allowance_checks \
+                 WHERE wallet = ?1 AND cluster = ?2 AND endpoint = ?3",
+                libsql::params![
+                    wallet.to_string(),
+                    cluster.to_string(),
+                    endpoint.to_string()
+                ],
+            )
+            .await?;
+        Ok::<Option<i64>, crate::db::DbError>(rows.next().await?.and_then(|row| row.get(0).ok()))
+    }
+    .await;
+
+    match read {
+        Ok(None) => true,
+        Ok(Some(checked_at)) => crate::auth::unix_now() - checked_at >= ALLOWANCE_CHECK_SECS,
+        Err(error) => {
+            tracing::info!(%error, "allowance checks were not readable");
+            false
+        }
+    }
+}
+
+/// Records that this wallet's allowances were just looked up, so the next load
+/// is a row read whatever the answer was.
+pub async fn mark_allowance_checked(
+    db: &libsql::Database,
+    wallet: &str,
+    cluster: &str,
+    endpoint: &str,
+) {
+    let now = crate::auth::unix_now();
+    let written = async {
+        let connection = db.connect()?;
+        connection
+            .execute(
+                "INSERT INTO allowance_checks (wallet, endpoint, cluster, checked_at) \
+                 VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(wallet, endpoint, cluster) \
+                 DO UPDATE SET checked_at = excluded.checked_at",
+                libsql::params![
+                    wallet.to_string(),
+                    endpoint.to_string(),
+                    cluster.to_string(),
+                    now
+                ],
+            )
+            .await?;
+        Ok::<(), crate::db::DbError>(())
+    }
+    .await;
+    if let Err(error) = written {
+        tracing::info!(%error, "an allowance check was not recorded");
+    }
+}
+
+/// The session keys this buyer's allowances pay with, read off the cluster.
+///
+/// A budget's address is derived from the buyer and, for a token budget, the
+/// mint, so the few an account can have are known without a scan: one
+/// `getMultipleAccounts` on those addresses. `None` means the cluster did not
+/// answer — the caller then leaves the check unrecorded and tries again later;
+/// `Some(empty)` means this wallet has no allowance, which is worth knowing.
+pub async fn detect_allowance(
+    db: &libsql::Database,
+    endpoint: &str,
+    cluster: &str,
+    buyer: &Pubkey,
+) -> Option<Vec<Pubkey>> {
+    let program = program_id().ok()?;
+    let mut addresses = vec![crate::push_budget::budget_address(buyer, &program)];
+    for currency in ["usdc", "eurc"] {
+        if let Some(mint) = mint_for(currency, cluster) {
+            addresses.push(crate::push_budget::token_budget_address(
+                buyer, &mint, &program,
+            ));
+        }
+    }
+
+    let rpc = payment_rpc(endpoint.to_owned());
+    let accounts = match rpc.get_multiple_accounts(&addresses).await {
+        Ok(accounts) => accounts,
+        Err(error) => {
+            tracing::info!(%endpoint, %error, "allowance accounts not readable");
+            return None;
+        }
+    };
+
+    let mut session_keys = Vec::new();
+    for (address, account) in addresses.iter().zip(accounts) {
+        let Some(account) = account else {
+            continue;
+        };
+        let Some(ScannedAccount::Budget(budget)) = classify_program_account(
+            *address,
+            &account.data,
+            cluster.to_owned(),
+            endpoint.to_owned(),
+        ) else {
+            continue;
+        };
+        // The address was derived from this buyer, so a different one in the
+        // account is not this wallet's allowance.
+        if budget.buyer != *buyer {
+            continue;
+        }
+        session_keys.push(budget.session_key);
+    }
+
+    let budgets: Vec<BudgetAccount> = session_keys
+        .iter()
+        .map(|session_key| BudgetAccount {
+            buyer: *buyer,
+            session_key: *session_key,
+        })
+        .collect();
+    remember_budgets(db, &budgets, cluster, endpoint).await;
+    Some(session_keys)
+}
+
+/// What an invoice row from before this API kept amounts is missing, filled in
+/// from the invoice or its marker.
+///
+/// The row is only ever completed, never rewritten: `amount = 0` is what marks a
+/// row as unfilled, so the statement is a no-op for every row written since, and
+/// the seller's own name, description and receipt lines are left exactly as they
+/// were. Being one statement per row also makes a retry harmless.
+async fn fill_invoice_row(db: &libsql::Database, record: &PaymentRecord) -> bool {
+    let Some(option) = record
+        .options
+        .iter()
+        .find(|option| option.amount > 0)
+        .or_else(|| record.options.first())
+    else {
+        return false;
+    };
+    let written = async {
+        let connection = db.connect()?;
+        let changed = connection
+            .execute(
+                "UPDATE invoice_meta SET \
+                     reference = CASE WHEN reference = '' THEN ?2 ELSE reference END, \
+                     cluster   = CASE WHEN cluster   = '' THEN ?3 ELSE cluster   END, \
+                     endpoint  = CASE WHEN endpoint  = '' THEN ?4 ELSE endpoint  END, \
+                     currency  = ?5, mint = ?6, amount = ?7, \
+                     memo      = CASE WHEN memo = '' THEN ?8 ELSE memo END \
+                 WHERE id = ?1 AND amount = 0",
+                libsql::params![
+                    record.id.clone(),
+                    record.reference.clone(),
+                    record.cluster.clone(),
+                    record.endpoint.clone(),
+                    option.currency.clone(),
+                    option.mint.clone(),
+                    option.amount as i64,
+                    record.memo.clone(),
+                ],
+            )
+            .await?;
+        Ok::<u64, crate::db::DbError>(changed)
+    }
+    .await;
+    match written {
+        Ok(changed) => changed > 0,
+        Err(error) => {
+            tracing::info!(%error, "a legacy invoice row was not filled");
+            false
+        }
+    }
+}
+
+/// The rows this seller made before a row carried an amount, oldest first — the
+/// ones the feed cannot list and so has to scan for. Bounded like any watch
+/// request, and ids the chain already gave no answer for are left out.
+async fn legacy_invoice_ids(db: &libsql::Database, wallet: &str) -> Vec<String> {
+    let read = async {
+        let connection = db.connect()?;
+        connection
+            .query(
+                &format!(
+                    "SELECT id FROM invoice_meta \
+                     WHERE seller = ?1 AND amount = 0 \
+                       AND id NOT IN (SELECT id FROM invoice_backfill) \
+                     ORDER BY created_at ASC LIMIT {MAX_WATCH_PDAS}"
+                ),
+                libsql::params![wallet.to_string()],
+            )
+            .await
+    }
+    .await;
+
+    let Ok(mut rows) = read else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    while let Ok(Some(row)) = rows.next().await {
+        if let Ok(id) = row.get::<String>(0) {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
+/// Remembers the ids the chain had nothing to say about, so they are not asked
+/// about again.
+async fn remember_backfill_tried(db: &libsql::Database, ids: &[String], endpoint: &str) {
+    if ids.is_empty() {
+        return;
+    }
+    let now = crate::auth::unix_now();
+    let written = async {
+        let connection = db.connect()?;
+        for id in ids {
+            connection
+                .execute(
+                    "INSERT OR IGNORE INTO invoice_backfill (id, endpoint, tried_at) \
+                     VALUES (?1, ?2, ?3)",
+                    libsql::params![id.clone(), endpoint.to_string(), now],
+                )
+                .await?;
+        }
+        Ok::<(), crate::db::DbError>(())
+    }
+    .await;
+    if let Err(error) = written {
+        tracing::info!(%error, "a backfill attempt was not recorded");
+    }
+}
+
+/// Fills this seller's rows from before amounts were kept, from the chain.
+///
+/// Without it a returning seller's feed has no row it can list — every row it
+/// has is one the read skips — so the program scan becomes the only thing that
+/// answers, on every load. One batched read fills the page once; after that the
+/// rows carry what the feed needs and the scan is behind `?scan=1` again.
+///
+/// A read that fails changes nothing, so the next load tries again; a row the
+/// chain does not know is remembered and left alone.
+pub async fn backfill_invoice_rows(
+    db: &libsql::Database,
+    wallet: &str,
+    cluster: &str,
+    endpoint: &str,
+) {
+    let ids = legacy_invoice_ids(db, wallet).await;
+    if ids.is_empty() {
+        return;
+    }
+    // The endpoint is the one the caller already checked against the allowlist,
+    // so this is the read itself rather than a request that resolves one.
+    let records = match fetch_many_at(endpoint, cluster, &ids, db).await {
+        Ok(records) => records,
+        Err(error) => {
+            tracing::info!(%error, "legacy invoices not readable");
+            return;
+        }
+    };
+
+    let mut unknown = Vec::new();
+    for id in &ids {
+        match records.iter().find(|record| &record.id == id) {
+            Some(record) if record.options.iter().any(|option| option.amount > 0) => {
+                fill_invoice_row(db, record).await;
+            }
+            _ => unknown.push(id.clone()),
+        }
+    }
+    remember_backfill_tried(db, &unknown, endpoint).await;
+}
+
+/// Writes what a fallback scan found, so the next request is answered from our
+/// own rows: the fallback is a one-off cost per invoice, not a per-request one.
+///
+/// `INSERT OR IGNORE` on purpose — a row this API wrote carries a seller's name,
+/// description and receipt lines, and a scan cannot improve on any of them. The
+/// facts it does add are the ones the old rows were missing.
+pub async fn remember_scanned(db: &libsql::Database, records: &[PaymentRecord]) {
+    let now = crate::auth::unix_now();
+    let written = async {
+        let connection = db.connect()?;
+        for record in records {
+            let mut rows: Vec<(String, String, String, u64)> = record
+                .options
+                .iter()
+                .filter(|option| !option.payment_pda.is_empty())
+                .map(|option| {
+                    (
+                        option.payment_pda.clone(),
+                        option.currency.clone(),
+                        option.mint.clone(),
+                        option.amount,
+                    )
+                })
+                .collect();
+            if rows.is_empty() {
+                rows.push((
+                    record.id.clone(),
+                    SOL_CURRENCY.to_string(),
+                    String::new(),
+                    record.amount_lamports,
+                ));
+            }
+            for (id, currency, mint, amount) in &rows {
+                connection
+                    .execute(
+                        "INSERT OR IGNORE INTO invoice_meta \
+                            (id, seller, reference, cluster, endpoint, currency, mint, amount, \
+                             memo, seller_user, name, description, items, created_at) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL, '', '', '', ?10)",
+                        libsql::params![
+                            id.clone(),
+                            record.seller.clone(),
+                            record.reference.clone(),
+                            record.cluster.clone(),
+                            record.endpoint.clone(),
+                            currency.clone(),
+                            mint.clone(),
+                            *amount as i64,
+                            record.memo.clone(),
+                            now
+                        ],
+                    )
+                    .await?;
+            }
+        }
+        Ok::<(), libsql::Error>(())
+    }
+    .await;
+
+    if let Err(error) = written {
+        tracing::info!(%error, "scanned invoices were not recorded");
     }
 }
 
@@ -680,17 +1367,36 @@ pub async fn fetch_payment(
     let pubkey = parse_pubkey(payment_pda, "id")?;
     let cluster = query.cluster.clone().unwrap_or_else(default_cluster);
     let endpoint = resolve_endpoint(query.endpoint.as_deref(), &cluster)?;
+    fetch_payment_at(&endpoint, &cluster, pubkey, db).await
+}
+
+/// The read itself, from an endpoint already checked against the allowlist —
+/// which is what lets a test point it at a stand-in cluster and count what it
+/// asked.
+async fn fetch_payment_at(
+    endpoint: &str,
+    cluster: &str,
+    pubkey: Pubkey,
+    db: &libsql::Database,
+) -> ApiResult<PaymentRecord> {
+    // A page polls this address every five seconds, and the same invoice is
+    // open in a second tab and on the seller's screen: one recent answer serves
+    // all of them, and the cluster is asked once per address per window instead
+    // of once per viewer per tick.
+    if let Some(cached) = cached_pending(endpoint, &pubkey) {
+        return Ok(cached);
+    }
 
     let program = program_id()?;
     let receipt_address = receipt_pda(&program, &pubkey);
 
     // The invoice and its receipt are two different addresses, and only one of
     // them exists at a time, so ask for both in one round trip.
-    let rpc = payment_rpc(endpoint.clone());
+    let rpc = payment_rpc(endpoint.to_owned());
     let accounts = match rpc.get_multiple_accounts(&[pubkey, receipt_address]).await {
         Ok(accounts) => accounts,
         Err(error) => {
-            tracing::info!(%payment_pda, %error, "payment account not readable");
+            tracing::info!(invoice = %pubkey, %error, "payment account not readable");
             // A cluster hiccup is not "unpaid": say so instead of inventing a
             // status, so the caller can retry and keep its last known state.
             return Err(ApiError::Internal(
@@ -709,8 +1415,13 @@ pub async fn fetch_payment(
 
     // One address is one invoice, so one history read is the whole need: a
     // settled invoice the cache has not seen yet is read once, here.
-    let mut reader = InvoiceReader::new(&rpc, db, cluster, endpoint, 1);
-    Ok(reader.record(pubkey, invoice_data, receipt_data).await)
+    let mut reader = InvoiceReader::new(&rpc, db, cluster.to_owned(), endpoint.to_owned(), 1);
+    let record = reader.record(pubkey, invoice_data, receipt_data).await;
+    // A failure above returned already, so what is remembered here is always a
+    // status: settled goes to the cache that never expires, and anything else
+    // gets the short window.
+    remember_pending(endpoint, pubkey, &record);
+    Ok(record)
 }
 
 /// The client every invoice read goes through.
@@ -720,7 +1431,7 @@ pub async fn fetch_payment(
 /// in their wallet came back `pending` from this API, and the checkout had to
 /// read the chain itself to cover the gap. `confirmed` is the same level the send
 /// settled at, so the record catches up within a slot or two.
-fn payment_rpc(endpoint: String) -> RpcClient {
+pub(crate) fn payment_rpc(endpoint: String) -> RpcClient {
     RpcClient::new_with_commitment(endpoint, CommitmentConfig::confirmed())
 }
 
@@ -919,24 +1630,53 @@ pub async fn fetch_many(
         )));
     }
 
-    let cluster = request.cluster.unwrap_or_else(default_cluster);
+    let cluster = request.cluster.clone().unwrap_or_else(default_cluster);
     let endpoint = resolve_endpoint(request.endpoint.as_deref(), &cluster)?;
-    let pubkeys = request
-        .pdas
+    fetch_many_at(&endpoint, &cluster, &request.pdas, db).await
+}
+
+/// The batch itself, from an endpoint already checked against the allowlist.
+async fn fetch_many_at(
+    endpoint: &str,
+    cluster: &str,
+    pdas: &[String],
+    db: &libsql::Database,
+) -> ApiResult<Vec<PaymentRecord>> {
+    let pubkeys = pdas
         .iter()
         .map(|pda| parse_pubkey(pda, "pdas"))
         .collect::<ApiResult<Vec<_>>>()?;
 
     let program = program_id()?;
-    let rpc = RpcClient::new(endpoint.clone());
-    let mut records = Vec::with_capacity(pubkeys.len());
+    // `confirmed`, like every other invoice read: a feed that waited for
+    // `finalized` would show a payment a dozen seconds after the buyer saw it.
+    let rpc = payment_rpc(endpoint.to_owned());
+    // The seller's screen watches the very addresses the buyer's page is polling,
+    // so a recent answer is shared rather than asked for again; what is left is
+    // batched into one round trip as before.
+    let mut answered: HashMap<Pubkey, PaymentRecord> = HashMap::new();
+    let mut unresolved = Vec::new();
+    for pubkey in &pubkeys {
+        match cached_pending(endpoint, pubkey) {
+            Some(record) => {
+                answered.insert(*pubkey, record);
+            }
+            None => unresolved.push(*pubkey),
+        }
+    }
     // A watched address is an invoice the caller is about to display, so it may
     // be resolved from history — but only once: the next poll is a cache hit.
-    let mut reader = InvoiceReader::new(&rpc, db, cluster, endpoint, pubkeys.len());
+    let mut reader = InvoiceReader::new(
+        &rpc,
+        db,
+        cluster.to_owned(),
+        endpoint.to_owned(),
+        pubkeys.len(),
+    );
 
     // Two accounts per invoice (the invoice and its receipt), and JSON-RPC caps
     // one `getMultipleAccounts` call at 100 keys, so batch the addresses.
-    for batch in pubkeys.chunks(MAX_WATCH_PDAS.min(MAX_ACCOUNTS_PER_RPC / 2)) {
+    for batch in unresolved.chunks(MAX_WATCH_PDAS.min(MAX_ACCOUNTS_PER_RPC / 2)) {
         let mut keys = Vec::with_capacity(batch.len() * 2);
         for invoice in batch {
             keys.push(*invoice);
@@ -962,11 +1702,18 @@ pub async fn fetch_many(
                 .get(index * 2 + 1)
                 .and_then(|account| account.as_ref())
                 .map(|account| account.data.as_slice());
-            records.push(reader.record(*invoice, invoice_data, receipt_data).await);
+            let record = reader.record(*invoice, invoice_data, receipt_data).await;
+            remember_pending(endpoint, *invoice, &record);
+            answered.insert(*invoice, record);
         }
     }
 
-    Ok(records)
+    // In the order the caller named them: a seller's screen pairs each address
+    // with the discount code it belongs to by position.
+    Ok(pubkeys
+        .iter()
+        .filter_map(|pubkey| answered.remove(pubkey))
+        .collect())
 }
 
 /// `declare_id!` of the program in `apps/contracts/programs/payvand` —
@@ -1012,21 +1759,47 @@ pub async fn fetch_program_scan(
 ) -> ApiResult<ProgramScan> {
     let cluster = default_cluster();
     let endpoint = resolve_endpoint(None, &cluster)?;
+    program_scan_at(&endpoint, &cluster, history_reads, db).await
+}
+
+/// The scan itself, from an endpoint already checked against the allowlist.
+async fn program_scan_at(
+    endpoint: &str,
+    cluster: &str,
+    history_reads: usize,
+    db: &libsql::Database,
+) -> ApiResult<ProgramScan> {
     let program_id = Pubkey::from_str(PAYVAND_PROGRAM_ID)
         .map_err(|error| ApiError::Internal(format!("bad program id: {error}")))?;
 
-    // `confirmed`, not the `finalized` a bare `RpcClient::new` reads at: an
-    // invoice is created, and a receipt written, in transactions the wallet has
-    // already seen confirmed, so a finalized scan left a payment that had just
-    // gone through out of the history for another dozen seconds.
-    let rpc = payment_rpc(endpoint.clone());
-    let accounts = match rpc.get_program_accounts(&program_id).await {
-        Ok(accounts) => accounts,
-        Err(error) => {
-            tracing::info!(%error, "program accounts not readable");
-            return Err(ApiError::Internal(
-                "The cluster did not return the payment list. Try again.".into(),
-            ));
+    // A scan a moment ago answers this one: the fallback is the cold path, but
+    // three tabs and the admin list still make a burst of the same read.
+    let accounts = match cached_scan(endpoint, cluster) {
+        Some(accounts) => accounts,
+        None => {
+            // `confirmed`, not the `finalized` a bare `RpcClient::new` reads at:
+            // an invoice is created, and a receipt written, in transactions the
+            // wallet has already seen confirmed, so a finalized scan left a
+            // payment that had just gone through out of the history for another
+            // dozen seconds.
+            let rpc = payment_rpc(endpoint.to_owned());
+            let read = match rpc.get_program_accounts(&program_id).await {
+                Ok(accounts) => accounts,
+                Err(error) => {
+                    tracing::info!(%error, "program accounts not readable");
+                    // A failure is not a scan: it is not remembered, so the next
+                    // request asks again rather than serving an empty program.
+                    return Err(ApiError::Internal(
+                        "The cluster did not return the payment list. Try again.".into(),
+                    ));
+                }
+            };
+            let accounts: Vec<(Pubkey, Vec<u8>)> = read
+                .into_iter()
+                .map(|(pubkey, account)| (pubkey, account.data))
+                .collect();
+            remember_scan(endpoint, cluster, &accounts);
+            accounts
         }
     };
 
@@ -1036,8 +1809,8 @@ pub async fn fetch_program_scan(
     // budget has to go to the newest settlements, and the account order a scan
     // returns is arbitrary.
     let mut markers = Vec::new();
-    for (pubkey, account) in accounts {
-        match classify_program_account(pubkey, &account.data, cluster.clone(), endpoint.clone()) {
+    for (pubkey, data) in accounts {
+        match classify_program_account(pubkey, &data, cluster.to_owned(), endpoint.to_owned()) {
             Some(ScannedAccount::Payment(record)) => payments.push(*record),
             Some(ScannedAccount::Settled(marker)) => markers.push(marker),
             Some(ScannedAccount::Budget(budget)) => budgets.push(budget),
@@ -1050,50 +1823,62 @@ pub async fn fetch_program_scan(
     // Every marker in one database read, and the ones history has to answer for
     // a few at a time. Serial — one remote query per marker, then two paced RPC
     // calls behind each miss — a page of twenty settlements took half a minute.
-    let stored = stored_settlements(db, &endpoint, &markers).await;
+    let stored = stored_settlements(db, endpoint, &markers).await;
     let mut budget = HistoryBudget::new(history_reads);
     let mut unresolved = Vec::new();
     for marker in markers {
-        if let Some(cached) = cached_settlement(&endpoint, &marker.invoice) {
-            payments.push(receipt_record(cached, cluster.clone(), endpoint.clone()));
+        if let Some(cached) = cached_settlement(endpoint, &marker.invoice) {
+            payments.push(receipt_record(
+                cached,
+                cluster.to_owned(),
+                endpoint.to_owned(),
+            ));
         } else if let Some(known) = stored.get(&marker.invoice) {
-            remember_settlement(&endpoint, marker.invoice, known);
+            remember_settlement(endpoint, marker.invoice, known);
             payments.push(receipt_record(
                 known.clone(),
-                cluster.clone(),
-                endpoint.clone(),
+                cluster.to_owned(),
+                endpoint.to_owned(),
             ));
         } else if budget.take() {
             unresolved.push(marker);
         } else {
-            payments.push(marker_record(marker, cluster.clone(), endpoint.clone()));
+            payments.push(marker_record(
+                marker,
+                cluster.to_owned(),
+                endpoint.to_owned(),
+            ));
         }
     }
 
     let invoices: Vec<Pubkey> = unresolved.iter().map(|marker| marker.invoice).collect();
-    let resolved = settlements_from_history(&endpoint, &invoices).await;
+    let resolved = settlements_from_history(endpoint, &invoices).await;
     let mut fresh = Vec::new();
     for marker in unresolved {
         match resolved.get(&marker.invoice) {
             Some(receipt) => {
-                remember_settlement(&endpoint, marker.invoice, receipt);
+                remember_settlement(endpoint, marker.invoice, receipt);
                 fresh.push(receipt.clone());
             }
-            None => payments.push(marker_record(marker, cluster.clone(), endpoint.clone())),
+            None => payments.push(marker_record(
+                marker,
+                cluster.to_owned(),
+                endpoint.to_owned(),
+            )),
         }
     }
-    store_settlements(db, &endpoint, &fresh).await;
+    store_settlements(db, endpoint, &fresh).await;
     payments.extend(
         fresh
             .into_iter()
-            .map(|receipt| receipt_record(receipt, cluster.clone(), endpoint.clone())),
+            .map(|receipt| receipt_record(receipt, cluster.to_owned(), endpoint.to_owned())),
     );
 
     Ok(ProgramScan {
         payments,
         budgets,
-        cluster,
-        endpoint,
+        cluster: cluster.to_owned(),
+        endpoint: endpoint.to_owned(),
     })
 }
 
@@ -1747,6 +2532,204 @@ fn remember_in(
             }
             None => break,
         }
+    }
+}
+
+/// How long an unsettled answer may be reused.
+///
+/// A pending invoice is the one status that changes, and it changes once. The
+/// polling clients ask about the same address from several places at the same
+/// time — the buyer's page, a second tab, the seller's screen watching the code
+/// it printed — and each of those reads used to be its own request to the
+/// cluster. Eight seconds spans a poll tick (`STATUS_POLL_MS` is five), so a
+/// payment shows up within two polls at most — the checkout's own receipt read
+/// covers the gap in between — and a single viewer's polls, not just concurrent
+/// viewers of one invoice, share a cluster read.
+const PENDING_TTL: Duration = Duration::from_secs(8);
+
+/// Addresses one instance remembers an unsettled answer for, oldest-first: a
+/// very busy day forgets what stopped being asked.
+const PENDING_CACHE_LIMIT: usize = 4_096;
+
+/// The last unsettled answer per `(endpoint, invoice)`, with when it was read.
+///
+/// Only unsettled records are kept. A settled one is final and lives in the
+/// settled cache, which never expires; an answer that failed to read is not a
+/// status at all and is never stored.
+struct PendingCache {
+    inner: Mutex<PendingCacheInner>,
+}
+
+#[derive(Default)]
+struct PendingCacheInner {
+    entries: HashMap<(String, Pubkey), (Instant, PaymentRecord)>,
+    /// Insertion order, so the oldest entry is the one evicted.
+    order: VecDeque<(String, Pubkey)>,
+}
+
+static PENDING_CACHE: OnceLock<PendingCache> = OnceLock::new();
+
+fn pending_cache() -> &'static PendingCache {
+    PENDING_CACHE.get_or_init(|| PendingCache {
+        inner: Mutex::new(PendingCacheInner::default()),
+    })
+}
+
+/// A recent unsettled answer, if one is still inside [`PENDING_TTL`].
+fn cached_pending(endpoint: &str, invoice: &Pubkey) -> Option<PaymentRecord> {
+    let mut inner = pending_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cached_pending_in(&mut inner, endpoint, invoice, Instant::now())
+}
+
+/// The lookup itself, taking the map and the clock rather than reaching for the
+/// statics, so the expiry can be tested without waiting for it.
+fn cached_pending_in(
+    inner: &mut PendingCacheInner,
+    endpoint: &str,
+    invoice: &Pubkey,
+    now: Instant,
+) -> Option<PaymentRecord> {
+    let key = (endpoint.to_owned(), *invoice);
+    let (read_at, record) = inner.entries.get(&key)?;
+    if now.duration_since(*read_at) >= PENDING_TTL {
+        inner.entries.remove(&key);
+        return None;
+    }
+    Some(record.clone())
+}
+
+/// Remembers an unsettled answer. A settled record is refused here on purpose:
+/// it belongs to the cache that never expires, and a copy with a deadline would
+/// only make the next read slower.
+fn remember_pending(endpoint: &str, invoice: Pubkey, record: &PaymentRecord) {
+    let mut inner = pending_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    remember_pending_in(&mut inner, endpoint, invoice, record, Instant::now());
+}
+
+fn remember_pending_in(
+    inner: &mut PendingCacheInner,
+    endpoint: &str,
+    invoice: Pubkey,
+    record: &PaymentRecord,
+    now: Instant,
+) {
+    if record.status == PaymentStatus::Settled {
+        return;
+    }
+    let key = (endpoint.to_owned(), invoice);
+    if inner
+        .entries
+        .insert(key.clone(), (now, record.clone()))
+        .is_none()
+    {
+        inner.order.push_back(key);
+    }
+    while inner.entries.len() > PENDING_CACHE_LIMIT {
+        match inner.order.pop_front() {
+            Some(oldest) => {
+                inner.entries.remove(&oldest);
+            }
+            None => break,
+        }
+    }
+}
+
+/// How long a program scan may be reused.
+///
+/// The scan is one `getProgramAccounts` over every account the program owns, and
+/// it runs when the feed has to fall back to the chain. That is the cold path,
+/// but a page open in three tabs still asks three times in the same second, and
+/// the admin list asks beside it. Eight seconds is short enough that an invoice
+/// made just now is in the next scan and long enough that a burst is one read.
+const SCAN_TTL: Duration = Duration::from_secs(8);
+
+/// Scans one instance keeps: `(endpoint, cluster)`. One entry per cluster in
+/// practice, bounded anyway.
+const SCAN_CACHE_LIMIT: usize = 8;
+
+/// One scan's accounts, with when they were read.
+type ScannedEntry = (Instant, Vec<(Pubkey, Vec<u8>)>);
+
+/// `(endpoint, cluster)` → the scan of it a moment ago.
+type ScannedAccountsMap = HashMap<(String, String), ScannedEntry>;
+
+/// The accounts a scan last returned, per `(endpoint, cluster)`.
+///
+/// Accounts, not records: the caller resolves settlements against the database
+/// with its own history budget, and that must not be frozen for the window.
+/// A failed scan is never stored — an error is not an answer.
+struct ScannedAccounts {
+    inner: Mutex<ScannedAccountsMap>,
+}
+
+static SCAN_CACHE: OnceLock<ScannedAccounts> = OnceLock::new();
+
+fn scan_cache() -> &'static ScannedAccounts {
+    SCAN_CACHE.get_or_init(|| ScannedAccounts {
+        inner: Mutex::new(HashMap::new()),
+    })
+}
+
+fn cached_scan(endpoint: &str, cluster: &str) -> Option<Vec<(Pubkey, Vec<u8>)>> {
+    let mut inner = scan_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cached_scan_in(&mut inner, endpoint, cluster, Instant::now())
+}
+
+fn cached_scan_in(
+    inner: &mut ScannedAccountsMap,
+    endpoint: &str,
+    cluster: &str,
+    now: Instant,
+) -> Option<Vec<(Pubkey, Vec<u8>)>> {
+    let key = (endpoint.to_owned(), cluster.to_owned());
+    let (read_at, accounts) = inner.get(&key)?;
+    if now.duration_since(*read_at) >= SCAN_TTL {
+        inner.remove(&key);
+        return None;
+    }
+    Some(accounts.clone())
+}
+
+fn remember_scan(endpoint: &str, cluster: &str, accounts: &[(Pubkey, Vec<u8>)]) {
+    let mut inner = scan_cache()
+        .inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    remember_scan_in(&mut inner, endpoint, cluster, accounts, Instant::now());
+}
+
+fn remember_scan_in(
+    inner: &mut ScannedAccountsMap,
+    endpoint: &str,
+    cluster: &str,
+    accounts: &[(Pubkey, Vec<u8>)],
+    now: Instant,
+) {
+    // Expired entries are dropped here rather than swept on a timer: the map is
+    // one entry per cluster, and this is the only place it grows.
+    inner.retain(|_, (read_at, _)| now.duration_since(*read_at) < SCAN_TTL);
+    inner.insert(
+        (endpoint.to_owned(), cluster.to_owned()),
+        (now, accounts.to_vec()),
+    );
+    while inner.len() > SCAN_CACHE_LIMIT {
+        let Some(oldest) = inner
+            .iter()
+            .min_by_key(|(_, (read_at, _))| *read_at)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        inner.remove(&oldest);
     }
 }
 
@@ -2824,6 +3807,119 @@ mod tests {
         (db, path)
     }
 
+    /// An invoice this API made is listed from its own row, with no cluster read
+    /// at all: the seller's feed should not have to scan the program to show
+    /// what it created.
+    #[tokio::test]
+    async fn an_invoice_we_created_is_listed_from_our_rows() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x51u8; 32]);
+        let seller = Pubkey::from([0x52u8; 32]);
+        let mut record = pending_record(invoice, "devnet".into(), "https://example".into());
+        record.seller = seller.to_string();
+        record.reference = Pubkey::from([0x53u8; 32]).to_string();
+        record.memo = "flat white".into();
+        record.name = "Invoice".into();
+        record.options = vec![PaymentOption {
+            currency: SOL_CURRENCY.to_string(),
+            mint: String::new(),
+            decimals: SOL_DECIMALS,
+            amount: 4_500_000,
+            payment_pda: invoice.to_string(),
+        }];
+
+        remember_invoice(&db, &record, Some("user-1")).await;
+
+        let listed = recorded_invoices(&db, &record.seller, "devnet", 10).await;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, invoice.to_string());
+        assert_eq!(listed[0].seller, record.seller);
+        assert_eq!(listed[0].options[0].amount, 4_500_000);
+        assert_eq!(listed[0].memo, "flat white");
+        assert!(
+            recorded_invoices(&db, "someone-else", "devnet", 10)
+                .await
+                .is_empty(),
+            "another wallet's feed is not served this row"
+        );
+        assert!(
+            recorded_invoices(&db, &record.seller, "mainnet", 10)
+                .await
+                .is_empty(),
+            "a devnet invoice is not a mainnet one"
+        );
+
+        // The row carries the account that made it, for the pages that ask by
+        // account rather than by wallet.
+        let connection = db.connect().expect("connect");
+        let mut rows = connection
+            .query(
+                "SELECT seller_user, amount FROM invoice_meta WHERE id = ?1",
+                libsql::params![invoice.to_string()],
+            )
+            .await
+            .expect("read");
+        let row = rows.next().await.expect("row").expect("invoice");
+        assert_eq!(row.get::<String>(0).expect("account"), "user-1");
+        assert_eq!(row.get::<i64>(1).expect("amount"), 4_500_000);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A settled invoice this wallet paid is listed from the stored settlement:
+    /// the payer is only knowable from the settle transaction, and it is already
+    /// in the row history wrote.
+    #[tokio::test]
+    async fn settlements_this_wallet_paid_are_listed_from_the_db() {
+        let (db, path) = temp_db().await;
+        let buyer = Pubkey::from([0x61u8; 32]);
+        let receipt = OnchainReceipt {
+            invoice: Pubkey::from([0x62u8; 32]),
+            seller: Pubkey::from([0x63u8; 32]),
+            reference: Pubkey::from([0x64u8; 32]),
+            mint: Pubkey::default(),
+            amount: 2_000_000,
+            memo: "coffee".into(),
+            payer: buyer,
+            created_at: 10,
+            settled_at: 20,
+        };
+        let endpoint = "https://feed-test.invalid";
+        store_settlement(&db, endpoint, &receipt).await;
+
+        let paid = settlements_paid_by(&db, endpoint, "devnet", &buyer.to_string(), 10).await;
+        assert_eq!(paid.len(), 1);
+        assert_eq!(paid[0].id, receipt.invoice.to_string());
+        assert_eq!(paid[0].status, PaymentStatus::Settled);
+        assert_eq!(paid[0].amount_lamports, 2_000_000);
+        assert_eq!(
+            paid[0].settled_by.as_deref(),
+            Some(buyer.to_string().as_str())
+        );
+
+        let stranger = Pubkey::from([0x65u8; 32]);
+        assert!(
+            settlements_paid_by(&db, endpoint, "devnet", &stranger.to_string(), 10)
+                .await
+                .is_empty(),
+            "another wallet's payments are not in this feed"
+        );
+        assert!(
+            settlements_paid_by(
+                &db,
+                "https://other.invalid",
+                "devnet",
+                &buyer.to_string(),
+                10
+            )
+            .await
+            .is_empty(),
+            "a settlement belongs to the cluster it settled on"
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
     #[tokio::test]
     async fn an_unpaid_invoice_is_pending_not_missing() {
         let (db, path) = temp_db().await;
@@ -3019,10 +4115,19 @@ mod tests {
                 let counter = counter.clone();
                 async move {
                     counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let calls = body.as_array().cloned().unwrap_or_default();
-                    axum::Json(serde_json::Value::Array(
-                        calls.iter().map(|call| (answers)(call)).collect(),
-                    ))
+                    // A batch is answered in kind; a single request — what
+                    // `RpcClient` posts — gets its own object back, not an array.
+                    let batch = body.as_array().cloned();
+                    let calls = batch.clone().unwrap_or_else(|| vec![body]);
+                    let answered: Vec<serde_json::Value> =
+                        calls.iter().map(|call| (answers)(call)).collect();
+                    axum::Json(match batch {
+                        Some(_) => serde_json::Value::Array(answered),
+                        None => answered
+                            .into_iter()
+                            .next()
+                            .unwrap_or(serde_json::Value::Null),
+                    })
                 }
             }),
         );
@@ -3225,6 +4330,698 @@ mod tests {
             "the oldest settlement should have been evicted"
         );
         assert_eq!(inner.entries.len(), SETTLED_CACHE_LIMIT);
+    }
+
+    /// An unsettled answer is shared for one window and then asked for again.
+    /// The length is the point: long enough that the buyer's page, a second tab
+    /// and the seller's screen share one cluster read, short enough that a
+    /// payment still appears within a poll or two.
+    #[test]
+    fn an_unsettled_answer_is_shared_until_its_window_ends() {
+        let endpoint = "https://pending-test.invalid";
+        let invoice = Pubkey::from([7u8; 32]);
+        let record = pending_record(invoice, "devnet".into(), endpoint.into());
+        let mut inner = PendingCacheInner::default();
+        let start = Instant::now();
+
+        assert!(
+            cached_pending_in(&mut inner, endpoint, &invoice, start).is_none(),
+            "nothing has been read yet"
+        );
+
+        remember_pending_in(&mut inner, endpoint, invoice, &record, start);
+        let shared = cached_pending_in(
+            &mut inner,
+            endpoint,
+            &invoice,
+            start + Duration::from_secs(3),
+        )
+        .expect("a second viewer reads the first one's answer");
+        assert_eq!(shared.id, invoice.to_string());
+        assert!(
+            cached_pending_in(&mut inner, endpoint, &invoice, start + PENDING_TTL).is_none(),
+            "an expired answer is a miss, not a stale status"
+        );
+        assert!(
+            inner.entries.is_empty(),
+            "the expired entry is dropped where it is found"
+        );
+    }
+
+    /// A settled record belongs to the cache that never expires; a copy with a
+    /// deadline here would only make the next read slower.
+    #[test]
+    fn a_settled_record_is_not_kept_as_pending() {
+        let endpoint = "https://pending-test-settled.invalid";
+        let invoice = Pubkey::from([8u8; 32]);
+        let mut record = pending_record(invoice, "devnet".into(), endpoint.into());
+        record.status = PaymentStatus::Settled;
+        let mut inner = PendingCacheInner::default();
+        remember_pending_in(&mut inner, endpoint, invoice, &record, Instant::now());
+        assert!(inner.entries.is_empty());
+    }
+
+    /// A cluster keeps its own answers: two networks can hold different states
+    /// at the same address, so one must never answer for the other.
+    #[test]
+    fn the_pending_memo_is_keyed_by_endpoint() {
+        let endpoint = "https://pending-test-a.invalid";
+        let other = "https://pending-test-b.invalid";
+        let invoice = Pubkey::from([9u8; 32]);
+        let record = pending_record(invoice, "devnet".into(), endpoint.into());
+        let mut inner = PendingCacheInner::default();
+        let start = Instant::now();
+        remember_pending_in(&mut inner, endpoint, invoice, &record, start);
+        assert!(cached_pending_in(&mut inner, endpoint, &invoice, start).is_some());
+        assert!(
+            cached_pending_in(&mut inner, other, &invoice, start).is_none(),
+            "another endpoint has not been asked yet"
+        );
+    }
+
+    /// A `null` answer is a status — "not paid yet" — and is worth keeping for
+    /// the window like any other unsettled one.
+    #[test]
+    fn an_unpaid_answer_is_kept_for_its_window() {
+        let endpoint = "https://pending-test-null.invalid";
+        let invoice = Pubkey::from([0xAu8; 32]);
+        let record = pending_record(invoice, "devnet".into(), endpoint.into());
+        assert_eq!(record.status, PaymentStatus::Pending);
+        let mut inner = PendingCacheInner::default();
+        let start = Instant::now();
+        remember_pending_in(&mut inner, endpoint, invoice, &record, start);
+        assert!(cached_pending_in(&mut inner, endpoint, &invoice, start).is_some());
+    }
+
+    /// The memo through the real read: the buyer's page and a second viewer of
+    /// the same invoice cost one cluster request, not two.
+    #[tokio::test]
+    async fn a_second_viewer_is_answered_from_the_first_read() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x31u8; 32]);
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"context": {"slot": 1}, "value": [null, null]},
+            })
+        })
+        .await;
+
+        let first = fetch_payment_at(&endpoint, "devnet", invoice, &db)
+            .await
+            .expect("first read");
+        let second = fetch_payment_at(&endpoint, "devnet", invoice, &db)
+            .await
+            .expect("second read");
+        assert_eq!(first.status, PaymentStatus::Pending);
+        assert_eq!(second.id, first.id);
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the window answered the second viewer"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A cluster that does not answer is an error, not "unpaid": nothing is
+    /// remembered, and the next poll asks again rather than serving the failure
+    /// as a status.
+    #[tokio::test]
+    async fn a_failed_read_is_never_remembered() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x32u8; 32]);
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32000, "message": "node is behind"},
+            })
+        })
+        .await;
+
+        assert!(fetch_payment_at(&endpoint, "devnet", invoice, &db)
+            .await
+            .is_err());
+        assert!(fetch_payment_at(&endpoint, "devnet", invoice, &db)
+            .await
+            .is_err());
+        assert!(
+            hits.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+            "each attempt asked the cluster"
+        );
+        assert!(
+            cached_pending(&endpoint, &invoice).is_none(),
+            "a failure is not an answer to keep"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A seller watching two addresses is one batch, and the next tick inside
+    /// the window is no request at all.
+    #[tokio::test]
+    async fn a_watch_request_is_one_cluster_read_inside_the_window() {
+        let (db, path) = temp_db().await;
+        let pdas = vec![
+            Pubkey::from([0x33u8; 32]).to_string(),
+            Pubkey::from([0x34u8; 32]).to_string(),
+        ];
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"context": {"slot": 1}, "value": [null, null, null, null]},
+            })
+        })
+        .await;
+
+        let first = fetch_many_at(&endpoint, "devnet", &pdas, &db)
+            .await
+            .expect("first watch");
+        let second = fetch_many_at(&endpoint, "devnet", &pdas, &db)
+            .await
+            .expect("second watch");
+        assert_eq!(first.len(), 2);
+        assert_eq!(second.len(), 2);
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "two invoices over two polls: one batched read"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A row from before amounts were kept is completed from its own account,
+    /// once, and the seller's own words are left exactly as they were.
+    #[tokio::test]
+    async fn a_legacy_row_is_filled_from_the_chain_and_asked_about_once() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x71u8; 32]);
+        let seller = Pubkey::from([0x72u8; 32]);
+        let reference = Pubkey::from([0x73u8; 32]);
+
+        let mut data = account_discriminator().to_vec();
+        data.extend_from_slice(seller.as_ref());
+        data.extend_from_slice(reference.as_ref());
+        data.extend_from_slice(&4_500_000u64.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(b"flat white");
+        data.push(0); // pending
+        data.extend_from_slice(&[0u8; 32]);
+        data.extend_from_slice(&100i64.to_le_bytes());
+        data.extend_from_slice(&0i64.to_le_bytes());
+        let account = serde_json::json!({
+            "data": [STANDARD.encode(&data), "base64"],
+            "executable": false,
+            "lamports": 1000,
+            "owner": PAYVAND_PROGRAM_ID,
+            "rentEpoch": 0,
+        });
+        let (endpoint, hits) = stub_rpc(move |call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"context": {"slot": 1}, "value": [account.clone(), null]},
+            })
+        })
+        .await;
+
+        let connection = db.connect().expect("connect");
+        connection
+            .execute(
+                "INSERT INTO invoice_meta (id, seller, name, description, created_at) \
+                 VALUES (?1, ?2, 'Flat white', 'Cardamom bun', 100)",
+                libsql::params![invoice.to_string(), seller.to_string()],
+            )
+            .await
+            .expect("a row from before amounts were kept");
+
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+
+        let mut rows = connection
+            .query(
+                "SELECT amount, currency, reference, cluster, endpoint, name, description \
+                 FROM invoice_meta WHERE id = ?1",
+                libsql::params![invoice.to_string()],
+            )
+            .await
+            .expect("read");
+        let row = rows.next().await.expect("row").expect("the row");
+        assert_eq!(row.get::<i64>(0).expect("amount"), 4_500_000);
+        assert_eq!(row.get::<String>(1).expect("currency"), "sol");
+        assert_eq!(
+            row.get::<String>(2).expect("reference"),
+            reference.to_string()
+        );
+        assert_eq!(row.get::<String>(3).expect("cluster"), "devnet");
+        assert_eq!(row.get::<String>(4).expect("endpoint"), endpoint);
+        assert_eq!(
+            row.get::<String>(5).expect("name"),
+            "Flat white",
+            "the seller's own words are not overwritten"
+        );
+        assert_eq!(row.get::<String>(6).expect("description"), "Cardamom bun");
+
+        // And the row is now something the feed can list.
+        let listed = recorded_invoices(&db, &seller.to_string(), "devnet", 10).await;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].amount_lamports, 4_500_000);
+
+        let asked = hits.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(asked, 1, "one batched read filled the page");
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            asked,
+            "a filled row is not asked about again"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A row the chain knows nothing about — an invoice from another cluster, or
+    /// one whose account is long gone — is asked about once and then left alone.
+    #[tokio::test]
+    async fn a_legacy_row_the_chain_does_not_know_is_not_asked_again() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x74u8; 32]);
+        let seller = Pubkey::from([0x75u8; 32]);
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"context": {"slot": 1}, "value": [null, null]},
+            })
+        })
+        .await;
+
+        let connection = db.connect().expect("connect");
+        connection
+            .execute(
+                "INSERT INTO invoice_meta (id, seller, name, description, created_at) \
+                 VALUES (?1, ?2, 'Flat white', '', 100)",
+                libsql::params![invoice.to_string(), seller.to_string()],
+            )
+            .await
+            .expect("legacy row");
+
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(
+            recorded_invoices(&db, &seller.to_string(), "devnet", 10)
+                .await
+                .is_empty(),
+            "nothing to list until the chain says something"
+        );
+
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the next load does not ask about it again"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A cluster that did not answer is not an answer: nothing is remembered as
+    /// tried, so the next load asks again instead of leaving the row behind.
+    #[tokio::test]
+    async fn a_backfill_that_failed_is_tried_again() {
+        let (db, path) = temp_db().await;
+        let invoice = Pubkey::from([0x76u8; 32]);
+        let seller = Pubkey::from([0x77u8; 32]);
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32005, "message": "node is unhealthy"},
+            })
+        })
+        .await;
+
+        let connection = db.connect().expect("connect");
+        connection
+            .execute(
+                "INSERT INTO invoice_meta (id, seller, name, description, created_at) \
+                 VALUES (?1, ?2, 'Flat white', '', 100)",
+                libsql::params![invoice.to_string(), seller.to_string()],
+            )
+            .await
+            .expect("legacy row");
+
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+        backfill_invoice_rows(&db, &seller.to_string(), "devnet", &endpoint).await;
+        assert!(
+            hits.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+            "each load asks again until the cluster answers"
+        );
+
+        let mut rows = connection
+            .query("SELECT count(*) FROM invoice_backfill", ())
+            .await
+            .expect("read");
+        let row = rows.next().await.expect("row").expect("count");
+        assert_eq!(
+            row.get::<i64>(0).expect("count"),
+            0,
+            "a failure is not remembered as an answer"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A session key is kept against the wallet it spends for, and no other
+    /// wallet, cluster or endpoint reads it back.
+    #[tokio::test]
+    async fn a_session_key_is_kept_for_the_wallet_it_spends_for() {
+        let (db, path) = temp_db().await;
+        let wallet = "wallet-a";
+        let key = Pubkey::from([0x61u8; 32]);
+        let endpoint = "https://allowance-a.invalid";
+        assert!(
+            session_keys_for(&db, wallet, "devnet", endpoint)
+                .await
+                .is_empty(),
+            "nothing has been read yet"
+        );
+
+        remember_session_key(&db, &key.to_string(), wallet, "devnet", endpoint).await;
+        assert_eq!(
+            session_keys_for(&db, wallet, "devnet", endpoint).await,
+            vec![key]
+        );
+        assert!(
+            session_keys_for(&db, "wallet-b", "devnet", endpoint)
+                .await
+                .is_empty(),
+            "another wallet has no key"
+        );
+        assert!(
+            session_keys_for(&db, wallet, "mainnet-beta", endpoint)
+                .await
+                .is_empty(),
+            "another cluster is another program"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A payment signed by a session key is the wallet's once the key is known:
+    /// the settle row is keyed by the payer, so the read asks for every key that
+    /// stands for the buyer.
+    #[tokio::test]
+    async fn settlements_a_session_key_paid_are_listed_for_its_wallet() {
+        let (db, path) = temp_db().await;
+        let endpoint = "https://allowance-b.invalid";
+        let wallet = Pubkey::from([0x62u8; 32]);
+        let session_key = Pubkey::from([0x63u8; 32]);
+        let receipt =
+            |invoice: [u8; 32], payer: Pubkey, settled_at: i64, memo: &str| OnchainReceipt {
+                invoice: Pubkey::from(invoice),
+                seller: Pubkey::from([0x69u8; 32]),
+                reference: Pubkey::from([0x6Au8; 32]),
+                mint: Pubkey::default(),
+                amount: 4_500_000,
+                memo: memo.to_string(),
+                payer,
+                created_at: settled_at - 60,
+                settled_at,
+            };
+        let direct = receipt([0x64u8; 32], wallet, 100, "direct");
+        let silent = receipt([0x65u8; 32], session_key, 200, "silent");
+        store_settlements(&db, endpoint, &[direct, silent]).await;
+
+        let direct_only =
+            settlements_paid_by(&db, endpoint, "devnet", &wallet.to_string(), 10).await;
+        assert_eq!(direct_only.len(), 1, "the wallet's own payment");
+        assert_eq!(direct_only[0].memo, "direct");
+
+        let both = settlements_paid_by_any(
+            &db,
+            endpoint,
+            "devnet",
+            &[wallet.to_string(), session_key.to_string()],
+            10,
+        )
+        .await;
+        assert_eq!(both.len(), 2, "the allowance payment is the buyer's too");
+        assert!(
+            both.iter().any(|record| record.memo == "silent"),
+            "the silent payment is in the page"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// One bounded read of the addresses a buyer's budgets live at is enough to
+    /// learn its session key — the program is not scanned.
+    #[tokio::test]
+    async fn an_allowance_is_read_from_its_own_addresses() {
+        let (db, path) = temp_db().await;
+        let buyer = Pubkey::from([0x66u8; 32]);
+        let session_key = Pubkey::from([0x67u8; 32]);
+        let mut budget = discriminator_for("Budget").to_vec();
+        budget.extend_from_slice(buyer.as_ref());
+        budget.extend_from_slice(session_key.as_ref());
+        budget.extend_from_slice(&10u64.to_le_bytes());
+        budget.extend_from_slice(&0u64.to_le_bytes());
+        budget.extend_from_slice(&1u64.to_le_bytes());
+        budget.push(255);
+        let account = serde_json::json!({
+            "data": [STANDARD.encode(&budget), "base64"],
+            "executable": false,
+            "lamports": 1000,
+            "owner": PAYVAND_PROGRAM_ID,
+            "rentEpoch": 0,
+        });
+        let (endpoint, hits) = stub_rpc(move |call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"context": {"slot": 1}, "value": [account.clone(), null, null]},
+            })
+        })
+        .await;
+
+        let found = detect_allowance(&db, &endpoint, "devnet", &buyer)
+            .await
+            .expect("the cluster answered");
+        assert_eq!(found, vec![session_key]);
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "one read, whatever the buyer has"
+        );
+        assert_eq!(
+            session_keys_for(&db, &buyer.to_string(), "devnet", &endpoint).await,
+            vec![session_key],
+            "and it is kept for the next load"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A cluster that does not answer is not an answer: nothing is remembered,
+    /// and the wallet can be looked up again.
+    #[tokio::test]
+    async fn an_allowance_lookup_that_failed_learns_nothing() {
+        let (db, path) = temp_db().await;
+        let buyer = Pubkey::from([0x68u8; 32]);
+        let (endpoint, _) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32005, "message": "node is unhealthy"},
+            })
+        })
+        .await;
+
+        assert!(detect_allowance(&db, &endpoint, "devnet", &buyer)
+            .await
+            .is_none());
+        assert!(
+            session_keys_for(&db, &buyer.to_string(), "devnet", &endpoint)
+                .await
+                .is_empty()
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The lookup is once a window, not once a load: a wallet with no allowance
+    /// is remembered as checked, and looked at again when the window turns.
+    #[tokio::test]
+    async fn a_checked_wallet_is_not_looked_up_again_inside_the_window() {
+        let (db, path) = temp_db().await;
+        let wallet = "wallet-c";
+        let endpoint = "https://allowance-c.invalid";
+        assert!(
+            allowance_check_due(&db, wallet, "devnet", endpoint).await,
+            "never looked up"
+        );
+        mark_allowance_checked(&db, wallet, "devnet", endpoint).await;
+        assert!(!allowance_check_due(&db, wallet, "devnet", endpoint).await);
+
+        let connection = db.connect().expect("connect");
+        connection
+            .execute(
+                "UPDATE allowance_checks SET checked_at = ?1 WHERE wallet = ?2",
+                libsql::params![
+                    crate::auth::unix_now() - ALLOWANCE_CHECK_SECS - 1,
+                    wallet.to_string()
+                ],
+            )
+            .await
+            .expect("backdate");
+        assert!(
+            allowance_check_due(&db, wallet, "devnet", endpoint).await,
+            "an old look is due again"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The scan's window end to end: the second request in it is answered from
+    /// the accounts the first one read.
+    #[tokio::test]
+    async fn a_scan_answers_the_next_request_without_asking_again() {
+        let (db, path) = temp_db().await;
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": []})
+        })
+        .await;
+
+        let first = program_scan_at(&endpoint, "devnet", 0, &db)
+            .await
+            .expect("first scan");
+        let second = program_scan_at(&endpoint, "devnet", 0, &db)
+            .await
+            .expect("second scan");
+        assert!(first.payments.is_empty());
+        assert_eq!(second.cluster, "devnet");
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the window answered the second scan"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A scan that failed is not a scan of an empty program: it is not kept, so
+    /// the next request asks again instead of serving ``no payments'' for the
+    /// window.
+    #[tokio::test]
+    async fn a_failed_scan_is_never_remembered() {
+        let (db, path) = temp_db().await;
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32005, "message": "node is unhealthy"},
+            })
+        })
+        .await;
+
+        assert!(program_scan_at(&endpoint, "devnet", 0, &db).await.is_err());
+        assert!(program_scan_at(&endpoint, "devnet", 0, &db).await.is_err());
+        assert!(
+            hits.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+            "each attempt asked the cluster"
+        );
+        assert!(
+            cached_scan(&endpoint, "devnet").is_none(),
+            "a failure is not a scan to keep"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// The scan's window in the map: shared inside it, dropped at its end, and
+    /// never shared across a cluster or an endpoint.
+    #[test]
+    fn a_scan_is_shared_until_its_window_ends() {
+        let mut inner = HashMap::new();
+        let accounts = vec![(Pubkey::from([0x41u8; 32]), vec![1u8, 2, 3])];
+        let start = Instant::now();
+        assert!(
+            cached_scan_in(&mut inner, "https://scan-test.invalid", "devnet", start).is_none(),
+            "nothing has been scanned yet"
+        );
+        remember_scan_in(
+            &mut inner,
+            "https://scan-test.invalid",
+            "devnet",
+            &accounts,
+            start,
+        );
+        let shared = cached_scan_in(
+            &mut inner,
+            "https://scan-test.invalid",
+            "devnet",
+            start + Duration::from_secs(3),
+        )
+        .expect("inside the window");
+        assert_eq!(shared.len(), 1);
+        assert!(
+            cached_scan_in(
+                &mut inner,
+                "https://scan-test.invalid",
+                "devnet",
+                start + SCAN_TTL
+            )
+            .is_none(),
+            "an expired scan is a miss"
+        );
+        assert!(
+            inner.is_empty(),
+            "the expired entry is dropped where it is found"
+        );
+    }
+
+    #[test]
+    fn scans_are_kept_per_cluster_and_endpoint() {
+        let mut inner = HashMap::new();
+        let accounts = vec![(Pubkey::from([0x42u8; 32]), vec![1u8])];
+        let start = Instant::now();
+        remember_scan_in(
+            &mut inner,
+            "https://scan-a.invalid",
+            "devnet",
+            &accounts,
+            start,
+        );
+        assert!(
+            cached_scan_in(&mut inner, "https://scan-a.invalid", "mainnet-beta", start).is_none(),
+            "another cluster is another program state"
+        );
+        assert!(
+            cached_scan_in(&mut inner, "https://scan-b.invalid", "devnet", start).is_none(),
+            "another endpoint has not been asked yet"
+        );
+        assert_eq!(inner.len(), 1);
+    }
+
+    #[test]
+    fn the_scan_cache_stays_bounded() {
+        let mut inner = HashMap::new();
+        let accounts = vec![(Pubkey::from([0x43u8; 32]), vec![1u8])];
+        let start = Instant::now();
+        for index in 0..(SCAN_CACHE_LIMIT + 3) {
+            remember_scan_in(
+                &mut inner,
+                &format!("https://scan-{index}.invalid"),
+                "devnet",
+                &accounts,
+                start + Duration::from_millis(index as u64),
+            );
+        }
+        assert_eq!(inner.len(), SCAN_CACHE_LIMIT);
+        assert!(
+            cached_scan_in(&mut inner, "https://scan-0.invalid", "devnet", start).is_none(),
+            "the oldest fell out"
+        );
     }
 
     #[test]

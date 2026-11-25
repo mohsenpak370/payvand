@@ -310,6 +310,17 @@ pub async fn require_user(db: &SharedDb, headers: &HeaderMap) -> ApiResult<User>
         .ok_or(ApiError::Unauthorized)
 }
 
+/// The signed-in account, when the request carries a usable session.
+///
+/// For the endpoints a stranger may also use: a buyer who scanned a printed code
+/// and never signed in still has to be able to pay, and an account is only what
+/// we happen to know about them. A missing, expired or malformed token is `None`
+/// rather than an error here — the caller's own limits hold either way.
+pub async fn optional_user(db: &SharedDb, headers: &HeaderMap) -> Option<User> {
+    let token = bearer_token(headers)?;
+    resolve_session(db, token).await.ok().flatten()
+}
+
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     value

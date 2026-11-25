@@ -4,7 +4,7 @@ import type { TransactionsResponse } from './useAuth'
 interface UseProfileTransactionsOptions {
   /** The history follows the linked wallet, not whichever one is connected. */
   linkedWallet: Readonly<Ref<string | null>>
-  myTransactions: () => Promise<TransactionsResponse>
+  myTransactions: (options?: { scan?: boolean }) => Promise<TransactionsResponse>
 }
 
 /** The on-chain history shown in the profile's transactions card. */
@@ -18,7 +18,12 @@ export function useProfileTransactions({
   const txLoading = ref(false)
   const txFailure = ref('')
 
-  async function refreshTransactions() {
+  /**
+   * `scan` is what the refresh button asks for: the server's own rows answer
+   * the card, and only a scan can find a payment the API never wrote an invoice
+   * for — one from an allowance, or a code another client made.
+   */
+  async function refreshTransactions(scan = false) {
     if (!linkedWallet.value) {
       transactions.value = null
       return
@@ -26,7 +31,7 @@ export function useProfileTransactions({
     txFailure.value = ''
     txLoading.value = true
     try {
-      transactions.value = await myTransactions()
+      transactions.value = await myTransactions({ scan })
     } catch (error) {
       txFailure.value = apiErrorMessage(error, t('profile.txFailure'))
     } finally {
@@ -34,7 +39,7 @@ export function useProfileTransactions({
     }
   }
 
-  onMounted(refreshTransactions)
+  onMounted(() => refreshTransactions())
 
   return { transactions, txLoading, txFailure, refreshTransactions }
 }
