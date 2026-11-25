@@ -41,7 +41,7 @@ onBeforeUnmount(() => timer && clearInterval(timer))
     class="pv-icon"
     :style="{ width: px, height: px }"
     xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 1254 1254"
+    viewBox="177 172.5 899 899"
     role="img"
     aria-label="Payvand"
   >
@@ -395,6 +395,7 @@ onBeforeUnmount(() => timer && clearInterval(timer))
       cx="904.9"
       cy="506.8"
       r="30"
+      vector-effect="non-scaling-stroke"
     /></svg>
 </template>
 
@@ -409,10 +410,13 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 .wv{--t:2.15s;--d:.7s}
 .wx{--t:2.85s;--d:.75s}
 .shfade{opacity:0;animation:pv-fadein .4s ease 2.5s forwards}
-/* once the logo is drawn, one light travels the ribbon and the V and ripples at the tip */
+/* once the logo is drawn, one light travels the ribbon and the V and ripples at the tip.
+   The ring's stroke keeps its width in screen pixels: at the size this is shown on a
+   hero card, a stroke measured in the drawing's own units came out under half a pixel
+   and the ripple was there but invisible. */
 .dot{offset-path:path("M396.0 745.5 C401.0 740.7 419.3 722.9 426.0 716.5 C432.7 710.1 432.7 710.2 436.0 707.0 C439.3 703.8 442.7 700.2 446.0 697.0 C449.3 693.8 452.7 690.7 456.0 687.5 C459.3 684.3 462.7 681.2 466.0 678.0 C469.3 674.8 472.7 671.2 476.0 668.0 C479.3 664.8 482.7 661.6 486.0 658.5 C489.3 655.4 492.7 652.4 496.0 649.5 C499.3 646.6 502.7 643.8 506.0 641.0 C509.3 638.2 512.7 635.5 516.0 633.0 C519.3 630.5 522.7 628.3 526.0 626.0 C529.3 623.7 532.7 621.0 536.0 619.0 C539.3 617.0 542.7 615.8 546.0 614.0 C549.3 612.2 552.7 609.7 556.0 608.0 C559.3 606.3 562.7 605.2 566.0 604.0 C569.3 602.8 572.7 601.8 576.0 600.5 C579.3 599.2 584.3 596.8 586.0 596.0 L646.1 628.0 L728.1 760.5 Q746.0 789.5 762.6 759.8 L904.9 506.8");offset-rotate:0deg;offset-distance:0%;opacity:0;animation:run 2.9s cubic-bezier(.5,0,.35,1) calc(4s + var(--lag)) forwards}
 @keyframes run{0%{offset-distance:0%;opacity:0}5%{opacity:var(--o)}94%{opacity:var(--o)}100%{offset-distance:100%;opacity:0}}
-.ring{fill:none;stroke:#5cc8ff;stroke-width:5;opacity:0;transform-box:fill-box;transform-origin:center;animation:ring .8s ease-out 6.65s forwards}
-@keyframes ring{0%{transform:scale(.35);opacity:.95}100%{transform:scale(2.6);opacity:0}}
+.ring{fill:none;stroke:#5cc8ff;stroke-width:1.6px;opacity:0;transform-box:fill-box;transform-origin:center;animation:ring 1s cubic-bezier(.2,.6,.3,1) 6.85s forwards}
+@keyframes ring{0%{transform:scale(.4);opacity:.9}100%{transform:scale(3.4);opacity:0}}
 @media (prefers-reduced-motion:reduce){.dot,.ring{display:none}.piece,.shfade{animation:none;opacity:1}.wipe{animation:none;stroke-dashoffset:0;stroke-opacity:1}}
 </style>

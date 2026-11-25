@@ -982,7 +982,7 @@
       "off": "No — cobro una cosa cada vez"
     },
     "soundsTitle": "Sonidos",
-    "soundsDescription": "Un tono corto que sube cuando un pago pasa y un zumbido grave cuando no.",
+    "soundsDescription": "Un tintineo de moneda cuando un pago pasa y un «womp» grave cuando no.",
     "soundsLabel": "Sonidos de pago",
     "soundsSwitch": "Reproducir un sonido al terminar un pago",
     "notificationsTitle": "Notificaciones",

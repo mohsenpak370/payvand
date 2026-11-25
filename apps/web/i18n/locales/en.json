@@ -982,7 +982,7 @@
       "off": "No — I charge for one thing at a time"
     },
     "soundsTitle": "Sounds",
-    "soundsDescription": "A short rise when a payment goes through, a low buzz when it does not.",
+    "soundsDescription": "A coin sound when a payment goes through, a low womp when it does not.",
     "soundsLabel": "Payment sounds",
     "soundsSwitch": "Play a sound when a payment finishes",
     "notificationsTitle": "Notifications",

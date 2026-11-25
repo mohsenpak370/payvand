@@ -982,7 +982,7 @@
       "off": "Nein — ich berechne jeweils eine Sache"
     },
     "soundsTitle": "Töne",
-    "soundsDescription": "Ein kurzer Anstieg, wenn eine Zahlung durchgeht, ein tiefes Brummen, wenn nicht.",
+    "soundsDescription": "Ein Münzklang, wenn eine Zahlung durchgeht, ein tiefes Womp, wenn nicht.",
     "soundsLabel": "Zahlungstöne",
     "soundsSwitch": "Einen Ton spielen, wenn eine Zahlung endet",
     "notificationsTitle": "Benachrichtigungen",

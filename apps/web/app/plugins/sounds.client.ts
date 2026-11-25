@@ -1,4 +1,4 @@
-import { SOUND_STORAGE_KEY } from '~/composables/useTransactionSounds'
+import { SOUND_STORAGE_KEY, preloadTransactionSounds } from '~/composables/useTransactionSounds'
 
 /**
  * Restores the choice made on the settings page. Sounds are on by default, so
@@ -13,4 +13,6 @@ export default defineNuxtPlugin(() => {
   } catch {
     // No storage (private mode, embedded webview): keep the default.
   }
+  // Decode both files now, so the first payment is not waiting on a fetch.
+  if (soundsEnabled.value) preloadTransactionSounds()
 })

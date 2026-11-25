@@ -1023,9 +1023,9 @@ if (!props.embedded) {
           <div
             class="relative grid size-18 place-items-center rounded-full bg-success/10 text-success animate-pay-result-pop motion-reduce:animate-none"
           >
-            <UIcon
-              name="i-lucide-circle-check"
-              class="size-12"
+            <PayResultMark
+              state="success"
+              class="size-16"
             />
             <span
               class="absolute inset-0 rounded-full border-2 border-current opacity-0 animate-pay-result-halo motion-reduce:hidden"
@@ -1093,9 +1093,9 @@ if (!props.embedded) {
           <div
             class="relative grid size-18 place-items-center rounded-full bg-error/10 text-error animate-pay-result-pop-error motion-reduce:animate-none"
           >
-            <UIcon
-              name="i-lucide-circle-alert"
-              class="size-12"
+            <PayResultMark
+              state="error"
+              class="size-16"
             />
           </div>
           <p

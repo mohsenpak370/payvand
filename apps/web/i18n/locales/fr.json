@@ -982,7 +982,7 @@
       "off": "Non — je facture un article à la fois"
     },
     "soundsTitle": "Sons",
-    "soundsDescription": "Une courte montée quand un paiement passe, un bourdonnement grave quand il échoue.",
+    "soundsDescription": "Un tintement de pièce quand un paiement passe, un « womp » grave quand il échoue.",
     "soundsLabel": "Sons de paiement",
     "soundsSwitch": "Jouer un son à la fin d'un paiement",
     "notificationsTitle": "Notifications",
