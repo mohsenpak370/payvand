@@ -27,7 +27,11 @@ export function useCheckoutCosts(
       const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
         mint: option.mint || undefined,
         seller: payload.value?.seller ? address(payload.value.seller) : undefined,
-        signatures: 1
+        signatures: 1,
+        // The code's cluster, not this page's: pricing an invoice on another
+        // cluster from the policy here would quote a fee the program will not
+        // charge.
+        cluster: payload.value?.cluster
       })
       costs.value = quote
       costsError.value = ''

@@ -135,9 +135,12 @@ afterEach(() => {
 
 describe('a quote priced from /api/config', () => {
   it('reads the policy and the rents from the API, not from the cluster', async () => {
-    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol')
+    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
 
     expect(getConfig).toHaveBeenCalledTimes(1)
+    // The invoice's cluster travels with the question: the API answers for the
+    // cluster the checkout is pointed at, not its own default.
+    expect(getConfig).toHaveBeenCalledWith('devnet')
     // The API's 2% policy, and its rents rather than the stub's per-byte ones.
     expect(sol.fee).toBe(152_000)
     expect(sol.invoiceRent).toBe(230_000)
@@ -147,18 +150,49 @@ describe('a quote priced from /api/config', () => {
   })
 
   it('answers the next quote inside the minute without asking the API again', async () => {
-    await quote.estimateInvoiceCosts(10_000_000, 'sol')
-    const second = await useInvoiceCosts().estimateInvoiceCosts(10_000_000, 'sol')
+    await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
+    const second = await useInvoiceCosts()
+      .estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
 
     expect(getConfig).toHaveBeenCalledTimes(1)
     expect(second.invoiceRent).toBe(230_000)
     expect(rentReads).toBe(0)
   })
 
+  it('asks for another cluster instead of reusing the cached policy', async () => {
+    await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
+    getConfig.mockResolvedValue({ ...apiConfig(), cluster: 'mainnet-beta' })
+
+    const mainnet = await quote.estimateInvoiceCosts(10_000_000, 'sol', {
+      cluster: 'mainnet-beta'
+    })
+
+    expect(getConfig).toHaveBeenLastCalledWith('mainnet-beta')
+    // Priced again, not answered from devnet's minute-old policy.
+    expect(mainnet.invoiceRent).toBe(230_000)
+    expect(getConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the API policy but reads the rents itself when they come back zero', async () => {
+    getConfig.mockResolvedValue({
+      ...apiConfig(),
+      rent: Object.fromEntries(Object.keys(apiConfig().rent).map(name => [name, 0]))
+    })
+
+    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
+
+    // The 2% policy is still the API's, so the fee is not the fallback's 1%:
+    // 200,000 of fee, less the 96,000 of marker rent the chain's rent implies.
+    expect(sol.fee).toBe(104_000)
+    // A zero rent is not an answer: the quote asks the cluster instead.
+    expect(sol.invoiceRent).toBe(460_000)
+    expect(rentReads).toBe(2)
+  })
+
   it('falls back to the account when the API cannot answer', async () => {
     getConfig.mockRejectedValue(new Error('503'))
 
-    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol')
+    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
 
     // The chain's own 1% policy and the stub's 2,000 lamports per byte: 1% of
     // 10,000,000 is 100,000, less the 96,000 marker rent the seller pays out of
@@ -171,7 +205,7 @@ describe('a quote priced from /api/config', () => {
   it('falls back when the API answers a policy a quote cannot use', async () => {
     getConfig.mockResolvedValue({ ...apiConfig(), mints: { usdc: '', eurc: '' } })
 
-    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol')
+    const sol = await quote.estimateInvoiceCosts(10_000_000, 'sol', { cluster: 'devnet' })
 
     expect(sol.fee).toBe(4_000)
     expect(accountReads).toHaveLength(1)

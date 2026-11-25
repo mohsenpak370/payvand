@@ -140,7 +140,10 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
       ? undefined
       : mintForCurrency(currentCurrency, options.cluster)?.toString()
     try {
-      netQuote.value = await estimateInvoiceCosts(amount, currentCurrency, { mint })
+      netQuote.value = await estimateInvoiceCosts(amount, currentCurrency, {
+        mint,
+        cluster: options.cluster
+      })
     } catch {
       // No policy, no promise: a stale number here would be a lie.
       netQuote.value = null

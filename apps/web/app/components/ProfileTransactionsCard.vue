@@ -51,7 +51,12 @@ async function openDetail(item: MyTransaction) {
     const mint = item.currency === 'sol'
       ? undefined
       : (mintForCurrency(item.currency, props.transactions?.cluster ?? '') ?? undefined)
-    const quote = await estimateInvoiceCosts(item.amount, item.currency, { mint })
+    // The row's own cluster: a payment listed from another one carries that
+    // cluster's fee, not this page's.
+    const quote = await estimateInvoiceCosts(item.amount, item.currency, {
+      mint,
+      cluster: props.transactions?.cluster ?? undefined
+    })
     // The list may have moved on while the quote read the chain.
     if (selected.value?.id === item.id) {
       detailFee.value = `${formatTokenAmount(quote.fee, item.decimals)} ${currencySymbol(item.currency)}`

@@ -232,18 +232,27 @@ describe('the sell form\'s net quote', () => {
   it('quotes a USDC price with the USDC mint, so the flat is charged', () => {
     sellFormIn('usdc')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'usdc', { mint: USDC_MINT })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'usdc', {
+      mint: USDC_MINT,
+      cluster: 'devnet'
+    })
   })
 
   it('quotes a EURC price with the EURC mint', () => {
     sellFormIn('eurc')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'eurc', { mint: EURC_MINT })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'eurc', {
+      mint: EURC_MINT,
+      cluster: 'devnet'
+    })
   })
 
   it('quotes a SOL price with no mint, which pays no flat', () => {
     sellFormIn('sol')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000_000, 'sol', { mint: undefined })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000_000, 'sol', {
+      mint: undefined,
+      cluster: 'devnet'
+    })
   })
 })

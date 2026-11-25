@@ -93,7 +93,7 @@ pub struct Spaces {
     pub token_budget: u64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Rent {
     pub payment: u64,
     pub token_payment: u64,
@@ -224,27 +224,68 @@ pub async fn read_config(endpoint: &str, cluster: &str) -> ApiResult<ConfigRespo
         })
     };
 
-    Ok(ConfigResponse {
-        cluster: cluster.to_string(),
-        program_id: program.to_string(),
-        rent: Rent {
-            payment: rent(payment)?,
-            token_payment: rent(token_payment)?,
-            payment_receipt: rent(payment_receipt)?,
-            token_account: rent(token_account)?,
-            budget: rent(budget)?,
-            token_budget: rent(token_budget)?,
-        },
-        spaces: Spaces {
-            payment: PAYMENT_SPACE,
-            token_payment: TOKEN_PAYMENT_SPACE,
-            payment_receipt: PAYMENT_RECEIPT_SPACE,
-            token_account: TOKEN_ACCOUNT_SPACE,
-            budget: BUDGET_SPACE,
-            token_budget: TOKEN_BUDGET_SPACE,
-        },
-        ..policy
-    })
+    let rents = Rent {
+        payment: rent(payment)?,
+        token_payment: rent(token_payment)?,
+        payment_receipt: rent(payment_receipt)?,
+        token_account: rent(token_account)?,
+        budget: rent(budget)?,
+        token_budget: rent(token_budget)?,
+    };
+    // A cluster that answers zero for a rent is not answering: no account of any
+    // size is free, and a quote built on zero would understate what the payer
+    // gets back and what the seller funds.
+    for (size, lamports) in [
+        (PAYMENT_SPACE, rents.payment),
+        (TOKEN_PAYMENT_SPACE, rents.token_payment),
+        (PAYMENT_RECEIPT_SPACE, rents.payment_receipt),
+        (TOKEN_ACCOUNT_SPACE, rents.token_account),
+        (BUDGET_SPACE, rents.budget),
+        (TOKEN_BUDGET_SPACE, rents.token_budget),
+    ] {
+        if lamports == 0 {
+            tracing::info!(size, "a rent minimum came back as zero");
+            return Err(ApiError::Internal(
+                "The cluster's rents are not readable. Try again.".into(),
+            ));
+        }
+    }
+
+    Ok(policy.with_rent(rents))
+}
+
+/// A `Config` account decoded: every field of the answer except the rents, which
+/// the account does not hold.
+///
+/// Keeping them out is deliberate — the only way to build a `ConfigResponse` is
+/// `with_rent`, so a decoded policy can never be handed out with zeroed rents
+/// beside it.
+struct Policy {
+    cluster: String,
+    program_id: String,
+    admin: String,
+    fee_mode: String,
+    session_fee_float: u64,
+    fees: Fees,
+    mints: Mints,
+    spaces: Spaces,
+}
+
+impl Policy {
+    /// The answer: this policy with the rents read from the same cluster.
+    fn with_rent(self, rent: Rent) -> ConfigResponse {
+        ConfigResponse {
+            cluster: self.cluster,
+            program_id: self.program_id,
+            admin: self.admin,
+            fee_mode: self.fee_mode,
+            session_fee_float: self.session_fee_float,
+            fees: self.fees,
+            mints: self.mints,
+            spaces: self.spaces,
+            rent,
+        }
+    }
 }
 
 /// The `Config` account, read by offset.
@@ -253,7 +294,7 @@ pub async fn read_config(endpoint: &str, cluster: &str) -> ApiResult<ConfigRespo
 /// (two rates, their two boundaries, the two per-currency flats, the two mints,
 /// the network fee in lamports and in each token), the fee mode, the session
 /// float and the bump/version bytes this endpoint does not need.
-fn decode_policy(data: &[u8], cluster: &str) -> Option<ConfigResponse> {
+fn decode_policy(data: &[u8], cluster: &str) -> Option<Policy> {
     if data.len() < CONFIG_SPACE {
         return None;
     }
@@ -289,7 +330,7 @@ fn decode_policy(data: &[u8], cluster: &str) -> Option<ConfigResponse> {
         }
     };
 
-    Some(ConfigResponse {
+    Some(Policy {
         cluster: cluster.to_string(),
         program_id: payments::PAYVAND_PROGRAM_ID.to_string(),
         admin: admin.to_string(),
@@ -318,7 +359,6 @@ fn decode_policy(data: &[u8], cluster: &str) -> Option<ConfigResponse> {
             budget: BUDGET_SPACE,
             token_budget: TOKEN_BUDGET_SPACE,
         },
-        rent: Rent::default(),
     })
 }
 
@@ -420,9 +460,22 @@ mod tests {
 
     /// One read answers every request for a minute, per cluster, and the entry is
     /// dropped when it is looked at after that.
+    fn sample_config() -> ConfigResponse {
+        decode_policy(&policy_bytes(), "devnet")
+            .expect("a policy")
+            .with_rent(Rent {
+                payment: 1_000_000,
+                token_payment: 1_100_000,
+                payment_receipt: 890_880,
+                token_account: 2_039_280,
+                budget: 890_880,
+                token_budget: 1_000_000,
+            })
+    }
+
     #[test]
     fn a_config_is_kept_for_a_minute_per_cluster() {
-        let devnet = decode_policy(&policy_bytes(), "devnet").expect("a policy");
+        let devnet = sample_config();
         let mut inner = HashMap::new();
         let start = Instant::now();
 
@@ -508,6 +561,55 @@ mod tests {
             calls.load(Ordering::SeqCst),
             7,
             "one account read and six rents"
+        );
+    }
+
+    /// A rent of zero is not an answer — every account costs something — and a
+    /// quote built on it would understate the rent the seller funds. The whole
+    /// request fails rather than being cached with zeroes in it.
+    #[tokio::test]
+    async fn a_cluster_that_answers_no_rent_is_an_error() {
+        let encoded = base64_encode(&policy_bytes());
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                let encoded = encoded.clone();
+                async move {
+                    let id = body.get("id").cloned().unwrap_or_default();
+                    let answer = match body.get("method").and_then(serde_json::Value::as_str) {
+                        Some("getMinimumBalanceForRentExemption") => {
+                            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": 0})
+                        }
+                        Some("getAccountInfo") => serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {"context": {"slot": 1}, "value": {
+                                "data": [encoded, "base64"],
+                                "executable": false,
+                                "lamports": 2_000_000,
+                                "owner": payments::PAYVAND_PROGRAM_ID,
+                                "rentEpoch": 0,
+                            }},
+                        }),
+                        _ => serde_json::json!({"jsonrpc": "2.0", "id": id, "result": null}),
+                    };
+                    axum::Json(answer)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        assert!(
+            read_config(&format!("http://{addr}/"), "devnet")
+                .await
+                .is_err(),
+            "zero rents are refused, not quoted"
         );
     }
 

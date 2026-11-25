@@ -20,20 +20,31 @@
  */
 const CACHE_TTL_MS = 60_000
 
-const rentCache = new Map<number, { readAt: number, lamports: number }>()
+const rentCache = new Map<string, { readAt: number, lamports: number }>()
+
+/**
+ * A size is only answerable for the cluster it was asked of: rent parameters are
+ * per cluster, and a quote for an invoice on another one must not inherit this
+ * one's minimums. The key carries the cluster; an empty one is "whatever the
+ * client is pointed at", which is how the cluster-less callers read.
+ */
+function cacheKey(cluster: string, space: number): string {
+  return `${cluster}:${space}`
+}
 
 /** `getMinimumBalanceForRentExemption` for `space`, answered from the shared cache. */
 export async function rentMinimum(
   client: ReturnType<typeof useSolanaClient>['client'],
-  space: number
+  space: number,
+  cluster = ''
 ): Promise<number> {
-  const cached = rentCache.get(space)
+  const cached = rentCache.get(cacheKey(cluster, space))
   if (cached && Date.now() - cached.readAt < CACHE_TTL_MS) return cached.lamports
 
   const lamports = Number(
     await client.rpc.getMinimumBalanceForRentExemption(BigInt(space)).send()
   )
-  rentCache.set(space, { readAt: Date.now(), lamports })
+  rentCache.set(cacheKey(cluster, space), { readAt: Date.now(), lamports })
   return lamports
 }
 
@@ -45,13 +56,16 @@ export async function rentMinimum(
  */
 export function primeRentCache(
   spaces: Record<string, number>,
-  rent: Record<string, number>
+  rent: Record<string, number>,
+  cluster = ''
 ): void {
   const readAt = Date.now()
   for (const [name, space] of Object.entries(spaces)) {
     const lamports = rent[name]
-    if (typeof space !== 'number' || typeof lamports !== 'number') continue
-    rentCache.set(space, { readAt, lamports })
+    // Zero is not a rent: every account costs something, and an answer that says
+    // otherwise is not one a quote may use.
+    if (typeof space !== 'number' || typeof lamports !== 'number' || lamports <= 0) continue
+    rentCache.set(cacheKey(cluster, space), { readAt, lamports })
   }
 }
 
