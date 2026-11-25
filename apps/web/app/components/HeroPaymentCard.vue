@@ -42,7 +42,7 @@ onMounted(async () => {
  * The plate is a whole number of modules across and centred on the grid, so no
  * dot is left half covered by it: each one is either under the plate or clear
  * of it. The code is drawn at error correction level Q, which recovers ~25% of
- * it, and nine modules across hides about 13% of the modules.
+ * it, and eleven modules across hides about 19% of the code's area.
  */
 const qrPlate = computed(() => {
   const svg = qrMarkup.value

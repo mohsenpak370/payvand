@@ -64,7 +64,7 @@ export interface QrPlate {
  * on a module rather than on a seam and its edges land exactly between modules.
  * Nothing here can move it off the grid, which is the property the dots need.
  */
-export function coverBox(grid: QrGrid, size: number, cells = 9): QrPlate | null {
+export function coverBox(grid: QrGrid, size: number, cells = 11): QrPlate | null {
   // Eight modules at least are left around it, so the finder patterns stay whole.
   let across = Math.min(cells, grid.count - 8)
   if (across % 2 === 0) across -= 1

@@ -64,7 +64,7 @@ describe('coverBox', () => {
   const plate = coverBox(grid, SIZE)!
 
   it('is a whole number of modules across', () => {
-    expect(plate.side / CELL).toBeCloseTo(9, 6)
+    expect(plate.side / CELL).toBeCloseTo(11, 6)
   })
 
   it('starts and ends between modules, so its edges are never inside a dot', () => {
@@ -96,13 +96,24 @@ describe('coverBox', () => {
       else outside++
     }
 
-    // Nine modules across at 25 per side: 81 dots hidden, most of them visible.
+    // Eleven modules across at 25 per side: 121 cells hidden, most dots visible.
     expect(inside).toBeGreaterThan(0)
     expect(outside).toBeGreaterThan(inside)
   })
 
   it('never grows past the code or past the finder patterns', () => {
     expect(coverBox(grid, SIZE, 40)!.side / CELL).toBeCloseTo(COUNT - 8, 6)
+  })
+
+  it('stays on the grid for the other side counts the generator draws', () => {
+    // 21 and 29 modules are the versions either side of this URL's.
+    for (const count of [21, 29]) {
+      const cell = (SIZE - QR_MARGIN * 2) / count
+      const box = coverBox({ cell, count, margin: QR_MARGIN }, SIZE)
+      expect(box).not.toBeNull()
+      expect(box!.side / cell).toBeCloseTo(11, 6)
+      expect((box!.x - QR_MARGIN) % cell).toBeCloseTo(0, 6)
+    }
   })
 })
 
