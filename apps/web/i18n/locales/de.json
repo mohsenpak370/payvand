@@ -114,7 +114,7 @@
       "q4": "In welchen Währungen kann ich abrechnen?",
       "a4": "SOL, USDC oder EURC. Du wählst die Währung beim Erstellen des Codes, und der Kunde zahlt diesen Betrag darin.",
       "q5": "Was kostet es?",
-      "a5": "1 % bis 0,1 SOL (oder 10 USDC / EURC), darüber 0,5 %, vom Preis abgezogen – der Kunde zahlt genau, was der Code zeigt. Für das Kassieren gibt es keine Monatsgebühr. Die optionale Shop-Seite mit Produktliste kostet 1,70 € pro 30 Tage. Die Gebührenregel liegt on-chain und ändert sich ohne neue Version.",
+      "a5": "1 % bis 0,1 SOL (oder 10 USDC / EURC), darüber 0,5 %, vom Preis abgezogen – der Kunde zahlt genau, was der Code zeigt. Kleine Beträge zahlen stattdessen einen Sockel: die Miete des Belegs plus die Netzwerkgebühr, bei einer USDC-Rechnung rund 0,063 USDC – ein Kaffee für 4,50 USDC zahlt also diesen Sockel und nicht 1 %. Für das Kassieren gibt es keine Monatsgebühr; die optionale Shop-Seite mit Produktliste kostet 1,70 € pro 30 Tage, und ein Shop kann seinen eigenen Satz senken, nie erhöhen.",
       "q6": "Braucht der Käufer SOL für Netzwerkgebühren?",
       "a6": "Bei USDC- oder EURC-Zahlungen nein: Payvands Relayer zahlt die Netzwerkgebühr und die Mieten der temporären Konten und wird aus der Gebühr erstattet. Eine SOL-Zahlung besteht aus den Lamports des Käufers, also braucht er genau den Betrag.",
       "q7": "Was, wenn der Kunde den falschen Betrag zahlt?",

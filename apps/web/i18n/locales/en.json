@@ -114,7 +114,7 @@
       "q4": "Which currencies can I charge in?",
       "a4": "SOL, USDC or EURC. You choose the currency when you make the code, and the customer pays that amount in it.",
       "q5": "What does it cost?",
-      "a5": "1% up to 0.1 SOL (or 10 USDC / EURC) and 0.5% above that, taken out of the price — the customer pays exactly what the code shows. There is no monthly fee to take payments. The optional shop page with a product list is €1.70 per 30 days. The fee policy lives on chain, so it can change without a release.",
+      "a5": "1% up to 0.1 SOL (or 10 USDC / EURC) and 0.5% above that, taken out of the price, so the customer pays exactly what the code shows. A small payment pays a floor instead — the receipt’s rent plus the network fee, about 0.063 USDC on a USDC invoice — so a 4.50 USDC coffee pays that floor rather than 1%. There is no monthly fee to take payments; the optional shop page with a product list is €1.70 per 30 days, and a shop can set its own lower rate, never a higher one.",
       "q6": "Does the buyer need SOL for network fees?",
       "a6": "For USDC or EURC payments, no: Payvand’s relayer pays the network fee and the temporary account rents and is repaid out of the fee. A SOL payment is the buyer’s own lamports, so they need the amount they are paying and nothing else.",
       "q7": "What if the customer pays the wrong amount?",

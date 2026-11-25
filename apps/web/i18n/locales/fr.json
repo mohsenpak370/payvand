@@ -114,7 +114,7 @@
       "q4": "Dans quelles devises puis-je encaisser ?",
       "a4": "SOL, USDC ou EURC. Vous choisissez la devise en créant le code, et le client paie ce montant dans cette devise.",
       "q5": "Combien ça coûte ?",
-      "a5": "1 % jusqu’à 0,1 SOL (ou 10 USDC / EURC), 0,5 % au-delà, prélevé sur le prix : le client paie exactement ce que le code affiche. Encaisser n’a pas d’abonnement mensuel. La page boutique avec liste de produits, facultative, coûte 1,70 € les 30 jours. La politique de frais vit on-chain et change sans nouvelle version.",
+      "a5": "1 % jusqu’à 0,1 SOL (ou 10 USDC / EURC), 0,5 % au-delà, prélevé sur le prix : le client paie exactement ce que le code affiche. Les petits montants paient un plancher à la place : le loyer du reçu plus les frais de réseau, environ 0,063 USDC sur une facture en USDC — un café à 4,50 USDC paie donc ce plancher, pas 1 %. Encaisser n’a pas d’abonnement mensuel ; la page boutique avec liste de produits, facultative, coûte 1,70 € les 30 jours, et une boutique peut baisser son propre taux, jamais l’augmenter.",
       "q6": "L’acheteur a-t-il besoin de SOL pour les frais de réseau ?",
       "a6": "Pour un paiement en USDC ou EURC, non : le relais de Payvand paie les frais de réseau et les loyers des comptes temporaires, et il est remboursé sur les frais. Un paiement en SOL, ce sont les lamports de l’acheteur : il lui faut exactement le montant.",
       "q7": "Et si le client paie le mauvais montant ?",

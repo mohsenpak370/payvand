@@ -114,7 +114,7 @@
       "q4": "¿En qué monedas puedo cobrar?",
       "a4": "SOL, USDC o EURC. Eliges la moneda al crear el código y el cliente paga ese importe en ella.",
       "q5": "¿Cuánto cuesta?",
-      "a5": "1 % hasta 0,1 SOL (o 10 USDC / EURC) y 0,5 % por encima, descontado del precio: el cliente paga exactamente lo que muestra el código. Cobrar no tiene cuota mensual. La página de tienda con lista de productos, opcional, cuesta 1,70 € por 30 días. La política de comisiones vive en la cadena, así que cambia sin publicar una versión.",
+      "a5": "1 % hasta 0,1 SOL (o 10 USDC / EURC) y 0,5 % por encima, descontado del precio, así que el cliente paga exactamente lo que muestra el código. Los importes pequeños pagan un mínimo en su lugar: el alquiler del recibo más la comisión de red, unos 0,063 USDC en una factura en USDC, así que un café de 4,50 USDC paga ese mínimo y no el 1 %. Cobrar no tiene cuota mensual; la página de tienda con lista de productos, opcional, cuesta 1,70 € por 30 días, y una tienda puede bajar su propia tarifa, nunca subirla.",
       "q6": "¿El comprador necesita SOL para las comisiones de red?",
       "a6": "En pagos con USDC o EURC, no: el relayer de Payvand paga la comisión de red y el alquiler de las cuentas temporales, y se le devuelve con la comisión. Un pago en SOL son los lamports del propio comprador, así que necesita exactamente el importe.",
       "q7": "¿Y si el cliente paga un importe equivocado?",
