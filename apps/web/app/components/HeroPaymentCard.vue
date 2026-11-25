@@ -57,6 +57,40 @@ const qrPlate = computed(() => {
     markSize: `${(plate.share * 100).toFixed(2)}%`
   }
 })
+
+/**
+ * The mark is drawn once, when the card reaches the middle of the screen — not
+ * while it sits below the fold, where nobody sees it play. It is mounted at
+ * that moment, so its CSS animations start from the beginning, and it stays
+ * drawn afterwards: scrolling away and back does not replay it.
+ */
+const markSlot = ref<HTMLElement | null>(null)
+const markDue = ref(false)
+let markObserver: IntersectionObserver | undefined
+
+const watchForCentre = () => {
+  const slot = markSlot.value
+  if (!slot) return
+  if (typeof IntersectionObserver === 'undefined') {
+    markDue.value = true
+    return
+  }
+  markObserver = new IntersectionObserver((entries) => {
+    if (!entries.some(entry => entry.isIntersecting)) return
+    markDue.value = true
+    markObserver?.disconnect()
+  }, { rootMargin: '-40% 0px -40% 0px' })
+  markObserver.observe(slot)
+}
+
+// The plate appears once the code is generated, so the slot is watched from then.
+watch(qrPlate, async (plate) => {
+  if (!plate || markDue.value) return
+  await nextTick()
+  watchForCentre()
+})
+
+onBeforeUnmount(() => markObserver?.disconnect())
 </script>
 
 <template>
@@ -109,10 +143,13 @@ const qrPlate = computed(() => {
             v-html="qrPlate.markup"
           />
           <!-- The drawn mark sits in the clearing, centred on the same grid. -->
-          <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            ref="markSlot"
+            class="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
             <PayvandLogoDraw
+              v-if="markDue"
               :size="qrPlate.markSize"
-              loop
             />
           </div>
         </div>
