@@ -1015,7 +1015,11 @@ pub async fn fetch_program_scan(
     let program_id = Pubkey::from_str(PAYVAND_PROGRAM_ID)
         .map_err(|error| ApiError::Internal(format!("bad program id: {error}")))?;
 
-    let rpc = RpcClient::new(endpoint.clone());
+    // `confirmed`, not the `finalized` a bare `RpcClient::new` reads at: an
+    // invoice is created, and a receipt written, in transactions the wallet has
+    // already seen confirmed, so a finalized scan left a payment that had just
+    // gone through out of the history for another dozen seconds.
+    let rpc = payment_rpc(endpoint.clone());
     let accounts = match rpc.get_program_accounts(&program_id).await {
         Ok(accounts) => accounts,
         Err(error) => {
@@ -1042,10 +1046,48 @@ pub async fn fetch_program_scan(
     }
 
     markers.sort_by_key(|marker| std::cmp::Reverse(marker.settled_at));
-    let mut reader = InvoiceReader::new(&rpc, db, cluster.clone(), endpoint.clone(), history_reads);
+
+    // Every marker in one database read, and the ones history has to answer for
+    // a few at a time. Serial — one remote query per marker, then two paced RPC
+    // calls behind each miss — a page of twenty settlements took half a minute.
+    let stored = stored_settlements(db, &endpoint, &markers).await;
+    let mut budget = HistoryBudget::new(history_reads);
+    let mut unresolved = Vec::new();
     for marker in markers {
-        payments.push(reader.settled(marker).await);
+        if let Some(cached) = cached_settlement(&endpoint, &marker.invoice) {
+            payments.push(receipt_record(cached, cluster.clone(), endpoint.clone()));
+        } else if let Some(known) = stored.get(&marker.invoice) {
+            remember_settlement(&endpoint, marker.invoice, known);
+            payments.push(receipt_record(
+                known.clone(),
+                cluster.clone(),
+                endpoint.clone(),
+            ));
+        } else if budget.take() {
+            unresolved.push(marker);
+        } else {
+            payments.push(marker_record(marker, cluster.clone(), endpoint.clone()));
+        }
     }
+
+    let invoices: Vec<Pubkey> = unresolved.iter().map(|marker| marker.invoice).collect();
+    let resolved = settlements_from_history(&endpoint, &invoices).await;
+    let mut fresh = Vec::new();
+    for marker in unresolved {
+        match resolved.get(&marker.invoice) {
+            Some(receipt) => {
+                remember_settlement(&endpoint, marker.invoice, receipt);
+                fresh.push(receipt.clone());
+            }
+            None => payments.push(marker_record(marker, cluster.clone(), endpoint.clone())),
+        }
+    }
+    store_settlements(db, &endpoint, &fresh).await;
+    payments.extend(
+        fresh
+            .into_iter()
+            .map(|receipt| receipt_record(receipt, cluster.clone(), endpoint.clone())),
+    );
 
     Ok(ProgramScan {
         payments,
@@ -1070,9 +1112,9 @@ enum ScannedAccount {
 /// Sorts one account from `get_program_accounts` into what the scan keeps.
 ///
 /// `None` is the normal answer for accounts this API has no use for — the fee
-/// `Config` and each buyer's `TokenBudget` live under the same program id — so
-/// an unknown or unreadable account is skipped rather than failing the whole
-/// scan. A future account type gets the same treatment for free.
+/// `Config` lives under the same program id — so an unknown or unreadable
+/// account is skipped rather than failing the whole scan. A future account type
+/// gets the same treatment for free.
 fn classify_program_account(
     pubkey: Pubkey,
     data: &[u8],
@@ -1088,7 +1130,9 @@ fn classify_program_account(
         // transaction, which the scan reads within its history budget.
         return Some(ScannedAccount::Settled(marker));
     }
-    decode_budget(data).map(ScannedAccount::Budget)
+    decode_budget(data)
+        .or_else(|| decode_token_budget(data))
+        .map(ScannedAccount::Budget)
 }
 
 /// The payment half of a program scan (the admin feed needs nothing else).
@@ -1247,6 +1291,7 @@ fn decode_token_payment(data: &[u8]) -> Option<OnchainTokenPayment> {
 /// closed and the `settled_at` replay guard, nothing more. The payment's own
 /// fields are in the `PaymentSettled` event the settle transaction logged, and
 /// `settled_from_history` reads them from there.
+#[derive(Clone, Copy)]
 struct ReceiptMarker {
     invoice: Pubkey,
     settled_at: i64,
@@ -1302,7 +1347,7 @@ fn decode_receipt_marker(data: &[u8]) -> Option<ReceiptMarker> {
 fn decode_payment_settled(data: &[u8]) -> Option<OnchainReceipt> {
     let mut reader = Reader::new(data);
 
-    if reader.take(8)? != discriminator_for("PaymentSettled") {
+    if reader.take(8)? != event_discriminator_for("PaymentSettled") {
         return None;
     }
 
@@ -1349,6 +1394,196 @@ fn settled_event_in_log(line: &str) -> Option<OnchainReceipt> {
 /// settled invoice — the price of keeping the payment's 2,094,960 lamports of
 /// rent off chain. `None` means the history was unreadable, and the caller falls
 /// back to what the marker itself says.
+/// Every settlement in at most two HTTP round trips: one batch asking each
+/// invoice for its newest signature, one batch asking for those transactions.
+///
+/// Asking one invoice at a time is what made a cold history expensive: the
+/// public cluster paces single calls hard, and the client retries a 429 with
+/// backoff, so a page of twenty settlements spent tens of seconds waiting on a
+/// rate limiter before answering — and often answered with nothing. A batch is
+/// one request to a node that accepts it as such.
+///
+/// A missing entry means history did not answer for that invoice; the caller
+/// falls back to the marker it already has.
+async fn settlements_from_history(
+    endpoint: &str,
+    invoices: &[Pubkey],
+) -> HashMap<Pubkey, OnchainReceipt> {
+    let mut settled = HashMap::new();
+    if invoices.is_empty() {
+        return settled;
+    }
+
+    // The id is the invoice's own index, kept across both batches so a chunked
+    // answer still says which invoice it belongs to.
+    let calls = invoices
+        .iter()
+        .enumerate()
+        .map(|(id, invoice)| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "getSignaturesForAddress",
+                "params": [invoice.to_string(), {"limit": 5, "commitment": "confirmed"}],
+            })
+        })
+        .collect();
+    let mut signatures: HashMap<usize, (Pubkey, String)> = HashMap::new();
+    for result in rpc_batch_all(endpoint, calls).await {
+        let Some(id) = result.get("id").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let Some(invoice) = invoices.get(id as usize) else {
+            continue;
+        };
+        let Some(signature) = result
+            .get("result")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|entries| entries.first())
+            .and_then(|entry| entry.get("signature"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        signatures.insert(id as usize, (*invoice, signature.to_string()));
+    }
+    if signatures.is_empty() {
+        return settled;
+    }
+
+    let mut ordered: Vec<(usize, (Pubkey, String))> = signatures.into_iter().collect();
+    ordered.sort_by_key(|(id, _)| *id);
+
+    let calls = ordered
+        .iter()
+        .map(|(id, (_, signature))| {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "getTransaction",
+                "params": [signature, {
+                    "encoding": "json",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0,
+                }],
+            })
+        })
+        .collect();
+    let results = rpc_batch_all(endpoint, calls).await;
+
+    for result in results {
+        let Some(id) = result.get("id").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let Some(invoice) = invoices.get(id as usize) else {
+            continue;
+        };
+        let Some(transaction) = result.get("result").filter(|value| !value.is_null()) else {
+            continue;
+        };
+        let Some(logs) = transaction
+            .pointer("/meta/logMessages")
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        for line in logs.iter().filter_map(serde_json::Value::as_str) {
+            let Some(receipt) = settled_event_in_log(line) else {
+                continue;
+            };
+            if receipt.invoice != *invoice {
+                continue;
+            }
+            // A transaction's block time is the only clock the event has; the
+            // marker's own `settled_at` is written from it.
+            let at = transaction
+                .get("blockTime")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            settled.insert(
+                *invoice,
+                OnchainReceipt {
+                    created_at: at,
+                    settled_at: at,
+                    ..receipt
+                },
+            );
+            break;
+        }
+    }
+
+    settled
+}
+
+/// One HTTP client for the batched history reads; building one per request
+/// would pay the TLS handshake for every page.
+static RPC_HTTP: OnceLock<Option<reqwest::Client>> = OnceLock::new();
+
+fn rpc_http() -> Option<&'static reqwest::Client> {
+    RPC_HTTP
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                // HTTP/1.1 on purpose: the public cluster answers a batch sent
+                // over HTTP/2 with 429 while the same batch over HTTP/1.1 is
+                // served, and single requests are unaffected either way.
+                .http1_only()
+                .build()
+                .ok()
+        })
+        .as_ref()
+}
+
+/// Requests one batch may carry. The public cluster answers a bigger batch with
+/// 429 rather than an error, so this is the size that keeps a page of history
+/// from being refused outright.
+const RPC_BATCH_LIMIT: usize = 10;
+
+/// Posts every call, in batches the node accepts. A batch that fails costs only
+/// its own invoices their detail; the rest still resolve.
+async fn rpc_batch_all(endpoint: &str, calls: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let mut results = Vec::with_capacity(calls.len());
+    for batch in calls.chunks(RPC_BATCH_LIMIT) {
+        if let Some(mut answered) = rpc_batch(endpoint, batch.to_vec()).await {
+            results.append(&mut answered);
+        }
+    }
+    results
+}
+
+/// Posts a JSON-RPC batch and returns its entries. One retry, because the
+/// public cluster answers a batch it is pacing with 429 and a retry usually
+/// lands after the window; anything else is a miss the caller already handles.
+async fn rpc_batch(
+    endpoint: &str,
+    calls: Vec<serde_json::Value>,
+) -> Option<Vec<serde_json::Value>> {
+    let client = rpc_http()?;
+    let body = serde_json::to_vec(&serde_json::Value::Array(calls)).ok()?;
+
+    for attempt in 0..2 {
+        let response = client
+            .post(endpoint)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body.clone())
+            .send()
+            .await;
+        let Ok(response) = response else {
+            continue;
+        };
+        if response.status().is_success() {
+            let text = response.text().await.ok()?;
+            return serde_json::from_str::<serde_json::Value>(&text)
+                .ok()?
+                .as_array()
+                .cloned();
+        }
+        tracing::info!(status = %response.status(), attempt, "settlement history batch was refused");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    None
+}
+
 async fn settled_from_history(rpc: &RpcClient, invoice: Pubkey) -> Option<OnchainReceipt> {
     let signatures = rpc
         .get_signatures_for_address_with_config(
@@ -1526,30 +1761,88 @@ async fn stored_settlement(
     endpoint: &str,
     invoice: &Pubkey,
 ) -> Option<OnchainReceipt> {
-    let connection = db.connect().ok()?;
-    let mut rows = connection
-        .query(
-            "SELECT seller, reference, mint, amount, memo, payer, created_at, settled_at \
-             FROM settled_payments WHERE invoice = ?1 AND endpoint = ?2",
-            vec![
-                libsql::Value::Text(invoice.to_string()),
-                libsql::Value::Text(endpoint.to_owned()),
-            ],
-        )
-        .await
-        .ok()?;
-    let row = rows.next().await.ok()??;
-
-    Some(OnchainReceipt {
+    let marker = ReceiptMarker {
         invoice: *invoice,
-        seller: Pubkey::from_str(&row.get::<String>(0).ok()?).ok()?,
-        reference: Pubkey::from_str(&row.get::<String>(1).ok()?).ok()?,
-        mint: Pubkey::from_str(&row.get::<String>(2).ok()?).ok()?,
-        amount: u64::try_from(row.get::<i64>(3).ok()?).ok()?,
-        memo: row.get::<String>(4).ok()?,
-        payer: Pubkey::from_str(&row.get::<String>(5).ok()?).ok()?,
-        created_at: row.get::<i64>(6).ok()?,
-        settled_at: row.get::<i64>(7).ok()?,
+        settled_at: 0,
+    };
+    stored_settlements(db, endpoint, std::slice::from_ref(&marker))
+        .await
+        .remove(invoice)
+}
+
+/// The settlements the database already knows, for every marker in one read.
+///
+/// A scan used to ask the database once per settlement, which on a remote
+/// database is a round trip each: with the chain reads behind them, that is
+/// what made a cold history slow.
+///
+/// An empty map covers both "none stored yet" and "the database did not
+/// answer": this is a cache in front of the chain, so a miss falls through to
+/// history rather than failing the scan.
+async fn stored_settlements(
+    db: &libsql::Database,
+    endpoint: &str,
+    markers: &[ReceiptMarker],
+) -> HashMap<Pubkey, OnchainReceipt> {
+    let mut found = HashMap::new();
+    if markers.is_empty() {
+        return found;
+    }
+    let Ok(connection) = db.connect() else {
+        return found;
+    };
+
+    let placeholders = (2..=markers.len() + 1)
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut params: Vec<libsql::Value> = Vec::with_capacity(markers.len() + 1);
+    params.push(libsql::Value::Text(endpoint.to_owned()));
+    params.extend(
+        markers
+            .iter()
+            .map(|marker| libsql::Value::Text(marker.invoice.to_string())),
+    );
+
+    let read = connection
+        .query(
+            &format!(
+                "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at \
+                 FROM settled_payments WHERE endpoint = ?1 AND invoice IN ({placeholders})"
+            ),
+            params,
+        )
+        .await;
+
+    let Ok(mut rows) = read else {
+        return found;
+    };
+    while let Ok(Some(row)) = rows.next().await {
+        let Ok(invoice) = row.get::<String>(0) else {
+            continue;
+        };
+        let Ok(invoice) = Pubkey::from_str(&invoice) else {
+            continue;
+        };
+        if let Some(receipt) = receipt_from_row(&row, invoice) {
+            found.insert(invoice, receipt);
+        }
+    }
+    found
+}
+
+/// One `settled_payments` row as the receipt it was written from.
+fn receipt_from_row(row: &libsql::Row, invoice: Pubkey) -> Option<OnchainReceipt> {
+    Some(OnchainReceipt {
+        invoice,
+        seller: Pubkey::from_str(&row.get::<String>(1).ok()?).ok()?,
+        reference: Pubkey::from_str(&row.get::<String>(2).ok()?).ok()?,
+        mint: Pubkey::from_str(&row.get::<String>(3).ok()?).ok()?,
+        amount: u64::try_from(row.get::<i64>(4).ok()?).ok()?,
+        memo: row.get::<String>(5).ok()?,
+        payer: Pubkey::from_str(&row.get::<String>(6).ok()?).ok()?,
+        created_at: row.get::<i64>(7).ok()?,
+        settled_at: row.get::<i64>(8).ok()?,
     })
 }
 
@@ -1560,36 +1853,68 @@ async fn stored_settlement(
 /// its record. Failing the request because a cache write failed would be worse
 /// than reading history one more time on a later poll.
 async fn store_settlement(db: &libsql::Database, endpoint: &str, settled: &OnchainReceipt) {
+    store_settlements(db, endpoint, std::slice::from_ref(settled)).await;
+}
+
+/// Remembers a batch of settlements in one statement, for the scan that reads
+/// many at once. Same best-effort rule as one row at a time.
+async fn store_settlements(db: &libsql::Database, endpoint: &str, settled: &[OnchainReceipt]) {
+    if settled.is_empty() {
+        return;
+    }
     let Ok(connection) = db.connect() else {
         return;
     };
-    let params = vec![
-        libsql::Value::Text(settled.invoice.to_string()),
-        libsql::Value::Text(endpoint.to_owned()),
-        libsql::Value::Text(settled.seller.to_string()),
-        libsql::Value::Text(settled.reference.to_string()),
-        libsql::Value::Text(settled.mint.to_string()),
-        libsql::Value::Integer(settled.amount as i64),
-        libsql::Value::Text(settled.memo.clone()),
-        libsql::Value::Text(settled.payer.to_string()),
-        libsql::Value::Integer(settled.created_at),
-        libsql::Value::Integer(settled.settled_at),
-    ];
+
+    let mut rows = Vec::with_capacity(settled.len());
+    let mut params: Vec<libsql::Value> = Vec::with_capacity(settled.len() * 10);
+    for (index, receipt) in settled.iter().enumerate() {
+        let at = index * 10;
+        rows.push(format!(
+            "(?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{})",
+            at + 1,
+            at + 2,
+            at + 3,
+            at + 4,
+            at + 5,
+            at + 6,
+            at + 7,
+            at + 8,
+            at + 9,
+            at + 10
+        ));
+        params.extend([
+            libsql::Value::Text(receipt.invoice.to_string()),
+            libsql::Value::Text(endpoint.to_owned()),
+            libsql::Value::Text(receipt.seller.to_string()),
+            libsql::Value::Text(receipt.reference.to_string()),
+            libsql::Value::Text(receipt.mint.to_string()),
+            libsql::Value::Integer(receipt.amount as i64),
+            libsql::Value::Text(receipt.memo.clone()),
+            libsql::Value::Text(receipt.payer.to_string()),
+            libsql::Value::Integer(receipt.created_at),
+            libsql::Value::Integer(receipt.settled_at),
+        ]);
+    }
+
     let written = connection
         .execute(
-            "INSERT INTO settled_payments \
-                (invoice, endpoint, seller, reference, mint, amount, memo, payer, created_at, settled_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
-             ON CONFLICT(invoice, endpoint) DO UPDATE SET \
-                seller = excluded.seller, reference = excluded.reference, \
-                mint = excluded.mint, amount = excluded.amount, \
-                memo = excluded.memo, payer = excluded.payer, \
-                created_at = excluded.created_at, settled_at = excluded.settled_at",
+            &format!(
+                "INSERT INTO settled_payments \
+                    (invoice, endpoint, seller, reference, mint, amount, memo, payer, created_at, settled_at) \
+                 VALUES {} \
+                 ON CONFLICT(invoice, endpoint) DO UPDATE SET \
+                    seller = excluded.seller, reference = excluded.reference, \
+                    mint = excluded.mint, amount = excluded.amount, \
+                    memo = excluded.memo, payer = excluded.payer, \
+                    created_at = excluded.created_at, settled_at = excluded.settled_at",
+                rows.join(", ")
+            ),
             params,
         )
         .await;
     if let Err(error) = written {
-        tracing::info!(%error, "settlement was not cached");
+        tracing::info!(%error, "settlements were not cached");
     }
 }
 
@@ -1758,12 +2083,39 @@ fn discriminator_for(name: &str) -> [u8; 8] {
     digest[..8].try_into().expect("8 byte slice")
 }
 
+/// `sha256("event:<Name>")[..8]`, the prefix Anchor puts on an event's
+/// `Program data:` line.
+///
+/// Events and accounts of the same name hash differently, and an event read
+/// with the account prefix never matches: every settlement would decode to
+/// `None`, which left settled invoices with no payer, price or seller — so a
+/// fresh payment vanished from the history that had to name its owner.
+fn event_discriminator_for(name: &str) -> [u8; 8] {
+    let digest = Sha256::digest(format!("event:{name}").as_bytes());
+    digest[..8].try_into().expect("8 byte slice")
+}
+
 /// Borsh layout of the `Budget` account: discriminator, buyer, session key,
 /// then the allowance fields the chain enforces. Only the identities matter
 /// to the API — the amounts are read from the chain by the client.
 fn decode_budget(data: &[u8]) -> Option<BudgetAccount> {
     let mut reader = Reader::new(data);
     if reader.take(8)? != discriminator_for("Budget") {
+        return None;
+    }
+    Some(BudgetAccount {
+        buyer: reader.pubkey()?,
+        session_key: reader.pubkey()?,
+    })
+}
+
+/// A token allowance is a budget too: it holds the same buyer and session key at
+/// the same offsets, with the mint after them. A payment made silently from a
+/// USDC or EURC pot is signed by that session key, so a history that read only
+/// the SOL pots could not show it at all.
+fn decode_token_budget(data: &[u8]) -> Option<BudgetAccount> {
+    let mut reader = Reader::new(data);
+    if reader.take(8)? != discriminator_for("TokenBudget") {
         return None;
     }
     Some(BudgetAccount {
@@ -2210,24 +2562,27 @@ mod tests {
         data.extend_from_slice(&50u16.to_le_bytes()); // fee_bps_above
         data.extend_from_slice(&100_000_000u64.to_le_bytes()); // sol_tier_lamports
         data.extend_from_slice(&10_000_000u64.to_le_bytes()); // token_tier_base_units
-        data.extend_from_slice(&89_400u64.to_le_bytes()); // flat_usdc_base_units
-        data.extend_from_slice(&89_400u64.to_le_bytes()); // flat_eurc_base_units
+        data.extend_from_slice(&62_782u64.to_le_bytes()); // flat_usdc_base_units
+        data.extend_from_slice(&57_346u64.to_le_bytes()); // flat_eurc_base_units
         data.extend_from_slice(&[4u8; 32]); // usdc_mint
         data.extend_from_slice(&[5u8; 32]); // eurc_mint
+        data.extend_from_slice(&5_000u64.to_le_bytes()); // network_fee_lamports
+        data.extend_from_slice(&351u64.to_le_bytes()); // network_fee_usdc_base_units
+        data.extend_from_slice(&320u64.to_le_bytes()); // network_fee_eurc_base_units
         data.push(0); // fee_mode: SellerPays
         data.extend_from_slice(&session_fee_float.to_le_bytes());
         data.extend_from_slice(&1_760_000_000i64.to_le_bytes()); // flats_updated_at
         data.push(251); // bump
         data.push(250); // treasury_bump
-        data.push(3); // version
+        data.push(4); // version
         data
     }
 
     #[test]
     fn the_program_scan_skips_the_config_account() {
         let data = config_data(30_000_000);
-        // 160 bytes, the shape the program allocates.
-        assert_eq!(data.len(), 160);
+        // 184 bytes, the shape the program allocates.
+        assert_eq!(data.len(), 184);
 
         // No decoder mistakes it for something the scan keeps.
         assert!(decode_payment(&data).is_none());
@@ -2282,6 +2637,34 @@ mod tests {
             "https://example".into(),
         );
         assert!(matches!(classified, Some(ScannedAccount::Budget(_))));
+    }
+
+    /// A token allowance classifies too: a payment made silently from a USDC or
+    /// EURC pot is signed by that session key, so without it the payment would
+    /// belong to nobody the history can name.
+    #[test]
+    fn the_program_scan_classifies_token_budgets() {
+        let mut budget = discriminator_for("TokenBudget").to_vec();
+        budget.extend_from_slice(&[1u8; 32]); // buyer
+        budget.extend_from_slice(&[2u8; 32]); // session key
+        budget.extend_from_slice(&[3u8; 32]); // mint
+        budget.extend_from_slice(&10u64.to_le_bytes());
+        budget.extend_from_slice(&0u64.to_le_bytes());
+        budget.extend_from_slice(&1u64.to_le_bytes());
+        budget.push(255);
+
+        match classify_program_account(
+            Pubkey::from([3u8; 32]),
+            &budget,
+            "devnet".into(),
+            "https://example".into(),
+        ) {
+            Some(ScannedAccount::Budget(found)) => {
+                assert_eq!(found.buyer, Pubkey::from([1u8; 32]));
+                assert_eq!(found.session_key, Pubkey::from([2u8; 32]));
+            }
+            _ => panic!("a token budget must classify as a budget"),
+        }
     }
 
     #[test]
@@ -2341,7 +2724,7 @@ mod tests {
     /// program's field order: amount, fee, seller_proceeds, payer, seller, mint,
     /// reference, invoice, memo.
     fn settled_log_line(invoice: Pubkey, mint: Pubkey, amount: u64, memo: &str) -> String {
-        let mut body = discriminator_for("PaymentSettled").to_vec();
+        let mut body = event_discriminator_for("PaymentSettled").to_vec();
         body.extend_from_slice(&amount.to_le_bytes());
         body.extend_from_slice(&10u64.to_le_bytes()); // fee
         body.extend_from_slice(&(amount - 10).to_le_bytes()); // seller_proceeds
@@ -2373,6 +2756,22 @@ mod tests {
         assert_eq!(record.id, invoice.to_string());
         assert_eq!(record.settled_at_unix, 200);
         assert!(record.settled_by.is_none());
+    }
+
+    /// The IDL publishes the settle event's discriminator; this pins the bytes
+    /// the cluster actually logs, so a prefix mix-up cannot hide every payment
+    /// again.
+    #[test]
+    fn the_settle_event_discriminator_matches_the_idl() {
+        assert_eq!(
+            event_discriminator_for("PaymentSettled"),
+            [158, 182, 152, 76, 105, 23, 232, 135]
+        );
+        assert_ne!(
+            event_discriminator_for("PaymentSettled"),
+            discriminator_for("PaymentSettled"),
+            "an event and an account of the same name are prefixed differently"
+        );
     }
 
     #[test]
@@ -2602,6 +3001,159 @@ mod tests {
         assert_eq!(record.created_at_unix, 190);
         assert_eq!(record.settled_at_unix, 200);
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// A stand-in cluster: answers every JSON-RPC batch from `answers`, and
+    /// counts the HTTP requests it received so a test can see the batching.
+    async fn stub_rpc(
+        answers: impl Fn(&serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = hits.clone();
+        let answers = std::sync::Arc::new(answers);
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+                let answers = answers.clone();
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let calls = body.as_array().cloned().unwrap_or_default();
+                    axum::Json(serde_json::Value::Array(
+                        calls.iter().map(|call| (answers)(call)).collect(),
+                    ))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("address");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{addr}/"), hits)
+    }
+
+    /// The batched read has to carry the invoice's own id through both requests
+    /// and read the settle event out of the transaction's logs.
+    #[tokio::test]
+    async fn a_batch_history_read_returns_the_settle_event() {
+        let invoice = Pubkey::from([0xB7u8; 32]);
+        let line = settled_log_line(invoice, Pubkey::default(), 42, "tip");
+        let signature = "5vxXkMhTVpHt4QkHVgcFj8itGev4a7trxRkj5Z3xs37".to_string();
+
+        let (endpoint, _) = stub_rpc(move |call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            match call.get("method").and_then(serde_json::Value::as_str) {
+                Some("getSignaturesForAddress") => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": [{"signature": signature.clone()}],
+                }),
+                Some("getTransaction") => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {"blockTime": 700, "meta": {"logMessages": [line.clone()]}},
+                }),
+                _ => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32601, "message": "no such method"},
+                }),
+            }
+        })
+        .await;
+
+        let settled = settlements_from_history(&endpoint, &[invoice]).await;
+        let receipt = settled
+            .get(&invoice)
+            .expect("the settle event was read back");
+        assert_eq!(receipt.amount, 42);
+        assert_eq!(receipt.memo, "tip");
+        assert_eq!(receipt.payer, Pubkey::from([5u8; 32]));
+        assert_eq!(receipt.settled_at, 700, "the transaction's block time");
+    }
+
+    /// The cluster refuses a batch bigger than ten, so twelve invoices cost two
+    /// signature requests, and only the invoice that answered is asked about
+    /// again — a per-item 429 must not fail the rest of the page.
+    #[tokio::test]
+    async fn history_batches_are_chunked_and_a_refused_item_does_not_fail_the_page() {
+        let invoices: Vec<Pubkey> = (0..12u8)
+            .map(|index| Pubkey::from([index + 1; 32]))
+            .collect();
+
+        let (endpoint, hits) = stub_rpc(|call| {
+            let id = call.get("id").cloned().unwrap_or_default();
+            let first = call.get("id").and_then(serde_json::Value::as_u64) == Some(0);
+            match call.get("method").and_then(serde_json::Value::as_str) {
+                Some("getSignaturesForAddress") if first => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": [{"signature": "sig-0"}],
+                }),
+                Some("getSignaturesForAddress") => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": 429, "message": "Too many requests for a specific RPC call"},
+                }),
+                _ => serde_json::json!({"jsonrpc": "2.0", "id": id, "result": null}),
+            }
+        })
+        .await;
+
+        let settled = settlements_from_history(&endpoint, &invoices).await;
+        assert!(settled.is_empty(), "no transaction came back");
+        // Two signature chunks, then one transaction request for the one
+        // invoice that answered.
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    /// The scan writes every settlement it resolved in one statement and reads
+    /// them back in one, which is what keeps a cold history off a round trip per
+    /// marker.
+    #[tokio::test]
+    async fn settlements_are_stored_and_read_in_one_batch() {
+        let (db, path) = temp_db().await;
+        let endpoint = "https://settled-batch.invalid";
+        let first = settled_event_in_log(&settled_log_line(
+            Pubkey::from([0xA1u8; 32]),
+            Pubkey::default(),
+            42,
+            "tip",
+        ))
+        .expect("decodes");
+        let second = settled_event_in_log(&settled_log_line(
+            Pubkey::from([0xA2u8; 32]),
+            Pubkey::default(),
+            77,
+            "flat white",
+        ))
+        .expect("decodes");
+
+        store_settlements(&db, endpoint, &[first.clone(), second.clone()]).await;
+
+        let markers = [
+            ReceiptMarker {
+                invoice: first.invoice,
+                settled_at: 1,
+            },
+            ReceiptMarker {
+                invoice: second.invoice,
+                settled_at: 2,
+            },
+        ];
+        let stored = stored_settlements(&db, endpoint, &markers).await;
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[&first.invoice].amount, 42);
+        assert_eq!(stored[&second.invoice].memo, "flat white");
+
+        // A cluster the rows were not written for has nothing to answer with.
+        assert!(stored_settlements(&db, "https://other.invalid", &markers)
+            .await
+            .is_empty());
         let _ = std::fs::remove_file(path);
     }
 

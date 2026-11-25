@@ -22,8 +22,7 @@ Les frais crypto sont différents sur deux points :
 
 - **Ils sont fixes.** Payer 2 ou payer 2 000 coûte la même somme minuscule, parce que le travail
   est le même.
-- **C'est le vendeur qui les paie, sur le prix.** Aucune location de terminal, aucun contrat
-  mensuel, rien ajouté au-dessus : l'acheteur paie exactement le prix affiché, et les frais de réseau
+- **C'est le vendeur qui les paie, sur le prix.** Aucune location de terminal, aucun abonnement pour encaisser un paiement, rien ajouté au-dessus : l'acheteur paie exactement le prix affiché, et les frais de réseau
   comme le loyer du reçu sortent de la part du vendeur.
 
 ## Pourquoi aucun SOL n'est nécessaire, même pour payer en USDC

@@ -27,6 +27,9 @@ definePageMeta({ middleware: 'auth' })
       <ShopsSubscription />
 
       <ShopsList />
+
+      <!-- The purchase sheet, opened by either card above it. -->
+      <SubscriptionCheckout />
     </div>
   </UPageSection>
 </template>

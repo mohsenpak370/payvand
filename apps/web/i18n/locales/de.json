@@ -85,7 +85,7 @@
       "description": "Drei Schritte, ohne Konto für deine Kundschaft.",
       "create": {
         "title": "Zahlungscode erstellen",
-        "description": "Betrag eingeben und den QR-Code zeigen. Kein Kartenterminal, keine Rechnungen, keine Monatsgebühren."
+        "description": "Betrag eingeben und den QR-Code zeigen. Kein Kartenterminal, keine Rechnungen, keine Monatsgebühr für eine Zahlung."
       },
       "scan": {
         "title": "Dein Kunde scannt und zahlt",
@@ -879,6 +879,8 @@
       "productsTitle": "Produkte",
       "productsSubtitle": "Was die Zahlungsseite als Rechnung anbietet.",
       "pricesInSol": "Preise werden in SOL berechnet",
+      "pricesInLabel": "Preise in",
+      "pricesInHelp": "Die Währung, in der du Preise eingibst. Kundinnen und Kunden zahlen weiterhin in SOL.",
       "editAria": "{name} bearbeiten",
       "removeAria": "{name} entfernen",
       "removeConfirm": "„{name}“ entfernen?\n\nBereits erstellte Rechnungen behalten ihre Position — das nimmt es nur aus der Karte.",
@@ -908,6 +910,7 @@
       "inactive": "Nicht aktiv",
       "loading": "Abo wird geladen…",
       "renewsOn": "Bezahlt bis {date}.",
+      "daysLeft": "{count} Tag übrig | {count} Tage übrig",
       "price": "1,70 € für {days} Tage, zahlbar in einer dieser Währungen.",
       "chooseCurrency": "Bezahlen mit",
       "allowanceBadge": "Budget",
@@ -927,6 +930,8 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Deine Produkte, die Preise, die die Zahlungsseite berechnet, und die Codes, die du hier gespeichert hast.",
+    "tabPayments": "Zahlungen",
+    "tabShop": "Shop",
     "backToShops": "Zurück zu deinen Shops",
     "createPaymentTitle": "Zahlung erstellen",
     "createPaymentDescription": "Das ganze Zahlungsformular, bepreist aus der Karte dieses Shops, mit deinen Rabattcodes.",
@@ -975,7 +980,7 @@
   "terms": {
     "metaTitle": "Nutzungsbedingungen — Payvand",
     "metaDescription": "Was Payvand tut, was es nicht tut, und die wenigen Regeln, die dazugehören: Zahlungen gehen von Wallet zu Wallet, nur die Protokollgebühr läuft über das Programm, und eine bezahlte Transaktion lässt sich nicht zurücknehmen.",
-    "updated": "15. November 2026",
+    "updated": "24. November 2026",
     "title": "Nutzungsbedingungen",
     "description": "Was Payvand tut, was es nicht tut und die paar Regeln, die zur Nutzung gehören.",
     "what": {
@@ -1016,7 +1021,7 @@
     },
     "fees": {
       "title": "Gebühren",
-      "body": "Ein Code zu erstellen oder zu scannen ist für den Kunden kostenlos über den angezeigten Betrag hinaus: er zahlt den sichtbaren Preis plus die Netzwerkgebühr von Solana für die Transaktion, sonst nichts. Verkäufer zahlen die Protokollgebühr, die aus zwei Teilen besteht. Der eine ist ein Prozentsatz des Preises, der vom Betrag des Verkäufers abgezogen wird. Der andere ist eine Beleggebühr bei Rechnungen, die in einem Token bezahlt werden, und deckt den dauerhaften Nachweis dieser Zahlung auf der Blockchain; bei einer SOL-Rechnung wird dieser Betrag stattdessen aus dem Preis genommen. Die Gebühr wird in der Währung der Zahlung berechnet, ist nie im Betrag des Kunden enthalten, und die App zeigt vor dem Teilen eines Codes den genauen Betrag, den der Verkäufer erhält. Prozentsätze und Beleggebühr legt die Plattform fest; sie können sich mit den Kosten des Betriebs ändern. Es gilt die Gebühr, die beim Bezahlen in Kraft ist, und der Preis eines Codes ändert sich nie."
+      "body": "Ein Code zu erstellen oder zu scannen ist für den Kunden kostenlos über den angezeigten Betrag hinaus: er zahlt den sichtbaren Preis und sonst nichts: die Netzwerkgebühr von Solana und die Miete des Belegs stecken schon darin. Verkäufer zahlen die Protokollgebühr, die aus zwei Teilen besteht. Der eine ist ein Prozentsatz des Preises, der vom Betrag des Verkäufers abgezogen wird. Der andere ist eine Beleggebühr bei Rechnungen, die in einem Token bezahlt werden, und deckt den dauerhaften Nachweis dieser Zahlung auf der Blockchain; bei einer SOL-Rechnung wird dieser Betrag stattdessen aus dem Preis genommen. Die Gebühr wird in der Währung der Zahlung berechnet, ist nie im Betrag des Kunden enthalten, und die App zeigt vor dem Teilen eines Codes den genauen Betrag, den der Verkäufer erhält. Prozentsätze und Beleggebühr legt die Plattform fest; sie können sich mit den Kosten des Betriebs ändern. Es gilt die Gebühr, die beim Bezahlen in Kraft ist, und der Preis eines Codes ändert sich nie."
     },
     "testMoney": {
       "title": "Testgeld",

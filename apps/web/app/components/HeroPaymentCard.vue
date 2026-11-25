@@ -10,6 +10,17 @@
  */
 const { generate } = useSolanaQrCode()
 
+/** The code is drawn in its own pixels, and the mark is placed in the same ones. */
+const QR_SIZE = 280
+/**
+ * How wide the mark's art is against the code. The code is drawn at error
+ * correction level Q, which recovers ~25% of it; a mark this size covers ~4%
+ * of the area, so the modules behind it come back and the code still scans.
+ */
+const MARK_SHARE = 0.2
+/** The art sits inset in the logo's own square: about 70% of it is the tile. */
+const MARK_ART_SHARE = 0.7
+
 const qrMarkup = ref<string | null>(null)
 
 const qrCells = [
@@ -25,11 +36,27 @@ const qrCells = [
 onMounted(async () => {
   const origin = window.location.origin
   try {
-    qrMarkup.value = await generate(`${origin}/`, { size: 280 })
+    qrMarkup.value = await generate(`${origin}/`, { size: QR_SIZE })
   } catch {
     // A card that cannot draw the code keeps the pattern below instead.
     qrMarkup.value = null
   }
+})
+
+/**
+ * The mark belongs to the code, not on top of it: it goes into the code's own
+ * SVG, in the middle of the modules, with nothing drawn around it. A white
+ * plate and a margin of its own are what make a logo look pasted on.
+ */
+const qrWithMark = computed(() => {
+  const svg = qrMarkup.value
+  if (!svg) return null
+  const markSize = Math.round(QR_SIZE * MARK_SHARE / MARK_ART_SHARE)
+  const offset = (QR_SIZE - markSize) / 2
+  return svg.replace(
+    '</svg>',
+    `${markMarkup({ x: offset, y: offset, size: markSize })}</svg>`
+  )
 })
 </script>
 
@@ -68,11 +95,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- A white plate, because a code stays readable only against it. -->
+      <!--
+        A white plate, because a code stays readable only against it. The
+        margin is the code's quiet zone, not decoration: the modules need to
+        end against plain white for a camera to find the edges.
+      -->
       <div
-        v-if="qrMarkup"
+        v-if="qrWithMark"
         class="mx-auto w-fit max-w-full rounded-xl bg-white p-3 [&_svg]:h-auto [&_svg]:max-h-[280px] [&_svg]:w-auto [&_svg]:max-w-full"
-        v-html="qrMarkup"
+        v-html="qrWithMark"
       />
       <div
         v-else

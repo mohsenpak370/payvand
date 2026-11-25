@@ -371,12 +371,15 @@ pub async fn transactions(
     // how many settled invoices are worth resolving from history.
     let scan = payments::fetch_program_scan(TRANSACTION_LIMIT, &state.db).await?;
     let mut items = match_transactions(scan.payments, &scan.budgets, &wallet);
+    // The count the card shows is everything the wallet has, which is not the
+    // page it was cut down to.
+    let total = items.len();
     items.truncate(TRANSACTION_LIMIT);
     fill_invoice_meta(&state.db, &mut items).await;
 
     Ok(Json(TransactionsResponse {
         wallet,
-        total: items.len(),
+        total,
         cluster: scan.cluster,
         items,
     }))
@@ -455,26 +458,28 @@ async fn fill_invoice_meta(db: &libsql::Database, items: &mut [MyTransaction]) {
 /// Pure part of the transactions feed: keep the invoices this wallet is
 /// party to, label the direction, newest first.
 ///
-/// The budget path records the *session key* as the payer, so a payment
-/// made silently from this buyer's allowance counts as theirs too — which
-/// is why the budget accounts come along.
+/// An allowance path records the *session key* as the payer, so a payment made
+/// silently from this buyer's allowance counts as theirs too — which is why the
+/// budget accounts come along. There is one allowance per currency, so every
+/// session key this buyer owns counts, not just the first.
 pub(crate) fn match_transactions(
     records: Vec<PaymentRecord>,
     budgets: &[BudgetAccount],
     wallet: &str,
 ) -> Vec<MyTransaction> {
-    let session = budgets
+    let sessions: Vec<String> = budgets
         .iter()
-        .find(|budget| budget.buyer.to_string() == wallet)
-        .map(|budget| budget.session_key.to_string());
+        .filter(|budget| budget.buyer.to_string() == wallet)
+        .map(|budget| budget.session_key.to_string())
+        .collect();
 
     let mut items: Vec<MyTransaction> = records
         .into_iter()
         .filter_map(|record| {
             let is_seller = record.seller == wallet;
             let payer = record.settled_by.as_deref();
-            let is_payer =
-                payer == Some(wallet) || (session.is_some() && payer == session.as_deref());
+            let is_payer = payer == Some(wallet)
+                || payer.is_some_and(|paid| sessions.iter().any(|s| s.as_str() == paid));
             if !is_seller && !is_payer {
                 return None;
             }
@@ -876,6 +881,36 @@ mod tests {
             created_at_unix: created,
             settled_at_unix: settled,
         }
+    }
+
+    /// A buyer can hold more than one allowance — SOL, USDC and EURC each have
+    /// their own session key — and a payment from any of them is still theirs.
+    #[test]
+    fn payments_from_every_allowance_count_as_sent() {
+        let (wallet, _) = wallet_fixture(1);
+        let (other, _) = wallet_fixture(2);
+        let (sol_session, _) = wallet_fixture(4);
+        let (token_session, _) = wallet_fixture(6);
+        let buyer = payments::parse_pubkey(&wallet, "address").expect("wallet");
+        let budgets = [
+            BudgetAccount {
+                buyer,
+                session_key: payments::parse_pubkey(&sol_session, "session").expect("session"),
+            },
+            BudgetAccount {
+                buyer,
+                session_key: payments::parse_pubkey(&token_session, "session").expect("session"),
+            },
+        ];
+
+        let records = vec![
+            payment_fixture("sol-pot", &other, Some(&sol_session), 100, 500),
+            payment_fixture("token-pot", &other, Some(&token_session), 200, 600),
+        ];
+
+        let items = match_transactions(records, &budgets, &wallet);
+        let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, vec!["token-pot", "sol-pot"], "every pot is ours");
     }
 
     #[test]

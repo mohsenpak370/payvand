@@ -21,7 +21,7 @@ Eine Krypto-Gebühr unterscheidet sich in zwei Punkten:
 
 - **Sie ist pauschal.** 2 zu zahlen oder 2.000 kostet denselben winzigen Betrag, weil die Arbeit
   dieselbe ist.
-- **Der Verkäufer zahlt sie, aus dem Preis.** Keine Terminalmiete, kein Monatsvertrag und nichts
+- **Der Verkäufer zahlt sie, aus dem Preis.** Keine Terminalmiete, keine Monatsgebühr für eine Zahlung und nichts
   obendrauf: Der Zahler zahlt genau den Preis auf dem Code, und Netzgebühr wie Miete des Belegs
   gehen von der Seite des Verkäufers ab.
 

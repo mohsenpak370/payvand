@@ -5,9 +5,10 @@ import type { SupportedCurrency } from './usePaymentApi'
  *
  * The prices are the API's, converted at its cached live rate — the browser
  * never computes them, so the amount shown is the amount the invoice charges.
- * The pending payment id is kept in `localStorage` because paying leaves this
- * page for the checkout: coming back, `confirm()` asks the API to record the
- * period, and the cluster (not the browser) is what proves the invoice settled.
+ * The pending payment id is kept in `localStorage` because a payment can
+ * outlive the page that started it — a reload, or a phone that closed the tab
+ * mid-checkout. Coming back, `confirm()` asks the API to record the period, and
+ * the cluster (not the browser) is what proves the invoice settled.
  */
 
 export interface SubscriptionQuote {

@@ -51,8 +51,10 @@ const savingShop = ref(false)
 const loadFailure = ref('')
 const failure = ref('')
 
-// Prices are paid in SOL; the seller may type them in the money they think in.
-// The unit is a convenience at the keyboard — what is stored is always SOL.
+// Products are stored in lamports and charged in SOL; the seller may type them
+// in the money they think in. That choice belongs to the shop rather than to
+// each product line: a menu is written in one currency, and asking it again for
+// every item is a question with one answer.
 const { currency } = useCurrencyPreference()
 const rates = useSolRates()
 type PriceUnit = 'sol' | 'usd' | 'eur'
@@ -62,12 +64,42 @@ const priceUnits: { label: string, value: PriceUnit }[] = [
   { label: 'EUR', value: 'eur' }
 ]
 
+/**
+ * Kept in the browser next to the account's own display currency: the unit
+ * changes nothing about the shop — its prices are lamports either way — so this
+ * is how they are written and read back, not shop data to sync.
+ */
+const PRICE_UNIT_KEY = 'payvand.shop-price-unit.v1'
+
+const priceUnit = ref<PriceUnit>('sol')
+
+function readPriceUnit(): PriceUnit {
+  try {
+    const stored = localStorage.getItem(`${PRICE_UNIT_KEY}:${props.shopId}`)
+    return stored === 'usd' || stored === 'eur' ? stored : 'sol'
+  } catch {
+    return 'sol'
+  }
+}
+
+watch(priceUnit, (unit) => {
+  try {
+    localStorage.setItem(`${PRICE_UNIT_KEY}:${props.shopId}`, unit)
+  } catch {
+    // Private mode without storage: the choice still holds for this visit.
+  }
+})
+
+/** The unit as it is written after a price field. */
+const unitLabel = computed(() =>
+  priceUnit.value === 'sol' ? 'SOL' : priceUnit.value.toUpperCase()
+)
+
 const editingId = ref<string | null>(null)
 const productName = ref('')
 const productDetails = ref('')
 const productCategory = ref('')
 const productPrice = ref('')
-const priceUnit = ref<PriceUnit>('sol')
 const productBusy = ref(false)
 const productFailure = ref('')
 
@@ -86,6 +118,33 @@ const canSubmitProduct = computed(() =>
 /** The price in the reader's own money, when the rate is known. */
 function fiatHint(lamports: number): string | null {
   return fiatFromLamports(lamports, rates.value, currency.value)
+}
+
+/** A stored price, written the way this shop writes its prices. */
+function priceLabel(lamports: number): string {
+  if (priceUnit.value === 'sol') return `${lamportsToSol(lamports)} SOL`
+  return fiatFromLamports(lamports, rates.value, priceUnit.value)
+    ?? `${lamportsToSol(lamports)} SOL`
+}
+
+/**
+ * The figure under the shop's own: in SOL that is the reader's money, and in
+ * dollars or euros it is the SOL the customer actually hands over, so the two
+ * lines are never the same amount twice.
+ */
+function priceHint(lamports: number): string | null {
+  if (priceUnit.value === 'sol') return fiatHint(lamports)
+  return `${lamportsToSol(lamports)} SOL`
+}
+
+/** A stored price in the shop's unit, as a number for the edit field. */
+function priceInputValue(lamports: number): string {
+  if (priceUnit.value === 'sol') return lamportsToSol(lamports)
+  const rate = rates.value?.[priceUnit.value]
+  // No rate yet: leave it to be typed rather than show a figure in a unit the
+  // seller did not pick.
+  if (!rate) return ''
+  return ((lamports / 1_000_000_000) * rate).toFixed(2)
 }
 
 async function load() {
@@ -128,7 +187,8 @@ function resetForm() {
   productDetails.value = ''
   productCategory.value = ''
   productPrice.value = ''
-  priceUnit.value = 'sol'
+  // The shop's unit is a setting, not part of the form: clearing the form
+  // leaves it as the seller chose it.
   productFailure.value = ''
 }
 
@@ -138,8 +198,7 @@ function editProduct(product: Product) {
   productName.value = product.name
   productDetails.value = product.details
   productCategory.value = product.category
-  productPrice.value = lamportsToSol(product.price_lamports)
-  priceUnit.value = 'sol'
+  productPrice.value = priceInputValue(product.price_lamports)
   productFailure.value = ''
 }
 
@@ -196,7 +255,10 @@ function productCount(count: number) {
   return t('shopEditor.products', { count }, count)
 }
 
-onMounted(load)
+onMounted(() => {
+  priceUnit.value = readPriceUnit()
+  void load()
+})
 </script>
 
 <template>
@@ -256,6 +318,20 @@ onMounted(load)
                 class="w-full"
                 :placeholder="$t('shopEditor.descriptionPlaceholder')"
                 :maxlength="160"
+              />
+            </UFormField>
+
+            <!-- One currency for the whole menu, chosen with the shop rather
+                 than on every product. -->
+            <UFormField
+              :label="$t('shopEditor.pricesInLabel')"
+              :help="$t('shopEditor.pricesInHelp')"
+            >
+              <USelect
+                v-model="priceUnit"
+                :items="priceUnits"
+                class="w-full sm:w-48"
+                :aria-label="$t('shopEditor.priceUnitAria')"
               />
             </UFormField>
           </div>
@@ -326,12 +402,12 @@ onMounted(load)
               </div>
               <div class="flex shrink-0 items-center gap-1.5">
                 <div class="flex flex-col items-end">
-                  <span class="text-sm tabular-nums">{{ lamportsToSol(product.price_lamports) }} SOL</span>
+                  <span class="text-sm tabular-nums">{{ priceLabel(product.price_lamports) }}</span>
                   <span
-                    v-if="fiatHint(product.price_lamports)"
+                    v-if="priceHint(product.price_lamports)"
                     class="text-xs text-muted tabular-nums"
                   >
-                    ≈ {{ fiatHint(product.price_lamports) }}
+                    ≈ {{ priceHint(product.price_lamports) }}
                   </span>
                 </div>
                 <UButton
@@ -373,7 +449,7 @@ onMounted(load)
                 />
               </UFormField>
               <UFormField :label="$t('shopEditor.priceLabel')">
-                <div class="flex items-stretch gap-2">
+                <div class="flex items-center gap-2">
                   <UInput
                     v-model="productPrice"
                     type="number"
@@ -382,12 +458,9 @@ onMounted(load)
                     class="min-w-0 flex-1"
                     :placeholder="$t('shopEditor.pricePlaceholder')"
                   />
-                  <USelect
-                    v-model="priceUnit"
-                    :items="priceUnits"
-                    class="w-24"
-                    :aria-label="$t('shopEditor.priceUnitAria')"
-                  />
+                  <!-- The unit is the shop's, so it is written here rather than
+                       offered again as a choice on every product. -->
+                  <span class="w-12 shrink-0 text-sm text-muted tabular-nums">{{ unitLabel }}</span>
                 </div>
               </UFormField>
               <UFormField

@@ -31,6 +31,13 @@ const paying = ref<SupportedCurrency | ''>('')
  * The checkout applies the same test before it offers its silent path.
  */
 const silent = ref<Partial<Record<SupportedCurrency, boolean>>>({})
+/**
+ * The invoice whose checkout is open, as the payment sheet reads it, and the
+ * currency it was priced in. Held here rather than in a component because the
+ * card and the New shop dialog both start the same purchase, and only one
+ * sheet may be open at a time.
+ */
+const checkout = shallowRef<{ source: string, currency: SupportedCurrency } | null>(null)
 let inflight: Promise<void> | null = null
 
 export function useSubscriptionPurchase() {
@@ -129,9 +136,29 @@ export function useSubscriptionPurchase() {
           api.clearPending()
           return
         } catch (error) {
-          // A refusal that is not about settlement is final: no retry can fix it.
-          if (attempt === 7 || !subscriptionRetryable(error)) {
-            if (attempt === 7) status.value = await api.status()
+          const message = apiErrorMessage(error, '')
+          // An invoice this server never issued can never be recorded — a
+          // database restored from a backup, say. Forget the id instead of
+          // asking about it on every page from now on.
+          if (/was not created here/i.test(message)) {
+            api.clearPending()
+            status.value = await api.status()
+            return
+          }
+          // A refusal that is not about settlement is final: no retry can fix
+          // it, and it must not be silent — a month that was paid for and
+          // refused is the one failure worth reading. The id stays pending so
+          // the server can still record the period once it agrees.
+          if (!subscriptionRetryable(error)) {
+            failure.value = message
+            status.value = await api.status()
+            return
+          }
+          if (attempt === 7) {
+            // Still not settled after the last wait: the cluster is the source
+            // of truth, so the card shows where the account stands and the
+            // server credits the payment when it can read the settlement.
+            status.value = await api.status()
             return
           }
           await new Promise(resolve => setTimeout(resolve, 1_500))
@@ -155,15 +182,21 @@ export function useSubscriptionPurchase() {
     await inflight
   }
 
-  /** One invoice for the picked currency, then the checkout that pays it. */
+  /**
+   * One invoice for the picked currency, then the payment sheet, which the
+   * shops page opens over itself rather than handing the seller to the
+   * checkout page. A subscription is a two-tap purchase; sending someone to a
+   * full checkout and leaving them there after they pay is more page than the
+   * purchase deserves.
+   */
   async function pay(currency: SupportedCurrency): Promise<void> {
-    if (paying.value) return
+    if (paying.value || checkout.value) return
     paying.value = currency
     failure.value = ''
     try {
       const invoice = await api.startPayment(currency)
       api.rememberPending(invoice.payment_id)
-      await navigateTo(paymentLinkPath(invoice.payload))
+      checkout.value = { source: invoice.payload, currency }
     } catch (error) {
       failure.value = apiErrorMessage(error, t('subscription.payFailure'))
     } finally {
@@ -171,5 +204,36 @@ export function useSubscriptionPurchase() {
     }
   }
 
-  return { status, loading, failure, paying, quotes, covered, active, priceLabel, load, pay }
+  /** The sheet was closed without a payment: nothing was charged. */
+  function close(): void {
+    checkout.value = null
+  }
+
+  /**
+   * The invoice settled in the sheet. Closing first puts the seller back on the
+   * shops page, and the read that follows is what records the paid period:
+   * `load` confirms the pending invoice with the same retries a buyer gets on
+   * the way back to the page, so the card can say how long is left by the time
+   * the dialog is gone.
+   */
+  async function complete(): Promise<void> {
+    checkout.value = null
+    await load()
+  }
+
+  return {
+    status,
+    loading,
+    failure,
+    paying,
+    quotes,
+    covered,
+    active,
+    checkout,
+    priceLabel,
+    load,
+    pay,
+    close,
+    complete
+  }
 }

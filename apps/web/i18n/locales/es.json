@@ -85,7 +85,7 @@
       "description": "Tres pasos, sin que tu cliente cree una cuenta.",
       "create": {
         "title": "Crea un código de pago",
-        "description": "Escribe el importe que quieres cobrar y muestra el código QR. Sin datáfono, sin facturas, sin cuotas mensuales."
+        "description": "Escribe el importe que quieres cobrar y muestra el código QR. Sin datáfono, sin facturas, sin cuota mensual por cobrar un pago."
       },
       "scan": {
         "title": "Tu cliente escanea y paga",
@@ -879,6 +879,8 @@
       "productsTitle": "Productos",
       "productsSubtitle": "Lo que la página de pago ofrece como recibo.",
       "pricesInSol": "Los precios se cobran en SOL",
+      "pricesInLabel": "Precios en",
+      "pricesInHelp": "La moneda en la que escribes los precios. El cliente sigue pagando en SOL.",
       "editAria": "Editar {name}",
       "removeAria": "Quitar {name}",
       "removeConfirm": "¿Quitar «{name}»?\n\nLas facturas ya creadas conservan su recibo — esto solo lo quita de la carta.",
@@ -908,6 +910,7 @@
       "inactive": "No activa",
       "loading": "Leyendo tu suscripción…",
       "renewsOn": "Pagada hasta el {date}.",
+      "daysLeft": "{count} día restante | {count} días restantes",
       "price": "1,70 € por {days} días, pagadero en cualquiera de estas monedas.",
       "chooseCurrency": "Pagar con",
       "allowanceBadge": "Límite",
@@ -927,6 +930,8 @@
     "shopMetaTitle": "Comercio — Payvand",
     "shopTitle": "Comercio",
     "shopDescription": "Tus productos, los precios que cobra la página de pago y los códigos que has guardado aquí.",
+    "tabPayments": "Pagos",
+    "tabShop": "Tienda",
     "backToShops": "Volver a tus comercios",
     "createPaymentTitle": "Crear un pago",
     "createPaymentDescription": "Todo el formulario de pago, con precios de la carta de este comercio y tus códigos de descuento.",
@@ -975,7 +980,7 @@
   "terms": {
     "metaTitle": "Términos de uso — Payvand",
     "metaDescription": "Qué hace Payvand, qué no hace y las pocas reglas que trae: los pagos van de cartera a cartera, solo la comisión del protocolo pasa por el programa, y un pago confirmado no se puede deshacer.",
-    "updated": "15 de noviembre de 2026",
+    "updated": "24 de noviembre de 2026",
     "title": "Términos de uso",
     "description": "Qué hace Payvand, qué no hace y el puñado de reglas que acompañan su uso.",
     "what": {
@@ -1016,7 +1021,7 @@
     },
     "fees": {
       "title": "Comisiones",
-      "body": "Crear o escanear un código no cuesta nada al cliente más allá de lo que dice: paga el precio que ve más la comisión de red de Solana por la transacción, y nada más. Los vendedores pagan la comisión del protocolo, que tiene dos partes. Una es un porcentaje del precio, descontado de lo que recibe el vendedor. La otra es una comisión de registro en las facturas pagadas con un token, que cubre la prueba permanente de ese pago en la cadena; en una factura en SOL ese coste sale del precio. La comisión se cobra en la moneda del pago, nunca forma parte del total del cliente, y la app muestra el importe exacto que recibirá el vendedor antes de compartir un código. Los porcentajes y la comisión de registro los fija la plataforma y pueden cambiar con el coste de operar el servicio; se aplica la comisión vigente al pagar, y el precio de un código nunca cambia."
+      "body": "Crear o escanear un código no cuesta nada al cliente más allá de lo que dice: paga el precio que ve y nada más: la comisión de red de Solana y la renta del recibo ya están dentro. Los vendedores pagan la comisión del protocolo, que tiene dos partes. Una es un porcentaje del precio, descontado de lo que recibe el vendedor. La otra es una comisión de registro en las facturas pagadas con un token, que cubre la prueba permanente de ese pago en la cadena; en una factura en SOL ese coste sale del precio. La comisión se cobra en la moneda del pago, nunca forma parte del total del cliente, y la app muestra el importe exacto que recibirá el vendedor antes de compartir un código. Los porcentajes y la comisión de registro los fija la plataforma y pueden cambiar con el coste de operar el servicio; se aplica la comisión vigente al pagar, y el precio de un código nunca cambia."
     },
     "testMoney": {
       "title": "Dinero de prueba",

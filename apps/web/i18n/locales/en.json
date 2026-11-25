@@ -85,7 +85,7 @@
       "description": "Three steps, no account setup for your customer.",
       "create": {
         "title": "Create a payment code",
-        "description": "Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fees."
+        "description": "Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fee to take a payment."
       },
       "scan": {
         "title": "Your customer scans and pays",
@@ -879,6 +879,8 @@
       "productsTitle": "Products",
       "productsSubtitle": "What the payment page offers as a receipt.",
       "pricesInSol": "Prices are charged in SOL",
+      "pricesInLabel": "Prices in",
+      "pricesInHelp": "The money you type prices in. Customers still pay in SOL.",
       "editAria": "Edit {name}",
       "removeAria": "Remove {name}",
       "removeConfirm": "Remove “{name}”?\n\nInvoices already created keep their receipt — this only takes it off the menu.",
@@ -908,6 +910,7 @@
       "inactive": "Not active",
       "loading": "Reading your subscription…",
       "renewsOn": "Paid until {date}.",
+      "daysLeft": "{count} day left | {count} days left",
       "price": "€1.70 for {days} days, payable in any of these currencies.",
       "chooseCurrency": "Pay with",
       "allowanceBadge": "Allowance",
@@ -927,6 +930,8 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Your products, the prices the payment page charges, and the codes you saved here.",
+    "tabPayments": "Payments",
+    "tabShop": "Shop",
     "backToShops": "Back to your shops",
     "createPaymentTitle": "Create a payment",
     "createPaymentDescription": "The whole payment form, priced from this shop’s menu, with your discount codes.",
@@ -975,7 +980,7 @@
   "terms": {
     "metaTitle": "Terms of use — Payvand",
     "metaDescription": "What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, only the protocol fee passes through the program, and a paid transaction cannot be taken back.",
-    "updated": "15 November 2026",
+    "updated": "24 November 2026",
     "title": "Terms of use",
     "description": "What Payvand does, what it does not do, and the handful of rules that come with using it.",
     "what": {
@@ -1016,7 +1021,7 @@
     },
     "fees": {
       "title": "Fees",
-      "body": "Making or scanning a code is free for the customer beyond what it says: they pay the price they see plus the Solana network fee for the transaction, and nothing else. Sellers pay the protocol fee, which has two parts. One is a percentage of the price, taken out of what the seller receives. The other is a record fee on invoices paid in a token, which covers the permanent on-chain proof of that payment; a SOL invoice carries that record cost out of the price instead. The fee is charged in the currency the payment is made in, the customer’s total never includes it, and the app shows the exact amount the seller will receive before a code is shared. The percentages and the record fee are set by the platform and can change with the cost of operating the service; the fee applied is the one in force when a payment is made, and the price on a code never changes."
+      "body": "Making or scanning a code is free for the customer beyond what it says: they pay the price they see and nothing else — the Solana network fee and the record’s rent are already inside it. Sellers pay the protocol fee, which has two parts. One is a percentage of the price, taken out of what the seller receives. The other is a record fee on invoices paid in a token, which covers the permanent on-chain proof of that payment; a SOL invoice carries that record cost out of the price instead. The fee is charged in the currency the payment is made in, the customer’s total never includes it, and the app shows the exact amount the seller will receive before a code is shared. The percentages and the record fee are set by the platform and can change with the cost of operating the service; the fee applied is the one in force when a payment is made, and the price on a code never changes."
     },
     "testMoney": {
       "title": "Test money",

@@ -85,7 +85,7 @@
       "description": "Trois étapes, aucun compte à créer pour votre client.",
       "create": {
         "title": "Créer un code de paiement",
-        "description": "Saisissez le montant à encaisser et affichez le QR code. Ni terminal, ni factures, ni abonnement."
+        "description": "Saisissez le montant à encaisser et affichez le QR code. Ni terminal, ni factures, ni abonnement pour encaisser un paiement."
       },
       "scan": {
         "title": "Votre client scanne et paie",
@@ -879,6 +879,8 @@
       "productsTitle": "Produits",
       "productsSubtitle": "Ce que la page de paiement propose comme reçu.",
       "pricesInSol": "Les prix sont facturés en SOL",
+      "pricesInLabel": "Prix en",
+      "pricesInHelp": "La monnaie dans laquelle vous saisissez les prix. Le client paie toujours en SOL.",
       "editAria": "Modifier {name}",
       "removeAria": "Retirer {name}",
       "removeConfirm": "Retirer « {name} » ?\n\nLes factures déjà créées gardent leur reçu — cela le retire seulement du menu.",
@@ -908,6 +910,7 @@
       "inactive": "Inactif",
       "loading": "Lecture de votre abonnement…",
       "renewsOn": "Payé jusqu’au {date}.",
+      "daysLeft": "{count} jour restant | {count} jours restants",
       "price": "1,70 € pour {days} jours, payable dans l’une de ces devises.",
       "chooseCurrency": "Payer avec",
       "allowanceBadge": "Budget",
@@ -927,6 +930,8 @@
     "shopMetaTitle": "Boutique — Payvand",
     "shopTitle": "Boutique",
     "shopDescription": "Vos produits, les prix facturés par la page de paiement, et les codes que vous avez enregistrés ici.",
+    "tabPayments": "Paiements",
+    "tabShop": "Boutique",
     "backToShops": "Retour à vos boutiques",
     "createPaymentTitle": "Créer un paiement",
     "createPaymentDescription": "Tout le formulaire de paiement, tarifé depuis le menu de cette boutique, avec vos codes de remise.",
@@ -975,7 +980,7 @@
   "terms": {
     "metaTitle": "Conditions d'utilisation — Payvand",
     "metaDescription": "Ce que Payvand fait, ce qu’il ne fait pas, et les quelques règles qui l’accompagnent : les paiements vont de portefeuille à portefeuille, seuls les frais du protocole passent par le programme, et une transaction payée ne peut pas être annulée.",
-    "updated": "15 novembre 2026",
+    "updated": "24 novembre 2026",
     "title": "Conditions d'utilisation",
     "description": "Ce que fait Payvand, ce qu'il ne fait pas, et la poignée de règles qui vont avec son usage.",
     "what": {
@@ -1016,7 +1021,7 @@
     },
     "fees": {
       "title": "Frais",
-      "body": "Créer ou scanner un code ne coûte rien au client au-delà de ce qui est affiché : il paie le prix indiqué plus les frais de réseau Solana pour la transaction, rien d’autre. Les vendeurs paient les frais du protocole, en deux parties. L’une est un pourcentage du prix, déduit de ce que reçoit le vendeur. L’autre est des frais de reçu sur les factures payées en token, qui couvrent la preuve permanente de ce paiement sur la chaîne ; sur une facture en SOL, ce coût sort du prix. Les frais sont prélevés dans la devise du paiement, ne font jamais partie du total du client, et l’app montre le montant exact que recevra le vendeur avant qu’un code soit partagé. Les pourcentages et les frais de reçu sont fixés par la plateforme et peuvent évoluer avec le coût du service ; les frais appliqués sont ceux en vigueur au moment du paiement, et le prix d’un code ne change jamais."
+      "body": "Créer ou scanner un code ne coûte rien au client au-delà de ce qui est affiché : il paie le prix indiqué, rien de plus : les frais de réseau Solana et le loyer du reçu sont déjà compris dedans. Les vendeurs paient les frais du protocole, en deux parties. L’une est un pourcentage du prix, déduit de ce que reçoit le vendeur. L’autre est des frais de reçu sur les factures payées en token, qui couvrent la preuve permanente de ce paiement sur la chaîne ; sur une facture en SOL, ce coût sort du prix. Les frais sont prélevés dans la devise du paiement, ne font jamais partie du total du client, et l’app montre le montant exact que recevra le vendeur avant qu’un code soit partagé. Les pourcentages et les frais de reçu sont fixés par la plateforme et peuvent évoluer avec le coût du service ; les frais appliqués sont ceux en vigueur au moment du paiement, et le prix d’un code ne change jamais."
     },
     "testMoney": {
       "title": "Argent de test",
