@@ -12,14 +12,6 @@ const { generate } = useSolanaQrCode()
 
 /** The code is drawn in its own pixels, and the mark is placed in the same ones. */
 const QR_SIZE = 280
-/**
- * How wide the mark's art is against the code. The code is drawn at error
- * correction level Q, which recovers ~25% of it; a mark this size covers ~4%
- * of the area, so the modules behind it come back and the code still scans.
- */
-const MARK_SHARE = 0.2
-/** The art sits inset in the logo's own square: about 70% of it is the tile. */
-const MARK_ART_SHARE = 0.7
 
 const qrMarkup = ref<string | null>(null)
 
@@ -44,19 +36,26 @@ onMounted(async () => {
 })
 
 /**
- * The mark belongs to the code, not on top of it: it goes into the code's own
- * SVG, in the middle of the modules, with nothing drawn around it. A white
- * plate and a margin of its own are what make a logo look pasted on.
+ * The code with its middle cleared for the mark, and how wide the mark is
+ * against it.
+ *
+ * The plate is a whole number of modules across and centred on the grid, so no
+ * dot is left half covered by it: each one is either under the plate or clear
+ * of it. The code is drawn at error correction level Q, which recovers ~25% of
+ * it, and nine modules across hides about 13% of the modules.
  */
-const qrWithMark = computed(() => {
+const qrPlate = computed(() => {
   const svg = qrMarkup.value
   if (!svg) return null
-  const markSize = Math.round(QR_SIZE * MARK_SHARE / MARK_ART_SHARE)
-  const offset = (QR_SIZE - markSize) / 2
-  return svg.replace(
-    '</svg>',
-    `${markMarkup({ x: offset, y: offset, size: markSize })}</svg>`
-  )
+  const grid = readGrid(svg, QR_SIZE)
+  const plate = grid ? coverBox(grid, QR_SIZE) : null
+  if (!plate) return null
+  return {
+    markup: clearMiddle(svg, plate),
+    share: plate.share,
+    /** The mark is drawn at the plate's width, so its tile fills the clearing. */
+    markSize: `${(plate.share * 100).toFixed(2)}%`
+  }
 })
 </script>
 
@@ -101,10 +100,23 @@ const qrWithMark = computed(() => {
         end against plain white for a camera to find the edges.
       -->
       <div
-        v-if="qrWithMark"
-        class="mx-auto w-fit max-w-full rounded-xl bg-white p-3 [&_svg]:h-auto [&_svg]:max-h-[280px] [&_svg]:w-auto [&_svg]:max-w-full"
-        v-html="qrWithMark"
-      />
+        v-if="qrPlate"
+        class="mx-auto w-fit max-w-full rounded-xl bg-white p-3"
+      >
+        <div class="relative aspect-square w-[280px] max-w-full">
+          <div
+            class="h-full w-full [&_svg]:h-full [&_svg]:w-full"
+            v-html="qrPlate.markup"
+          />
+          <!-- The drawn mark sits in the clearing, centred on the same grid. -->
+          <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <PayvandLogoDraw
+              :size="qrPlate.markSize"
+              loop
+            />
+          </div>
+        </div>
+      </div>
       <div
         v-else
         class="border-default grid grid-cols-7 gap-1 rounded-xl border p-2"
