@@ -101,6 +101,30 @@
       "startSelling": "Verkaufen starten",
       "startCta": "Neu bei Krypto? Hier starten",
       "devnetGuide": "So stellst du deine Wallet auf Devnet um"
+    },
+    "faq": {
+      "title": "Häufige Fragen",
+      "description": "Was Payvand gegenüber einer Wallet bringt, was es kostet und was deine Kundschaft braucht.",
+      "q1": "Worin unterscheidet sich Payvand vom Senden von USDC aus meiner Wallet?",
+      "a1": "Bei einer Wallet-Überweisung tippst du einen Betrag in eine eingefügte Adresse. Auf einem Payvand-Code stehen Betrag, Währung, Verkäufer und Memo fest, bevor gescannt wird: nichts kann vertippt werden, der Code springt auf Bezahlt, und jede Zahlung hinterlässt einen Beleg. Das ist der Mehrwert: ein Code, der sich selbst bepreist, eine laufende Liste der Eingänge und ein Käufer, der kein SOL braucht.",
+      "q2": "Ist Payvand eine Wallet? Verwaltet es mein Geld?",
+      "a2": "Nein. Es gibt keine Seed-Phrase und kein Payvand-Guthaben: Jede Zahlung geht direkt von der Wallet des Käufers zu deiner, und die App hat keinen Schlüssel, der dein Geld bewegen könnte. Sie ist die Zahlungsebene über der Wallet, die du schon hast.",
+      "q3": "Brauchen meine Kunden ein Konto oder eine App?",
+      "a3": "Nein. Sie scannen mit einer Solana-Wallet, die Solana-Pay-Links versteht – Phantom, Solflare, Backpack und die meisten anderen – oder mit dem Scanner dieser Seite, prüfen den Betrag und bestätigen. Ein Zahlungslink funktioniert in jedem Browser. Konten sind für Verkäufer, die ihre Codes und Shops behalten.",
+      "q4": "In welchen Währungen kann ich abrechnen?",
+      "a4": "SOL, USDC oder EURC. Du wählst die Währung beim Erstellen des Codes, und der Kunde zahlt diesen Betrag darin.",
+      "q5": "Was kostet es?",
+      "a5": "1 % bis 0,1 SOL (oder 10 USDC / EURC), darüber 0,5 %, vom Preis abgezogen – der Kunde zahlt genau, was der Code zeigt. Für das Kassieren gibt es keine Monatsgebühr. Die optionale Shop-Seite mit Produktliste kostet 1,70 € pro 30 Tage. Die Gebührenregel liegt on-chain und ändert sich ohne neue Version.",
+      "q6": "Braucht der Käufer SOL für Netzwerkgebühren?",
+      "a6": "Bei USDC- oder EURC-Zahlungen nein: Payvands Relayer zahlt die Netzwerkgebühr und die Mieten der temporären Konten und wird aus der Gebühr erstattet. Eine SOL-Zahlung besteht aus den Lamports des Käufers, also braucht er genau den Betrag.",
+      "q7": "Was, wenn der Kunde den falschen Betrag zahlt?",
+      "a7": "Der Betrag ist Teil der Zahlungsadresse: Ein anderer Betrag ist eine andere Adresse, die dieser Code nicht beobachtet. Der Code bleibt unbezahlt, und die Zahlung zählt nicht für diese Rechnung.",
+      "q8": "Kann ich eine Zahlung erstatten?",
+      "a8": "Ja, indem du sie von deiner Wallet zurückschickst. Payvand hält das Geld nie und kann es nicht für dich bewegen; deine Zahlungsliste zeigt die Adresse, die gezahlt hat – eine Erstattung ist eine Überweisung.",
+      "q9": "Wir haben Personal oder Stammkunden, die jede Woche zahlen. Passt das?",
+      "a9": "Ja. Ein Käufer kann ein monatliches Budget eröffnen, aus dem ein Session-Key zahlt – Stammkunden bestätigen einmal im Monat statt an jeder Kasse. Verkäufer bekommen Rabattcodes und eine Shop-Seite mit Produktliste.",
+      "q10": "Kann ich es ohne echtes Geld ausprobieren?",
+      "a10": "Ja. Die App läuft im Testmodus auf Solana Devnet: Ein Konto kann kostenlose Start-Token abholen und eine ganze Zahlung über das echte Programm abwickeln, ohne etwas auszugeben."
     }
   },
   "admin": {

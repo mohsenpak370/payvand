@@ -48,6 +48,19 @@ const steps = computed(() => [{
   description: t('home.how.paid.description')
 }])
 
+/**
+ * The questions a shop owner asks before the first payment, and the ones they
+ * ask after it: what this adds over a plain wallet, what it costs, whether the
+ * buyer needs anything installed, and what happens when something goes wrong.
+ * The answers live in the locale files like every other string on the page.
+ */
+const FAQ_COUNT = 10
+
+const faqs = computed(() => Array.from({ length: FAQ_COUNT }, (_, index) => ({
+  label: t(`home.faq.q${index + 1}`),
+  content: t(`home.faq.a${index + 1}`)
+})))
+
 const ctaLinks = computed<ButtonProps[]>(() => [{
   label: t('home.cta.startSelling'),
   to: '/sell',
@@ -145,6 +158,23 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
       :description="$t('home.how.description')"
       :features="steps"
     />
+
+    <!--
+      The FAQ sits after the three steps and before the closing call: it is for
+      the reader who already understands the flow and is now deciding whether
+      it is worth using instead of their wallet.
+    -->
+    <UPageSection
+      id="faq"
+      :title="$t('home.faq.title')"
+      :description="$t('home.faq.description')"
+    >
+      <UAccordion
+        :items="faqs"
+        type="multiple"
+        class="mx-auto max-w-3xl"
+      />
+    </UPageSection>
 
     <UPageSection>
       <UPageCTA

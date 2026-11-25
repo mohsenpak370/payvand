@@ -101,6 +101,30 @@
       "startSelling": "Start selling",
       "startCta": "New to crypto? Start here",
       "devnetGuide": "See how to switch to devnet on your wallet"
+    },
+    "faq": {
+      "title": "Questions people ask",
+      "description": "What Payvand adds over a wallet, what it costs, and what your customer needs.",
+      "q1": "How is Payvand different from sending USDC from my wallet?",
+      "a1": "A wallet transfer is an amount typed into a pasted address. On a Payvand code the amount, currency, seller and memo are fixed before the customer scans, so nothing can be mistyped, the code turns Paid, and each payment leaves a receipt. That is the added value: a code that prices itself, a running list of what came in, and a buyer who needs no SOL.",
+      "q2": "Is Payvand a wallet? Does it hold my money?",
+      "a2": "No. There is no seed phrase to keep and no Payvand balance: each payment goes straight from the buyer’s wallet to yours, and the app holds no key that can move your funds. It is the payment layer on top of the wallet you already have.",
+      "q3": "Do my customers need an account or an app?",
+      "a3": "No. They scan with any Solana wallet that reads Solana Pay links — Phantom, Solflare, Backpack and most others — or with the scanner on this site, check the amount and approve. A payment link works in any browser. Accounts are for sellers, to keep their codes and shops.",
+      "q4": "Which currencies can I charge in?",
+      "a4": "SOL, USDC or EURC. You choose the currency when you make the code, and the customer pays that amount in it.",
+      "q5": "What does it cost?",
+      "a5": "1% up to 0.1 SOL (or 10 USDC / EURC) and 0.5% above that, taken out of the price — the customer pays exactly what the code shows. There is no monthly fee to take payments. The optional shop page with a product list is €1.70 per 30 days. The fee policy lives on chain, so it can change without a release.",
+      "q6": "Does the buyer need SOL for network fees?",
+      "a6": "For USDC or EURC payments, no: Payvand’s relayer pays the network fee and the temporary account rents and is repaid out of the fee. A SOL payment is the buyer’s own lamports, so they need the amount they are paying and nothing else.",
+      "q7": "What if the customer pays the wrong amount?",
+      "a7": "The amount is part of the payment address, so a different amount is a different address that this code is not watching. The code stays unpaid, and the payment is not counted against that invoice.",
+      "q8": "Can I refund a payment?",
+      "a8": "Yes, by sending it back from your wallet. Payvand never holds the money and cannot move it for you; your payment list shows the address that paid, so a refund is one transfer.",
+      "q9": "We have staff, or regulars who pay every week. Does that fit?",
+      "a9": "Yes. A buyer can open a monthly allowance that a session key spends from, so a regular approves once a month instead of at every counter, and sellers get discount codes and a shop page with a product list.",
+      "q10": "Can I try it without real money?",
+      "a10": "Yes. The app runs on Solana devnet in test mode: an account can claim free starter tokens and take a whole payment through the real program without spending anything."
     }
   },
   "admin": {
