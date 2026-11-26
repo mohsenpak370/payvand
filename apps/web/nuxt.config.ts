@@ -173,6 +173,21 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/health',
         changeOrigin: true
       },
+      // The /start page's test-token card: its status and the one claim.
+      '/api/faucet': {
+        target: 'http://127.0.0.1:8787/api/faucet',
+        changeOrigin: true
+      },
+      // The fee payer for sponsored payments, and the settle that follows.
+      '/api/sponsor': {
+        target: 'http://127.0.0.1:8787/api/sponsor',
+        changeOrigin: true
+      },
+      // The program config the fee preview and payment builder read.
+      '/api/config': {
+        target: 'http://127.0.0.1:8787/api/config',
+        changeOrigin: true
+      },
       // The settings page's notifications card: the VAPID key, this device's
       // subscription and the test send.
       '/api/push': {
@@ -184,7 +199,19 @@ export default defineNuxtConfig({
       '/api/admin': {
         target: 'http://127.0.0.1:8787/api/admin',
         changeOrigin: true
+      },
+      // The API's own reference page and the spec it renders.
+      '/api/docs': {
+        target: 'http://127.0.0.1:8787/api/docs',
+        changeOrigin: true
+      },
+      '/api/openapi.json': {
+        target: 'http://127.0.0.1:8787/api/openapi.json',
+        changeOrigin: true
       }
+      // Not /api/cron: Vercel Cron calls the API project directly, never
+      // through this origin. devProxy.test.ts checks this list against the
+      // API's route table and the app's own calls.
     }
   },
 

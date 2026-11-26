@@ -28,6 +28,10 @@ tasks:
     cmds:
       - pnpm dev
 
+  dev:all:
+    desc: Axum API and Nuxt dev server together (the app's /api calls need both)
+    deps: [api, dev]
+
   api:
     desc: Axum API on http://127.0.0.1:8787 (loads apps/web/.env)
     cmds:
