@@ -12,8 +12,10 @@ use crate::{
     subscription, waitlist, wallet,
 };
 
-/// Every path in the router, in route order. `index()` lists these, and a test
-/// compares this list to the `.route(...)` calls so the two cannot drift.
+/// Every path in the router, in route order. A test compares this list to the
+/// `.route(...)` calls so the two cannot drift. The public index and OpenAPI
+/// document show a filtered subset; the admin routes stay live but are not
+/// part of the advertised public contract.
 pub(crate) const ROUTES: &[&str] = &[
     "/",
     "/health",
@@ -73,6 +75,17 @@ pub(crate) const ROUTES: &[&str] = &[
     "/api/shops/{id}/categories/{name}",
     "/api/shops/{id}/products/{product_id}",
 ];
+
+/// The routes advertised at the API index and in the public OpenAPI document.
+/// Admin endpoints remain in the router — the Nuxt admin page calls them — but
+/// are internal operations, not part of the public developer contract.
+pub(crate) fn public_routes() -> Vec<&'static str> {
+    ROUTES
+        .iter()
+        .copied()
+        .filter(|path| !path.starts_with("/api/admin/"))
+        .collect()
+}
 
 pub fn build_router(state: AppState) -> Router {
     Router::<AppState>::new()
