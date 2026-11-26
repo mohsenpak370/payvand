@@ -62,7 +62,7 @@ const FAQ_COUNT = 10
  * more to read rather than a detour back to the same paragraph.
  */
 const FAQ_LINKS: Record<number, string[]> = {
-  1: ['payingWithWallet', 'stablecoins'],
+  1: ['payvandVsWallet', 'stablecoins', 'checkingBeforeSign'],
   2: ['cryptoWallet'],
   3: ['payingWithWallet'],
   5: ['paymentCosts', 'fee'],
@@ -73,6 +73,7 @@ const FAQ_LINKS: Record<number, string[]> = {
 
 /** Where each link in `home.faq.links` points on the learning pages. */
 const LEARN_GUIDES: Record<string, string> = {
+  payvandVsWallet: '/learn/what-payvand-adds-to-a-wallet',
   payingWithWallet: '/learn/paying-with-a-wallet',
   stablecoins: '/learn/stablecoins-explained',
   cryptoWallet: '/learn/what-is-a-crypto-wallet',
@@ -80,7 +81,8 @@ const LEARN_GUIDES: Record<string, string> = {
   fee: '/learn/what-is-a-fee',
   monthlyAllowance: '/learn/monthly-allowance-explained',
   testMoney: '/learn/test-money-on-devnet',
-  switchToDevnet: '/learn/switch-to-devnet'
+  switchToDevnet: '/learn/switch-to-devnet',
+  checkingBeforeSign: '/learn/checking-before-you-sign'
 }
 
 const faqs = computed(() => Array.from({ length: FAQ_COUNT }, (_, index) => ({

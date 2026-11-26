@@ -106,7 +106,7 @@
       "title": "Preguntas frecuentes",
       "description": "Qué aporta Payvand frente a una cartera, cuánto cuesta y qué necesita tu cliente.",
       "q1": "¿En qué se diferencia Payvand de enviar USDC desde mi cartera?",
-      "a1": "En la cadena es la misma transferencia: los USDC siguen yendo de la cartera del comprador a la tuya, nunca a través de nosotros. La diferencia está en lo que la acompaña. Una transferencia suelta es un importe que escribes en una dirección pegada: llega sin pedido — la emparejas con una venta a ojo y el cliente tiene que avisarte de que pagó. Un código Payvand lleva el precio, la moneda y el memo que fijas una vez, y el importe forma parte de la dirección de pago: el comprador no puede cambiarlo sin enviar a una dirección que este código no vigila. El código vigila su propio pago, pasa solo a Pagado y guarda la dirección del pagador y la transacción como recibo. Y para el comprador es más fácil: con USDC o EURC Payvand paga la comisión de red, así que no necesita SOL.",
+      "a1": "Una cartera también puede mostrar un código QR, y el dinero se mueve igual: de la cartera del comprador directamente a la tuya, nunca a través de nosotros. Lo que una cartera te deja a ti es comprobar. Cualquiera puede crear una moneda sin valor, llamarla USDC y ponerle el mismo logo, y la única forma de distinguirla de la real es comparar una larga cadena de letras y números. Un código Payvand hace esa comprobación por ti: solo cuenta el USDC o el EURC reales, así que nunca pasa a Pagado con una imitación. Tu cliente tampoco escribe nunca una dirección ni un importe. Aprueba una solicitud sencilla — este importe, en esta moneda, para ti — sin nada más escondido, así que hay menos margen para un error de tecleo o para una solicitud que pide más a escondidas. El precio y la moneda quedan fijados en el código, el pago va ligado a esta venta y el código pasa solo a Pagado en cuanto llega el dinero, con el pagador y la transacción como recibo. Nada de emparejar transferencias a ojo ni de fiarse de una captura de «ya lo envié». Y con USDC o EURC el comprador no necesita SOL para la comisión de red.",
       "q2": "¿Payvand es una cartera? ¿Guarda mi dinero?",
       "a2": "No. No hay frase de recuperación que guardar ni saldo de Payvand: cada pago va directo de la cartera del comprador a la tuya, y la app no tiene ninguna clave con la que mover tu dinero. Es la capa de pagos sobre la cartera que ya usas.",
       "q3": "¿Mis clientes necesitan una cuenta o una app?",
@@ -126,6 +126,7 @@
       "q10": "¿Puedo probarlo sin dinero real?",
       "a10": "Sí. La app funciona en devnet de Solana en modo de prueba: una cuenta puede reclamar tokens iniciales gratis y completar un pago real por el programa sin gastar nada.",
       "links": {
+        "payvandVsWallet": "Lo que Payvand añade a una cartera",
         "payingWithWallet": "Cómo se paga con una cartera",
         "stablecoins": "Qué es un stablecoin",
         "cryptoWallet": "Qué es una cartera cripto",
@@ -133,7 +134,8 @@
         "fee": "Qué es una comisión",
         "monthlyAllowance": "Cómo funciona un presupuesto mensual",
         "testMoney": "Dinero de prueba gratis en devnet",
-        "switchToDevnet": "Cambiar a devnet"
+        "switchToDevnet": "Cambiar a devnet",
+        "checkingBeforeSign": "Lee antes de firmar"
       }
     }
   },

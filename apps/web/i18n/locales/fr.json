@@ -106,7 +106,7 @@
       "title": "Questions fréquentes",
       "description": "Ce que Payvand apporte de plus qu’un portefeuille, ce que ça coûte et ce dont votre client a besoin.",
       "q1": "En quoi Payvand diffère-t-il d’un envoi d’USDC depuis mon portefeuille ?",
-      "a1": "Sur la chaîne, c’est le même virement : les USDC vont toujours du portefeuille de l’acheteur au vôtre, jamais par nous. La différence est dans ce qui l’accompagne. Un virement simple, c’est un montant saisi dans une adresse collée : il arrive sans commande – vous le rapprochez d’une vente à l’œil, et le client doit vous prévenir qu’il a payé. Un code Payvand porte le prix, la devise et le mémo que vous fixez une fois, et le montant fait partie de l’adresse de paiement : l’acheteur ne peut pas le changer sans envoyer à une adresse que ce code ne surveille pas. Le code surveille son propre paiement, passe seul à Payé et conserve l’adresse du payeur et la transaction comme reçu. Et c’est plus simple pour l’acheteur : en USDC ou EURC, Payvand paie les frais de réseau, il n’a donc pas besoin de SOL.",
+      "a1": "Un portefeuille sait aussi afficher un QR code, et l’argent circule de la même façon : du portefeuille de l’acheteur directement au vôtre, jamais par nous. Ce qu’un portefeuille vous laisse, ce sont les vérifications. N’importe qui peut créer un jeton sans valeur, l’appeler USDC et lui donner le même logo, et la seule façon de le distinguer du vrai est de comparer une longue suite de lettres et de chiffres. Un code Payvand fait cette vérification pour vous : il ne compte que les vrais USDC ou EURC, et ne passe donc jamais à Payé pour une imitation. Votre client ne saisit jamais d’adresse ni de montant non plus. Il approuve une demande toute simple – ce montant, dans ce jeton, pour vous – sans rien d’autre de caché, ce qui laisse moins de place à une faute de frappe ou à une demande qui réclame plus en douce. Le prix et la devise sont fixés dans le code, le paiement est lié à cette vente, et le code passe seul à Payé dès que l’argent arrive, en gardant le payeur et la transaction comme reçu. Plus de virements à rapprocher à l’œil, ni de capture « je l’ai envoyé » à croire sur parole. Et en USDC ou en EURC, l’acheteur n’a pas besoin de SOL pour les frais de réseau.",
       "q2": "Payvand est-il un portefeuille ? Garde-t-il mon argent ?",
       "a2": "Non. Aucune phrase de récupération à conserver, aucun solde Payvand : chaque paiement va directement du portefeuille de l’acheteur au vôtre, et l’application ne détient aucune clé capable de déplacer vos fonds. C’est la couche de paiement au-dessus du portefeuille que vous avez déjà.",
       "q3": "Mes clients ont-ils besoin d’un compte ou d’une application ?",
@@ -126,6 +126,7 @@
       "q10": "Puis-je l’essayer sans argent réel ?",
       "a10": "Oui. L’application tourne sur le devnet de Solana, en mode test : un compte peut réclamer des jetons de départ gratuits et faire un paiement complet via le vrai programme sans rien dépenser.",
       "links": {
+        "payvandVsWallet": "Ce que Payvand ajoute à un portefeuille",
         "payingWithWallet": "Comment paie-t-on avec un portefeuille",
         "stablecoins": "Qu’est-ce qu’un stablecoin",
         "cryptoWallet": "Qu’est-ce qu’un portefeuille crypto",
@@ -133,7 +134,8 @@
         "fee": "Qu’est-ce que les frais",
         "monthlyAllowance": "Comment fonctionne un budget mensuel",
         "testMoney": "De l’argent de test gratuit sur devnet",
-        "switchToDevnet": "Passer sur devnet"
+        "switchToDevnet": "Passer sur devnet",
+        "checkingBeforeSign": "Lisez avant de signer"
       }
     }
   },

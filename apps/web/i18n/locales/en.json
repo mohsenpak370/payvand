@@ -106,7 +106,7 @@
       "title": "Questions people ask",
       "description": "What Payvand adds over a wallet, what it costs, and what your customer needs.",
       "q1": "How is Payvand different from sending USDC from my wallet?",
-      "a1": "On chain it is the same transfer: the USDC still moves from the buyer's wallet to yours, never through us. The difference is what travels with it. A plain transfer is an amount you type into a pasted address, so it arrives with no order attached — you match it to a sale by eye, and the customer has to tell you it was sent. A Payvand code carries the price, currency and memo you set once, and the amount is part of the payment address, so the buyer cannot change it without sending somewhere this code is not watching. The code watches its own payment, turns Paid by itself, and keeps the payer's address and the transaction as a receipt. And it is easier for the buyer too: with USDC or EURC the relayer pays the network fee, so they need no SOL.",
+      "a1": "A wallet can show a QR code too, and the money moves the same way: from the buyer's wallet straight to yours, never through us. What a wallet leaves to you is the checking. Anyone can make a worthless coin, call it USDC and give it the same logo, and the only way to tell it from the real one is to compare a long string of letters and numbers. A Payvand code does that check for you: it only counts the real USDC or EURC, so it never turns Paid for a look-alike. Your customer never types an address or an amount either. They approve one plain request — this amount, in this coin, to you — with nothing else hidden in it, so there is less room for a typo or for a request that quietly asks for more. The price and currency are fixed in the code, the payment is tied to this one sale, and the code turns Paid by itself the moment the money lands, keeping the payer and the transaction as a receipt. No matching transfers by eye, and no \"I sent it\" screenshot to take on trust. And with USDC or EURC the buyer needs no SOL for the network fee.",
       "q2": "Is Payvand a wallet? Does it hold my money?",
       "a2": "No. There is no seed phrase to keep and no Payvand balance: each payment goes straight from the buyer’s wallet to yours, and the app holds no key that can move your funds. It is the payment layer on top of the wallet you already have.",
       "q3": "Do my customers need an account or an app?",
@@ -126,6 +126,7 @@
       "q10": "Can I try it without real money?",
       "a10": "Yes. The app runs on Solana devnet in test mode: an account can claim free starter tokens and take a whole payment through the real program without spending anything.",
       "links": {
+        "payvandVsWallet": "What Payvand adds to a wallet",
         "payingWithWallet": "How paying with a wallet works",
         "stablecoins": "What a stablecoin is",
         "cryptoWallet": "What a crypto wallet is",
@@ -133,7 +134,8 @@
         "fee": "What a fee is",
         "monthlyAllowance": "How a monthly allowance works",
         "testMoney": "Free test money on devnet",
-        "switchToDevnet": "Switching to devnet"
+        "switchToDevnet": "Switching to devnet",
+        "checkingBeforeSign": "Read before you sign"
       }
     }
   },

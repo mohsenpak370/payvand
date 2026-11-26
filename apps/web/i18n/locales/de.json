@@ -106,7 +106,7 @@
       "title": "Häufige Fragen",
       "description": "Was Payvand über eine Wallet hinaus bietet, was es kostet und was deine Kundschaft braucht.",
       "q1": "Worin unterscheidet sich Payvand von einer USDC-Überweisung aus meiner Wallet?",
-      "a1": "Auf der Chain ist es dieselbe Überweisung: Die USDC gehen weiterhin von der Wallet des Käufers zu deiner, nie über uns. Der Unterschied liegt in dem, was mitkommt. Eine einfache Überweisung ist ein Betrag, den du in eine eingefügte Adresse tippst – sie kommt ohne Bestellung an: Du ordnest sie mit dem Auge einem Verkauf zu, und der Kunde muss dir sagen, dass er gezahlt hat. Ein Payvand-Code trägt Preis, Währung und Memo, die du einmal festlegst, und der Betrag ist Teil der Zahlungsadresse: Der Käufer kann ihn nicht ändern, ohne an eine Adresse zu senden, die dieser Code nicht überwacht. Der Code überwacht seine eigene Zahlung, springt von selbst auf Bezahlt und bewahrt die Adresse des Zahlers und die Transaktion als Beleg. Und für den Käufer ist es leichter: Bei USDC oder EURC zahlt Payvand die Netzwerkgebühr, er braucht also kein SOL.",
+      "a1": "Eine Wallet kann auch einen QR-Code zeigen, und das Geld bewegt sich genauso: direkt von der Wallet des Käufers zu deiner, nie über uns. Was eine Wallet dir überlässt, ist das Prüfen. Jeder kann einen wertlosen Coin erstellen, ihn USDC nennen und ihm dasselbe Logo geben, und vom echten unterscheiden lässt er sich nur, indem man eine lange Folge aus Buchstaben und Ziffern vergleicht. Ein Payvand-Code übernimmt diese Prüfung: Er zählt nur echte USDC oder EURC und springt bei einem Doppelgänger nie auf Bezahlt. Dein Kunde tippt auch nie eine Adresse oder einen Betrag ein. Er bestätigt eine einfache Anfrage – dieser Betrag, in diesem Coin, an dich –, in der nichts anderes versteckt ist. So bleibt weniger Raum für Tippfehler oder für eine Anfrage, die heimlich mehr will. Preis und Währung stehen fest im Code, die Zahlung gehört zu genau diesem Verkauf, und der Code springt von selbst auf Bezahlt, sobald das Geld ankommt, mit Zahler und Transaktion als Beleg. Kein Zuordnen von Überweisungen mit dem Auge und kein „Hab’s geschickt“-Screenshot, dem du glauben musst. Und bei USDC oder EURC braucht der Käufer kein SOL für die Netzwerkgebühr.",
       "q2": "Ist Payvand eine Wallet? Verwaltet es mein Geld?",
       "a2": "Nein. Es gibt keine Seed-Phrase und kein Payvand-Guthaben: Jede Zahlung geht direkt von der Wallet des Käufers zu deiner, und die App hat keinen Schlüssel, mit dem sie dein Geld bewegen könnte. Payvand ist die Zahlungsebene für die Wallet, die du schon hast.",
       "q3": "Brauchen meine Kunden ein Konto oder eine App?",
@@ -126,6 +126,7 @@
       "q10": "Kann ich es ohne echtes Geld ausprobieren?",
       "a10": "Ja. Die App läuft im Testmodus auf Solana Devnet: Ein Konto kann kostenlose Start-Token abholen und eine ganze Zahlung über das echte Programm abwickeln, ohne etwas auszugeben.",
       "links": {
+        "payvandVsWallet": "Was Payvand einer Wallet hinzufügt",
         "payingWithWallet": "So läuft eine Zahlung aus der Wallet",
         "stablecoins": "Was ein Stablecoin ist",
         "cryptoWallet": "Was eine Krypto-Wallet ist",
@@ -133,7 +134,8 @@
         "fee": "Was eine Gebühr ist",
         "monthlyAllowance": "So funktioniert ein Monatsbudget",
         "testMoney": "Kostenloses Testgeld auf Devnet",
-        "switchToDevnet": "Auf Devnet umstellen"
+        "switchToDevnet": "Auf Devnet umstellen",
+        "checkingBeforeSign": "Lies, bevor du signierst"
       }
     }
   },
