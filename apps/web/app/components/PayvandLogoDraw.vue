@@ -5,15 +5,15 @@
     3. A light travels the ribbon, under the bowl and along the V to its tip, where a ring ripples out.
   Vue 3.5+ (uses useId). No dependencies, no text, transparent outside the icon tile.
 
-  Props   size (px or any CSS length, default 256) · loop (default false) · interval (ms between replays, default 9000)
+  Props   size (px or any CSS length, default 256)
   Expose  replay()  restart the animation from a parent through a template ref
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 const props = withDefaults(
-  defineProps<{ size?: number | string, loop?: boolean, interval?: number }>(),
-  { size: 256, loop: false, interval: 9000 }
+  defineProps<{ size?: number | string }>(),
+  { size: 256 }
 )
 
 const uid = `pv${useId()}`.replace(/[^a-zA-Z0-9_-]/g, '')
@@ -24,15 +24,6 @@ const replay = () => {
   run.value++
 }
 defineExpose({ replay })
-
-let timer: ReturnType<typeof setInterval> | undefined
-const sync = () => {
-  if (timer) clearInterval(timer)
-  timer = props.loop ? setInterval(replay, Math.max(props.interval, 7600)) : undefined
-}
-onMounted(sync)
-watch(() => [props.loop, props.interval], sync)
-onBeforeUnmount(() => timer && clearInterval(timer))
 </script>
 
 <template>
@@ -300,9 +291,9 @@ onBeforeUnmount(() => timer && clearInterval(timer))
           fill="#000"
         /></mask></defs>
 
+    <!-- The tile is the mark's own background: it is there from the first frame, so the letters draw onto it instead of the white plate showing through. -->
     <path
       id="tile"
-      class="piece"
       fill="#080e20"
       d="M981.0 1023.5 L971.0 1031.2 L954.0 1042.2 L939.0 1050.3 L923.0 1057.2 L900.0 1064.5 L886.0 1067.5 L864.0 1070.5 L852.0 1070.5 L847.0 1071.5 L405.0 1071.5 L401.0 1070.5 L390.0 1070.5 L387.0 1069.5 L373.0 1068.5 L358.0 1065.5 L346.0 1062.2 L321.0 1053.2 L298.0 1041.2 L282.7 1031.0 L267.0 1018.5 L250.5 1002.0 L240.0 989.3 L229.8 975.0 L220.8 960.0 L211.8 942.0 L206.8 930.0 L200.8 912.0 L195.5 891.0 L192.5 872.0 L192.5 864.0 L191.5 860.0 L191.5 842.0 L190.5 838.0 L190.5 414.0 L191.5 409.0 L191.5 385.0 L192.5 382.0 L192.5 374.0 L194.5 360.0 L198.8 340.0 L208.8 310.0 L219.8 287.0 L234.8 263.0 L251.5 242.0 L267.0 226.5 L283.7 213.0 L296.0 204.8 L308.0 197.8 L325.0 189.8 L341.0 183.8 L359.0 178.8 L376.0 175.5 L389.0 174.5 L392.0 173.5 L403.0 173.5 L408.0 172.5 L846.0 172.5 L850.0 173.5 L862.0 173.5 L865.0 174.5 L871.0 174.5 L889.0 177.5 L906.0 181.8 L921.0 186.8 L933.0 191.8 L954.0 202.8 L969.3 213.0 L984.0 224.5 L1005.5 246.0 L1017.0 260.7 L1026.2 274.0 L1032.2 284.0 L1042.2 304.0 L1048.2 319.0 L1053.2 335.0 L1057.5 352.0 L1060.5 372.0 L1060.5 380.0 L1061.5 384.0 L1061.5 399.0 L1062.5 403.0 L1062.5 842.0 L1061.5 846.0 L1061.5 861.0 L1060.5 865.0 L1060.5 872.0 L1057.5 892.0 L1052.2 913.0 L1041.2 943.0 L1029.2 966.0 L1018.0 983.3 L997.5 1008.0Z"
     />
@@ -401,7 +392,6 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 
 <style scoped>
 .pv-icon{display:block;overflow:visible}
-.piece{animation:pv-fadein .45s ease both}
 @keyframes pv-fadein{from{opacity:0}to{opacity:1}}
 /* the P is drawn from the foot of its stem to the end of its bowl while, at the same moment, the ribbon is drawn from the stem's foot up to the P's top; both finish together. The V's left arm then continues out from under the bowl, and when it reaches the bottom the V's right arm is drawn up to the top right. */
 .wipe{stroke-dasharray:1 1;stroke-dashoffset:1;stroke-opacity:0;animation:pv-wipe var(--d) cubic-bezier(.45,0,.25,1) var(--t) forwards}
@@ -418,5 +408,5 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 @keyframes run{0%{offset-distance:0%;opacity:0}5%{opacity:var(--o)}94%{opacity:var(--o)}100%{offset-distance:100%;opacity:0}}
 .ring{fill:none;stroke:#5cc8ff;stroke-width:1.6px;opacity:0;transform-box:fill-box;transform-origin:center;animation:ring 1s cubic-bezier(.2,.6,.3,1) 6.85s forwards}
 @keyframes ring{0%{transform:scale(.4);opacity:.9}100%{transform:scale(3.4);opacity:0}}
-@media (prefers-reduced-motion:reduce){.dot,.ring{display:none}.piece,.shfade{animation:none;opacity:1}.wipe{animation:none;stroke-dashoffset:0;stroke-opacity:1}}
+@media (prefers-reduced-motion:reduce){.dot,.ring{display:none}.shfade{animation:none;opacity:1}.wipe{animation:none;stroke-dashoffset:0;stroke-opacity:1}}
 </style>
