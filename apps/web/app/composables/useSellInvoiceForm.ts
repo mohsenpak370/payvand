@@ -8,7 +8,7 @@ import { currenciesForCluster, mintForCurrency } from '~/composables/usePaymentP
 import { CARD_DESIGNS, type CardDesign } from '~/utils/cardDesigns'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
-import { cartTotalLamports } from '~/composables/useShop'
+import { cartTotal as totalCart } from '~/composables/useShop'
 
 interface CreatedPaymentPayload {
   payment: PaymentRecord
@@ -19,8 +19,11 @@ interface CreatedPaymentPayload {
 
 interface UseSellInvoiceFormOptions {
   cluster: string
-  shopsEnabled: Ref<boolean>
-  /** A page made for one shop: only its menu, and it starts priced from it. */
+  /**
+   * A page made for one shop: only its menu, and it starts priced from it. Its
+   * absence is what makes a page a plain payment page — no menu to pick from,
+   * no basket to price, and so no shop codes either.
+   */
   shopId?: string
   selectedDiscount: Ref<DiscountCode | null>
   /** Let the buyer apply one of the seller's codes on the payment page. */
@@ -65,12 +68,17 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   const failure = ref('')
   const detailsOpen = ref(false)
 
-  // The seller's own menus, offered as taps instead of typing. An account with
-  // no products simply never sees this block.
+  /** Whether this form belongs to a shop's own payment page. */
+  const shopScoped = computed(() => Boolean(options.shopId))
+
+  // The seller's own menus, offered as taps instead of typing. Only a shop's
+  // page has one, and it is read then; a plain payment page never asks.
   const shops = ref<ShopWithProducts[]>([])
   const hasProducts = computed(() => shops.value.some(shop => shop.products.length > 0))
   const cart = ref<CartLine[]>([])
-  const cartTotal = computed(() => cartTotalLamports(cart.value))
+  const cartTotal = computed(() => totalCart(cart.value))
+  /** The currency this shop charges in: its prices are already in it. */
+  const shopCurrency = computed<SupportedCurrency>(() => shops.value[0]?.currency ?? 'sol')
   const cartActive = computed(() => cart.value.length > 0)
   // An invoice is priced one of two ways: a number the seller types, or the total
   // of what they pick off a shop's menu. Most codes are the first, so the menus
@@ -80,7 +88,9 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
     { label: t('sell.priceModes.amount'), value: 'amount' },
     { label: t('sell.priceModes.products'), value: 'products' }
   ])
-  const sellingFromShops = computed(() => priceMode.value === 'products')
+  const sellingFromShops = computed(
+    () => shopScoped.value && priceMode.value === 'products'
+  )
   // A code prices a basket, so the discount sections belong to a payment built
   // from the shop's products. With an empty tray — or a typed price — there is
   // nothing for a percentage to price, and the fields would only ask a question
@@ -166,12 +176,16 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
     return t('sell.amountHelpTyped', { currency: currencySymbol(priceCurrency.value) })
   })
 
-  // Picking products decides the price: the invoice has to charge exactly what
-  // the receipt adds up to, or the API refuses to build the code.
+  // Picking products decides the price, and the shop decides the currency: the
+  // invoice has to charge exactly what the receipt adds up to, in the unit the
+  // menu is written in, or the code would say one price and charge another.
   watch(cartTotal, (total) => {
     if (total <= 0) return
-    priceCurrency.value = 'sol'
-    priceInput.value = String(Number((total / 1_000_000_000).toFixed(9)))
+    const shop = shopCurrency.value
+    priceCurrency.value = shop
+    priceInput.value = shop === 'sol'
+      ? String(Number((total / 1_000_000_000).toFixed(9)))
+      : formatTokenAmount(total, 6)
   })
 
   // Switching back to a typed amount drops the tray: a cart left behind would
@@ -223,10 +237,12 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   /** The menus, if this account has any. Shops that fail to load must never stop
    *  a seller from typing an amount the way they always could. */
   async function loadShop() {
+    if (!options.shopId) return
     try {
-      shops.value = options.shopId
-        ? [await shopApi.get(options.shopId)]
-        : await shopApi.list()
+      shops.value = [await shopApi.get(options.shopId)]
+      // This page charges in the shop's currency, never in whatever the seller
+      // last typed on the plain payment page.
+      priceCurrency.value = shops.value[0]?.currency ?? 'sol'
     } catch {
       shops.value = []
     }
@@ -313,6 +329,7 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   }
 
   return {
+    shopScoped,
     priceInput,
     priceCurrency,
     currencyItems,

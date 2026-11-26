@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { Product } from '~/composables/useShop'
+import { priceInCurrency } from '~/composables/useShop'
+import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
-// One shop's page: its name, its description, and what it sells. Everything
-// here is the seller's own menu — the payment page reads the same catalogue
-// and turns a cart of it into a receipt.
+// One shop's page: its name, its description, the currency its menu is priced
+// in, and what it sells. Everything here is the seller's own menu — the shop's
+// payment page reads the same catalogue and turns a cart of it into a receipt.
 const props = defineProps<{ shopId: string }>()
 
 const { t } = useI18n()
@@ -51,51 +53,36 @@ const savingShop = ref(false)
 const loadFailure = ref('')
 const failure = ref('')
 
-// Products are stored in lamports and charged in SOL; the seller may type them
-// in the money they think in. That choice belongs to the shop rather than to
-// each product line: a menu is written in one currency, and asking it again for
-// every item is a question with one answer.
 const { currency } = useCurrencyPreference()
 const rates = useSolRates()
-type PriceUnit = 'sol' | 'usd' | 'eur'
-const priceUnits: { label: string, value: PriceUnit }[] = [
-  { label: 'SOL', value: 'sol' },
-  { label: 'USD', value: 'usd' },
-  { label: 'EUR', value: 'eur' }
-]
 
 /**
- * Kept in the browser next to the account's own display currency: the unit
- * changes nothing about the shop — its prices are lamports either way — so this
- * is how they are written and read back, not shop data to sync.
+ * What the whole menu is priced — and charged — in. A stablecoin price is its
+ * own money, not a conversion of SOL, so this is shop data saved with the shop,
+ * and the shop's payment page charges in it.
  */
-const PRICE_UNIT_KEY = 'payvand.shop-price-unit.v1'
+const shopCurrency = ref<SupportedCurrency>('sol')
+/** The currency the saved prices are in, which is what a change converts from. */
+const savedCurrency = ref<SupportedCurrency>('sol')
 
-const priceUnit = ref<PriceUnit>('sol')
-
-function readPriceUnit(): PriceUnit {
-  try {
-    const stored = localStorage.getItem(`${PRICE_UNIT_KEY}:${props.shopId}`)
-    return stored === 'usd' || stored === 'eur' ? stored : 'sol'
-  } catch {
-    return 'sol'
-  }
-}
-
-watch(priceUnit, (unit) => {
-  try {
-    localStorage.setItem(`${PRICE_UNIT_KEY}:${props.shopId}`, unit)
-  } catch {
-    // Private mode without storage: the choice still holds for this visit.
-  }
-})
+const currencyOptions: { label: string, value: SupportedCurrency }[] = [
+  { label: 'SOL', value: 'sol' },
+  { label: 'USDC', value: 'usdc' },
+  { label: 'EURC', value: 'eurc' }
+]
 
 /** The unit as it is written after a price field. */
-const unitLabel = computed(() =>
-  priceUnit.value === 'sol' ? 'SOL' : priceUnit.value.toUpperCase()
-)
+const unitLabel = computed(() => currencySymbol(shopCurrency.value))
+
+/** A price typed in the shop's currency, in that currency's base units. */
+const priceBaseUnits = computed(() => {
+  const typed = Number(productPrice.value)
+  if (!Number.isFinite(typed) || typed <= 0) return 0
+  return shopCurrency.value === 'sol' ? solToLamports(typed) : Math.round(typed * 1_000_000)
+})
 
 const editingId = ref<string | null>(null)
+const formOpen = ref(false)
 const productName = ref('')
 const productDetails = ref('')
 const productCategory = ref('')
@@ -103,48 +90,46 @@ const productPrice = ref('')
 const productBusy = ref(false)
 const productFailure = ref('')
 
-const priceLamports = computed(() =>
-  priceUnit.value === 'sol'
-    ? solToLamports(Number(productPrice.value))
-    : lamportsFromFiat(Number(productPrice.value), rates.value, priceUnit.value)
-)
-
 const canSubmitProduct = computed(() =>
   !productBusy.value
   && productName.value.trim().length > 0
-  && priceLamports.value > 0
+  && priceBaseUnits.value > 0
 )
 
-/** The price in the reader's own money, when the rate is known. */
-function fiatHint(lamports: number): string | null {
-  return fiatFromLamports(lamports, rates.value, currency.value)
+/** A stored price as a number for the price field. */
+function priceInputValue(amount: number): string {
+  return shopCurrency.value === 'sol'
+    ? lamportsToSol(amount)
+    : formatTokenAmount(amount, 6)
 }
 
-/** A stored price, written the way this shop writes its prices. */
-function priceLabel(lamports: number): string {
-  if (priceUnit.value === 'sol') return `${lamportsToSol(lamports)} SOL`
-  return fiatFromLamports(lamports, rates.value, priceUnit.value)
-    ?? `${lamportsToSol(lamports)} SOL`
+/** A stored price in the reader's own money, when the rate is known. */
+function priceHint(amount: number): string | null {
+  const value = fiatValueOf(shopCurrency.value, amount, rates.value, currency.value)
+  return value === null ? null : formatFiat(value, currency.value)
 }
 
 /**
- * The figure under the shop's own: in SOL that is the reader's money, and in
- * dollars or euros it is the SOL the customer actually hands over, so the two
- * lines are never the same amount twice.
+ * A price moved from one currency's base units to another's, through the SOL
+ * rate — the only ratio the app knows. `null` while a rate it needs is missing,
+ * so a change is refused rather than saved at a guessed price.
  */
-function priceHint(lamports: number): string | null {
-  if (priceUnit.value === 'sol') return fiatHint(lamports)
-  return `${lamportsToSol(lamports)} SOL`
-}
-
-/** A stored price in the shop's unit, as a number for the edit field. */
-function priceInputValue(lamports: number): string {
-  if (priceUnit.value === 'sol') return lamportsToSol(lamports)
-  const rate = rates.value?.[priceUnit.value]
-  // No rate yet: leave it to be typed rather than show a figure in a unit the
-  // seller did not pick.
-  if (!rate) return ''
-  return ((lamports / 1_000_000_000) * rate).toFixed(2)
+function convertPrice(
+  amount: number,
+  from: SupportedCurrency,
+  to: SupportedCurrency
+): number | null {
+  if (from === to) return amount
+  const usd = fiatValueOf(from, amount, rates.value, 'usd')
+  if (usd === null) return null
+  if (to === 'usdc') return Math.max(1, Math.round(usd * 1_000_000))
+  if (to === 'eurc') {
+    const inEur = fiatValueOf('usdc', Math.round(usd * 1_000_000), rates.value, 'eur')
+    return inEur === null ? null : Math.max(1, Math.round(inEur * 1_000_000))
+  }
+  const rate = rates.value?.usd
+  if (!rate) return null
+  return Math.max(1, Math.round((usd / rate) * 1_000_000_000))
 }
 
 async function load() {
@@ -155,6 +140,8 @@ async function load() {
     await loadCategories()
     shopName.value = shop.name
     shopDescription.value = shop.description
+    shopCurrency.value = shop.currency
+    savedCurrency.value = shop.currency
     products.value = shop.products
   } catch (error) {
     loadFailure.value = apiErrorMessage(error, t('shopEditor.loadFailure'))
@@ -163,19 +150,63 @@ async function load() {
   }
 }
 
+function productBody(product: Product, price: number) {
+  return {
+    name: product.name,
+    details: product.details,
+    category: product.category,
+    price_lamports: price
+  }
+}
+
+/**
+ * Saves the shop. Changing the currency changes what every stored price means,
+ * so the catalogue is converted first — in the currency the prices were saved
+ * in — and the shop only starts charging the new one once all of it has moved.
+ * A failure puts back what was already rewritten, so a shop is never half in
+ * one currency and half in the other.
+ */
 async function saveShop() {
-  if (!shopName.value.trim()) return
+  if (!shopName.value.trim() || savingShop.value) return
   savingShop.value = true
   failure.value = ''
+
+  const previous = savedCurrency.value
+  const next = shopCurrency.value
+  const original = [...products.value]
+  const converted: Product[] = []
+
   try {
+    if (next !== previous && products.value.length) {
+      if (!rates.value) throw new Error(t('shopEditor.ratesNeeded'))
+      for (const product of original) {
+        const price = convertPrice(product.price_lamports, previous, next)
+        if (price === null) throw new Error(t('shopEditor.ratesNeeded'))
+        const updated = await api.updateProduct(props.shopId, product.id, productBody(product, price))
+        converted.push(product)
+        products.value = products.value.map(item => (item.id === updated.id ? updated : item))
+      }
+    }
+
     const shop = await api.updateShop(props.shopId, {
       name: shopName.value.trim(),
-      description: shopDescription.value.trim()
+      description: shopDescription.value.trim(),
+      currency: next
     })
     shopName.value = shop.name
     shopDescription.value = shop.description
+    shopCurrency.value = shop.currency
+    savedCurrency.value = shop.currency
   } catch (error) {
-    failure.value = apiErrorMessage(error, t('shopEditor.saveFailure'))
+    // Undo the prices this attempt already rewrote, oldest first.
+    for (const product of converted) {
+      await api.updateProduct(props.shopId, product.id, productBody(product, product.price_lamports))
+        .catch(() => { /* the refresh below shows what the API actually kept */ })
+    }
+    products.value = original
+    failure.value = converted.length
+      ? t('shopEditor.currencyChangeFailure')
+      : apiErrorMessage(error, t('shopEditor.saveFailure'))
   } finally {
     savingShop.value = false
   }
@@ -187,19 +218,28 @@ function resetForm() {
   productDetails.value = ''
   productCategory.value = ''
   productPrice.value = ''
-  // The shop's unit is a setting, not part of the form: clearing the form
-  // leaves it as the seller chose it.
   productFailure.value = ''
 }
 
-/** Editing shows the stored price in SOL: a converted figure could drift. */
-function editProduct(product: Product) {
+function openAdd() {
+  resetForm()
+  formOpen.value = true
+}
+
+/** Editing shows the stored price in the shop's own currency, unconverted. */
+function openEdit(product: Product) {
   editingId.value = product.id
   productName.value = product.name
   productDetails.value = product.details
   productCategory.value = product.category
   productPrice.value = priceInputValue(product.price_lamports)
   productFailure.value = ''
+  formOpen.value = true
+}
+
+function closeForm() {
+  formOpen.value = false
+  resetForm()
 }
 
 async function submitProduct() {
@@ -211,7 +251,7 @@ async function submitProduct() {
       name: productName.value.trim(),
       details: productDetails.value.trim(),
       category: productCategory.value.trim(),
-      price_lamports: priceLamports.value
+      price_lamports: priceBaseUnits.value
     }
     // A heading the seller typed is remembered for this shop, so the next
     // product can pick it from the list instead of typing it again.
@@ -226,7 +266,7 @@ async function submitProduct() {
     } else {
       products.value = [...products.value, await api.createProduct(props.shopId, body)]
     }
-    resetForm()
+    closeForm()
   } catch (error) {
     productFailure.value = apiErrorMessage(error, t('shopEditor.productFailureTitle'))
   } finally {
@@ -244,7 +284,7 @@ async function removeProduct(product: Product) {
   try {
     await api.deleteProduct(props.shopId, product.id)
     products.value = products.value.filter(item => item.id !== product.id)
-    if (editingId.value === product.id) resetForm()
+    if (editingId.value === product.id) closeForm()
   } catch (error) {
     productFailure.value = apiErrorMessage(error, t('shopEditor.productFailureTitle'))
   }
@@ -256,7 +296,6 @@ function productCount(count: number) {
 }
 
 onMounted(() => {
-  priceUnit.value = readPriceUnit()
   void load()
 })
 </script>
@@ -321,15 +360,15 @@ onMounted(() => {
               />
             </UFormField>
 
-            <!-- One currency for the whole menu, chosen with the shop rather
-                 than on every product. -->
+            <!-- One currency for the whole menu, saved with the shop: this is
+                 the money every payment from it is charged in. -->
             <UFormField
               :label="$t('shopEditor.pricesInLabel')"
               :help="$t('shopEditor.pricesInHelp')"
             >
               <USelect
-                v-model="priceUnit"
-                :items="priceUnits"
+                v-model="shopCurrency"
+                :items="currencyOptions"
                 class="w-full sm:w-48"
                 :aria-label="$t('shopEditor.priceUnitAria')"
               />
@@ -366,8 +405,19 @@ onMounted(() => {
               <p class="text-sm text-muted">
                 {{ $t('shopEditor.productsSubtitle') }}
               </p>
+              <p class="text-xs text-muted">
+                {{ $t('shopEditor.pricesInCharged', { currency: unitLabel }) }}
+              </p>
             </div>
-            <span class="text-xs text-muted">{{ $t('shopEditor.pricesInSol') }}</span>
+            <!-- The way to add a product stays at the top of the list: at sixty
+                 products the form at the bottom was a page of scrolling away. -->
+            <UButton
+              :label="$t('shopEditor.addProduct')"
+              icon="i-lucide-plus"
+              size="sm"
+              class="shrink-0"
+              @click="openAdd"
+            />
           </div>
         </template>
 
@@ -402,7 +452,7 @@ onMounted(() => {
               </div>
               <div class="flex shrink-0 items-center gap-1.5">
                 <div class="flex flex-col items-end">
-                  <span class="text-sm tabular-nums">{{ priceLabel(product.price_lamports) }}</span>
+                  <span class="text-sm tabular-nums">{{ priceInCurrency(product.price_lamports, shopCurrency) }}</span>
                   <span
                     v-if="priceHint(product.price_lamports)"
                     class="text-xs text-muted tabular-nums"
@@ -417,7 +467,7 @@ onMounted(() => {
                   size="xs"
                   square
                   :aria-label="$t('shopEditor.editAria', { name: product.name })"
-                  @click="editProduct(product)"
+                  @click="openEdit(product)"
                 />
                 <UButton
                   icon="i-lucide-trash-2"
@@ -438,133 +488,152 @@ onMounted(() => {
             {{ $t('shopEditor.emptyProducts') }}
           </p>
 
-          <div class="flex flex-col gap-3 border-t border-default pt-4">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <UFormField :label="$t('shopEditor.productLabel')">
-                <UInput
-                  v-model="productName"
-                  class="w-full"
-                  :placeholder="$t('shopEditor.productPlaceholder')"
-                  :maxlength="32"
-                />
-              </UFormField>
-              <UFormField :label="$t('shopEditor.priceLabel')">
-                <div class="flex items-center gap-2">
-                  <UInput
-                    v-model="productPrice"
-                    type="number"
-                    min="0"
-                    :step="priceUnit === 'sol' ? '0.001' : '0.01'"
-                    class="min-w-0 flex-1"
-                    :placeholder="$t('shopEditor.pricePlaceholder')"
-                  />
-                  <!-- The unit is the shop's, so it is written here rather than
-                       offered again as a choice on every product. -->
-                  <span class="w-12 shrink-0 text-sm text-muted tabular-nums">{{ unitLabel }}</span>
-                </div>
-              </UFormField>
-              <UFormField
-                :label="$t('shopEditor.categoryLabel')"
-                :help="$t('shopEditor.categoryHelp')"
-                class="sm:col-span-2"
-              >
-                <div class="relative">
-                  <UInput
-                    v-model="productCategory"
-                    class="w-full"
-                    :placeholder="$t('shopEditor.categoryPlaceholder')"
-                    :maxlength="32"
-                    :aria-expanded="categoryOpen"
-                    aria-autocomplete="list"
-                    @focus="categoryOpen = true"
-                    @input="categoryOpen = true"
-                    @keydown.esc="categoryOpen = false"
-                  />
-                  <!-- The shop's own headings, filtered as the seller types, each
-                       with the way to stop suggesting it. -->
-                  <ul
-                    v-if="categoryOpen && categorySuggestions.length"
-                    class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-default bg-default shadow-lg"
-                  >
-                    <li
-                      v-for="name in categorySuggestions"
-                      :key="name"
-                      class="flex items-center justify-between gap-2 px-1"
-                    >
-                      <button
-                        type="button"
-                        class="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm hover:bg-elevated"
-                        @click="pickCategory(name)"
-                      >
-                        {{ name }}
-                      </button>
-                      <UButton
-                        icon="i-lucide-trash-2"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        :aria-label="$t('shopEditor.categoryDelete', { name })"
-                        @click.stop="deleteCategory(name)"
-                      />
-                    </li>
-                  </ul>
-                  <p
-                    v-else-if="categoryOpen"
-                    class="mt-1 text-xs text-muted"
-                  >
-                    {{ $t('shopEditor.categoryNew') }}
-                  </p>
-                </div>
-              </UFormField>
-              <UFormField
-                :label="$t('shopEditor.detailsLabel')"
-                :help="$t('shopEditor.detailsHelp')"
-                class="sm:col-span-2"
-              >
-                <UInput
-                  v-model="productDetails"
-                  class="w-full"
-                  :placeholder="$t('shopEditor.detailsPlaceholder')"
-                  :maxlength="160"
-                />
-              </UFormField>
-            </div>
-
-            <p
-              v-if="priceUnit !== 'sol' && !rates"
-              class="text-xs text-muted"
-            >
-              {{ $t('shopEditor.readingRate') }}
-            </p>
-
-            <UAlert
-              v-if="productFailure"
-              color="error"
-              variant="subtle"
-              icon="i-lucide-circle-alert"
-              :title="$t('shopEditor.productFailureTitle')"
-              :description="productFailure"
-            />
-
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                :label="editingId ? $t('shopEditor.saveChanges') : $t('shopEditor.addProduct')"
-                :icon="editingId ? 'i-lucide-check' : 'i-lucide-plus'"
-                :loading="productBusy"
-                :disabled="!canSubmitProduct"
-                @click="submitProduct"
-              />
-              <UButton
-                v-if="editingId"
-                :label="$t('common.cancel')"
-                color="neutral"
-                variant="ghost"
-                @click="resetForm"
-              />
-            </div>
-          </div>
+          <UAlert
+            v-if="productFailure && !formOpen"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="$t('shopEditor.productFailureTitle')"
+            :description="productFailure"
+          />
         </div>
       </UCard>
     </template>
+
+    <!-- One product at a time, in a sheet over the list: adding or editing
+         never pushes the catalogue down, and closing it loses nothing. -->
+    <UModal
+      v-model:open="formOpen"
+      :title="editingId ? $t('shopEditor.editProductTitle') : $t('shopEditor.addProductTitle')"
+    >
+      <template #body>
+        <div class="flex flex-col gap-3">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <UFormField :label="$t('shopEditor.productLabel')">
+              <UInput
+                v-model="productName"
+                class="w-full"
+                :placeholder="$t('shopEditor.productPlaceholder')"
+                :maxlength="32"
+              />
+            </UFormField>
+            <UFormField :label="$t('shopEditor.priceLabel')">
+              <div class="flex items-center gap-2">
+                <UInput
+                  v-model="productPrice"
+                  type="number"
+                  min="0"
+                  :step="shopCurrency === 'sol' ? '0.001' : '0.01'"
+                  class="min-w-0 flex-1"
+                  :placeholder="$t('shopEditor.pricePlaceholder')"
+                />
+                <!-- The unit is the shop's, so it is written here rather than
+                     offered again as a choice on every product. -->
+                <span class="w-12 shrink-0 text-sm text-muted tabular-nums">{{ unitLabel }}</span>
+              </div>
+            </UFormField>
+            <UFormField
+              :label="$t('shopEditor.categoryLabel')"
+              :help="$t('shopEditor.categoryHelp')"
+              class="sm:col-span-2"
+            >
+              <div class="relative">
+                <UInput
+                  v-model="productCategory"
+                  class="w-full"
+                  :placeholder="$t('shopEditor.categoryPlaceholder')"
+                  :maxlength="32"
+                  :aria-expanded="categoryOpen"
+                  aria-autocomplete="list"
+                  @focus="categoryOpen = true"
+                  @input="categoryOpen = true"
+                  @keydown.esc="categoryOpen = false"
+                />
+                <!-- The shop's own headings, filtered as the seller types, each
+                     with the way to stop suggesting it. -->
+                <ul
+                  v-if="categoryOpen && categorySuggestions.length"
+                  class="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-default bg-default shadow-lg"
+                >
+                  <li
+                    v-for="name in categorySuggestions"
+                    :key="name"
+                    class="flex items-center justify-between gap-2 px-1"
+                  >
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 truncate px-2 py-2 text-left text-sm hover:bg-elevated"
+                      @click="pickCategory(name)"
+                    >
+                      {{ name }}
+                    </button>
+                    <UButton
+                      icon="i-lucide-trash-2"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      :aria-label="$t('shopEditor.categoryDelete', { name })"
+                      @click.stop="deleteCategory(name)"
+                    />
+                  </li>
+                </ul>
+                <p
+                  v-else-if="categoryOpen"
+                  class="mt-1 text-xs text-muted"
+                >
+                  {{ $t('shopEditor.categoryNew') }}
+                </p>
+              </div>
+            </UFormField>
+            <UFormField
+              :label="$t('shopEditor.detailsLabel')"
+              :help="$t('shopEditor.detailsHelp')"
+              class="sm:col-span-2"
+            >
+              <UInput
+                v-model="productDetails"
+                class="w-full"
+                :placeholder="$t('shopEditor.detailsPlaceholder')"
+                :maxlength="160"
+              />
+            </UFormField>
+          </div>
+
+          <p
+            v-if="shopCurrency !== 'sol' && !rates"
+            class="text-xs text-muted"
+          >
+            {{ $t('shopEditor.readingRate') }}
+          </p>
+
+          <UAlert
+            v-if="productFailure"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="$t('shopEditor.productFailureTitle')"
+            :description="productFailure"
+          />
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton
+            :label="$t('common.cancel')"
+            color="neutral"
+            variant="ghost"
+            @click="closeForm"
+          />
+          <UButton
+            :label="editingId ? $t('shopEditor.saveChanges') : $t('shopEditor.addProduct')"
+            :icon="editingId ? 'i-lucide-check' : 'i-lucide-plus'"
+            :loading="productBusy"
+            :disabled="!canSubmitProduct"
+            @click="submitProduct"
+          />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

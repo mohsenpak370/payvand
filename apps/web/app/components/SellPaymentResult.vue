@@ -126,8 +126,11 @@ const {
             class="flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm"
           >
             <span class="min-w-0 break-words">{{ item.quantity }} × {{ item.name }}</span>
+            <!-- Each line is priced in the invoice's own unit, which for a
+                 shop in EURC is EURC, not the SOL the line's field is named
+                 after. -->
             <span class="shrink-0 text-muted tabular-nums">
-              {{ lamportsToSol(item.amount_lamports * item.quantity) }} SOL
+              {{ priceInCurrency(item.amount_lamports * item.quantity, record.options?.[0]?.currency ?? 'sol') }}
             </span>
           </li>
         </ul>
@@ -153,7 +156,7 @@ const {
           {{ t('sell.percentOff', { percent: record.discount.percent_off }) }}
         </UBadge>
         <UBadge
-          v-if="paidCode && record.amount_lamports > 0"
+          v-if="paidCode && savedLabel"
           color="success"
           variant="subtle"
         >

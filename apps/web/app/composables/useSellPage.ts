@@ -2,8 +2,14 @@ import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
 export function useSellPage(shopId?: string) {
   const { cluster } = useRuntimeConfig().public
-  const { shopsEnabled } = useShopPreference()
   const subscription = useSubscription()
+
+  /**
+   * Whether this page was opened for one shop. Its menu, its codes and its card
+   * designs are that page's features; the plain payment page prices one typed
+   * amount and shows nothing from the shop feature at all.
+   */
+  const shopScoped = computed(() => Boolean(shopId))
 
   const discountCodes = useSellDiscountCodes()
 
@@ -15,7 +21,7 @@ export function useSellPage(shopId?: string) {
   const shopsActivated = ref(false)
 
   async function loadActivation(): Promise<void> {
-    if (!shopsEnabled.value) return
+    if (!shopScoped.value) return
     try {
       shopsActivated.value = (await subscription.status()).active
     } catch {
@@ -34,7 +40,6 @@ export function useSellPage(shopId?: string) {
 
   const invoiceForm = useSellInvoiceForm({
     cluster,
-    shopsEnabled,
     shopId,
     selectedDiscount: discountCodes.selectedDiscount,
     allowDiscounts: discountCodes.allowDiscounts,
@@ -47,7 +52,7 @@ export function useSellPage(shopId?: string) {
 
   return buildSellPage({
     cluster,
-    shopsEnabled,
+    shopScoped,
     shopsActivated,
     loadActivation,
     discountCodes,
@@ -58,19 +63,23 @@ export function useSellPage(shopId?: string) {
 
 function buildSellPage(state: {
   cluster: string
-  shopsEnabled: Ref<boolean>
+  shopScoped: Ref<boolean>
   shopsActivated: Ref<boolean>
   loadActivation: () => Promise<void>
   discountCodes: ReturnType<typeof useSellDiscountCodes>
   invoiceForm: ReturnType<typeof useSellInvoiceForm>
   paymentResult: ReturnType<typeof useSellPaymentResult>
 }) {
-  const { cluster, shopsEnabled, shopsActivated, loadActivation, discountCodes, invoiceForm, paymentResult } = state
+  const { cluster, shopScoped, shopsActivated, loadActivation, discountCodes, invoiceForm, paymentResult } = state
 
   onMounted(() => {
-    void discountCodes.loadDiscounts()
+    // The seller's codes and the shop's subscription are only read where they
+    // are shown; the plain payment page asks for neither.
+    if (shopScoped.value) {
+      void discountCodes.loadDiscounts()
+      void loadActivation()
+    }
     void invoiceForm.loadShop()
-    void loadActivation()
   })
 
   function reset() {
@@ -80,7 +89,7 @@ function buildSellPage(state: {
 
   return {
     cluster,
-    shopsEnabled,
+    // `shopScoped` rides along with the form's own state.
     shopsActivated,
     ...discountCodes,
     ...invoiceForm,

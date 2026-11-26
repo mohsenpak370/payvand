@@ -75,6 +75,7 @@ const SCHEMA: &[&str] = &[
         user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
+        currency    TEXT NOT NULL DEFAULT 'sol',
         created_at  INTEGER NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS shops_user_id_idx ON shops(user_id)",
@@ -258,6 +259,7 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
         eprintln!("[db] migrate statement {} ok", i + 1);
     }
     migrate_shops_to_a_list(connection).await?;
+    migrate_shop_currency(connection).await?;
     migrate_saved_codes_to_shops(connection).await?;
     migrate_settlements_to_wallets(connection).await?;
     migrate_invoice_columns(connection).await?;
@@ -363,6 +365,22 @@ async fn migrate_shops_to_a_list(connection: &libsql::Connection) -> Result<(), 
         )
         .await?;
 
+    Ok(())
+}
+
+/// A shop prices its menu in one currency, chosen with the shop rather than on
+/// every product. The column is additive: a shop created before it charges in
+/// SOL, which is exactly what its stored prices already mean.
+async fn migrate_shop_currency(connection: &libsql::Connection) -> Result<(), DbError> {
+    if !has_column(connection, "shops", "currency").await? {
+        connection
+            .execute(
+                "ALTER TABLE shops ADD COLUMN currency TEXT NOT NULL DEFAULT 'sol'",
+                (),
+            )
+            .await?;
+        eprintln!("[db] migrate: added shops.currency");
+    }
     Ok(())
 }
 

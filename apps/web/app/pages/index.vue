@@ -13,7 +13,7 @@ const ctaTitle = computed(() =>
 
 const heroLinks = computed<ButtonProps[]>(() => [{
   label: t('home.hero.createCta'),
-  to: '/sell',
+  to: '/payment',
   icon: 'i-lucide-qr-code',
   size: 'xl'
 }, {
@@ -94,7 +94,7 @@ const faqs = computed(() => Array.from({ length: FAQ_COUNT }, (_, index) => ({
 
 const ctaLinks = computed<ButtonProps[]>(() => [{
   label: t('home.cta.startSelling'),
-  to: '/sell',
+  to: '/payment',
   icon: 'i-lucide-arrow-right'
 }, {
   // The way in for someone who has never held a wallet: one page with the

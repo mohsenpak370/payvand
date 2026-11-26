@@ -75,7 +75,7 @@ const SESSION_CHECK_TIMEOUT_MS = 5000
 /** Mirrors `MIN_PASSWORD_LEN` in the Axum API. */
 export const MIN_PASSWORD_LENGTH = 8
 
-/** Only allows same-origin style paths (`/sell`, not `//evil.com`). */
+/** Only allows same-origin style paths (`/payment`, not `//evil.com`). */
 export function safeNextPath(value: unknown): string {
   if (typeof value !== 'string') return '/'
   if (!value.startsWith('/') || value.startsWith('//')) return '/'

@@ -71,7 +71,10 @@ export default defineNuxtConfig({
     '/privacy': { prerender: true },
     // Both flows talk to a connected wallet and a camera, so they only make
     // sense in the browser. The Solana plugin is client-only.
-    '/sell': { ssr: false },
+    '/payment': { ssr: false },
+    // The page was /sell before it was named for what it does, so links already
+    // shared for it still land on the form.
+    '/sell': { redirect: { to: '/payment', statusCode: 301 } },
     // The checkout is the scan target now, and it is as client-only as /pay:
     // it reads the invoice from the URL, the wallet and the allowance.
     '/p/**': { ssr: false },
@@ -153,8 +156,8 @@ export default defineNuxtConfig({
         target: 'http://127.0.0.1:8787/api/waitlist',
         changeOrigin: true
       },
-      // The seller's shops and their products, read by /profile, the shop
-      // pages and /sell.
+      // The seller's shops and their products, read by /profile and the shop
+      // pages.
       '/api/shops': {
         target: 'http://127.0.0.1:8787/api/shops',
         changeOrigin: true

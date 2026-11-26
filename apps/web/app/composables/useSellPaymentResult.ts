@@ -53,8 +53,12 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
 
   /** What a carried discount code took off, in the currency this code charges. */
   const savedLabel = computed(() => {
-    const currency = record.value?.options?.[0]?.currency ?? options.priceCurrency.value
-    const saved = priceLamports.value - (record.value?.amount_lamports ?? 0)
+    const option = record.value?.options?.[0]
+    const currency = option?.currency ?? options.priceCurrency.value
+    // The invoice's own price, in its own base units: a token invoice keeps its
+    // amount in `options`, while `amount_lamports` is zero for it.
+    const total = option?.amount ?? record.value?.amount_lamports ?? 0
+    const saved = priceLamports.value - total
     return saved > 0 ? priceLabel({ currency, amount: saved }) : ''
   })
 

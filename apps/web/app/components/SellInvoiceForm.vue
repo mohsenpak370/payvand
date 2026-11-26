@@ -10,7 +10,7 @@ const { t } = useI18n()
 
 const {
   cluster,
-  shopsEnabled,
+  shopScoped,
   hasProducts,
   shops,
   cart,
@@ -60,7 +60,7 @@ const {
 
     <div class="flex flex-col gap-4">
       <UFormField
-        v-if="shopsEnabled && hasProducts"
+        v-if="shopScoped && hasProducts"
         :label="t('sell.pricingLabel')"
       >
         <URadioGroup
@@ -70,7 +70,7 @@ const {
       </UFormField>
 
       <ProductPicker
-        v-if="shopsEnabled && sellingFromShops"
+        v-if="sellingFromShops"
         v-model="cart"
         :shops="shops"
       />
