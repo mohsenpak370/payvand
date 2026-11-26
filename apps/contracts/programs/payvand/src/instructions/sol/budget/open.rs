@@ -1,7 +1,8 @@
-//! The wallet-signed half of the allowance: fund it (or top it up) and close it.
+//! Opening (or topping up) the SOL allowance: the one wallet signature a buyer
+//! makes for it.
 //!
-//! No invoices are touched here. Opening registers the session key and tops the
-//! pot up to this month's limit; closing returns whatever is left to the buyer.
+//! No invoice is touched here. The buyer registers the session key, gives it
+//! its fee float, and tops the pot up to the monthly limit.
 
 use anchor_lang::prelude::*;
 
@@ -120,24 +121,5 @@ pub fn open_budget_handler<'info, 'ctx>(
         mint: Pubkey::default(),
         monthly_limit,
     });
-    Ok(())
-}
-
-#[derive(Accounts)]
-pub struct CloseBudget<'info> {
-    #[account(
-        mut,
-        close = buyer,
-        seeds = [BUDGET_SEED, buyer.key().as_ref()],
-        bump = budget.bump
-    )]
-    pub budget: Account<'info, Budget>,
-
-    #[account(mut)]
-    pub buyer: Signer<'info>,
-}
-
-pub fn close_budget_handler<'info, 'ctx>(_ctx: Context<'ctx, CloseBudget<'info>>) -> Result<()> {
-    msg!("budget closed; remaining lamports returned to the buyer");
     Ok(())
 }
