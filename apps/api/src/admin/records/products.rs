@@ -20,6 +20,8 @@ pub struct AdminProduct {
     pub category: String,
     /// In the shop's currency's base units.
     pub price_lamports: u64,
+    /// The shop's currency (`sol`, `usdc` or `eurc`), so the price can be read.
+    pub currency: String,
     pub created_at: i64,
 }
 
@@ -66,7 +68,7 @@ pub async fn list_products(
     };
 
     let select = "SELECT p.id, s.name, u.email, p.name, p.details, p.category, \
-        p.price_lamports, p.created_at \
+        p.price_lamports, p.created_at, s.currency \
         FROM products p JOIN shops s ON s.id = p.shop_id JOIN users u ON u.id = p.user_id";
     let mut rows = match &pattern {
         Some(pattern) => {
@@ -101,6 +103,7 @@ pub async fn list_products(
             price_lamports: u64::try_from(price)
                 .map_err(|_| ApiError::Internal("stored price out of range".into()))?,
             created_at: row.get(7).map_err(auth::internal)?,
+            currency: row.get(8).map_err(auth::internal)?,
         });
     }
 

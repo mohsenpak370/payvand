@@ -50,6 +50,64 @@ export interface WaitlistPage {
   total: number
 }
 
+/** Which deployment account a chain row describes. */
+export type ChainAccountKey = 'program' | 'program_data' | 'config' | 'treasury' | 'faucet' | 'sponsor'
+
+/** One account the deployment depends on, read live from the cluster. */
+export interface ChainAccount {
+  key: ChainAccountKey
+  address: string
+  exists: boolean
+  lamports: number
+  data_len: number
+  /** What the account must hold to stay rent-exempt at its current size. */
+  rent_exempt_lamports: number
+  owner: string | null
+  executable: boolean
+  /** USDC/EURC held in its token accounts; a `null` amount is no token account. */
+  tokens: { usdc_base_units: number | null, eurc_base_units: number | null } | null
+}
+
+/** A key the server holds that spends money: the faucet or the fee sponsor. */
+export interface ServerWallet {
+  key: 'faucet' | 'sponsor'
+  configured: boolean
+  account: ChainAccount | null
+}
+
+export interface ChainOverview {
+  cluster: string
+  program: { last_deploy_slot: number | null, upgrade_authority: string | null }
+  accounts: ChainAccount[]
+  wallets: ServerWallet[]
+  faucet_sol_lamports: number
+  faucet_token_base_units: number
+  faucet_enabled: boolean
+  sponsor_settle_lamports: number
+  read_at: number
+}
+
+/** One starter-token claim. An empty signature is a claim still being sent. */
+export interface Airdrop {
+  user_id: string
+  email: string
+  wallet: string
+  cluster: string
+  sol_lamports: number
+  token_base_units: number
+  signature: string
+  claimed_at: number
+}
+
+export interface AirdropPage {
+  items: Airdrop[]
+  total: number
+  limit: number
+  offset: number
+  total_sol_lamports: number
+  total_token_base_units: number
+}
+
 /** One shop in the admin's records table. */
 export interface AdminShop {
   id: string
@@ -69,7 +127,10 @@ export interface AdminProduct {
   name: string
   details: string
   category: string
+  /** In the shop currency's base units: lamports for SOL, atoms for a stablecoin. */
   price_lamports: number
+  /** The shop's currency, which the price is counted in. */
+  currency: string
   created_at: number
 }
 
@@ -126,6 +187,21 @@ export function useAdminApi() {
     return await $fetch<PaymentsPage>(`${base}/api/admin/payments`, {
       headers: authHeaders(),
       query: { limit }
+    })
+  }
+
+  /** Program accounts, their rent, and the server wallets' balances — an RPC read. */
+  async function fetchChain(): Promise<ChainOverview> {
+    return await $fetch<ChainOverview>(`${base}/api/admin/chain`, {
+      headers: authHeaders()
+    })
+  }
+
+  /** The faucet's claims, newest first, with what it has sent in total. */
+  async function fetchAirdrops(limit: number, offset: number): Promise<AirdropPage> {
+    return await $fetch<AirdropPage>(`${base}/api/admin/airdrops`, {
+      headers: authHeaders(),
+      query: { limit, offset }
     })
   }
 
@@ -230,6 +306,8 @@ export function useAdminApi() {
     deleteProduct,
     deleteCode,
     fetchPayments,
+    fetchChain,
+    fetchAirdrops,
     fetchWaitlist,
     removeWaitlistEntry,
     deleteUser

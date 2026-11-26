@@ -1,13 +1,14 @@
+use super::airdrops::{DEFAULT_AIRDROP_PAGE, MAX_AIRDROP_PAGE};
 use super::records::{
     list_codes, list_products, list_shops, update_product, update_shop, ProductEdit, RecordQuery,
     ShopEdit,
 };
 use super::{
-    delete_user,
+    airdrops, delete_user,
     feed::shape_feed,
     is_admin, list_payments, list_users, require_admin, scalar, stats,
     users::{DEFAULT_PAGE, MAX_PAGE},
-    PaymentListQuery, UserListQuery,
+    AirdropQuery, PaymentListQuery, UserListQuery,
 };
 use crate::auth::{random_id, ForgotPasswordRequest, SignupRequest};
 use crate::payments::{ApiError, PaymentRecord, PaymentStatus};
@@ -214,6 +215,9 @@ async fn admin_gate_stats_search_and_delete() {
         products.0.total, 1,
         "orphaned product must not inflate total"
     );
+    // The price is in the shop's currency, so the row says which one.
+    assert_eq!(products.0.items[0].currency, "sol");
+    assert_eq!(products.0.items[0].price_lamports, 12_000_000);
     let codes = list_codes(
         StateExtractor(state.clone()),
         admin_headers.clone(),
@@ -483,6 +487,78 @@ async fn admin_gate_stats_search_and_delete() {
         .expect("count")
             >= 1
     );
+
+    // The faucet's claims: newest first, with what reached the cluster summed
+    // and a claim still in flight listed but not counted.
+    let connection = state.db.connect().expect("connect");
+    let boss_row = text_field(
+        &state,
+        "SELECT id FROM users WHERE email = 'boss@example.com'",
+    )
+    .await;
+    let temp_row = text_field(
+        &state,
+        "SELECT id FROM users WHERE email = 'temp@example.com'",
+    )
+    .await;
+    connection
+        .execute(
+            "INSERT INTO faucet_claims VALUES (?1, 'WalletA', 'devnet', 1000000000, 10000000, 'SigA', 100)",
+            [boss_row.as_str()],
+        )
+        .await
+        .expect("claim");
+    connection
+        .execute(
+            "INSERT INTO faucet_claims VALUES (?1, 'WalletB', 'devnet', 1000000000, 10000000, '', 200)",
+            [temp_row.as_str()],
+        )
+        .await
+        .expect("pending claim");
+    let drops = airdrops(
+        StateExtractor(state.clone()),
+        admin_headers.clone(),
+        QueryExtractor(AirdropQuery {
+            limit: None,
+            offset: None,
+        }),
+    )
+    .await
+    .expect("airdrops")
+    .0;
+    assert_eq!(drops.total, 2);
+    assert_eq!(drops.limit, DEFAULT_AIRDROP_PAGE);
+    assert_eq!(drops.items[0].email, "temp@example.com");
+    assert_eq!(drops.items[0].signature, "");
+    assert_eq!(drops.items[1].wallet, "WalletA");
+    assert_eq!(drops.total_sol_lamports, 1_000_000_000);
+    assert_eq!(drops.total_token_base_units, 10_000_000);
+    let paged = airdrops(
+        StateExtractor(state.clone()),
+        admin_headers.clone(),
+        QueryExtractor(AirdropQuery {
+            limit: Some(1_000),
+            offset: Some(1),
+        }),
+    )
+    .await
+    .expect("paged airdrops")
+    .0;
+    assert_eq!(paged.limit, MAX_AIRDROP_PAGE);
+    assert_eq!(paged.items.len(), 1);
+    assert_eq!(paged.items[0].signature, "SigA");
+    // The earlier non-admin account is gone by now, so a fresh one asks.
+    let outsider = bearer(&signup(&state, "outsider@example.com").await);
+    let refused = airdrops(
+        StateExtractor(state.clone()),
+        outsider,
+        QueryExtractor(AirdropQuery {
+            limit: None,
+            offset: None,
+        }),
+    )
+    .await;
+    assert!(matches!(refused, Err(ApiError::Forbidden(_))));
 
     std::env::remove_var("ADMIN_EMAILS");
     let _ = std::fs::remove_file(path);

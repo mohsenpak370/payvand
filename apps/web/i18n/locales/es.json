@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Supervisión de la plataforma: cuentas, sesiones activas, códigos de descuento y la lista de espera.",
+    "description": "Supervisión de la plataforma: cuentas, tiendas y sus registros, pagos, las cuentas on-chain del programa y el faucet de tokens iniciales.",
     "forbiddenTitle": "Sin acceso de admin",
     "forbiddenDescription": "Esta cuenta no aparece en el ajuste ADMIN_EMAILS de la API, así que los endpoints de admin responden 403. Añade la dirección ahí (y vuelve a desplegar) para dar acceso.",
     "stats": {
@@ -196,6 +196,121 @@
       "range": "{from}–{to} de {total} cuentas",
       "previous": "Anterior",
       "next": "Siguiente"
+    },
+    "tabs": {
+      "overview": "Resumen",
+      "accounts": "Cuentas",
+      "records": "Registros",
+      "payments": "Pagos",
+      "chain": "Cadena",
+      "airdrops": "Airdrops"
+    },
+    "address": {
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "explorer": "Abrir en Solana Explorer"
+    },
+    "chain": {
+      "title": "Cuentas del programa",
+      "fallback": "Leído en vivo del clúster",
+      "readAt": "{cluster} · leído {time}",
+      "errorTitle": "Clúster no disponible",
+      "loadFailure": "No se pudieron leer las cuentas del programa desde el clúster.",
+      "upgradeAuthority": "Autoridad de actualización",
+      "immutable": "Ninguna: el programa es inmutable",
+      "lastDeploy": "Último despliegue en el slot",
+      "account": "Cuenta",
+      "address": "Dirección",
+      "size": "Tamaño",
+      "balance": "Saldo",
+      "rent": "Mínimo exento de renta",
+      "status": "Estado",
+      "bytes": "{count} bytes",
+      "aboveRent": "{amount} SOL por encima de la renta",
+      "missing": "No existe",
+      "rentExempt": "Exenta de renta",
+      "belowRent": "Por debajo de la renta",
+      "names": {
+        "program": "Programa Payvand",
+        "program_data": "Datos del programa",
+        "config": "Config",
+        "treasury": "Tesorería",
+        "faucet": "Monedero de airdrops",
+        "sponsor": "Patrocinador de comisiones"
+      },
+      "about": {
+        "program": "La cuenta ejecutable a la que llama la app.",
+        "program_data": "Guarda los bytes del programa y su autoridad de actualización.",
+        "config": "La política de comisiones que lee cada liquidación.",
+        "treasury": "Recibe las comisiones del protocolo y paga la renta de los recibos.",
+        "faucet": "Envía a cada cuenta nueva sus SOL, USDC y EURC iniciales.",
+        "sponsor": "Paga la comisión de red y la renta de los registros de las liquidaciones patrocinadas."
+      }
+    },
+    "wallets": {
+      "title": "Monederos del servidor",
+      "claimsLeft": "Alcanza para {count} solicitud más | Alcanza para {count} solicitudes más",
+      "settlesLeft": "Alcanza para {count} liquidación patrocinada más | Alcanza para {count} liquidaciones patrocinadas más",
+      "perClaim": "Cada solicitud envía {sol} SOL, {tokens} USDC y {tokens} EURC.",
+      "perSettle": "Cada liquidación adelanta hasta {sol} SOL; las rentas le vuelven.",
+      "faucetOff": "Este clúster no reparte tokens iniciales, así que el faucet está inactivo.",
+      "unset": {
+        "faucet": "FAUCET_KEYPAIR no está configurado en este servidor, así que no se pueden enviar tokens iniciales.",
+        "sponsor": "SPONSOR_KEYPAIR no está configurado en este servidor, así que no se puede patrocinar ninguna liquidación."
+      }
+    },
+    "airdrops": {
+      "title": "Airdrops",
+      "fallback": "Tokens iniciales enviados por el faucet",
+      "summary": "{count} solicitud · {sol} SOL y {tokens} de cada stablecoin enviados | {count} solicitudes · {sol} SOL y {tokens} de cada stablecoin enviados",
+      "errorTitle": "Airdrops",
+      "loadFailure": "No se pudo leer la lista de airdrops.",
+      "empty": "Ninguna cuenta ha pedido aún sus tokens iniciales.",
+      "wallet": "Monedero",
+      "transaction": "Transacción",
+      "pending": "Enviando",
+      "range": "{from}–{to} de {total} solicitudes"
+    },
+    "records": {
+      "kinds": {
+        "shops": "Tiendas",
+        "products": "Productos",
+        "codes": "Códigos de descuento"
+      },
+      "searchPlaceholder": {
+        "shops": "Buscar por nombre de tienda o propietario…",
+        "products": "Buscar por producto, tienda o propietario…",
+        "codes": "Buscar por código o propietario…"
+      },
+      "loadFailure": "No se pudieron cargar los registros.",
+      "deleteFailure": "No se pudo eliminar ese registro.",
+      "saveFailure": "No se pudo guardar el cambio.",
+      "confirm": {
+        "shops": "¿Eliminar la tienda {name}?\n\nSus productos y categorías se eliminan con ella. Los pagos ya hechos conservan sus recibos. No se puede deshacer.",
+        "products": "¿Eliminar el producto {name}?\n\nNo se puede deshacer.",
+        "codes": "¿Eliminar el código de descuento {name}?\n\nLos compradores ya no podrán usarlo. No se puede deshacer."
+      },
+      "empty": "Ningún registro coincide.",
+      "shop": "Tienda",
+      "owner": "Propietario",
+      "currency": "Moneda",
+      "productCount": "Productos",
+      "created": "Creado",
+      "product": "Producto",
+      "category": "Categoría",
+      "price": "Precio",
+      "code": "Código",
+      "percentOff": "Descuento",
+      "range": "{from}–{to} de {total}",
+      "edit": "Editar",
+      "editShop": "Editar tienda",
+      "editProduct": "Editar producto",
+      "name": "Nombre",
+      "description": "Descripción",
+      "details": "Detalles",
+      "badPrice": "Introduce un precio mayor que 0, sin más decimales de los que tiene la moneda.",
+      "cancel": "Cancelar",
+      "save": "Guardar"
     }
   },
   "authLayout": {

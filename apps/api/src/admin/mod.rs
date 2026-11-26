@@ -9,6 +9,8 @@
 //! Endpoint groups live in submodules; the public paths (`admin::stats`,
 //! `admin::list_shops`, …) stay the same through the re-exports below.
 
+mod airdrops;
+mod chain;
 mod feed;
 mod records;
 mod users;
@@ -17,6 +19,8 @@ mod waitlist;
 #[cfg(test)]
 mod tests;
 
+pub use airdrops::{airdrops, Airdrop, AirdropPage, AirdropQuery};
+pub use chain::{chain, ChainAccount, ChainOverview, ProgramInfo, ServerWallet, TokenBalances};
 pub use feed::{list_payments, AdminPayment, PaymentListQuery, PaymentsPage};
 pub use records::*;
 pub use users::{delete_user, list_users, stats, AdminUser, Stats, UserListQuery, UserPage};

@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Plattformaufsicht: Konten, aktive Sitzungen, Rabattcodes und die Warteliste.",
+    "description": "Plattformaufsicht: Konten, Shops und ihre Datensätze, Zahlungen, die On-Chain-Konten des Programms und der Startguthaben-Faucet.",
     "forbiddenTitle": "Kein Admin-Zugriff",
     "forbiddenDescription": "Dieses Konto steht nicht in der Einstellung ADMIN_EMAILS der API, deshalb antworten die Admin-Endpunkte mit 403. Trag die Adresse dort ein (und deploye neu), um Zugriff zu geben.",
     "stats": {
@@ -196,6 +196,121 @@
       "range": "{from}–{to} von {total} Konten",
       "previous": "Zurück",
       "next": "Weiter"
+    },
+    "tabs": {
+      "overview": "Übersicht",
+      "accounts": "Konten",
+      "records": "Datensätze",
+      "payments": "Zahlungen",
+      "chain": "Chain",
+      "airdrops": "Airdrops"
+    },
+    "address": {
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "explorer": "Im Solana Explorer öffnen"
+    },
+    "chain": {
+      "title": "Programmkonten",
+      "fallback": "Live aus dem Cluster gelesen",
+      "readAt": "{cluster} · gelesen {time}",
+      "errorTitle": "Cluster nicht erreichbar",
+      "loadFailure": "Die Programmkonten konnten nicht aus dem Cluster gelesen werden.",
+      "upgradeAuthority": "Upgrade-Berechtigung",
+      "immutable": "Keine — das Programm ist unveränderlich",
+      "lastDeploy": "Zuletzt bereitgestellt in Slot",
+      "account": "Konto",
+      "address": "Adresse",
+      "size": "Größe",
+      "balance": "Guthaben",
+      "rent": "Mietfreies Minimum",
+      "status": "Status",
+      "bytes": "{count} Bytes",
+      "aboveRent": "{amount} SOL über der Miete",
+      "missing": "Fehlt",
+      "rentExempt": "Mietfrei",
+      "belowRent": "Unter der Miete",
+      "names": {
+        "program": "Payvand-Programm",
+        "program_data": "Programmdaten",
+        "config": "Config",
+        "treasury": "Treasury",
+        "faucet": "Airdrop-Wallet",
+        "sponsor": "Gebühren-Sponsor"
+      },
+      "about": {
+        "program": "Das ausführbare Konto, das die App aufruft.",
+        "program_data": "Enthält die Bytes des Programms und seine Upgrade-Berechtigung.",
+        "config": "Die Gebührenregel, die jede Abrechnung liest.",
+        "treasury": "Sammelt die Protokollgebühren und zahlt die Miete der Belege.",
+        "faucet": "Schickt jedem neuen Konto sein Start-SOL, -USDC und -EURC.",
+        "sponsor": "Zahlt Netzwerkgebühr und Datensatzmiete gesponserter Abrechnungen."
+      }
+    },
+    "wallets": {
+      "title": "Server-Wallets",
+      "claimsLeft": "Reicht für {count} weitere Anforderung | Reicht für {count} weitere Anforderungen",
+      "settlesLeft": "Reicht für {count} weitere gesponserte Abrechnung | Reicht für {count} weitere gesponserte Abrechnungen",
+      "perClaim": "Eine Anforderung sendet {sol} SOL, {tokens} USDC und {tokens} EURC.",
+      "perSettle": "Eine Abrechnung streckt bis zu {sol} SOL vor; die Mieten fließen zurück.",
+      "faucetOff": "Dieser Cluster verteilt kein Startguthaben, der Faucet ruht also.",
+      "unset": {
+        "faucet": "FAUCET_KEYPAIR ist auf diesem Server nicht gesetzt, daher kann kein Startguthaben gesendet werden.",
+        "sponsor": "SPONSOR_KEYPAIR ist auf diesem Server nicht gesetzt, daher kann keine Abrechnung gesponsert werden."
+      }
+    },
+    "airdrops": {
+      "title": "Airdrops",
+      "fallback": "Vom Faucet gesendetes Startguthaben",
+      "summary": "{count} Anforderung · {sol} SOL und je {tokens} Stablecoin gesendet | {count} Anforderungen · {sol} SOL und je {tokens} Stablecoin gesendet",
+      "errorTitle": "Airdrops",
+      "loadFailure": "Die Airdrop-Liste konnte nicht gelesen werden.",
+      "empty": "Noch kein Konto hat Startguthaben angefordert.",
+      "wallet": "Wallet",
+      "transaction": "Transaktion",
+      "pending": "Wird gesendet",
+      "range": "{from}–{to} von {total} Anforderungen"
+    },
+    "records": {
+      "kinds": {
+        "shops": "Shops",
+        "products": "Produkte",
+        "codes": "Rabattcodes"
+      },
+      "searchPlaceholder": {
+        "shops": "Nach Shopname oder Inhaber suchen…",
+        "products": "Nach Produkt, Shop oder Inhaber suchen…",
+        "codes": "Nach Code oder Inhaber suchen…"
+      },
+      "loadFailure": "Die Datensätze konnten nicht geladen werden.",
+      "deleteFailure": "Dieser Datensatz konnte nicht gelöscht werden.",
+      "saveFailure": "Die Änderung konnte nicht gespeichert werden.",
+      "confirm": {
+        "shops": "Den Shop {name} löschen?\n\nSeine Produkte und Kategorien werden mitgelöscht. Bereits geleistete Zahlungen behalten ihre Belege. Das lässt sich nicht rückgängig machen.",
+        "products": "Das Produkt {name} löschen?\n\nDas lässt sich nicht rückgängig machen.",
+        "codes": "Den Rabattcode {name} löschen?\n\nKäufer können ihn dann nicht mehr verwenden. Das lässt sich nicht rückgängig machen."
+      },
+      "empty": "Keine passenden Datensätze.",
+      "shop": "Shop",
+      "owner": "Inhaber",
+      "currency": "Währung",
+      "productCount": "Produkte",
+      "created": "Erstellt",
+      "product": "Produkt",
+      "category": "Kategorie",
+      "price": "Preis",
+      "code": "Code",
+      "percentOff": "Rabatt",
+      "range": "{from}–{to} von {total}",
+      "edit": "Bearbeiten",
+      "editShop": "Shop bearbeiten",
+      "editProduct": "Produkt bearbeiten",
+      "name": "Name",
+      "description": "Beschreibung",
+      "details": "Details",
+      "badPrice": "Gib einen Preis über 0 ein, mit nicht mehr Nachkommastellen, als die Währung hat.",
+      "cancel": "Abbrechen",
+      "save": "Speichern"
     }
   },
   "authLayout": {

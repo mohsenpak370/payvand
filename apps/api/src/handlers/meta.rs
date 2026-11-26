@@ -214,6 +214,8 @@ mod tests {
         }
         for path in [
             "/api/admin/payments",
+            "/api/admin/chain",
+            "/api/admin/airdrops",
             "/api/admin/waitlist",
             "/api/admin/waitlist/{email}",
         ] {
