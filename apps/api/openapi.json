@@ -199,6 +199,82 @@
           "endpoint": { "type": "string" }
         }
       },
+      "ChainAccount": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string", "enum": ["program", "program_data", "config", "treasury", "faucet", "sponsor"] },
+          "address": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "lamports": { "type": "integer" },
+          "data_len": { "type": "integer" },
+          "rent_exempt_lamports": { "type": "integer" },
+          "owner": { "type": ["string", "null"] },
+          "executable": { "type": "boolean" },
+          "tokens": {
+            "type": ["object", "null"],
+            "properties": {
+              "usdc_base_units": { "type": ["integer", "null"] },
+              "eurc_base_units": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      },
+      "ChainOverview": {
+        "type": "object",
+        "properties": {
+          "cluster": { "type": "string" },
+          "program": {
+            "type": "object",
+            "properties": {
+              "last_deploy_slot": { "type": ["integer", "null"] },
+              "upgrade_authority": { "type": ["string", "null"] }
+            }
+          },
+          "accounts": { "type": "array", "items": { "$ref": "#/components/schemas/ChainAccount" } },
+          "wallets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string", "enum": ["faucet", "sponsor"] },
+                "configured": { "type": "boolean" },
+                "account": { "oneOf": [{ "$ref": "#/components/schemas/ChainAccount" }, { "type": "null" }] }
+              }
+            }
+          },
+          "faucet_sol_lamports": { "type": "integer" },
+          "faucet_token_base_units": { "type": "integer" },
+          "faucet_enabled": { "type": "boolean" },
+          "sponsor_settle_lamports": { "type": "integer" },
+          "read_at": { "type": "integer" }
+        }
+      },
+      "AirdropPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "user_id": { "type": "string" },
+                "email": { "type": "string" },
+                "wallet": { "type": "string" },
+                "cluster": { "type": "string" },
+                "sol_lamports": { "type": "integer" },
+                "token_base_units": { "type": "integer" },
+                "signature": { "type": "string", "description": "Empty while the transfer is still being sent" },
+                "claimed_at": { "type": "integer" }
+              }
+            }
+          },
+          "total": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" },
+          "total_sol_lamports": { "type": "integer" },
+          "total_token_base_units": { "type": "integer" }
+        }
+      },
       "WaitlistEntry": {
         "type": "object",
         "properties": {
@@ -764,6 +840,32 @@
         "parameters": [{ "$ref": "#/components/parameters/limit" }],
         "responses": {
           "200": { "description": "The payment feed and the cluster it came from", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaymentsPage" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/chain": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "The program's accounts and the server wallets",
+        "description": "The program, its ProgramData, Config and treasury accounts with their rent-exempt minimums, and the faucet and sponsor keys' SOL, USDC and EURC balances, read live from the cluster.",
+        "security": [{ "session": [] }],
+        "responses": {
+          "200": { "description": "Accounts and balances", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOverview" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/airdrops": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Starter-token claims, newest first",
+        "security": [{ "session": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/limit" }, { "$ref": "#/components/parameters/offset" }],
+        "responses": {
+          "200": { "description": "One page of claims and the totals sent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AirdropPage" } } } },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }

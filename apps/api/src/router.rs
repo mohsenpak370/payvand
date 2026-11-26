@@ -47,6 +47,8 @@ pub(crate) const ROUTES: &[&str] = &[
     "/api/admin/users",
     "/api/admin/users/{id}",
     "/api/admin/payments",
+    "/api/admin/chain",
+    "/api/admin/airdrops",
     "/api/admin/waitlist",
     "/api/admin/waitlist/{email}",
     "/api/admin/shops",
@@ -177,6 +179,9 @@ fn admin_routes() -> Router<AppState> {
         .route("/api/admin/users", get(admin::list_users))
         .route("/api/admin/users/{id}", delete(admin::delete_user))
         .route("/api/admin/payments", get(admin::list_payments))
+        // The deployment's accounts and server wallets, and what the faucet sent.
+        .route("/api/admin/chain", get(admin::chain))
+        .route("/api/admin/airdrops", get(admin::airdrops))
         .route("/api/admin/waitlist", get(admin::waitlist))
         .route(
             "/api/admin/waitlist/{email}",

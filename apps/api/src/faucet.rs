@@ -67,7 +67,7 @@ pub struct ClaimResponse {
 
 /// Start tokens are a test-network feature, full stop. A local validator is the
 /// other place they make sense; everything else is a real chain.
-fn hands_out(cluster: &str) -> bool {
+pub(crate) fn hands_out(cluster: &str) -> bool {
     matches!(cluster, "devnet" | "localnet")
 }
 
@@ -79,11 +79,11 @@ fn amount_from_env(name: &str, fallback: u64) -> u64 {
         .unwrap_or(fallback)
 }
 
-fn sol_lamports() -> u64 {
+pub(crate) fn sol_lamports() -> u64 {
     amount_from_env("FAUCET_SOL_LAMPORTS", DEFAULT_SOL_LAMPORTS)
 }
 
-fn token_base_units() -> u64 {
+pub(crate) fn token_base_units() -> u64 {
     amount_from_env("FAUCET_TOKEN_BASE_UNITS", DEFAULT_TOKEN_BASE_UNITS)
 }
 
@@ -104,7 +104,7 @@ fn sol_transfer_ix(from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
 
 /// The owner's associated token account under the classic token program, which
 /// is the only program the app's invoices accept.
-fn ata_for(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
+pub(crate) fn ata_for(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
     let token = Pubkey::from_str(TOKEN_PROGRAM).expect("the token program id parses");
     let program = Pubkey::from_str(ATA_PROGRAM).expect("the ATA program id parses");
     Pubkey::find_program_address(&[owner.as_ref(), token.as_ref(), mint.as_ref()], &program).0
