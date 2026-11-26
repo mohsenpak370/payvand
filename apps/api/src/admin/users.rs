@@ -173,8 +173,16 @@ pub async fn delete_user(
     for sql in [
         "DELETE FROM sessions WHERE user_id = ?1",
         "DELETE FROM discount_codes WHERE user_id = ?1",
+        "DELETE FROM discount_redemptions WHERE user_id = ?1",
         "DELETE FROM password_resets WHERE user_id = ?1",
         "DELETE FROM saved_payments WHERE user_id = ?1",
+        "DELETE FROM shop_categories WHERE user_id = ?1",
+        "DELETE FROM subscriptions WHERE user_id = ?1",
+        "DELETE FROM subscription_invoices WHERE user_id = ?1",
+        "DELETE FROM push_subscriptions WHERE user_id = ?1",
+        "DELETE FROM push_nudges WHERE user_id = ?1",
+        "DELETE FROM faucet_claims WHERE user_id = ?1",
+        "DELETE FROM sponsored_settlements WHERE user_id = ?1",
         "DELETE FROM products WHERE user_id = ?1",
         "DELETE FROM shops WHERE user_id = ?1",
     ] {
@@ -183,6 +191,14 @@ pub async fn delete_user(
             .await
             .map_err(auth::internal)?;
     }
+    // Invoices are evidence and outlive the account; only the link to it goes.
+    connection
+        .execute(
+            "UPDATE invoice_meta SET seller_user = NULL WHERE seller_user = ?1",
+            [id.as_str()],
+        )
+        .await
+        .map_err(auth::internal)?;
     let removed = connection
         .execute("DELETE FROM users WHERE id = ?1", [id.as_str()])
         .await

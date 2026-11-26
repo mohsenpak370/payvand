@@ -6,9 +6,9 @@ use serde::Deserialize;
 
 use crate::payments::{ApiError, ApiResult};
 
-pub mod codes;
-pub mod products;
-pub mod shops;
+mod codes;
+mod products;
+mod shops;
 
 pub use codes::*;
 pub use products::*;

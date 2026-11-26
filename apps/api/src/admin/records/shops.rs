@@ -53,7 +53,15 @@ pub async fn list_shops(
                 .map_err(auth::internal)?;
             first_count(&mut rows).await?
         }
-        None => scalar(&connection, "SELECT COUNT(*) FROM shops").await?,
+        // Count the same rows the page can show, not every row in the base
+        // table: a shop whose account is gone is not an admin record.
+        None => {
+            scalar(
+                &connection,
+                "SELECT COUNT(*) FROM shops s JOIN users u ON u.id = s.user_id",
+            )
+            .await?
+        }
     };
 
     let select = "SELECT s.id, u.email, s.name, s.description, s.currency, \
@@ -103,8 +111,10 @@ pub async fn list_shops(
 #[derive(Debug, Deserialize)]
 pub struct ShopEdit {
     pub name: String,
+    /// `None` means the field was omitted (or explicitly null), so the
+    /// stored description is left alone.
     #[serde(default)]
-    pub description: String,
+    pub description: Option<String>,
 }
 
 /// Corrects a shop's name or description. Its currency is deliberately not
@@ -122,19 +132,34 @@ pub async fn update_shop(
         crate::shops::MAX_SHOP_NAME_LEN,
         "The shop name",
     )?;
-    let description = optional(
-        &request.description,
-        crate::shops::MAX_SHOP_DESCRIPTION_LEN,
-        "The shop description",
-    )?;
+    let description = request
+        .description
+        .as_deref()
+        .map(|value| {
+            optional(
+                value,
+                crate::shops::MAX_SHOP_DESCRIPTION_LEN,
+                "The shop description",
+            )
+        })
+        .transpose()?;
     let connection = state.db.connect().map_err(auth::internal)?;
-    let updated = connection
-        .execute(
-            "UPDATE shops SET name = ?1, description = ?2 WHERE id = ?3",
-            (name, description, id),
-        )
-        .await
-        .map_err(auth::internal)?;
+    let updated = match description {
+        Some(description) => {
+            connection
+                .execute(
+                    "UPDATE shops SET name = ?1, description = ?2 WHERE id = ?3",
+                    (name, description, id),
+                )
+                .await
+        }
+        None => {
+            connection
+                .execute("UPDATE shops SET name = ?1 WHERE id = ?2", (name, id))
+                .await
+        }
+    }
+    .map_err(auth::internal)?;
     if updated == 0 {
         return Err(ApiError::NotFound("No shop with that id.".into()));
     }

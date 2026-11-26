@@ -54,7 +54,15 @@ pub async fn list_products(
                 .map_err(auth::internal)?;
             first_count(&mut rows).await?
         }
-        None => scalar(&connection, "SELECT COUNT(*) FROM products").await?,
+        // The page joins shops and users; count exactly those rows.
+        None => {
+            scalar(
+                &connection,
+                "SELECT COUNT(*) FROM products p \
+                 JOIN shops s ON s.id = p.shop_id JOIN users u ON u.id = p.user_id",
+            )
+            .await?
+        }
     };
 
     let select = "SELECT p.id, s.name, u.email, p.name, p.details, p.category, \
@@ -107,10 +115,12 @@ pub async fn list_products(
 #[derive(Debug, Deserialize)]
 pub struct ProductEdit {
     pub name: String,
+    /// Omitted means keep the stored value, not clear it.
     #[serde(default)]
-    pub details: String,
+    pub details: Option<String>,
+    /// Omitted means keep the stored value, not clear it.
     #[serde(default)]
-    pub category: String,
+    pub category: Option<String>,
     pub price_lamports: u64,
 }
 
@@ -126,16 +136,28 @@ pub async fn update_product(
         crate::shops::MAX_PRODUCT_NAME_LEN,
         "The product name",
     )?;
-    let details = optional(
-        &request.details,
-        crate::shops::MAX_PRODUCT_DETAILS_LEN,
-        "The product details",
-    )?;
-    let category = optional(
-        &request.category,
-        crate::shops::MAX_PRODUCT_CATEGORY_LEN,
-        "The product category",
-    )?;
+    let details = request
+        .details
+        .as_deref()
+        .map(|value| {
+            optional(
+                value,
+                crate::shops::MAX_PRODUCT_DETAILS_LEN,
+                "The product details",
+            )
+        })
+        .transpose()?;
+    let category = request
+        .category
+        .as_deref()
+        .map(|value| {
+            optional(
+                value,
+                crate::shops::MAX_PRODUCT_CATEGORY_LEN,
+                "The product category",
+            )
+        })
+        .transpose()?;
     if request.price_lamports == 0 {
         return Err(ApiError::BadRequest(
             "A price must be greater than 0.".into(),
@@ -144,14 +166,44 @@ pub async fn update_product(
     let price = i64::try_from(request.price_lamports)
         .map_err(|_| ApiError::BadRequest("That price is too large.".into()))?;
     let connection = state.db.connect().map_err(auth::internal)?;
-    let updated = connection
-        .execute(
-            "UPDATE products SET name = ?1, details = ?2, category = ?3, price_lamports = ?4 \
-             WHERE id = ?5",
-            (name, details, category, price, id),
-        )
-        .await
-        .map_err(auth::internal)?;
+    let updated = match (details, category) {
+        (Some(details), Some(category)) => {
+            connection
+                .execute(
+                    "UPDATE products SET name = ?1, details = ?2, category = ?3, \
+                     price_lamports = ?4 WHERE id = ?5",
+                    libsql::params![name, details, category, price, id],
+                )
+                .await
+        }
+        (Some(details), None) => {
+            connection
+                .execute(
+                    "UPDATE products SET name = ?1, details = ?2, price_lamports = ?3 \
+                     WHERE id = ?4",
+                    libsql::params![name, details, price, id],
+                )
+                .await
+        }
+        (None, Some(category)) => {
+            connection
+                .execute(
+                    "UPDATE products SET name = ?1, category = ?2, price_lamports = ?3 \
+                     WHERE id = ?4",
+                    libsql::params![name, category, price, id],
+                )
+                .await
+        }
+        (None, None) => {
+            connection
+                .execute(
+                    "UPDATE products SET name = ?1, price_lamports = ?2 WHERE id = ?3",
+                    libsql::params![name, price, id],
+                )
+                .await
+        }
+    }
+    .map_err(auth::internal)?;
     if updated == 0 {
         return Err(ApiError::NotFound("No product with that id.".into()));
     }

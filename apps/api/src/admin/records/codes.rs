@@ -27,6 +27,15 @@ pub struct AdminCodePage {
     pub offset: i64,
 }
 
+/// The table's CHECK keeps this in 1..=99, but a row written before the CHECK
+/// or by another tool must not quietly display as 0%.
+fn stored_percent(raw: i64) -> ApiResult<u32> {
+    if !(1i64..=99).contains(&raw) {
+        return Err(ApiError::Internal("stored percent_off out of range".into()));
+    }
+    u32::try_from(raw).map_err(|_| ApiError::Internal("stored percent_off out of range".into()))
+}
+
 pub async fn list_codes(
     State(state): State<crate::AppState>,
     headers: HeaderMap,
@@ -49,7 +58,14 @@ pub async fn list_codes(
                 .map_err(auth::internal)?;
             first_count(&mut rows).await?
         }
-        None => scalar(&connection, "SELECT COUNT(*) FROM discount_codes").await?,
+        // Only codes with an existing owner are visible in the page.
+        None => {
+            scalar(
+                &connection,
+                "SELECT COUNT(*) FROM discount_codes d JOIN users u ON u.id = d.user_id",
+            )
+            .await?
+        }
     };
 
     let select = "SELECT d.id, d.code, d.percent_off, u.email, d.created_at \
@@ -80,7 +96,7 @@ pub async fn list_codes(
         items.push(AdminCode {
             id: row.get(0).map_err(auth::internal)?,
             code: row.get(1).map_err(auth::internal)?,
-            percent_off: u32::try_from(percent).unwrap_or(0),
+            percent_off: stored_percent(percent)?,
             owner: row.get(3).map_err(auth::internal)?,
             created_at: row.get(4).map_err(auth::internal)?,
         });
@@ -109,4 +125,18 @@ pub async fn delete_code(
         return Err(ApiError::NotFound("No code with that id.".into()));
     }
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stored_percent;
+    use crate::payments::ApiError;
+
+    #[test]
+    fn rejects_a_stored_percent_outside_the_schema_range() {
+        assert_eq!(stored_percent(20).expect("valid"), 20);
+        assert!(matches!(stored_percent(0), Err(ApiError::Internal(_))));
+        assert!(matches!(stored_percent(-1), Err(ApiError::Internal(_))));
+        assert!(matches!(stored_percent(100), Err(ApiError::Internal(_))));
+    }
 }

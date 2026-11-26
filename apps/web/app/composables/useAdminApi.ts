@@ -90,6 +90,11 @@ export interface RecordPage<T> {
   offset: number
 }
 
+/** The body every admin write returns. */
+export interface OkResponse {
+  ok: true
+}
+
 /**
  * Admin endpoints. Access is decided by the API (`ADMIN_EMAILS`), not by
  * the client — every call can still come back 403 and the page must handle
@@ -131,16 +136,16 @@ export function useAdminApi() {
     })
   }
 
-  async function removeWaitlistEntry(email: string): Promise<void> {
+  async function removeWaitlistEntry(email: string): Promise<OkResponse> {
     // The address is a path segment, so it is encoded rather than trusted.
-    await $fetch(`${base}/api/admin/waitlist/${encodeURIComponent(email)}`, {
+    return await $fetch<OkResponse>(`${base}/api/admin/waitlist/${encodeURIComponent(email)}`, {
       method: 'DELETE',
       headers: authHeaders()
     })
   }
 
-  async function deleteUser(id: string): Promise<void> {
-    await $fetch(`${base}/api/admin/users/${id}`, {
+  async function deleteUser(id: string): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/users/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders()
     })
@@ -170,16 +175,19 @@ export function useAdminApi() {
     })
   }
 
-  async function updateShop(id: string, body: { name: string, description: string }) {
-    await $fetch(`${base}/api/admin/shops/${id}`, {
+  async function updateShop(
+    id: string,
+    body: { name: string, description?: string }
+  ): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/shops/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: authHeaders(),
       body
     })
   }
 
-  async function deleteShop(id: string) {
-    await $fetch(`${base}/api/admin/shops/${id}`, {
+  async function deleteShop(id: string): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/shops/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders()
     })
@@ -187,24 +195,24 @@ export function useAdminApi() {
 
   async function updateProduct(
     id: string,
-    body: { name: string, details: string, category: string, price_lamports: number }
-  ) {
-    await $fetch(`${base}/api/admin/products/${id}`, {
+    body: { name: string, details?: string, category?: string, price_lamports: number }
+  ): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/products/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: authHeaders(),
       body
     })
   }
 
-  async function deleteProduct(id: string) {
-    await $fetch(`${base}/api/admin/products/${id}`, {
+  async function deleteProduct(id: string): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/products/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders()
     })
   }
 
-  async function deleteCode(id: string) {
-    await $fetch(`${base}/api/admin/discounts/${id}`, {
+  async function deleteCode(id: string): Promise<OkResponse> {
+    return await $fetch<OkResponse>(`${base}/api/admin/discounts/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders()
     })

@@ -3,11 +3,11 @@
   "info": {
     "title": "Payvand API",
     "version": "1.0.0",
-    "description": "Accounts, Solana payment invoices, shops, discounts and admin oversight for Payvand.\n\nEvery route below lives on the API origin. Routes marked with a session need `Authorization: Bearer <token>` from `/api/auth/signin` or `/api/auth/signup`. Admin routes additionally require the signed-in account's address to be listed in `ADMIN_EMAILS`."
+    "description": "Accounts, Solana payment invoices, shops, discounts and admin oversight for Payvand.\n\nEvery route below lives on the API origin. Routes marked with a session need `Authorization: Bearer <token>` from `/api/auth/signin` or `/api/auth/signup`. Admin routes additionally require the signed-in account's email to be listed in `ADMIN_EMAILS`."
   },
   "servers": [
     { "url": "https://payvand-api.vercel.app", "description": "Production" },
-    { "url": "http://127.0.0.1:3001", "description": "Local server (`bun run api`)" }
+    { "url": "http://127.0.0.1:8787", "description": "Local server (`pnpm api`)" }
   ],
   "tags": [
     { "name": "auth", "description": "Accounts, sessions and linked wallets" },
@@ -175,6 +175,43 @@
           "owner": { "type": "string" },
           "created_at": { "type": "integer", "format": "int64" }
         }
+      },
+      "AdminPayment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "The payment PDA" },
+          "seller": { "type": "string", "description": "Seller wallet address" },
+          "amount_lamports": { "type": "integer", "format": "int64" },
+          "memo": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "settled", "missing"] },
+          "settled_by": { "type": "string", "nullable": true },
+          "created_at_unix": { "type": "integer", "format": "int64" },
+          "settled_at_unix": { "type": "integer", "format": "int64" }
+        },
+        "required": ["id", "seller", "amount_lamports", "memo", "status", "settled_by", "created_at_unix", "settled_at_unix"]
+      },
+      "PaymentsPage": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminPayment" } },
+          "total": { "type": "integer" },
+          "cluster": { "type": "string" },
+          "endpoint": { "type": "string" }
+        }
+      },
+      "WaitlistEntry": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "created_at_unix": { "type": "integer", "format": "int64" }
+        }
+      },
+      "WaitlistPage": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/WaitlistEntry" } },
+          "total": { "type": "integer", "format": "int64" }
+        }
       }
     },
     "responses": {
@@ -186,12 +223,31 @@
     "parameters": {
       "search": { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Literal substring match" },
       "limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+      "recordLimit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 25, "maximum": 100 } },
       "offset": { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0, "minimum": 0 } }
     }
   },
   "paths": {
+    "/": {
+      "get": {
+        "tags": ["misc"],
+        "summary": "Service metadata",
+        "responses": {
+          "200": { "description": "The service name and the routes it serves", "content": { "application/json": { "schema": { "type": "object", "properties": { "service": { "type": "string" }, "routes": { "type": "array", "items": { "type": "string" } } } } } } }
+        }
+      }
+    },
+    "/health": {
+      "get": { "tags": ["misc"], "summary": "Liveness", "responses": { "200": { "description": "The API is up", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } } } }
+    },
     "/api/health": {
       "get": { "tags": ["misc"], "summary": "Liveness", "responses": { "200": { "description": "The API is up", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } } } }
+    },
+    "/api/docs": {
+      "get": { "tags": ["misc"], "summary": "Interactive API reference", "responses": { "200": { "description": "The Swagger UI page", "content": { "text/html": { "schema": { "type": "string" } } } } } }
+    },
+    "/api/openapi.json": {
+      "get": { "tags": ["misc"], "summary": "This OpenAPI document", "responses": { "200": { "description": "The raw specification", "content": { "application/json": { "schema": { "type": "object" } } } } } }
     },
     "/api/config": {
       "get": {
@@ -668,6 +724,7 @@
         "security": [{ "session": [] }],
         "responses": {
           "200": { "description": "The counters", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminStats" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
@@ -684,6 +741,7 @@
         ],
         "responses": {
           "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUser" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
@@ -694,7 +752,49 @@
         "summary": "Delete an account and everything it owns",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Removed" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Removed" }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/admin/payments": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Live payment activity, newest first",
+        "description": "Read straight from the cluster, capped and sorted deterministically. The admin check runs before any RPC call.",
+        "security": [{ "session": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "responses": {
+          "200": { "description": "The payment feed and the cluster it came from", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaymentsPage" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/waitlist": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "The seller waitlist",
+        "description": "Newest first, capped at 500 entries; the total counts every row.",
+        "security": [{ "session": [] }],
+        "responses": {
+          "200": { "description": "The waitlist and its total", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WaitlistPage" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/waitlist/{email}": {
+      "delete": {
+        "tags": ["admin"],
+        "summary": "Remove an address from the waitlist",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "email", "in": "path", "required": true, "schema": { "type": "string", "format": "email" } }],
+        "responses": {
+          "200": { "description": "Removed", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
       }
     },
     "/api/admin/shops": {
@@ -704,11 +804,12 @@
         "security": [{ "session": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/search" },
-          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/recordLimit" },
           { "$ref": "#/components/parameters/offset" }
         ],
         "responses": {
           "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminShop" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
@@ -717,18 +818,18 @@
       "patch": {
         "tags": ["admin"],
         "summary": "Correct a shop's name or description",
-        "description": "The currency is not editable here: stored prices are in it.",
+        "description": "The currency is not editable here: stored prices are in it. An omitted optional field keeps its stored value.",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "description": { "type": "string" } } } } } },
-        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
       },
       "delete": {
         "tags": ["admin"],
         "summary": "Delete a shop with its catalogue",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Removed" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
       }
     },
     "/api/admin/products": {
@@ -738,11 +839,13 @@
         "security": [{ "session": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/search" },
-          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/recordLimit" },
           { "$ref": "#/components/parameters/offset" }
         ],
         "responses": {
-          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProduct" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } }
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProduct" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
     },
@@ -750,17 +853,18 @@
       "patch": {
         "tags": ["admin"],
         "summary": "Correct a product",
+        "description": "Omitted optional fields keep their stored values.",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "price_lamports"], "properties": { "name": { "type": "string" }, "details": { "type": "string" }, "category": { "type": "string" }, "price_lamports": { "type": "integer", "format": "int64" } } } } } },
-        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
       },
       "delete": {
         "tags": ["admin"],
         "summary": "Delete a product",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Removed" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
       }
     },
     "/api/admin/discounts": {
@@ -770,11 +874,13 @@
         "security": [{ "session": [] }],
         "parameters": [
           { "$ref": "#/components/parameters/search" },
-          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/recordLimit" },
           { "$ref": "#/components/parameters/offset" }
         ],
         "responses": {
-          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminCode" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } }
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminCode" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
         }
       }
     },
@@ -784,7 +890,7 @@
         "summary": "Delete a code",
         "security": [{ "session": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+        "responses": { "200": { "description": "Removed" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
       }
     }
   }
