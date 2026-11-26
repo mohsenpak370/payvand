@@ -3,6 +3,7 @@
 // markup is a self-contained SVG that still shows the logo when exported or
 // opened on its own. A plain `/logo.png` href would break outside the app.
 import logoDataUrl from '~/assets/logo.png?inline'
+import { clearMiddle, coverBox, readGrid } from '~/utils/qrPlate'
 
 const props = defineProps<{
   payload: string
@@ -43,29 +44,41 @@ watch(
 )
 
 /*
- * The logo plate sits in the code's middle. Error correction level Q recovers
- * ~25% of the code, and the plate covers ~6% of its area, so the modules
- * underneath are recoverable — this is the one decoration that survives.
+ * The mark sits in the code's middle, on a clearing cut on the code's own
+ * module grid — `coverBox` returns a square that starts and ends between
+ * modules, so every dot is either wholly under the mark or wholly visible
+ * beside it, never half covered.
  *
- * The encoder draws in pixels here (the styled SVG's viewBox is the size
- * itself), so the plate is scaled from the same number.
+ * The mark is drawn at the clearing's exact width: its tile fills the square,
+ * with no white frame left showing around it. Error correction level Q recovers
+ * ~25% of the code, and the plate hides about a tenth of its area, so what is
+ * under the tile is recoverable.
  */
+
+/**
+ * The plate's width as a share of the code's side, before snapping to whole
+ * modules. A share of the side count (rather than a fixed module count) keeps
+ * the mark the same visual size on small and large codes, and keeps the hidden
+ * area well inside what error correction level Q can recover.
+ */
+const LOGO_SHARE = 0.28
+
 const qrWithLogo = computed(() => {
   const svg = markup.value
   if (!svg) return null
 
   const size = qrSize.value
-  const logoSize = Math.round(size * 0.2)
-  const padding = Math.round(size * 0.025)
-  const plateSize = logoSize + padding * 2
-  const plateOffset = (size - plateSize) / 2
-  const logoOffset = (size - logoSize) / 2
-  const radius = Math.max(2, Math.round(size * 0.02))
+  const grid = readGrid(svg, size)
+  // Odd, so the plate is centred on a module instead of on a seam between two.
+  let cells = Math.ceil(grid ? grid.count * LOGO_SHARE : 0)
+  if (cells % 2 === 0) cells += 1
 
-  const logo = `<rect x="${plateOffset}" y="${plateOffset}" width="${plateSize}" height="${plateSize}" fill="#fff" rx="${radius}" ry="${radius}"/>`
-    + `<image x="${logoOffset}" y="${logoOffset}" width="${logoSize}" height="${logoSize}" href="${logoDataUrl}" preserveAspectRatio="xMidYMid meet"/>`
+  const plate = grid ? coverBox(grid, size, cells) : null
+  if (!plate) return null
 
-  return svg.replace('</svg>', `${logo}</svg>`)
+  const logo = `<image x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" href="${logoDataUrl}" preserveAspectRatio="xMidYMid meet"/>`
+
+  return clearMiddle(svg, plate).replace('</svg>', `${logo}</svg>`)
 })
 </script>
 
