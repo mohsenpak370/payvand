@@ -10,6 +10,8 @@
 //! - `errors` — every message a wallet can be shown
 //! - `events` — the structured events emitted beside the `msg!` logs
 //! - `helpers` — the calendar month, and token invoice bookkeeping
+//! - `instructions::config` — the fee policy, its price anchor and the treasury
+//! - `instructions::shop` — a shop's multiplier on the global fee policy
 //! - `instructions::sol` — SOL invoices and the SOL allowance
 //! - `instructions::token` — SPL token invoices and per-mint allowances
 
