@@ -32,8 +32,10 @@ const {
 <template>
   <UCard>
     <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-base font-semibold">
+      <!-- A heading and its button are one column each: in one row on a phone
+           the heading broke apart instead of the button moving down. -->
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <h2 class="text-base font-semibold whitespace-nowrap">
           {{ t('sell.showHeading') }}
         </h2>
         <UButton

@@ -50,8 +50,13 @@ const {
 <template>
   <UCard>
     <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-base font-semibold">
+      <!--
+        The title and the wallet sit on two rows, always: side by side, the
+        "No wallet detected" note squeezed "1. Invoice" onto two lines on a
+        phone, and the heading is the one thing that has to read in one piece.
+      -->
+      <div class="flex flex-col gap-2">
+        <h2 class="text-base font-semibold whitespace-nowrap">
           {{ t('sell.invoiceHeading') }}
         </h2>
         <WalletConnect />

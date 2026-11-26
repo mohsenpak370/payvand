@@ -54,8 +54,10 @@ const refillLabel = computed(() =>
   >
     <UCard>
       <template #header>
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-base font-semibold">
+        <!-- Title and wallet on two rows: the wallet's note is a sentence, and
+             beside the heading it broke the heading on a phone. -->
+        <div class="flex flex-col gap-2">
+          <h2 class="text-base font-semibold whitespace-nowrap">
             {{ $t('budget.cardTitle') }}
           </h2>
           <WalletConnect />

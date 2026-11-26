@@ -62,7 +62,7 @@ onMounted(load)
   <UCard>
     <template #header>
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-base font-semibold">
+        <h2 class="text-base font-semibold whitespace-nowrap">
           {{ $t('shopCodes.title') }}
         </h2>
         <p class="text-xs text-muted">

@@ -321,9 +321,9 @@ onMounted(() => {
     <template v-else>
       <UCard class="min-w-0">
         <template #header>
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div>
-              <h2 class="text-base font-semibold">
+              <h2 class="text-base font-semibold whitespace-nowrap">
                 {{ $t('shopEditor.detailsTitle') }}
               </h2>
               <p class="text-sm text-muted">
@@ -397,9 +397,9 @@ onMounted(() => {
 
       <UCard class="min-w-0">
         <template #header>
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div>
-              <h2 class="text-base font-semibold">
+              <h2 class="text-base font-semibold whitespace-nowrap">
                 {{ $t('shopEditor.productsTitle') }}
               </h2>
               <p class="text-sm text-muted">
@@ -415,7 +415,7 @@ onMounted(() => {
               :label="$t('shopEditor.addProduct')"
               icon="i-lucide-plus"
               size="sm"
-              class="shrink-0"
+              class="shrink-0 self-start"
               @click="openAdd"
             />
           </div>

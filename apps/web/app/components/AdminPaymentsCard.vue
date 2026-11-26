@@ -31,9 +31,9 @@ function invoiceCount(count: number, cluster: string) {
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div>
-          <h2 class="text-base font-semibold">
+          <h2 class="text-base font-semibold whitespace-nowrap">
             {{ $t('admin.feed.title') }}
           </h2>
           <p class="text-xs text-muted">

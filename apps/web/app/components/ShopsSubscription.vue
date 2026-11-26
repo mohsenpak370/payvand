@@ -65,9 +65,9 @@ onMounted(() => {
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex items-start justify-between gap-3">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div class="min-w-0">
-          <h2 class="text-base font-semibold">
+          <h2 class="text-base font-semibold whitespace-nowrap">
             {{ $t('subscription.title') }}
           </h2>
           <p class="text-sm text-muted">
@@ -78,7 +78,7 @@ onMounted(() => {
           v-if="purchase.status.value"
           :color="purchase.status.value.active ? 'success' : 'neutral'"
           variant="subtle"
-          class="shrink-0"
+          class="shrink-0 self-start"
         >
           {{ purchase.status.value.active ? $t('subscription.active') : $t('subscription.inactive') }}
         </UBadge>
