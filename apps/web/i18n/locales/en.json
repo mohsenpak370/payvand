@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Platform oversight: accounts, live sessions, discount codes and the waiting list.",
+    "description": "Platform oversight: accounts, payments, the program's on-chain accounts and the starter-token faucet.",
     "forbiddenTitle": "No admin access",
     "forbiddenDescription": "This account is not listed in the API's ADMIN_EMAILS setting, so the admin endpoints answer 403. Add the address there (and redeploy) to grant access.",
     "stats": {
@@ -196,6 +196,79 @@
       "range": "{from}–{to} of {total} accounts",
       "previous": "Previous",
       "next": "Next"
+    },
+    "tabs": {
+      "overview": "Overview",
+      "accounts": "Accounts",
+      "payments": "Payments",
+      "chain": "Chain",
+      "airdrops": "Airdrops"
+    },
+    "address": {
+      "copy": "Copy",
+      "copied": "Copied",
+      "explorer": "Open in Solana Explorer"
+    },
+    "chain": {
+      "title": "Program accounts",
+      "fallback": "Read live from the cluster",
+      "readAt": "{cluster} · read {time}",
+      "errorTitle": "Cluster unavailable",
+      "loadFailure": "Could not read the program's accounts from the cluster.",
+      "upgradeAuthority": "Upgrade authority",
+      "immutable": "None — the program is immutable",
+      "lastDeploy": "Last deployed in slot",
+      "account": "Account",
+      "address": "Address",
+      "size": "Size",
+      "balance": "Balance",
+      "rent": "Rent-exempt minimum",
+      "status": "Status",
+      "bytes": "{count} bytes",
+      "aboveRent": "{amount} SOL above rent",
+      "missing": "Missing",
+      "rentExempt": "Rent-exempt",
+      "belowRent": "Below rent",
+      "names": {
+        "program": "Payvand program",
+        "program_data": "Program data",
+        "config": "Config",
+        "treasury": "Treasury",
+        "faucet": "Airdrop wallet",
+        "sponsor": "Fee sponsor"
+      },
+      "about": {
+        "program": "The executable account the app calls.",
+        "program_data": "Holds the program's bytes and its upgrade authority.",
+        "config": "The fee policy every settlement reads.",
+        "treasury": "Collects the protocol fees and pays the receipt rent.",
+        "faucet": "Sends each new account its starter SOL, USDC and EURC.",
+        "sponsor": "Pays the network fee and record rents of sponsored settles."
+      }
+    },
+    "wallets": {
+      "title": "Server wallets",
+      "claimsLeft": "Enough for {count} more claim | Enough for {count} more claims",
+      "settlesLeft": "Enough for {count} more sponsored settle | Enough for {count} more sponsored settles",
+      "perClaim": "One claim sends {sol} SOL, {tokens} USDC and {tokens} EURC.",
+      "perSettle": "One settle fronts up to {sol} SOL; the rents come back to it.",
+      "faucetOff": "This cluster does not hand out starter tokens, so the faucet is idle.",
+      "unset": {
+        "faucet": "FAUCET_KEYPAIR is not set on this server, so no starter tokens can be sent.",
+        "sponsor": "SPONSOR_KEYPAIR is not set on this server, so no settle can be sponsored."
+      }
+    },
+    "airdrops": {
+      "title": "Airdrops",
+      "fallback": "Starter tokens sent by the faucet",
+      "summary": "{count} claim · {sol} SOL and {tokens} of each stablecoin sent | {count} claims · {sol} SOL and {tokens} of each stablecoin sent",
+      "errorTitle": "Airdrops",
+      "loadFailure": "Could not read the airdrop list.",
+      "empty": "No account has claimed starter tokens yet.",
+      "wallet": "Wallet",
+      "transaction": "Transaction",
+      "pending": "Sending",
+      "range": "{from}–{to} of {total} claims"
     }
   },
   "authLayout": {

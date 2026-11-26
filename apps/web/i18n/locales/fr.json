@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Supervision de la plateforme : comptes, sessions actives, codes de remise et liste d'attente.",
+    "description": "Supervision de la plateforme : comptes, paiements, comptes on-chain du programme et faucet de jetons de départ.",
     "forbiddenTitle": "Pas d'accès administrateur",
     "forbiddenDescription": "Ce compte ne figure pas dans le réglage ADMIN_EMAILS de l'API, donc les routes d'administration répondent 403. Ajoutez l'adresse (puis redéployez) pour accorder l'accès.",
     "stats": {
@@ -196,6 +196,79 @@
       "range": "{from}–{to} sur {total} comptes",
       "previous": "Précédent",
       "next": "Suivant"
+    },
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "accounts": "Comptes",
+      "payments": "Paiements",
+      "chain": "Chaîne",
+      "airdrops": "Airdrops"
+    },
+    "address": {
+      "copy": "Copier",
+      "copied": "Copié",
+      "explorer": "Ouvrir dans Solana Explorer"
+    },
+    "chain": {
+      "title": "Comptes du programme",
+      "fallback": "Lu en direct sur le cluster",
+      "readAt": "{cluster} · lu {time}",
+      "errorTitle": "Cluster indisponible",
+      "loadFailure": "Impossible de lire les comptes du programme sur le cluster.",
+      "upgradeAuthority": "Autorité de mise à jour",
+      "immutable": "Aucune — le programme est immuable",
+      "lastDeploy": "Dernier déploiement au slot",
+      "account": "Compte",
+      "address": "Adresse",
+      "size": "Taille",
+      "balance": "Solde",
+      "rent": "Minimum exempt de loyer",
+      "status": "État",
+      "bytes": "{count} octets",
+      "aboveRent": "{amount} SOL au-dessus du loyer",
+      "missing": "Absent",
+      "rentExempt": "Exempt de loyer",
+      "belowRent": "Sous le loyer",
+      "names": {
+        "program": "Programme Payvand",
+        "program_data": "Données du programme",
+        "config": "Config",
+        "treasury": "Trésorerie",
+        "faucet": "Portefeuille d'airdrop",
+        "sponsor": "Sponsor des frais"
+      },
+      "about": {
+        "program": "Le compte exécutable qu'appelle l'application.",
+        "program_data": "Contient les octets du programme et son autorité de mise à jour.",
+        "config": "La politique de frais que lit chaque règlement.",
+        "treasury": "Reçoit les frais du protocole et paie le loyer des reçus.",
+        "faucet": "Envoie à chaque nouveau compte ses SOL, USDC et EURC de départ.",
+        "sponsor": "Paie les frais réseau et le loyer des enregistrements des règlements sponsorisés."
+      }
+    },
+    "wallets": {
+      "title": "Portefeuilles du serveur",
+      "claimsLeft": "De quoi servir {count} demande de plus | De quoi servir {count} demandes de plus",
+      "settlesLeft": "De quoi sponsoriser {count} règlement de plus | De quoi sponsoriser {count} règlements de plus",
+      "perClaim": "Une demande envoie {sol} SOL, {tokens} USDC et {tokens} EURC.",
+      "perSettle": "Un règlement avance jusqu'à {sol} SOL ; les loyers lui reviennent.",
+      "faucetOff": "Ce cluster ne distribue pas de jetons de départ : le faucet est inactif.",
+      "unset": {
+        "faucet": "FAUCET_KEYPAIR n'est pas défini sur ce serveur : aucun jeton de départ ne peut être envoyé.",
+        "sponsor": "SPONSOR_KEYPAIR n'est pas défini sur ce serveur : aucun règlement ne peut être sponsorisé."
+      }
+    },
+    "airdrops": {
+      "title": "Airdrops",
+      "fallback": "Jetons de départ envoyés par le faucet",
+      "summary": "{count} demande · {sol} SOL et {tokens} de chaque stablecoin envoyés | {count} demandes · {sol} SOL et {tokens} de chaque stablecoin envoyés",
+      "errorTitle": "Airdrops",
+      "loadFailure": "Impossible de lire la liste des airdrops.",
+      "empty": "Aucun compte n'a encore demandé ses jetons de départ.",
+      "wallet": "Portefeuille",
+      "transaction": "Transaction",
+      "pending": "Envoi en cours",
+      "range": "{from}–{to} sur {total} demandes"
     }
   },
   "authLayout": {

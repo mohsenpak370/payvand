@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { explorerTxUrl } from './explorer'
+import { explorerAddressUrl, explorerTxUrl } from './explorer'
 
 /**
  * A link that opens the wrong cluster — or nothing — is worse than no link: the
@@ -29,5 +29,21 @@ describe('explorerTxUrl', () => {
 
   it('returns no link for a signature it does not have', () => {
     expect(explorerTxUrl('', 'devnet')).toBeNull()
+  })
+})
+
+describe('explorerAddressUrl', () => {
+  const ADDRESS = '4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J'
+
+  it('opens the account on its own cluster', () => {
+    expect(explorerAddressUrl(ADDRESS, 'devnet'))
+      .toBe(`https://explorer.solana.com/address/${ADDRESS}?cluster=devnet`)
+    expect(explorerAddressUrl(ADDRESS, 'mainnet-beta'))
+      .toBe(`https://explorer.solana.com/address/${ADDRESS}`)
+  })
+
+  it('links nowhere for a local validator or an empty address', () => {
+    expect(explorerAddressUrl(ADDRESS, 'localnet')).toBeNull()
+    expect(explorerAddressUrl('', 'devnet')).toBeNull()
   })
 })

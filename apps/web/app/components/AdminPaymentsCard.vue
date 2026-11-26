@@ -31,29 +31,12 @@ function invoiceCount(count: number, cluster: string) {
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <div>
-          <h2 class="text-base font-semibold whitespace-nowrap">
-            {{ $t('admin.feed.title') }}
-          </h2>
-          <p class="text-xs text-muted">
-            {{
-              feed
-                ? invoiceCount(feed.total, feed.cluster)
-                : $t('admin.feed.fallback')
-            }}
-          </p>
-        </div>
-        <UButton
-          icon="i-lucide-refresh-cw"
-          :label="$t('profile.refresh')"
-          color="neutral"
-          variant="soft"
-          size="sm"
-          :loading="loading"
-          @click="emit('refresh')"
-        />
-      </div>
+      <AdminCardHeader
+        :title="$t('admin.feed.title')"
+        :subtitle="feed ? invoiceCount(feed.total, feed.cluster) : $t('admin.feed.fallback')"
+        :loading="loading"
+        @refresh="emit('refresh')"
+      />
     </template>
 
     <UAlert
