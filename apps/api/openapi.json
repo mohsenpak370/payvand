@@ -1,0 +1,791 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Payvand API",
+    "version": "1.0.0",
+    "description": "Accounts, Solana payment invoices, shops, discounts and admin oversight for Payvand.\n\nEvery route below lives on the API origin. Routes marked with a session need `Authorization: Bearer <token>` from `/api/auth/signin` or `/api/auth/signup`. Admin routes additionally require the signed-in account's address to be listed in `ADMIN_EMAILS`."
+  },
+  "servers": [
+    { "url": "https://payvand-api.vercel.app", "description": "Production" },
+    { "url": "http://127.0.0.1:3001", "description": "Local server (`bun run api`)" }
+  ],
+  "tags": [
+    { "name": "auth", "description": "Accounts, sessions and linked wallets" },
+    { "name": "payments", "description": "Payment invoices and their on-chain status" },
+    { "name": "shops", "description": "A seller's shops and catalogues" },
+    { "name": "subscription", "description": "The shops plan" },
+    { "name": "discounts", "description": "Seller discount codes" },
+    { "name": "wallet", "description": "The signed-in account's transaction feed" },
+    { "name": "saved", "description": "Payment links a buyer kept" },
+    { "name": "solana-pay", "description": "Solana Pay transaction requests" },
+    { "name": "sponsor", "description": "The fee relayer for token invoices" },
+    { "name": "admin", "description": "Platform oversight — `ADMIN_EMAILS` only" },
+    { "name": "misc", "description": "Health, configuration, the waiting list, the faucet and push" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "session": { "type": "http", "scheme": "bearer", "description": "The token returned by signin/signup" }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } },
+        "required": ["error"]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "wallet": { "type": "string", "nullable": true, "description": "The linked Solana address, when there is one" }
+        },
+        "required": ["id", "email"]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "user": { "$ref": "#/components/schemas/User" }
+        },
+        "required": ["token", "user"]
+      },
+      "PaymentOption": {
+        "type": "object",
+        "properties": {
+          "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] },
+          "mint": { "type": "string", "description": "Empty for native SOL" },
+          "amount": { "type": "string", "description": "Base units, as a decimal string" },
+          "decimals": { "type": "integer" }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "The payment PDA" },
+          "payment_pda": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "settled", "missing"] },
+          "seller": { "type": "string", "description": "Seller wallet address" },
+          "seller_user": { "type": "string", "nullable": true, "description": "The selling account, when the invoice was made here" },
+          "reference": { "type": "string" },
+          "amount_lamports": { "type": "integer", "format": "int64" },
+          "options": { "type": "array", "items": { "$ref": "#/components/schemas/PaymentOption" } },
+          "memo": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "name": { "type": "string" }, "qty": { "type": "integer" }, "price": { "type": "integer" } }
+            }
+          },
+          "discount": {
+            "nullable": true,
+            "type": "object",
+            "properties": { "code": { "type": "string" }, "percent_off": { "type": "integer" } }
+          },
+          "allow_discounts": { "type": "boolean" },
+          "cluster": { "type": "string" },
+          "endpoint": { "type": "string" },
+          "settled_by": { "type": "string", "nullable": true },
+          "created_at_unix": { "type": "integer", "format": "int64" },
+          "settled_at_unix": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Shop": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "shop_id": { "type": "string" },
+          "name": { "type": "string" },
+          "details": { "type": "string" },
+          "category": { "type": "string" },
+          "price_lamports": { "type": "integer", "format": "int64", "description": "Base units of the shop's currency" },
+          "created_at_unix": { "type": "integer", "format": "int64" }
+        }
+      },
+      "DiscountCode": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "code": { "type": "string" },
+          "percent_off": { "type": "integer", "minimum": 1, "maximum": 99 }
+        }
+      },
+      "AdminStats": {
+        "type": "object",
+        "properties": {
+          "users": { "type": "integer" },
+          "active_sessions": { "type": "integer" },
+          "discount_codes": { "type": "integer" },
+          "pending_resets": { "type": "integer" }
+        }
+      },
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string" },
+          "wallet": { "type": "string", "nullable": true },
+          "created_at": { "type": "integer", "format": "int64" },
+          "sessions": { "type": "integer" },
+          "codes": { "type": "integer" }
+        }
+      },
+      "AdminShop": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "owner": { "type": "string", "description": "The owner's email" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "currency": { "type": "string" },
+          "products": { "type": "integer" },
+          "created_at": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AdminProduct": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "shop": { "type": "string" },
+          "owner": { "type": "string" },
+          "name": { "type": "string" },
+          "details": { "type": "string" },
+          "category": { "type": "string" },
+          "price_lamports": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AdminCode": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "code": { "type": "string" },
+          "percent_off": { "type": "integer" },
+          "owner": { "type": "string" },
+          "created_at": { "type": "integer", "format": "int64" }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": { "description": "No live session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "Signed in, but not allowed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "No such row", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "BadRequest": { "description": "The request was refused", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "parameters": {
+      "search": { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Literal substring match" },
+      "limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+      "offset": { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0, "minimum": 0 } }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": { "tags": ["misc"], "summary": "Liveness", "responses": { "200": { "description": "The API is up", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } } } }
+    },
+    "/api/config": {
+      "get": {
+        "tags": ["misc"],
+        "summary": "Pricing inputs for a quote",
+        "description": "Fee policy, token mints and the cluster's rent minimums, cached for a minute.",
+        "parameters": [{ "name": "cluster", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "The current numbers" } }
+      }
+    },
+    "/api/auth/signup": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Create an account",
+        "description": "Rate limited to 10 an hour per caller.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string", "format": "email" }, "password": { "type": "string", "minLength": 8 } } } } } },
+        "responses": {
+          "200": { "description": "The new session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "description": "Too many attempts" }
+        }
+      }
+    },
+    "/api/auth/signin": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Sign in with email and password",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["email", "password"], "properties": { "email": { "type": "string" }, "password": { "type": "string" } } } } } },
+        "responses": {
+          "200": { "description": "The session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "description": "Too many attempts" }
+        }
+      }
+    },
+    "/api/auth/signout": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "End the current session",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Signed out" }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "The signed-in account",
+        "security": [{ "session": [] }],
+        "responses": {
+          "200": { "description": "The account", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Start a password reset",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["email"], "properties": { "email": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Always the same answer, whether or not the address exists" } }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Finish a password reset",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["token", "password"], "properties": { "token": { "type": "string" }, "password": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Password changed" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/auth/wallet/challenge": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Ask for a message to sign",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["address", "purpose"], "properties": { "address": { "type": "string" }, "purpose": { "type": "string", "enum": ["link", "signin"] } } } } } },
+        "responses": { "200": { "description": "The message and its nonce" } }
+      }
+    },
+    "/api/auth/wallet/link": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Attach a wallet to the signed-in account",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["address", "signature"], "properties": { "address": { "type": "string" }, "signature": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "The account with its wallet" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/auth/wallet/signin": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Sign in with a linked wallet",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["address", "signature"], "properties": { "address": { "type": "string" }, "signature": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "The session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/auth/wallet/unlink": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Remove the wallet from the signed-in account",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "The account without a wallet" } }
+      }
+    },
+    "/api/me/transactions": {
+      "get": {
+        "tags": ["wallet"],
+        "summary": "The signed-in wallet's transaction feed",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "name": "scan", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Recent transfers" }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      }
+    },
+    "/api/payments": {
+      "post": {
+        "tags": ["payments"],
+        "summary": "Validate and record a new invoice",
+        "description": "Checks that the payment account exists on chain, records it, and returns the invoice with the code the QR carries.",
+        "security": [{ "session": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["payment_pda", "seller", "reference", "amount_lamports", "memo", "cluster"],
+                "properties": {
+                  "payment_pda": { "type": "string" },
+                  "seller": { "type": "string" },
+                  "reference": { "type": "string" },
+                  "amount_lamports": { "type": "integer", "format": "int64" },
+                  "options": { "type": "array", "items": { "$ref": "#/components/schemas/PaymentOption" } },
+                  "memo": { "type": "string" },
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "items": { "type": "array", "items": { "type": "object" } },
+                  "discount_code": { "type": "string" },
+                  "allow_discounts": { "type": "boolean" },
+                  "cluster": { "type": "string" },
+                  "endpoint": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "The invoice and its QR payload", "content": { "application/json": { "schema": { "type": "object", "properties": { "payment": { "$ref": "#/components/schemas/Payment" }, "qrPayload": { "type": "string" } } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/payments/watch": {
+      "post": {
+        "tags": ["payments"],
+        "summary": "Status of several invoices at once",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["pdas"], "properties": { "pdas": { "type": "array", "items": { "type": "string" } }, "cluster": { "type": "string" }, "endpoint": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "One record per invoice", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Payment" } } } } } }
+      }
+    },
+    "/api/payments/{id}": {
+      "get": {
+        "tags": ["payments"],
+        "summary": "One invoice, read from the cluster",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "cluster", "in": "query", "schema": { "type": "string" } },
+          { "name": "endpoint", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "The invoice", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Payment" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/solana-pay/{token}": {
+      "get": {
+        "tags": ["solana-pay"],
+        "summary": "Payment request metadata",
+        "parameters": [{ "name": "token", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "label, icon and the accepted currencies" } }
+      },
+      "post": {
+        "tags": ["solana-pay"],
+        "summary": "Build the transaction for a scanned invoice",
+        "parameters": [{ "name": "token", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["account"], "properties": { "account": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "A base64 wire transaction" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/solana-pay/icon.svg": {
+      "get": { "tags": ["solana-pay"], "summary": "The icon a wallet shows for this merchant", "responses": { "200": { "description": "SVG" } } }
+    },
+    "/api/sponsor": {
+      "get": {
+        "tags": ["sponsor"],
+        "summary": "Whether the relayer will pay for a wallet",
+        "parameters": [{ "name": "wallet", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Its allowance and the treasury address" } }
+      }
+    },
+    "/api/sponsor/settle": {
+      "post": {
+        "tags": ["sponsor"],
+        "summary": "Pay the fee and rents for a token invoice",
+        "description": "Signs only a transaction it has rebuilt byte for byte from the request.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["transaction", "buyer", "seller", "reference", "mint", "amount", "memo", "cluster"],
+                "properties": {
+                  "transaction": { "type": "string" },
+                  "buyer": { "type": "string" },
+                  "seller": { "type": "string" },
+                  "reference": { "type": "string" },
+                  "mint": { "type": "string" },
+                  "amount": { "type": "integer", "format": "int64" },
+                  "memo": { "type": "string" },
+                  "shop_policy": { "type": "string" },
+                  "cluster": { "type": "string" },
+                  "endpoint": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "The signed transaction, ready to send" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/shops": {
+      "get": {
+        "tags": ["shops"],
+        "summary": "The signed-in seller's shops",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Shops with their catalogues" }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      },
+      "post": {
+        "tags": ["shops"],
+        "summary": "Create a shop",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "description"], "properties": { "name": { "type": "string", "maxLength": 48 }, "description": { "type": "string", "maxLength": 160 }, "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] } } } } } },
+        "responses": { "200": { "description": "The shop", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Shop" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/shops/{id}": {
+      "get": {
+        "tags": ["shops"],
+        "summary": "One shop, publicly readable",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "The shop and its products" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "patch": {
+        "tags": ["shops"],
+        "summary": "Edit a shop",
+        "description": "Changing the currency re-prices the catalogue; the change is rolled back if any product cannot be converted.",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "description"], "properties": { "name": { "type": "string" }, "description": { "type": "string" }, "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] } } } } } },
+        "responses": { "200": { "description": "The shop as saved" }, "403": { "$ref": "#/components/responses/Forbidden" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/shops/{id}/products": {
+      "post": {
+        "tags": ["shops"],
+        "summary": "Add a product",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "details", "category", "price_lamports"], "properties": { "name": { "type": "string", "maxLength": 32 }, "details": { "type": "string", "maxLength": 160 }, "category": { "type": "string", "maxLength": 32 }, "price_lamports": { "type": "integer", "format": "int64" } } } } } },
+        "responses": { "200": { "description": "The product", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Product" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/shops/{id}/products/{product_id}": {
+      "patch": {
+        "tags": ["shops"],
+        "summary": "Edit a product",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "product_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "details", "category", "price_lamports"], "properties": { "name": { "type": "string" }, "details": { "type": "string" }, "category": { "type": "string" }, "price_lamports": { "type": "integer", "format": "int64" } } } } } },
+        "responses": { "200": { "description": "The product as saved" }, "403": { "$ref": "#/components/responses/Forbidden" } }
+      },
+      "delete": {
+        "tags": ["shops"],
+        "summary": "Remove a product",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "product_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/shops/{id}/categories": {
+      "get": {
+        "tags": ["shops"],
+        "summary": "A shop's category headings",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "The headings" } }
+      },
+      "post": {
+        "tags": ["shops"],
+        "summary": "Add a category heading",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "The added heading" } }
+      }
+    },
+    "/api/shops/{id}/categories/{name}": {
+      "delete": {
+        "tags": ["shops"],
+        "summary": "Remove a category heading",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Removed" } }
+      }
+    },
+    "/api/subscription": {
+      "get": {
+        "tags": ["subscription"],
+        "summary": "Plans and the account's current period",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Prices and the period, when there is one" } }
+      }
+    },
+    "/api/subscription/invoice": {
+      "post": {
+        "tags": ["subscription"],
+        "summary": "Make the invoice that pays for a period",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["currency"], "properties": { "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] } } } } } },
+        "responses": { "200": { "description": "The invoice and its code" } }
+      }
+    },
+    "/api/subscription/confirm": {
+      "post": {
+        "tags": ["subscription"],
+        "summary": "Record a settled subscription invoice",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["payment_id"], "properties": { "payment_id": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "The period now covered" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/discounts": {
+      "get": {
+        "tags": ["discounts"],
+        "summary": "The signed-in seller's codes",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "The codes", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/DiscountCode" } } } } } }
+      },
+      "post": {
+        "tags": ["discounts"],
+        "summary": "Create a code",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["code", "percent_off"], "properties": { "code": { "type": "string" }, "percent_off": { "type": "integer", "minimum": 1, "maximum": 99 } } } } } },
+        "responses": { "200": { "description": "The code", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DiscountCode" } } } }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/discounts/validate": {
+      "post": {
+        "tags": ["discounts"],
+        "summary": "Price a code against a seller's invoice",
+        "description": "The seller is named by wallet address, never by account id, so a buyer cannot point the lookup at their own codes. Rate limited to 12 a minute per caller.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["code", "price_lamports"], "properties": { "code": { "type": "string" }, "seller": { "type": "string" }, "price_lamports": { "type": "integer", "format": "int64" }, "buyer": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "The discounted price" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/discounts/use": {
+      "post": {
+        "tags": ["discounts"],
+        "summary": "Record that a code was spent",
+        "description": "The buyer is read off the settled invoice, not from the request.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["code", "seller", "invoice"], "properties": { "code": { "type": "string" }, "seller": { "type": "string" }, "invoice": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Recorded" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/discounts/{id}": {
+      "delete": {
+        "tags": ["discounts"],
+        "summary": "Delete one of the seller's codes",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/saved-payments": {
+      "get": {
+        "tags": ["saved"],
+        "summary": "Payment links the account kept",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "The saved links" } }
+      },
+      "post": {
+        "tags": ["saved"],
+        "summary": "Keep a payment link",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["payload"], "properties": { "payload": { "type": "string" }, "shop_id": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Saved" } }
+      }
+    },
+    "/api/waitlist": {
+      "post": {
+        "tags": ["misc"],
+        "summary": "Ask to be told when real payments open",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["email"], "properties": { "email": { "type": "string", "format": "email" } } } } } },
+        "responses": { "200": { "description": "On the list" }, "429": { "description": "Too many attempts" } }
+      }
+    },
+    "/api/faucet": {
+      "get": {
+        "tags": ["misc"],
+        "summary": "Devnet starter-token status for the signed-in account",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Whether it can still claim" } }
+      },
+      "post": {
+        "tags": ["misc"],
+        "summary": "Claim the devnet starter tokens",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Sent" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+      }
+    },
+    "/api/push/key": {
+      "get": { "tags": ["misc"], "summary": "The VAPID public key browsers subscribe with", "responses": { "200": { "description": "The key" } } }
+    },
+    "/api/push/subscribe": {
+      "post": {
+        "tags": ["misc"],
+        "summary": "Register this device",
+        "security": [{ "session": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["endpoint", "keys"], "properties": { "endpoint": { "type": "string" }, "keys": { "type": "object", "properties": { "p256dh": { "type": "string" }, "auth": { "type": "string" } } }, "locale": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Registered" } }
+      }
+    },
+    "/api/push/unsubscribe": {
+      "post": {
+        "tags": ["misc"],
+        "summary": "Forget this device",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["endpoint"], "properties": { "endpoint": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Removed" } }
+      }
+    },
+    "/api/push/test": {
+      "post": {
+        "tags": ["misc"],
+        "summary": "Send a test notification",
+        "security": [{ "session": [] }],
+        "responses": { "200": { "description": "Sent" } }
+      }
+    },
+    "/api/cron/allowance-nudge": {
+      "get": {
+        "tags": ["misc"],
+        "summary": "Daily reminder for refillable allowances",
+        "description": "Called by the platform's cron with its secret.",
+        "responses": { "200": { "description": "Sent" } }
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Platform counters",
+        "security": [{ "session": [] }],
+        "responses": {
+          "200": { "description": "The counters", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminStats" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Accounts, searchable and paged",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/search" },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": {
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUser" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "delete": {
+        "tags": ["admin"],
+        "summary": "Delete an account and everything it owns",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Removed" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/admin/shops": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Every shop, searchable by name or owner",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/search" },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": {
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminShop" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/shops/{id}": {
+      "patch": {
+        "tags": ["admin"],
+        "summary": "Correct a shop's name or description",
+        "description": "The currency is not editable here: stored prices are in it.",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "description": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "delete": {
+        "tags": ["admin"],
+        "summary": "Delete a shop with its catalogue",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/admin/products": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Every product, searchable by name, shop or owner",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/search" },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": {
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProduct" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } }
+        }
+      }
+    },
+    "/api/admin/products/{id}": {
+      "patch": {
+        "tags": ["admin"],
+        "summary": "Correct a product",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name", "price_lamports"], "properties": { "name": { "type": "string" }, "details": { "type": "string" }, "category": { "type": "string" }, "price_lamports": { "type": "integer", "format": "int64" } } } } } },
+        "responses": { "200": { "description": "Saved" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "delete": {
+        "tags": ["admin"],
+        "summary": "Delete a product",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/admin/discounts": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "Every discount code, searchable by code or owner",
+        "security": [{ "session": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/search" },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": {
+          "200": { "description": "One page", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminCode" } }, "total": { "type": "integer" }, "limit": { "type": "integer" }, "offset": { "type": "integer" } } } } } }
+        }
+      }
+    },
+    "/api/admin/discounts/{id}": {
+      "delete": {
+        "tags": ["admin"],
+        "summary": "Delete a code",
+        "security": [{ "session": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Removed" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    }
+  }
+}

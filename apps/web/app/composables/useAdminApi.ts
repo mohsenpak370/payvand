@@ -50,6 +50,46 @@ export interface WaitlistPage {
   total: number
 }
 
+/** One shop in the admin's records table. */
+export interface AdminShop {
+  id: string
+  owner: string
+  name: string
+  description: string
+  currency: string
+  products: number
+  created_at: number
+}
+
+/** One product in the admin's records table. */
+export interface AdminProduct {
+  id: string
+  shop: string
+  owner: string
+  name: string
+  details: string
+  category: string
+  price_lamports: number
+  created_at: number
+}
+
+/** One discount code in the admin's records table. */
+export interface AdminCode {
+  id: string
+  code: string
+  percent_off: number
+  owner: string
+  created_at: number
+}
+
+/** One page of any record table — they share a shape so the UI can page all. */
+export interface RecordPage<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
 /**
  * Admin endpoints. Access is decided by the API (`ADMIN_EMAILS`), not by
  * the client — every call can still come back 403 and the page must handle
@@ -106,9 +146,81 @@ export function useAdminApi() {
     })
   }
 
+  /** Shops, searched by name or owner. */
+  async function fetchShops(search: string, limit: number, offset: number) {
+    return await $fetch<RecordPage<AdminShop>>(`${base}/api/admin/shops`, {
+      headers: authHeaders(),
+      query: { ...(search ? { search } : {}), limit, offset }
+    })
+  }
+
+  /** Products, searched by name, shop or owner. */
+  async function fetchProducts(search: string, limit: number, offset: number) {
+    return await $fetch<RecordPage<AdminProduct>>(`${base}/api/admin/products`, {
+      headers: authHeaders(),
+      query: { ...(search ? { search } : {}), limit, offset }
+    })
+  }
+
+  /** Discount codes, searched by code or owner. */
+  async function fetchCodes(search: string, limit: number, offset: number) {
+    return await $fetch<RecordPage<AdminCode>>(`${base}/api/admin/discounts`, {
+      headers: authHeaders(),
+      query: { ...(search ? { search } : {}), limit, offset }
+    })
+  }
+
+  async function updateShop(id: string, body: { name: string, description: string }) {
+    await $fetch(`${base}/api/admin/shops/${id}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body
+    })
+  }
+
+  async function deleteShop(id: string) {
+    await $fetch(`${base}/api/admin/shops/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+  }
+
+  async function updateProduct(
+    id: string,
+    body: { name: string, details: string, category: string, price_lamports: number }
+  ) {
+    await $fetch(`${base}/api/admin/products/${id}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body
+    })
+  }
+
+  async function deleteProduct(id: string) {
+    await $fetch(`${base}/api/admin/products/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+  }
+
+  async function deleteCode(id: string) {
+    await $fetch(`${base}/api/admin/discounts/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+  }
+
   return {
     fetchStats,
     fetchUsers,
+    fetchShops,
+    fetchProducts,
+    fetchCodes,
+    updateShop,
+    deleteShop,
+    updateProduct,
+    deleteProduct,
+    deleteCode,
     fetchPayments,
     fetchWaitlist,
     removeWaitlistEntry,
