@@ -3,6 +3,8 @@
 // direction come from the same place the words do: the browser and a screen
 // reader pronounce the page as the language it is actually written in, and a
 // right-to-left locale lays the whole app out that way.
+import { MARK_BACKGROUND } from '~/utils/brand'
+
 const { t, locale, locales } = useI18n()
 const activeLocale = computed(() => locales.value.find(entry => entry.code === locale.value))
 
@@ -11,7 +13,7 @@ useHead({
     { name: 'viewport', content: 'width=device-width, initial-scale=1' },
     // Colors the browser UI (and the task switcher on Android) to match the
     // app rather than the browser default.
-    { name: 'theme-color', content: '#080E20' },
+    { name: 'theme-color', content: MARK_BACKGROUND },
     // iOS ignores the manifest for the home-screen title and opens the app
     // full screen only when asked to; these are the two things it reads.
     { name: 'apple-mobile-web-app-title', content: 'Payvand' },

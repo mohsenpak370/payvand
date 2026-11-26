@@ -17,6 +17,9 @@ const {
   sellingFromShops,
   discountAllowed,
   canInviteBuyerCodes,
+  paymentType,
+  paymentTypes,
+  reusableSelected,
   priceMode,
   priceModeItems,
   priceInput,
@@ -61,6 +64,22 @@ const {
     </template>
 
     <div class="flex flex-col gap-4">
+      <!--
+        Only a shop's page offers the choice: a reusable code is something a
+        shop puts out for customers to pay again and again, while the plain
+        payment page keeps making one invoice for one payer.
+      -->
+      <UFormField
+        v-if="shopScoped"
+        :label="t('sell.paymentTypeLabel')"
+        :help="t('sell.paymentTypeHelp')"
+      >
+        <URadioGroup
+          v-model="paymentType"
+          :items="paymentTypes"
+        />
+      </UFormField>
+
       <UFormField
         v-if="shopScoped && hasProducts"
         :label="t('sell.pricingLabel')"
@@ -220,7 +239,7 @@ const {
       />
 
       <UButton
-        :label="t('sell.createCode')"
+        :label="reusableSelected ? t('sell.createReusableCode') : t('sell.createCode')"
         icon="i-lucide-qr-code"
         :loading="busy"
         :disabled="!canCreate"

@@ -6,7 +6,13 @@ import logoDataUrl from '~/assets/logo.png?inline'
 import { clearMiddle, coverBox, readGrid } from '~/utils/qrPlate'
 
 const props = defineProps<{
-  payload: string
+  /** An invoice's payload, encoded as its checkout link. */
+  payload?: string
+  /**
+   * A path to encode as it is, with the origin in front of it — a reusable
+   * code, whose link is the code: opening it mints this visit's invoice.
+   */
+  url?: string
   size?: number
 }>()
 
@@ -20,6 +26,7 @@ const qrSize = computed(() => props.size ?? 320)
 // same page. Encoding `solana:` here would only work in a wallet.
 const origin = useRequestURL().origin
 const qrText = computed(() => {
+  if (props.url) return `${origin}${props.url}`
   if (!props.payload) return ''
   return `${origin}${paymentLinkPath(props.payload)}`
 })

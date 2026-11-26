@@ -11,6 +11,7 @@ pub mod payments;
 pub mod push;
 mod push_budget;
 pub mod rate_limit;
+pub mod reusable;
 pub mod saved;
 pub mod shops;
 pub mod solana_pay;

@@ -1,5 +1,8 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { readFileSync, readdirSync } from 'node:fs'
+// The manifest's colours are the mark's: the same hex the logo tile and the QR
+// clearing are painted with, so the installed app and the code do not drift.
+import { MARK_BACKGROUND } from './app/utils/brand'
 
 // The cluster the app targets is set in `.env` (`SOLANA_CLUSTER`), not here:
 // 'localnet' for a local `solana-test-validator`, 'devnet' for testing,
@@ -136,6 +139,12 @@ export default defineNuxtConfig({
       },
       '/api/payments': {
         target: 'http://127.0.0.1:8787/api/payments',
+        changeOrigin: true
+      },
+      // A reusable code is stored and minted here, so its page works in dev
+      // the way it does in production.
+      '/api/reusable': {
+        target: 'http://127.0.0.1:8787/api/reusable',
         changeOrigin: true
       },
       // Wallets ask the API for a transaction; in dev the QR points at this
@@ -291,8 +300,8 @@ export default defineNuxtConfig({
       display: 'standalone',
       // Matches the logo's navy, so the launch splash and the app window share
       // one colour instead of flashing white before the dark theme loads.
-      theme_color: '#080E20',
-      background_color: '#080E20',
+      theme_color: MARK_BACKGROUND,
+      background_color: MARK_BACKGROUND,
       icons: [
         { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
         { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },

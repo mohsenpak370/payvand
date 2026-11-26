@@ -106,7 +106,7 @@
       "title": "Häufige Fragen",
       "description": "Was Payvand über eine Wallet hinaus bietet, was es kostet und was deine Kundschaft braucht.",
       "q1": "Worin unterscheidet sich Payvand von einer USDC-Überweisung aus meiner Wallet?",
-      "a1": "Eine Wallet kann auch einen QR-Code zeigen, und das Geld bewegt sich genauso: direkt von der Wallet des Käufers zu deiner, nie über uns. Was eine Wallet dir überlässt, ist das Prüfen. Jeder kann einen wertlosen Coin erstellen, ihn USDC nennen und ihm dasselbe Logo geben, und vom echten unterscheiden lässt er sich nur, indem man eine lange Folge aus Buchstaben und Ziffern vergleicht. Ein Payvand-Code übernimmt diese Prüfung: Er zählt nur echte USDC oder EURC und springt bei einem Doppelgänger nie auf Bezahlt. Dein Kunde tippt auch nie eine Adresse oder einen Betrag ein. Er bestätigt eine einfache Anfrage – dieser Betrag, in diesem Coin, an dich –, in der nichts anderes versteckt ist. So bleibt weniger Raum für Tippfehler oder für eine Anfrage, die heimlich mehr will. Preis und Währung stehen fest im Code, die Zahlung gehört zu genau diesem Verkauf, und der Code springt von selbst auf Bezahlt, sobald das Geld ankommt, mit Zahler und Transaktion als Beleg. Kein Zuordnen von Überweisungen mit dem Auge und kein „Hab’s geschickt“-Screenshot, dem du glauben musst. Und bei USDC oder EURC braucht der Käufer kein SOL für die Netzwerkgebühr.",
+      "a1": "Eine Wallet kann auch einen QR-Code zeigen, und das Geld bewegt sich genauso: direkt von der Wallet des Käufers zu deiner, nie über uns. Was eine Wallet dir überlässt, ist das Prüfen: Jeder kann einen wertlosen Coin namens USDC mit demselben Logo erstellen, und nur der Vergleich der Adresse unterscheidet sie. Ein Payvand-Code übernimmt diese Prüfung: Er zählt nur echte USDC oder EURC, ein Doppelgänger springt also nie auf Bezahlt. Dein Kunde tippt auch nichts ein: Er bestätigt eine Anfrage — dieser Betrag, in diesem Coin, an dich — und der Code springt von selbst auf Bezahlt, sobald das Geld ankommt, mit Zahler und Transaktion als Beleg. Und bei USDC oder EURC braucht er kein SOL für die Netzwerkgebühr.",
       "q2": "Ist Payvand eine Wallet? Verwaltet es mein Geld?",
       "a2": "Nein. Es gibt keine Seed-Phrase und kein Payvand-Guthaben: Jede Zahlung geht direkt von der Wallet des Käufers zu deiner, und die App hat keinen Schlüssel, mit dem sie dein Geld bewegen könnte. Payvand ist die Zahlungsebene für die Wallet, die du schon hast.",
       "q3": "Brauchen meine Kunden ein Konto oder eine App?",
@@ -901,6 +901,15 @@
     "pageTitle": "Zahlungs-QR erstellen",
     "pageDescription": "Gib ein, was du berechnen willst, erstelle den Code und zeig ihn deiner Kundschaft.",
     "invoiceHeading": "1. Rechnung",
+    "paymentTypeLabel": "Zahlungsart",
+    "paymentTypeHelp": "Ein einmaliger Code schließt sich nach der Zahlung. Ein wiederverwendbarer Code bleibt offen: Jede und jeder kann ihn beliebig oft bezahlen.",
+    "paymentTypesSingle": "Einmalig",
+    "paymentTypesReusable": "Wiederverwendbar",
+    "createReusableCode": "Wiederverwendbaren Code erstellen",
+    "reusableHelp": "Alle mit diesem Code können {price} bezahlen, beliebig oft. Jede Zahlung erhält ihre eigene Rechnung und erscheint in deinem Verlauf.",
+    "reusableCopy": "Link kopieren",
+    "reusableCopied": "Link kopiert",
+    "reusableNote": "Leg ihn dorthin, wo Kundinnen und Kunden ihn erreichen — Theke, Seite oder Beleg.",
     "showHeading": "2. Code zeigen",
     "pricingLabel": "Preisgestaltung",
     "priceModes": {
@@ -1058,6 +1067,14 @@
       "categoryDelete": "Kategorie {name} löschen",
       "categoryNew": "Neue Kategorie — sie wird beim Speichern zur Liste dieses Ladens hinzugefügt."
     },
+  "reusable": {
+    "metaTitle": "Bezahlen — Payvand",
+    "opening": "Zahlung wird vorbereitet…",
+    "failureTitle": "Dieser Code ließ sich nicht öffnen",
+    "failureBody": "Dieser Zahlungscode ließ sich nicht öffnen.",
+    "goHome": "Zur Startseite"
+  },
+
   "subscription": {
       "title": "Shop-Abo",
       "description": "Für 1,70 € im Monat bleiben Shops und Produkte in diesem Konto verfügbar.",

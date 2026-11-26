@@ -169,6 +169,13 @@ const SCHEMA: &[&str] = &[
     // `reference` are what a status read needs, so the history asks the cluster
     // whether an invoice settled rather than for every payment ever made.
     "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        reference   TEXT NOT NULL DEFAULT '',\n        cluster     TEXT NOT NULL DEFAULT '',\n        endpoint    TEXT NOT NULL DEFAULT '',\n        currency    TEXT NOT NULL DEFAULT '',\n        mint        TEXT NOT NULL DEFAULT '',\n        amount      INTEGER NOT NULL DEFAULT 0,\n        memo        TEXT NOT NULL DEFAULT '',\n        seller_user TEXT,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
+    // A reusable code: one offer — price, currency, title, words — that any
+    // visitor pays by minting a fresh one-time invoice from it. The chain can
+    // settle an invoice once, so the repeatable thing is the row, not an
+    // address. The seller is the account that made it; `seller_user` is what
+    // ties every payment it mints to that account's history.
+    "CREATE TABLE IF NOT EXISTS reusable_links (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        seller_user TEXT NOT NULL,\n        shop_id     TEXT,\n        cluster     TEXT NOT NULL,\n        endpoint    TEXT NOT NULL DEFAULT '',\n        currency    TEXT NOT NULL,\n        amount      INTEGER NOT NULL,\n        memo        TEXT NOT NULL DEFAULT '',\n        name        TEXT NOT NULL DEFAULT '',\n        description TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
+    "CREATE INDEX IF NOT EXISTS reusable_links_seller_idx ON reusable_links(seller_user, created_at)",
     // Which wallet a session key spends for. A payment made from an allowance is
     // signed by that key, not by the buyer's wallet, so the settle leaves a payer
     // the feed would not otherwise recognise as this buyer. The chain keeps the

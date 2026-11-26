@@ -8,8 +8,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::AppState;
 use crate::{
-    admin, auth, config, discounts, faucet, handlers, push, saved, shops, solana_pay, sponsor,
-    subscription, waitlist, wallet,
+    admin, auth, config, discounts, faucet, handlers, push, reusable, saved, shops, solana_pay,
+    sponsor, subscription, waitlist, wallet,
 };
 
 /// Every path in the router, in route order. A test compares this list to the
@@ -37,6 +37,8 @@ pub(crate) const ROUTES: &[&str] = &[
     "/api/payments",
     "/api/payments/watch",
     "/api/payments/{id}",
+    "/api/reusable",
+    "/api/reusable/{id}/invoice",
     "/api/solana-pay/icon.svg",
     "/api/solana-pay/{token}",
     "/api/saved-payments",
@@ -94,6 +96,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(meta_routes())
         .merge(auth_routes())
         .merge(quote_routes())
+        .merge(reusable_routes())
         .merge(integration_routes())
         .merge(admin_routes())
         .merge(discount_routes())
@@ -150,6 +153,15 @@ fn quote_routes() -> Router<AppState> {
         .route("/api/payments", post(handlers::create_payment))
         .route("/api/payments/watch", post(handlers::watch_payments))
         .route("/api/payments/{id}", get(handlers::get_payment))
+}
+
+fn reusable_routes() -> Router<AppState> {
+    Router::<AppState>::new()
+        // A code anyone can pay, as often as they like. The seller stores the
+        // offer once; every visit mints a fresh one-time invoice from it, so two
+        // payers never share an address the chain can only settle once.
+        .route("/api/reusable", post(reusable::create))
+        .route("/api/reusable/{id}/invoice", post(reusable::invoice))
 }
 
 fn integration_routes() -> Router<AppState> {

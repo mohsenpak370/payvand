@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MARK_BACKGROUND } from '~/utils/brand'
 import { QR_MARGIN, clearMiddle, coverBox, readGrid } from '~/utils/qrPlate'
 
 /**
@@ -118,17 +119,20 @@ describe('coverBox', () => {
 })
 
 describe('clearMiddle', () => {
-  it('draws the plate over the modules inside it, on the code white', () => {
+  it('draws the plate over the modules inside it, in the mark\'s own background', () => {
     const svg = svgWith(darkModules)
     const plate = coverBox(readGrid(svg, SIZE)!, SIZE)!
     const cleared = clearMiddle(svg, plate)
 
     expect(cleared.endsWith('</svg>')).toBe(true)
     expect(cleared).toContain(
-      `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="#fff"/>`
+      `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="${MARK_BACKGROUND}"/>`
     )
+    // Not the code's white: before the mark is drawn the clearing has to look
+    // like the tile that will be drawn on it.
+    expect(MARK_BACKGROUND).not.toBe('#fff')
     // The plate is drawn last, so it covers the dots rather than sitting under them.
-    expect(cleared.indexOf('fill="#fff"')).toBeGreaterThan(cleared.lastIndexOf('fill="black"'))
+    expect(cleared.indexOf(`fill="${MARK_BACKGROUND}"`)).toBeGreaterThan(cleared.lastIndexOf('fill="black"'))
     // Reading the grid back is unaffected: the plate is a plain rect.
     expect(readGrid(cleared, SIZE)!.count).toBe(COUNT)
   })

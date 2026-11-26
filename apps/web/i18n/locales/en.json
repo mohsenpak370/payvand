@@ -106,7 +106,7 @@
       "title": "Questions people ask",
       "description": "What Payvand adds over a wallet, what it costs, and what your customer needs.",
       "q1": "How is Payvand different from sending USDC from my wallet?",
-      "a1": "A wallet can show a QR code too, and the money moves the same way: from the buyer's wallet straight to yours, never through us. What a wallet leaves to you is the checking. Anyone can make a worthless coin, call it USDC and give it the same logo, and the only way to tell it from the real one is to compare a long string of letters and numbers. A Payvand code does that check for you: it only counts the real USDC or EURC, so it never turns Paid for a look-alike. Your customer never types an address or an amount either. They approve one plain request — this amount, in this coin, to you — with nothing else hidden in it, so there is less room for a typo or for a request that quietly asks for more. The price and currency are fixed in the code, the payment is tied to this one sale, and the code turns Paid by itself the moment the money lands, keeping the payer and the transaction as a receipt. No matching transfers by eye, and no \"I sent it\" screenshot to take on trust. And with USDC or EURC the buyer needs no SOL for the network fee.",
+      "a1": "A wallet can show a QR code too, and the money moves the same way: from the buyer's wallet straight to yours, never through us. What a wallet leaves to you is the checking — anyone can make a worthless coin called USDC with the same logo, and only comparing the address tells them apart. A Payvand code does that check for you: it counts only real USDC or EURC, so a look-alike never turns Paid. Your customer types nothing either: one approval — this amount, in this coin, to you — and the code turns Paid by itself when the money lands, with the payer and the transaction kept as a receipt. With USDC or EURC the buyer needs no SOL for the network fee.",
       "q2": "Is Payvand a wallet? Does it hold my money?",
       "a2": "No. There is no seed phrase to keep and no Payvand balance: each payment goes straight from the buyer’s wallet to yours, and the app holds no key that can move your funds. It is the payment layer on top of the wallet you already have.",
       "q3": "Do my customers need an account or an app?",
@@ -901,6 +901,15 @@
     "pageTitle": "Create a payment QR",
     "pageDescription": "Enter what you want to charge, create the code, and show it to your customer.",
     "invoiceHeading": "1. Invoice",
+    "paymentTypeLabel": "Payment type",
+    "paymentTypeHelp": "A one-time code closes once it is paid. A reusable code stays open: anyone can pay it, as often as they like.",
+    "paymentTypesSingle": "One-time",
+    "paymentTypesReusable": "Reusable",
+    "createReusableCode": "Create reusable code",
+    "reusableHelp": "Anyone with this code can pay {price}, as often as they like. Every payment gets its own invoice and lands in your history.",
+    "reusableCopy": "Copy link",
+    "reusableCopied": "Link copied",
+    "reusableNote": "Put it where customers can reach it — a counter, a page, a receipt.",
     "showHeading": "2. Show the code",
     "pricingLabel": "Pricing",
     "priceModes": {
@@ -1058,6 +1067,13 @@
       "categoryDelete": "Delete category {name}",
       "categoryNew": "New category — it will be added to this shop's list when you save."
     },
+  "reusable": {
+    "metaTitle": "Pay — Payvand",
+    "opening": "Preparing your payment…",
+    "failureTitle": "This code could not be opened",
+    "failureBody": "Could not open this payment code.",
+    "goHome": "Go home"
+  },
   "subscription": {
       "title": "Shops subscription",
       "description": "€1.70 a month keeps shops and products on this account.",
