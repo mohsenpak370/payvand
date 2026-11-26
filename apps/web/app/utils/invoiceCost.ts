@@ -6,7 +6,7 @@ import type { SupportedCurrency } from '../composables/usePaymentApi'
  *
  * Nothing here reads a chain or a Nuxt context, so `invoiceCost.test.ts` can
  * hold these numbers against the program's own Rust (`fee_for` in `helpers.rs`,
- * the `InvoiceTooSmall` guard in `instructions/sol.rs`) without a validator.
+ * the `InvoiceTooSmall` guard in `instructions/sol/settle.rs`) without a validator.
  */
 
 /** `PAYMENT_SPACE`: the temporary account an invoice is created in. */
