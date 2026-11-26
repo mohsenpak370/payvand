@@ -1,9 +1,11 @@
 # 0007 — SOL sponsored fees: the seller pays the network fee there too
 
-Status: `Done` on devnet, with two open follow-ups. The program is upgraded to v4
-(`settle_payment` has a required `sponsor`, `Config` carries the three
-`network_fee_*` figures), the relayer's SOL route rebuilds and fee-pays
-`settle_payment`, and the checkout asks the relayer first for both currencies.
+Status: `In Progress` as of the 2026-11-26 audit. The **code and devnet runs are
+done**; what remains is deployment proof, copy, one client quote mismatch and
+bookkeeping. The program is upgraded to v4 (`settle_payment` has a required
+`sponsor`, `Config` carries the three `network_fee_*` figures), the relayer's SOL
+route rebuilds and fee-pays `settle_payment`, and the checkout asks the relayer
+first for both currencies.
 
 The policy write is done: `Config` was migrated to 184 bytes on 2026-11-24 and
 `set_fee_price_anchor` priced it at 5 000 lamports per signature. With a funded
@@ -29,6 +31,36 @@ price less `max(rate, flat + network_t × signatures)`, the treasury gains exact
 63 133 / 63 484 base units, the payer's lamports do not move and the relayer ends
 whole. Numbers are in `DEV.md`. All three paths in the change are now confirmed
 on devnet.
+
+## Progress Audit (2026-11-26)
+
+Audited at `92010cb`: the program, relayer rebuild and checkout paths are all
+still in place, and the harness covers the small/large SOL books and the
+sponsor-as-payer case. After `cargo build-sbf` the settle suite passes 74/74;
+`cargo fmt --check` is clean, while clippy fails on six test lints (see `0003`).
+**What is left:**
+
+- Provision and document `SPONSOR_KEYPAIR` and the caps for the deployed API,
+  then record a settle through the real `POST /api/sponsor/settle` route — the
+  devnet evidence in `DEV.md` uses local scripts and `.secrets/sponsor.json`, not
+  the deployed endpoint.
+- Fix the SOL cost panel/quote: `PaymentCheckout.vue` skips the sponsor read for
+  SOL and `useCheckoutCosts.ts` quotes one signature, but a sponsored SOL settle
+  charges and refunds two (`sol/settle/split.rs`).
+- Finish the copy pass: stale "the payer must hold SOL" prose remains in
+  `README.md` (the SOL-sponsorship paragraph and Notes), `DEV.md` (token-only
+  sponsor note and browser test steps), the five learn locales and the i18n FAQ.
+- Reconcile the legacy Solana Pay builder, which still builds a pre-v4
+  one-signer `settle_payment` in `apps/api/src/solana_pay.rs` while the program
+  now requires a `sponsor`.
+- Verify end to end (`task verify`, web vitest and API tests are not all in CI),
+  then archive this plan and add it to `plans/README.md`.
+
+Boxes below that say "no sponsor ⇒ byte-for-byte old settle", "treasury pays the
+fee" or "signed-out caller refused" are superseded by the shipped design: the
+sponsor is required and self-signing is expressed by passing the payer as its own
+sponsor, the split repays it directly, and sponsorship is anonymous and
+wallet-keyed. They stay unchecked as history.
 
 ## Linked Docs
 
@@ -61,6 +93,8 @@ In scope:
 Out of scope:
 
 - Anonymous (signed-out) sponsorship; that stays behind `auth::require_user`.
+  *(Superseded 2026-11-26: sponsorship is anonymous now, with caps keyed by
+  wallet address in `apps/api/src/sponsor.rs` and `apps/api/src/db.rs`.)*
 - Any change to the platform rates, the tiers or the token paths.
 
 ## Dependencies
@@ -198,6 +232,7 @@ Acceptance criteria:
 - [ ] `POST /api/sponsor/settle` accepts a SOL settle and returns a message
       whose fee payer is the relayer.
 - [ ] A signed-out caller is still refused (`auth::require_user`).
+      *(Superseded: anonymous sponsorship shipped, so this is no longer a gate.)*
 - [ ] The relayer refuses a message that names a sponsor other than itself.
 
 Files likely touched:
@@ -237,12 +272,16 @@ Estimated scope: Medium.
 
 ## Checkpoints
 
-- [ ] Phase 1: `cargo test --manifest-path apps/contracts/Cargo.toml` passes, and
+- [x] Phase 1: `cargo test --manifest-path apps/contracts/Cargo.toml` passes, and
       the treasury's books are asserted in both the small and the large case.
-- [ ] Phase 2: one sponsored and one unsponsored SOL settle land on devnet, and
+      *(2026-11-26: after a fresh SBF build the settle suite passes 74/74.)*
+- [x] Phase 2: one sponsored and one unsponsored SOL settle land on devnet, and
       the payer's lamport balance is unchanged in the sponsored one.
+      *(Signatures and deltas in `DEV.md:165-215`.)*
 - [ ] Before completion, `README.md`'s buyer row and sponsor paragraph are
       updated, and `DEV.md` records the SOL relayer.
+      *(Buyer row and `DEV.md` are done; the sponsor paragraph in `README.md` and
+      its Notes section still describe the old token-only, payer-needs-SOL rule.)*
 
 ## Risks And Mitigations
 
@@ -256,25 +295,37 @@ Estimated scope: Medium.
 
 ## Rollout / Deployment
 
-- [ ] Program: deploy the phase-1 build, then `migrate_config` if the account is
+- [x] Program: deploy the phase-1 build, then `migrate_config` if the account is
       version 3, then `set_fee_price_anchor` so the token equivalents are priced.
-- [ ] Policy: write `network_fee_lamports` in the same `update_config` call, and
+      *(Done 2026-11-24; signatures in `DEV.md:155-163`.)*
+- [x] Policy: write `network_fee_lamports` in the same `update_config` call, and
       leave it at zero until the client passes a sponsor.
+      *(The "leave it at zero" staging step is obsolete: the live policy is 5,000
+      lamports per signature and the client ships.)*
 - [ ] API: deploy with the relayer key already configured.
-- [ ] Client: deploy after both.
+      *(Still open: `SPONSOR_KEYPAIR` is read in code but is not in the README env
+      table or `apps/api/vercel.json`.)*
+- [x] Client: deploy after both. *(Code shipped; deployment smoke through the
+      API route is still owed — see above.)*
 - [ ] Smoke tests: sponsored SOL, sponsored token, unsponsored SOL — on devnet,
       with the payer's lamport delta checked in each.
+      *(Program-level runs are recorded in `DEV.md`; the API-endpoint run is not.)*
 
 ## Definition Of Done
 
 - [ ] All acceptance criteria are met.
-- [ ] `task verify` passes.
-- [ ] `README.md` and `DEV.md` describe the SOL rule.
+- [ ] `task verify` passes. *(2026-11-26: contract tests pass 74/74 and fmt is
+      clean; clippy fails on six test lints and web vitest / API tests are not
+      all run in CI.)*
+- [ ] `README.md` and `DEV.md` describe the SOL rule. *(Good in the fee section
+      and `DEV.md`; stale copy elsewhere — see the audit.)*
 - [ ] The plan is archived and `plans/README.md` is updated.
 
 ## Open Questions
 
 - Should an unsponsored SOL payment charge the seller nothing for the network
-  (today) or refuse with a named error?
+  (today) or refuse with a named error? *(Decided by implementation: a payer that
+  is its own sponsor is accepted and charged one signature.)*
 - Does the API need to report the fee payer on a settle it did not build, for
-  support and accounting?
+  support and accounting? *(Still open — `PaymentRecord` and `PaymentSettled` have
+  no fee-payer field.)*

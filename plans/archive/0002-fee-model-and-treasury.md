@@ -128,7 +128,7 @@ line says where it stands, so a later pass does not have to re-derive it.
   harness beside `Config`'s and the payment layouts'. The docs half closed too
   (2026-11-18): `README.md`'s *Token programs* section and `DEV.md`'s token block
   name SPL Token as the only supported program, quote the `Custom(6017)` refusal
-  and link `plans/0003-token-interface-migration.md`, which carries the
+  and link `plans/deferred/0003-token-interface-migration.md`, which carries the
   `token_interface` migration.
 - **Task 1.6 — closed (2026-11-18).** All three boundary cases now execute:
   `fee_floors_rather_than_rounds_at_ninety_nine_lamports`,
@@ -180,7 +180,7 @@ line says where it stands, so a later pass does not have to re-derive it.
   in `Config` and charges nothing. The charging half was never built and no
   product asks for it.
 - Token-2022 migration (`token_interface`) — written out in
-  [0003-token-interface-migration.md](../0003-token-interface-migration.md) — and
+  [0003-token-interface-migration.md](../deferred/0003-token-interface-migration.md) — and
   merging the two float constants onto `Config::session_fee_float` (revision 8).
 - Payer-side gasless/relayer support —
   [0004-relayer-sponsored-fees.md](../0004-relayer-sponsored-fees.md) — and
@@ -492,7 +492,7 @@ Revision 16 closes Task 4.4's documentation half (2026-11-18):
   error a caller sees, that the refusal happens before any CPI so nothing moves,
   and that a Token-2022 mint added today would only buy a `6017`.
 - **A follow-up to link, not a placeholder.**
-  `plans/0003-token-interface-migration.md` (Draft) records what exists and the
+  `plans/deferred/0003-token-interface-migration.md` (Deferred) records what exists and the
   work the migration actually needs: a `Config` mint/extension policy, interface
   CPIs with a truthful `seller_proceeds` under transfer fees, per-program ATA
   derivation, a treasury account per mint and program, the mint list, and the
@@ -622,7 +622,7 @@ full form costs a devnet upgrade and buys no new evidence.
 ## Linked Docs
 
 - `plans/README.md` — plan conventions and lifecycle.
-- `plans/0003-token-interface-migration.md` — the deferred Token-2022 migration
+- `plans/deferred/0003-token-interface-migration.md` — the deferred Token-2022 migration
   this plan's Task 4.4 hands over.
 - `plans/0004-relayer-sponsored-fees.md` — the sponsor the payer's SOL gap needs.
 - `plans/0005-per-shop-fees.md` — the per-shop override this plan's global
@@ -707,7 +707,7 @@ Out of scope:
   designed in
   [0004-relayer-sponsored-fees.md](../0004-relayer-sponsored-fees.md).
 - Token-2022 migration (documented as unsupported, tracked in
-  [0003-token-interface-migration.md](../0003-token-interface-migration.md)).
+  [0003-token-interface-migration.md](../deferred/0003-token-interface-migration.md)).
 - Mainnet deployment, discounts, a full event indexer.
 - Per-shop fee overrides — designed in
   [0005-per-shop-fees.md](../0005-per-shop-fees.md). One global policy ships here.
@@ -2383,7 +2383,7 @@ The code half was built on 2026-11-18 (revision 14):
 The documentation half landed on 2026-11-18: `README.md` has a *Token programs*
 section and `DEV.md` a token block, both naming SPL Token as the only supported
 program, quoting the `Custom(6017)` refusal and its message, and linking
-`plans/0003-token-interface-migration.md` for the migration. The UI/API mint
+`plans/deferred/0003-token-interface-migration.md` for the migration. The UI/API mint
 allowlist is unchanged, and the migration's own work (`transfer_checked`, the
 extension rules) is not started — `0003` carries it.
 
@@ -2392,7 +2392,7 @@ Acceptance criteria:
 - [x] Product docs state supported token programs and link the follow-up
       (2026-11-18: README's *Token programs* section and `DEV.md` name SPL Token
       as the only supported program, quote `Custom(6017)` and link
-      `plans/0003-token-interface-migration.md`).
+      `plans/deferred/0003-token-interface-migration.md`).
 - [x] A Token-2022 mint fails with a clear error.
 - [x] `Config`, `Budget`, and `TokenBudget` sizes are asserted by a test.
 
@@ -2891,7 +2891,7 @@ Acceptance criteria:
 - [ ] The plan file moves to `plans/archive/`.
 - [ ] Follow-ups (Token-2022, relayer/sponsor, per-shop fees) are captured as
       issues or new plans. All three are plans as of 2026-11-19:
-      [0003](../0003-token-interface-migration.md),
+      [0003](../deferred/0003-token-interface-migration.md),
       [0004](../0004-relayer-sponsored-fees.md) and
       [0005](../0005-per-shop-fees.md), each listed in `plans/README.md`; only the
       `plans/README.md` status change and the move to `plans/archive/` remain in

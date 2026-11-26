@@ -27,8 +27,13 @@ Use these statuses:
 - `Draft`: Proposed task breakdown, not approved for implementation.
 - `Approved`: Ready to implement.
 - `In Progress`: Implementation has started.
-- `On hold`: Partly implemented and paused until a named trigger; tasks already
-  done stay done, and the plan records what would restart it.
+- `On hold`: Partly implemented and paused, with a current intent to resume when
+  a named trigger fires; tasks already done stay done.
+- `Deferred`: Not currently intended for implementation. It may be a proposal
+  waiting on traffic (`0006`) or a partly shipped plan parked until the product
+  asks for it again (`0003`). These plans live in [`deferred/`](deferred/) and
+  keep their decisions and shipped work recorded without occupying the active
+  queue.
 - `Completed`: Tasks and verification are complete.
 - `Superseded`: Replaced by another plan.
 - `Cancelled`: No longer intended.
@@ -56,18 +61,18 @@ sequential filename. Templates live in `plans/templates/`.
   including `anchor test`) as the standard verification bar named in plan
   tasks.
 - Update `README.md` when a completed plan changes documented behavior.
-- Move completed plan files into `plans/archive/` and keep active,
-  draft, in-progress, superseded, or cancelled plans at the top level.
-- Keep the active and archived tables below up to date.
+- Move completed plan files into `plans/archive/` and parked or trigger-gated
+  plans into `plans/deferred/`; keep plans with current implementation intent at
+  the top level.
+- Keep the active, deferred, and archived tables below up to date.
 
 ## Active Plans
 
 | ID | Plan | Status |
 | ---- | ---- | -------- |
-| 0003 | [Token-2022 migration (`token_interface`)](0003-token-interface-migration.md) | On hold |
 | 0004 | [Relayer and sponsored fees (gasless payments)](0004-relayer-sponsored-fees.md) | In Progress |
 | 0005 | [Per-shop fee overrides](0005-per-shop-fees.md) | In Progress |
-| 0006 | [Compressed payment receipts (4 sharded trees + rotation)](0006-compressed-receipts.md) | Draft |
+| 0007 | [SOL sponsored fees](0007-sol-sponsored-fees.md) | In Progress |
 
 The 2026-11-09 contract review originally lived in one plan. It was split on
 2026-11-12: `0001` ships the theft, replay, and status fixes, and `0002` builds
@@ -79,42 +84,77 @@ but the single `fee_bps` and the 301-byte receipt it describes were replaced
 after its last revision by the tiered `FeePolicy` (`1c0600d`) and the 48-byte
 marker (`760053b`); its new *Current State* section is the live model, and the
 older tables are marked historical. `0003`–`0005` all dated their "what exists
-today" sections from revision 14–17 of `0002` and now describe the current
-`Config`, `fee_for` and rents instead. `0006` designs unbuilt work and was
-already current; only its mainnet/devnet rent labelling was wrong.
+today" sections from revision 14–17 of `0002`; their stale counts and `Config`
+facts were corrected in the 2026-11-26 audit below. `0006` designs unbuilt work
+and was moved to [`deferred/`](deferred/) that day.
 
-On 2026-11-22 `0003` moved from `In Progress` to **On hold**. USDC and EURC are
-both classic SPL Token mints on both clusters, so the `token_interface`
-migration changes nothing the product offers; and the Token-2022 stablecoins
-worth accepting (PYUSD, USDG) all carry extensions, which `0003`'s decided
-policy (owner plus the 82-byte base layout) refuses. Its Task C — the interface
-CPIs, behaviour-identical and verified — stays in place, because it is what makes
-the SPL Token refusal the named `Token2022Unsupported`. Tasks B/D/E/F are
-deferred; the plan restarts when a Token-2022 mint is actually wanted in
-`CURRENCY_MINTS`, and starts by re-deciding the extension policy.
+On 2026-11-22 `0003` moved from `In Progress` to `On hold`; on 2026-11-26 it
+moved again to **Deferred** after the decision that there is no current intent to
+implement Token-2022 support. USDC and EURC are both classic SPL Token mints on
+both clusters, so the `token_interface` migration changes nothing the product
+offers; and the Token-2022 stablecoins worth accepting (PYUSD, USDG) all carry
+extensions, which `0003`'s decided policy (owner plus the 82-byte base layout)
+refuses. Its Task C — the interface CPIs, behaviour-identical and verified —
+stays in place, because it is what makes the SPL Token refusal the named
+`Token2022Unsupported`. Tasks B/D/E/F are parked; the plan restarts only when a
+Token-2022 mint is actually wanted in `CURRENCY_MINTS`, and starts by re-deciding
+the extension policy.
 
 Audited again on 2026-11-22 with the same question — *is this shipped, with only
 checking left?* — and `0002` was archived, because its fee model, treasury,
 budgets and events all shipped and what remains is verification (see
-[`REMAINING.md`](REMAINING.md)). `0003`–`0005` were **not** archived: `0003` is
-parked on purpose, `0004` still owes its devnet run and `0005` still owes the
-setter and the settle-path account, so each keeps its own checkboxes.
+[`REMAINING.md`](REMAINING.md)). `0003`–`0005` were **not** archived: `0003` was
+parked on purpose, while `0004` and `0005` still had building left. Those
+specifics are historical; the 2026-11-26 audit below is current.
 
-`0004` began on 2026-11-22: its sponsor model is decided (in-house key in the
-API, token invoices only, the sponsor fronts both record rents and takes the
-treasury's refund of them), `settle_token_payment` now carries a `sponsor`
-account, the harness covers the zero-lamport buyer, `POST /api/sponsor/settle`
-rebuilds and byte-checks the one message it will sign, and the checkout asks for
-that sponsor only when the wallet cannot front the fee and rents. What is left is
-the devnet run and the session-key case.
+`0004` began on 2026-11-22 with an in-house API-held sponsor key for token
+invoices only, fronts both record rents and a refund to the sponsor; the
+zero-lamport harness case and the byte-checked `POST /api/sponsor/settle` rebuild
+shipped. Its original below-threshold, signed-in-only scope was later
+superseded: `0007` added SOL sponsorship and the checkout now asks the relayer
+first for both currencies, with wallet-keyed anonymous caps.
 
 `0005` also began on 2026-11-22, aimed at a per-shop multiplier rather than a
 second policy: a `ShopPolicy` PDA seeded by the seller and a key the API stores
 beside its row, `0..=10_000` set by the seller, scaling `Config`'s two rates and
 leaving the boundaries and the token flats shared. That shape needs no `Config`
-field, so it takes no version bump and the race with `0003` is gone. The
-arithmetic and the account type are in; the instruction that writes one, the
-optional account on the settle paths and the API/client side are next.
+field, so it takes no version bump. The setter and the optional accounts on all
+four settle paths have since shipped; the API/client side is what remains.
+
+Re-audited 2026-11-26 against `92010cb`: `0003` moved from **On hold** to
+**Deferred** (no current intent to implement Token-2022; the on-chain owner check
+is even stricter than its policy text — SPL Token only); `0004` remains **In
+Progress** because its API-endpoint devnet run, deployed sponsor key,
+client refusal text, SOL cost panel and copy are still owed; `0005` remains **In
+Progress** with the program/relayer shipped and the shop-row, client/quote,
+cap-settlement test and devnet work left; `0007` was added to the active table —
+its program, relayer and checkout code plus the devnet runs are done, but the
+same deployment/copy/verification items and its archive step remain. A fresh
+`cargo build-sbf` followed by `cargo test --test settle` passes 74/74; clippy
+still fails on six test lints. `0003` and `0006` were moved to `plans/deferred/`
+as described below. Details and remaining checkboxes are in each plan and in
+[`REMAINING.md`](REMAINING.md).
+
+## Deferred Plans
+
+| ID | Plan | Status | Trigger |
+| ---- | ---- | -------- | ------- |
+| 0003 | [Token-2022 migration (`token_interface`)](deferred/0003-token-interface-migration.md) | Deferred | A named Token-2022 mint is actually wanted |
+| 0006 | [Compressed payment receipts (4 sharded trees + rotation)](deferred/0006-compressed-receipts.md) | Deferred | ~700,000 expected settlements |
+
+`0003` moved here on 2026-11-26 after the decision not to implement Token-2022
+support for now. Its Task C is shipped and stays in place; Tasks B/D/E/F are
+parked. Restart only when a named mint is wanted in `CURRENCY_MINTS`, and start by
+re-deciding the extension policy — the current owner check refuses even a
+base-layout Token-2022 mint.
+
+`0006` moved here on 2026-11-26 after an audit found no implementation: its
+decisions and the README's "planned, not shipped" note are recorded, but none of
+Phase 1–5 has started. **It makes sense only when traffic justifies it**: the
+48-byte marker stays cheaper in total below roughly 700,000 settlements, even
+though rent alone breaks even at ~7,700–8,000. Even then, the compatible
+compression program gate and the replay-rule reconciliation in the plan must
+pass first.
 
 ## Archived Plans
 

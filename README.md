@@ -451,9 +451,12 @@ which is never negative, and `max(0, rate − receipt rent)` on SOL, where it pa
 nothing. What a small invoice earns is nothing rather than a subsidy, and the
 first fee-sized margin appears once the rate overtakes the record.
 
-**Planned compressed receipts (`plans/0006`).** When compressed receipts are
-enabled, a settlement commits the invoice to one of four shared Merkle trees
-instead of opening a permanent receipt account. The same `100`/`50` bps tiers
+**Deferred compressed receipts ([`plans/deferred/0006`](plans/deferred/0006-compressed-receipts.md)).**
+This is deferred until traffic justifies it — roughly 700,000 settlements, since
+below that the 48-byte marker is cheaper once engineering and operations are
+counted. When compressed receipts are enabled, a settlement commits the invoice
+to one of four shared Merkle trees instead of opening a permanent receipt
+account. The same `100`/`50` bps tiers
 apply, but there is no receipt-rent floor, no rent-derived token flat, and no
 receipt-rent refund; only the invoice-rent refund remains on token payments.
 Tree, nullifier, and occupancy accounts are shared infrastructure paid for by
@@ -514,8 +517,9 @@ Token's.
 
 Supporting Token-2022 — interface CPIs, `transfer_checked_with_fee`, the rules
 for extensions such as transfer fees and permanent delegates, ATA derivation per
-token program, and a treasury account per mint *and* program — is a follow-up of
-its own: [plans/0003-token-interface-migration.md](plans/0003-token-interface-migration.md).
+token program, and a treasury account per mint *and* program — is a deferred
+follow-up with no current implementation plan:
+[plans/deferred/0003-token-interface-migration.md](plans/deferred/0003-token-interface-migration.md).
 Until it lands, no Token-2022 invoice can be paid: the app offers no such mint,
 and the program would refuse one.
 

@@ -1,8 +1,14 @@
 # What Is Left
 
-Active plans keep their own checkboxes. This file exists so an **archived** plan
-does not have to be reopened to see what it still owes: a plan is archived once
+Active and deferred plans keep their own checkboxes; this file is the short
+cross-plan index. An **archived** plan is not reopened to see what it still owes:
 its design and code have shipped, and what remains is checking, not building.
+
+Re-audited 2026-11-26 against the working tree at `92010cb`. After a fresh
+`cargo build-sbf`, `cargo test --test settle` passes **74/74** and `cargo fmt
+--check` is clean. `cargo clippy -p payvand --all-targets -- -D warnings` still
+fails on six test lints; `task verify` is not recorded end to end, and CI does not
+run web vitest or API tests.
 
 ## Archived `0002` — Fee Model, Treasury, and Budget Accounting
 
@@ -13,10 +19,11 @@ shipped, and `0003`–`0006` came out of it. What is left is verification:
 - [ ] `task verify` (lint, typecheck, API tests, the contract suite) run against
       the current tree and recorded in the archived plan's revision notes.
 - [ ] `cargo clippy -p payvand --all-targets -- -D warnings`. It currently fails
-      on three lints in `apps/contracts/programs/payvand/tests/settle.rs` —
-      `proportional.max(TEST_FIXED_FEE)` and the two constant assertions on
-      `FLATS_REFRESH_SECS` / `PRICE_ANCHOR_BAND_BPS` — all from the fee-anchor
-      work that landed after the plan's last revision.
+      on **six** lints in `apps/contracts/programs/payvand/tests/settle.rs`:
+      `manual_clamp` and the old `max` suggestion around :1405, the two constant
+      assertions on `FLATS_REFRESH_SECS` / `PRICE_ANCHOR_BAND_BPS` around :3147,
+      plus `clone_on_copy` around :4457 and `redundant_locals` around :4469. The
+      first four come from the fee-anchor work; the last two are from later tests.
 - [ ] `anchor test`'s full form. It upgrades devnet to prove what the harness
       already proves; either run it once and record the result, or record the
       decision to retire it in favour of `cargo test --test settle`.
@@ -32,24 +39,43 @@ shipped, and `0003`–`0006` came out of it. What is left is verification:
 - [ ] One open question to settle: the initial treasury funding amount, and the
       alert threshold before a top-up is needed.
 
+## Deferred
+
+- `0003` — Moved to [`deferred/0003-token-interface-migration.md`](deferred/0003-token-interface-migration.md)
+  on 2026-11-26 after the decision not to implement Token-2022 support for now.
+  Task C (the interface CPIs) shipped and stays in place; Tasks B/D/E/F are
+  parked. Restart only when a named Token-2022 mint is wanted in `CURRENCY_MINTS`,
+  starting with a re-decision of the extension policy — the current owner check
+  refuses even a base-layout Token-2022 mint.
+- `0006` — Moved to [`deferred/0006-compressed-receipts.md`](deferred/0006-compressed-receipts.md)
+  on 2026-11-26. Nothing is built; its decisions are recorded and it should be
+  picked up only when the product expects ~700,000 settlements, at which point
+  the compatibility gate and the nullifier-rule reconciliation in the plan are
+  also prerequisites. The 48-byte marker remains the cheaper choice below that
+  traffic level.
+
 ## Still Active
 
-These were checked on 2026-11-22 and are **not** archived — each has building
-left, not only checking:
+These were re-audited on 2026-11-26 and are **not** archived — each has building
+or proof left, not only checking:
 
-- `0003` — On hold by decision. Task C (interface CPIs) shipped; Tasks B, D, E
-  and F wait on a Token-2022 mint the product actually wants, and start by
-  re-deciding the extension policy.
-- `0004` — In Progress. The program's `sponsor` account, its harness tests, the
-  `POST /api/sponsor/settle` endpoint and the checkout's sponsored send (with its
-  funded-wallet fallback test) shipped. Left: the devnet run, and letting a
-  drained session float borrow the sponsor's fee — which needs the same
-  refund-to-sponsor account on `pay_from_token_budget`.
-- `0005` — In Progress. The `ShopPolicy` type, `fee_for`'s multiplier, the
-  seller-signed `set_shop_policy` with its `0..=10_000` write cap, the optional
-  policy account on the four settle paths (all four covered by the harness:
-  wallet and allowance, SOL and token), and the relayer's rebuild carrying the
-  policy as its trailing account shipped. Left: the `PaymentSettled` field, a
-  settlement through a policy written at the cap, and the API/client side that
-  stores the policy address and passes it to the quote, the builder and
-  `POST /api/sponsor/settle`.
+- `0004` — In Progress. The program's `sponsor` account, harness tests,
+  `POST /api/sponsor/settle`, caps and checkout's sponsored send shipped; `0007`
+  extended them to SOL and made sponsorship anonymous. Left: a settle through the
+  deployed API endpoint, provisioning/documenting `SPONSOR_KEYPAIR` and caps,
+  a refusal naming the actual `needs_lamports`, the SOL cost panel showing two
+  signatures, stale "payer needs SOL" copy, and a per-seller cap decision. The
+  balance gate and drained session-float borrow are decided away.
+- `0005` — In Progress. The `ShopPolicy` type, `fee_for` multiplier, seller-signed
+  `set_shop_policy` with its `0..=10_000` write cap, optional policy accounts on
+  all four settle paths and the relayer's trailing account shipped. Left: the
+  policy identity in `PaymentSettled`, the shop-row column, the API/client wiring
+  (quote, checkout, allowance and seller UI), a settlement through a policy
+  written at `10_000`, client quote tests and a devnet record. The `Config` band,
+  admin approve/revoke path and API fee-field migration are decided away.
+- `0007` — In Progress after the 2026-11-26 audit. Program upgrades, the v4
+  network-fee fields, the relayer's SOL rebuild and all three devnet paths are
+  done. Left: deployed API key and endpoint smoke, the SOL cost panel/quote,
+  stale copy in README/DEV/learn/i18n, the legacy one-signer Solana Pay builder,
+  full verification, and the archive step. Its open question about reporting the
+  fee payer on an externally built settle is unresolved.

@@ -1,26 +1,46 @@
 # 0003 — Token-2022 migration (`token_interface`)
 
-Status: `On hold` (2026-11-22). Follow-up to `0002`'s Task 4.4, which decided
+Status: `Deferred` (moved from `On hold` on 2026-11-26). There is no current
+intent to add Token-2022 support. Follow-up to `0002`'s Task 4.4, which decided
 the program settles SPL Token mints only and made that refusal explicit rather
 than leaving it to a failure inside a CPI. `README.md` links this file as the
 place the migration is tracked.
 
-Task C is done and stays done; Tasks B, D, E and F are deferred, not dropped.
+Task C is done and stays done; Tasks B, D, E and F are parked, not dropped.
+
+## When To Implement
+
+Only revisit if the product actually wants a named Token-2022 mint in
+`CURRENCY_MINTS`. There is no date or traffic trigger: as of 2026-11-26 both
+stablecoins Payvand prices in are classic SPL Token mints, and the useful
+Token-2022 stablecoins carry extensions the current policy refuses. Restarting
+starts by re-deciding the extension policy, then by admitting a mint under that
+policy; see Task A. Until then, the shipped `token_interface` CPIs keep the SPL
+boundary explicit.
 
 First increment (2026-11-22): Task A's policy is decided and recorded below, and
 Task C's interface CPIs are in the program — `cargo build-sbf` plus all 57 suite
-tests pass with the refusal test unchanged. The mint constraint still admits SPL
-Token only, so this increment changes no behaviour. Verification of this
+tests passed with the refusal test unchanged. The mint constraint still admits SPL
+Token only, so this increment changes no behaviour. Verification of that
 increment: `cargo build-sbf` clean, `cargo test --test settle` 57 passed, `cargo
 fmt --check` clean, `anchor idl build` byte-identical to
-`apps/web/app/assets/payvand.idl.json`. `cargo clippy --all-targets -- -D
-warnings` still fails on three lints in `tests/settle.rs` that predate this
-change (`proportional.max(TEST_FIXED_FEE)` at 1213, and the constant assertions
-on `FLATS_REFRESH_SECS` / `PRICE_ANCHOR_BAND_BPS` at 2474–2475), all from the
-in-flight fee-anchor work; they need fixing before this task's clippy box can be
-ticked.
+`apps/web/app/assets/payvand.idl.json` at the time.
 
-## Why it is on hold (2026-11-22)
+Progress re-audited 2026-11-26 against `92010cb`: **the deferral stands and
+nothing has restarted.** `CURRENCY_MINTS` is still USDC/EURC, the harness still
+registers only SPL Token and the ATA program, and the boundary test still refuses
+a base-layout Token-2022 mint by name. The current suite is 74 tests (the Task C
+run above recorded 57); after a fresh `cargo build-sbf`, `cargo test --test settle`
+passes 74/74 and `cargo fmt --check` is clean. `cargo clippy --all-targets -- -D
+warnings` now fails on **six** lints in `tests/settle.rs`, not three: the old
+`proportional.max(TEST_FIXED_FEE)` and a `manual_clamp` at :1405, the constant
+assertions at :3147–3150, plus `clone_on_copy` at :4457 and `redundant_locals` at
+:4469 from later work. The on-chain owner check is also stricter than Task A's
+"one of the two programs" wording: today a mint must be owned by the classic SPL
+Token program. Open boxes below are decided-away or parked by the deferral, not
+oversights; none were ticked.
+
+## Why it is deferred (2026-11-22)
 
 Payvand prices in SOL, USDC and EURC, and **both stablecoins are classic SPL
 Token mints on both clusters** — USDC `EPjFWdd5…` mainnet / `4zMMC9sr…` devnet,
@@ -67,7 +87,7 @@ already written down.
   account per mint, opened by `open_treasury_token_account`.
 - `a_token_2022_mint_is_rejected_by_name` asserts a Token-2022 settle fails with
   `Custom(6017)`, writes no invoice or receipt and moves no tokens. While this
-  plan is on hold it is the permanent boundary test, not a task to flip; a
+  plan is deferred it is the permanent boundary test, not a task to flip; a
   restart turns it into the positive case (Task F).
 
 ## Why it is not a constraint change
@@ -116,8 +136,13 @@ extension is admitted — no new account data, version bump or migration yet.
 - [x] Record the decision here before any program edit.
 
 The decision stands as the program's behaviour, but as of 2026-11-22 it is not a
-route to any real Token-2022 stablecoin — see *Why it is on hold*. Any restart
-begins by re-deciding this task for a named mint and its extensions.
+route to any real Token-2022 stablecoin — see *Why it is deferred*. Any restart
+begins by re-deciding this task for a named mint and its extensions. Audited
+2026-11-26: the deployed constraint is actually stricter than the sentence above
+— `mint.owner == anchor_spl::token::ID` in `instructions/token/settle.rs` and
+`instructions/token/budget/open.rs`, so even a base-layout Token-2022 mint is
+refused. The interface account/CPI types remain; the "two programs" wording is
+the intended policy *after* a restart, not today's on-chain rule.
 
 ### Task B: `Config` mint policy
 
@@ -132,10 +157,11 @@ begins by re-deciding this task for a named mint and its extensions.
 - [ ] Keep `initialize_config`/`update_config` backwards-compatible for the
       deployed `Config` (realloc + version bump, or a fresh account and a
       migration step recorded in `DEV.md`). `migrate_config` already upgrades
-      v1 and v2 in place and the working tree writes version 3 (the flats
-      refresh), so a mint policy is version 4. `0006` deliberately avoided a
-      `Config` byte with a separate `ReceiptMode` PDA; whichever of `0003` and
-      `0005` lands first owns v4.
+      v1 and v2 in place. *(Stale 2026-11-26: the tree now writes version 4 —
+      taken by `0007`'s network-fee fields, not by a mint policy or a shop
+      policy. A mint policy would be v5 if this task is ever restarted;
+      `0006`, now in `plans/deferred/`, still avoids a `Config` byte with a
+      separate `ReceiptMode` PDA.)*
 
 ### Task C: Interface CPIs and the split
 
@@ -192,9 +218,11 @@ flight it documents the boundary rather than guarding one.)*
       Token. *(Blocked on a fixture: `tests/fixtures/` holds only `spl_token.so`
       and the ATA program, so a CPI into Token-2022 has no program to run
       in-process. Dump `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` the way the
-      other two were dumped and register it in `program_test()`; until then the
-      refusal test should cover the extension case — an over-length mint — rather
-      than a base-layout Token-2022 mint, which will be admitted.)*
+      other two were dumped and register it in `program_test()`.) *(Re-read
+      2026-11-26: the current test uses a **base-layout** Token-2022 mint and
+      expects `Custom(6017)`; the owner check refuses it before any CPI. The
+      "over-length mint instead, which will be admitted" suggestion is obsolete
+      while the deferral keeps the SPL-Token-only owner constraint.)*
 - [ ] One test per refused extension, each asserting its named error and no
       movement of tokens.
 - [ ] A transfer-fee mint test if Task A admits that extension; otherwise it is
@@ -219,9 +247,11 @@ suite proves it.)*
 
 ## Verification
 
-*(Task C's run is recorded in the header and passed everything but clippy, whose
-three failures are pre-existing lints in `tests/settle.rs` from the fee-anchor
-work. The list below is what a restart repeats.)*
+*(Task C's run is recorded in the header. Re-checked 2026-11-26: after a fresh
+`cargo build-sbf`, `cargo test --test settle` passes 74/74 and `cargo fmt --check`
+is clean; clippy still fails, now on six test lints listed in the header. IDL was
+regenerated for later work, so it is no longer byte-identical to the Task C run.
+The list below is what a restart repeats.)*
 
 - [ ] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
       `cargo test --test settle` in `apps/contracts` (never `anchor test` here).

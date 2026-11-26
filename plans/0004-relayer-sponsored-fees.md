@@ -37,8 +37,30 @@ could`, `pays its own fee and rents when no relayer takes the payment`,
 the sponsor key on the deployed API (`SPONSOR_KEYPAIR`), Task E's devnet run,
 the learn articles and terms copy that still says a payer needs SOL, and gasless
 **SOL** invoices, which need the program to take a sponsor on `settle_payment`.
-Note also that sponsorship is behind `auth::require_user`, so a buyer who is not
-signed in falls back to paying the fee from their own wallet.
+At that increment, sponsorship was also behind `auth::require_user`, so a buyer
+who was not signed in fell back to paying the fee from their own wallet.
+*(Superseded 2026-11-26: sponsorship is anonymous and wallet-keyed now.)*
+
+Progress audited 2026-11-26 against `92010cb`: **the built feature is in and
+`0007` extended it from token invoices to SOL invoices; this plan stays In
+Progress for what is still unproven or unshipped.** Superseded since the
+increments above: the balance gate is gone (the relayer is asked first for both
+currencies), `settle_payment` also takes a required `sponsor` (`0007`), and
+sponsorship is now **anonymous** — the API keys caps by wallet address, not by a
+signed-in user (`apps/api/src/sponsor.rs`, `apps/api/src/db.rs`). The program and
+API byte-match gate, caps, harness tests and four-settle-path coverage are all
+still present; after a fresh `cargo build-sbf` the settle suite passes 74/74.
+**What is left of `0004`:** a devnet settlement through the deployed
+`POST /api/sponsor/settle` endpoint (current evidence uses local scripts and a
+local sponsor keypair), provisioning/documenting `SPONSOR_KEYPAIR` and the caps
+on the deployment, a client refusal that names the actual missing lamports
+(`GET /api/sponsor`'s `needs_lamports` is fetched but never used in the message),
+the SOL cost panel/quote showing one signature where a sponsored settle costs
+two, stale "payer needs SOL" copy in README/DEV/learn/i18n, and a per-seller cap
+decision. The drained session-float box and the balance-threshold boxes are
+decided away, not overdue. Verification gaps: clippy fails on six test lints,
+`task verify` is not recorded end to end, and CI does not run web vitest or API
+tests.
 
 ## Model (Task A, decided 2026-11-22)
 
@@ -52,6 +74,8 @@ signed in falls back to paying the fee from their own wallet.
 - **Token invoices only.** A SOL invoice is paid with the payer's own lamports,
   so sponsoring it means buying the goods. Token invoices are the case where the
   buyer holds the value and the fee is the only obstacle.
+  *(Superseded by `0007`: a sponsor may now front the SOL transaction fee while
+  the buyer still pays the invoice amount.)*
 - **The sponsor pays the network fee and advances both record rents**, and the
   treasury's refund of those rents goes to the sponsor (Task B). That is the
   whole anti-faucet decision: a sponsor that topped the buyer up would leave it
@@ -240,7 +264,11 @@ pins the two to each other.
       `GET /api/sponsor` simply reports `available: false`, the client falls back
       to the wallet's own send and the refusal the buyer sees is the chain's,
       not a lamport count (`keeps the wallet’s own path when no relayer is
-      available`).
+      available`). *(Still open 2026-11-26: `needs_lamports` from
+      `usePaymentApi.ts` is available but the checkout throws the generic
+      `errors.paymentNeedsSol`; the locale and API 429 say only "a little SOL".
+      The SOL cost panel also still quotes one signature while a sponsored SOL
+      settle charges and refunds two — tracked in `0007`.)*
 - [ ] Cover the session-key case too: a budget whose float has been drained
       (`0002` Task 2.3's warning) should be able to borrow the sponsor's fee.
       *Deferred by the Model decision above: it needs the same refund-to-sponsor
@@ -266,7 +294,11 @@ pins the two to each other.
       its signature and the sponsor's balance change. This is also the first
       time a real wallet signs a transaction whose fee payer is not its own
       account (`useSolanaSignTransactions` over the wire bytes with the fee
-      payer's slot empty), which no test here can stand in for.
+      payer's slot empty), which no test here can stand in for. *(Still open
+      2026-11-26: `DEV.md:155-215` records sponsored/self-sponsored SOL and token
+      settles through local scripts using `.secrets/sponsor.json`; none goes
+      through `POST /api/sponsor/settle`, and no deployed `SPONSOR_KEYPAIR` is
+      documented.)*
 
 ## Acceptance criteria
 
@@ -311,10 +343,17 @@ routes to the sponsor, so do not size the sponsor's cap before that decision.
 
 ## Rollout
 
-- [ ] Program: upgrade in place, IDL copied, `Config` untouched.
+- [x] Program: upgrade in place, IDL copied, `Config` untouched.
+      *(Done for the token change; `0007` later migrated `Config` to v4.)*
 - [ ] API: deploy with the sponsor key set as a secret; caps in config.
-- [ ] Client: sponsor used only below the balance threshold; fallback verified.
+      *(Still open 2026-11-26: `SPONSOR_KEYPAIR` is read in `sponsor.rs` but is not
+      in the README env table or `apps/api/vercel.json`.)*
+- [x] Client: sponsor used only below the balance threshold; fallback verified.
+      *(Superseded by Increment 3: the relayer is now asked first for every
+      settle; the three checkout tests named there pin the behaviour.)*
 - [ ] Smoke tests: one sponsored and one unsponsored settle on devnet.
+      *(Program-level smokes are recorded in `DEV.md`; the API-endpoint smoke is
+      still owed — see Task E.)*
 
 ## Open Questions
 

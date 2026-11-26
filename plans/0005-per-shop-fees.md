@@ -31,6 +31,7 @@ Verified: `cargo build-sbf` clean, `cargo test --test settle` 65 passed (60
 before, plus the layout pin, the setter/cap/seeds test, the SOL shop-rate test,
 the two-shops test and the foreign-seller test), `cargo fmt --check` clean,
 `cargo clippy --all-targets` at its three pre-existing warnings and nothing new.
+*(Historical count: the 2026-11-26 audit found six test lints — see `0003`.)*
 The IDL was rebuilt and copied to `apps/web/app/assets/payvand.idl.json`, and the
 web builder now honours the IDL's `optional` flag by ending the account list there
 — without that, every settle the app builds would ask for `shop_policy` by name.
@@ -55,19 +56,38 @@ Next: the `PaymentSettled` field, then the API/client side (Task D) — storing 
 policy address beside the shop row and passing it to the quote, the builder and
 the sponsor request.
 
-## What exists today (2026-11-22)
+Progress audited 2026-11-26 against `92010cb`: **still In Progress; the program
+and relayer halves are shipped and unchanged by the later refactors.** All four
+settle paths still resolve `ShopPolicy` and all four harness tests remain; the
+relayer still accepts a trailing `shop_policy`. The current settle suite is 74
+tests (this plan records 57/60/65/67 at earlier increments); after a fresh
+`cargo build-sbf` it passes 74/74 and `cargo fmt --check` is clean. Clippy is
+still not clean — six test lints now, listed in `0003`'s header. The `Config`
+below was v3 when drafted but is **v4** today; `0007` took v4 for the network-fee
+fields, and this plan's multiplier shape needs no `Config` byte at all.
+`shops.currency` now exists (shop-menu pricing), but no shop row stores a policy
+address yet. **What is left:** the event field, the shop-row column, the
+API/client wiring (quote, checkout, allowance and seller UI), a settlement
+through a policy written at `10_000`, client quote tests and a devnet record.
+The `Config` band and admin approve/revoke boxes are decided away, not overdue.
+
+## What exists today (re-read 2026-11-26)
 
 - One policy for the whole program, read by all four settle paths:
   `Config { admin, policy: FeePolicy, fee_mode, session_fee_float,
-  flats_updated_at, bump, treasury_bump, version }` (version 3),
+  flats_updated_at, bump, treasury_bump, version }` (**version 4** — the three
+  `network_fee_*` figures from `0007` took v4; the flats refresh was v3),
   `FeePolicy { fee_bps_below, fee_bps_above, sol_tier_lamports,
   token_tier_base_units, flat_usdc_base_units, flat_eurc_base_units, usdc_mint,
-  eurc_mint }`, plus a `FeeAnchor` PDA holding the admin's SOL price.
-  `helpers::fee_for(config, amount, mint, receipt_rent)` is the single place the
-  split is decided: a marginal rate (`fee_bps_below` up to the currency's
-  boundary, `fee_bps_above` above it), floored at the 48-byte marker's rent —
-  `max(proportional, flat)` for a token, `max(0, proportional − receipt_rent)`
-  for SOL — and capped at `amount − 1`.
+  eurc_mint, network_fee_lamports, network_fee_usdc_base_units,
+  network_fee_eurc_base_units }`, plus a `FeeAnchor` PDA holding the admin's SOL
+  price. `helpers::fee_for(config, amount, mint, receipt_rent, multiplier_bps)`
+  (and `fee_for_signatures(..., signatures)` for a sponsored settle) is the single
+  place the split is decided: a marginal rate
+  (`fee_bps_below` up to the currency's boundary, `fee_bps_above` above it),
+  floored at the 48-byte marker's rent plus the network fee — `max(proportional,
+  flat + network)` for a token, `max(proportional − receipt_rent, network)` for
+  SOL — and capped at `amount − 1`.
 - `helpers::fee_for(config, amount, mint, receipt_rent, multiplier_bps)` takes
   the shop's multiplier and applies it to the percentage alone, and
   `state::ShopPolicy { seller, shop_key, multiplier_bps, bump }` is the account a
@@ -82,9 +102,10 @@ the sponsor request.
   what it does to two rates, two boundaries and two token flats, not to one
   number.
 - A **shop is an API row, not an account**: `shops(id, user_id, name,
-  description, created_at)` plus `products`, in `apps/api/src/db.rs`. A seller
-  may keep several shops (a café and a bakery), and the invoice's lines come
-  from the shop that priced it.
+  description, currency, created_at)` plus `products`, in `apps/api/src/db.rs`
+  (`currency` arrived with shop-menu pricing; there is still **no** policy-address
+  column). A seller may keep several shops (a café and a bakery), and the
+  invoice's lines come from the shop that priced it.
 - An **invoice carries no shop**: `Payment`/`TokenPayment` hold seller,
   reference, amount, memo, mint; their PDAs are seeded by
   `[payment, seller, reference, amount]` (plus mint for tokens). The shop exists
@@ -109,10 +130,10 @@ the sponsor request.
    auditable.
 5. **The existing `version` field is the migration hook.** `Config` carries one
    and `migrate_config` already upgrades v1 and v2 in place; the working tree
-   writes version 3 (the flats refresh). A shop policy is therefore version 4,
-   and `0003` plans the same bump for a mint policy — whichever lands first owns
-   it. `0006` avoided the race by putting its flag in a separate `ReceiptMode`
-   PDA, which is the cheaper pattern if a policy account of its own is chosen.
+   writes version 3 (the flats refresh), so version 4 looked like the next slot.
+   *(Resolved 2026-11-26: `0007` took version 4 for the network-fee fields;
+   neither this plan nor the deferred `0003` needs a `Config` byte, and `0006` —
+   now deferred — also uses a separate `ReceiptMode` PDA.)*
 
 ## Tasks
 
@@ -199,6 +220,12 @@ the sponsor request.
 
 ### Task C: Admin and configuration
 
+*(Decided away 2026-11-22 / re-confirmed 2026-11-26: both boxes describe the
+shape Task A rejected. The band is the hard `0..=10_000` cap on write in
+`helpers::validate_shop_multiplier`, not a `Config` field, and there is no admin
+approve/revoke path — the seller signs `set_shop_policy` within that band. Leave
+these unchecked as history; do not implement them without a new decision.)*
+
 - [ ] `initialize_config`/`update_config` keep their shape; the band and the
       default live in `Config` (a `min_fee_bps`/`max_fee_bps`, or one cap) and
       are validated on both set and settle.
@@ -219,6 +246,10 @@ the sponsor request.
       missing or stale; show the buyer only the price, as today.
 - [ ] Check `apps/api`'s receipt building and admin feed, which currently derive
       the fee from `Config`; they must read the event's `fee` instead.
+      *(Superseded 2026-11-26: the API decodes `PaymentSettled` positionally and
+      deliberately skips `fee`/`seller_proceeds`, per `0002`'s recorded decision
+      in `plans/archive/0002-fee-model-and-treasury.md`; there is no `Config`-derived
+      settled fee to migrate.)*
 
 ### Task E: Tests and devnet
 
@@ -253,21 +284,30 @@ the sponsor request.
 
 ## Acceptance criteria
 
-- [ ] A settlement's fee is the rate of the shop that priced it, and the event
+- [x] A settlement's fee is the rate of the shop that priced it, and the event
       agrees with the lamports that moved. (The receipt is a 48-byte marker and
       carries no fee; the event is the only on-chain record of the split.)
-- [ ] An invoice with no policy, or one printed before this ships, settles at
-      `Config`'s rate unchanged.
-- [ ] No seller can raise its own rate above the configured band, and no
-      settlement can name another seller's policy.
-- [ ] `README.md` states that the fee is per shop, with a pointer to the band.
+      *(Verified 2026-11-26 in all four harness paths.)*
+- [x] An invoice with no policy, or one printed before this ships, settles at
+      `Config`'s rate unchanged. *(Verified: `shop_multiplier(None)` and the
+      no-policy settlement in `two_shops_of_one_seller_settle_at_their_own_rates`.)*
+- [x] No seller can raise its own rate above the configured band, and no
+      settlement can name another seller's policy. *(The band is the hard
+      `0..=10_000` write cap; `a_policy_of_another_seller_is_refused_by_name` covers
+      the second half.)*
+- [x] `README.md` states that the fee is per shop, with a pointer to the band.
+      *(2026-11-26: `README.md:366-376`.)*
 
 ## Verification
 
-- [ ] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
+- [x] `cargo build-sbf --manifest-path programs/payvand/Cargo.toml`, then
       `cargo test --test settle` in `apps/contracts` (never `anchor test` here).
+      *(2026-11-26: clean build, 74/74 settle tests pass; the suite had 67 at the
+      last increment.)*
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`.
-- [ ] `anchor idl build`, copied to `apps/web/app/assets/payvand.idl.json`.
+      *(2026-11-26: fmt clean; clippy fails on six test lints — see `0003`'s header.)*
+- [x] `anchor idl build`, copied to `apps/web/app/assets/payvand.idl.json`.
+      *(Done earlier; the IDL has since grown `0007`'s fields.)*
 - [ ] `apps/api` tests for the shop row migration and the fee it reports.
 - [ ] In `apps/web`: `vitest run`, `nuxt typecheck`, `eslint .`.
 - [ ] Devnet smoke run recorded here.
@@ -275,10 +315,9 @@ the sponsor request.
 ## Dependencies
 
 `0002` Task 4.3 (the `PaymentSettled` split the event must keep truthful) and
-Task 1.6 (the fee boundary tests that must hold at any rate). `0003` also plans
-a `Config` layout bump for a mint policy — whichever lands first takes the
-version bump, and the second must build on it rather than assume the original
-layout.
+Task 1.6 (the fee boundary tests that must hold at any rate). *(Resolved
+2026-11-26: `0003` is deferred and needs no `Config` byte, this plan's multiplier
+needs none either, and `0007` took version 4 for the network-fee fields.)*
 
 ## Risks And Mitigations
 
@@ -288,7 +327,7 @@ layout.
 | A seller sets a rate that hides its own fee | Medium | Band enforced on chain at set time and settle time, not only in the UI. |
 | Old QRs stop working | High | The account is optional and the fallback is `Config`'s rate, proven by a test. |
 | Indexers keep pricing from `Config` | Medium | The fee and the policy address ride in the event; `apps/api` is migrated in the same change. |
-| Two plans bump `Config` at once | Medium | One bump, sequenced with `0003`, recorded in `DEV.md`. **Resolved for this plan (2026-11-22):** the multiplier shape needs no `Config` field, so `0005` takes no version and the race is gone; `0003` is on hold anyway. |
+| Two plans bump `Config` at once | Medium | One bump, sequenced with `0003`, recorded in `DEV.md`. **Resolved for this plan (2026-11-22):** the multiplier shape needs no `Config` field, so `0005` takes no version and the race is gone; `0003` is deferred anyway. |
 
 ## Rollout
 

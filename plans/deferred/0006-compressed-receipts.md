@@ -1,15 +1,42 @@
 # 0006 — Compressed payment receipts (4 sharded trees + rotation)
 
-Status: `Draft`. Not approved for implementation.
+Status: `Deferred`. Not approved for implementation; moved from `plans/` to
+`plans/deferred/` on 2026-11-26 because its trigger is traffic, not a date.
 
-> **When to start this: leave the compressed path off until you expect ~700,000
-> settlements.** Below that, the 48-byte marker stays the cheaper choice in
-> total — engineering, operations and review cost, not rent. Rent alone breaks
-> even after roughly 8,000 settlements (see "Cost model" below, ~6.6 SOL of
-> shared accounts against 894,080 lamports saved per invoice); the ~700k figure
-> is the volume at which owning paging, epochs, rotation and proof refresh is
-> worth the surface area. Until then the flag stays off, or the feature simply
-> is not built.
+## When To Implement
+
+Yes — **settlement volume is the trigger**. Do not build this on a schedule:
+
+- **Start when the product expects ~700,000 settlements** on a cluster (the
+  figure below is the point where owning paging, nullifier epochs, rotation and
+  proof refresh pays for its surface area). Recheck the forecast and the
+  observed settled-invoice count before starting any Phase 1 task.
+- **Below that, keep the 48-byte marker.** Rent breaks even much earlier —
+  roughly **7,700–8,000** invoices, against ~6.6 SOL of generation-0 shared
+  accounts and ~894,080 devnet / 1,224,960 mainnet lamports saved per invoice —
+  but rent is not the whole cost. Engineering, operations and review of the
+  shared infrastructure dominate until the ~700k horizon.
+- **Even at that volume, three gates must pass first:** Task 0.2's live devnet
+  proof of the raw-CPI tree setup, Task 0.3's compatible compression program on
+  the target cluster (mainnet's canonical program lacks prepared-init), and the
+  nullifier-rule reconciliation noted below. The operator must also be ready to
+  fund ~6.6 SOL of shared accounts plus 3.900 SOL per later generation.
+
+## Progress Audit
+
+Audited 2026-11-26 against the working tree at `92010cb`: **no implementation
+task has started.** Phase 1–5 checkboxes remain open — there is no
+`CompressionRegistry`, `ReceiptMode`, nullifier page, occupancy bitmap, tree CLI,
+`replaceLeaf` CPI, `ReceiptCommitted` event, proof service, schema column, or
+rotation instruction in the program, API, web app or IDL; replay is still the
+48-byte marker only, and the live fee/refund math is still the legacy one. The
+Task 0.3 mainnet compatibility gate has not been run (`DEV.md` records no
+compression program IDs). What *is* done is the documentation half of Phase 0:
+the fee decision and replay design are recorded below, and `README.md:454-475`
+states the planned policy and labels it unshipped (Task 0.4). Before Task 2.1,
+reconcile "both modes claim a nullifier" (above) with Task 2.1's "legacy path
+need not require a nullifier page"; they cannot both describe a settle with no
+page account.
 
 ## Replay Design Decision (review 2026-11-22)
 
@@ -421,12 +448,14 @@ flipped.
 
 Acceptance criteria:
 
-- [ ] This plan and the Architecture Decisions section state the decision and
+- [x] This plan and the Architecture Decisions section state the decision and
       its consequences for the SOL deduction, token flats, and treasury refund.
-- [ ] Flat fields and price-refresh instructions remain active for the legacy
-      path; only the compressed path ignores them.
-- [ ] Small-invoice behaviour is explicit: 1% of the amount, not a rent floor.
-- [ ] The fee decision and replay design are recorded. `README.md` fee prose is
+- [x] Flat fields and price-refresh instructions remain active for the legacy
+      path; only the compressed path ignores them. *(Confirmed 2026-11-26: the
+      legacy fields and `refresh_fee_price`/`set_fee_price_anchor` are still live;
+      there is no compressed path yet.)*
+- [x] Small-invoice behaviour is explicit: 1% of the amount, not a rent floor.
+- [x] The fee decision and replay design are recorded. `README.md` fee prose is
       updated in Task 5.2, not before the feature ships.
 
 Verification:
@@ -435,7 +464,7 @@ Verification:
 
 Files likely touched:
 
-- `plans/0006-compressed-receipts.md` (done), `README.md` (Task 5.2)
+- `plans/deferred/0006-compressed-receipts.md` (done), `README.md` (Task 5.2)
 
 Dependencies: None. **Resolved. Phase 2 still depends on the compatibility gate
 and the on-chain foundation tasks.**
@@ -525,15 +554,16 @@ accounting section stays unchanged until the flag is enabled.
 
 Acceptance criteria:
 
-- [ ] `README.md` contains the planned policy and marks it as not yet shipped.
-- [ ] This plan no longer defers the policy decision to Task 5.2; Task 5.2 only
+- [x] `README.md` contains the planned policy and marks it as not yet shipped.
+      *(Verified 2026-11-26 at `README.md:454-475`.)*
+- [x] This plan no longer defers the policy decision to Task 5.2; Task 5.2 only
       updates the prose from "planned" to "live".
 
 Verification:
 
 - [ ] Review only; no code change in this task.
 
-Files likely touched: `README.md` (done), `plans/0006-compressed-receipts.md`.
+Files likely touched: `README.md` (done), `plans/deferred/0006-compressed-receipts.md`.
 
 Dependencies: 0.1. **Resolved.**
 
@@ -1247,8 +1277,8 @@ Acceptance criteria:
       legacy rent floor while the flag is off, 100/50 bps with no receipt rent
       once the compressed flag is on, while token invoice rent is still refunded.
 - [ ] The `invoiceCost.test.ts` fixture uses live `Rent::minimum_balance(48)`
-      (currently **894,080** lamports on mainnet) instead of the stale
-      `1_224_960`, and compressed cases assert `receiptRent = 0`,
+      (currently **1,224,960** lamports on mainnet; 894,080 on devnet) instead of
+      a typed-in constant, and compressed cases assert `receiptRent = 0`,
       `recordFee = 0`, and `feeIsFloor = false`.
 
 Verification:
