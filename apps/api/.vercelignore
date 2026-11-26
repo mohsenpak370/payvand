@@ -10,3 +10,6 @@ target
 .env
 .env.*
 .DS_Store
+
+# Local SQLite database
+data/

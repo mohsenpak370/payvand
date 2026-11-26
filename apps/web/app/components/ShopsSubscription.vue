@@ -3,7 +3,8 @@ import type { SupportedCurrency } from '~/composables/usePaymentApi'
 
 // The shops feature is sold by the month: €1.70 for 30 days, in SOL, USDC or
 // EURC. The purchase lives in `useSubscriptionPurchase` because the New shop
-// dialog offers the same one; this card is its full-page face.
+// dialog offers the same one; this card is where the account's standing and
+// the price live.
 const purchase = useSubscriptionPurchase()
 const { t } = useI18n()
 
@@ -11,6 +12,17 @@ const expiry = computed(() => {
   const seconds = purchase.status.value?.expires_at_unix ?? 0
   if (!seconds) return ''
   return new Date(seconds * 1000).toLocaleDateString()
+})
+
+/**
+ * Whole days of the paid period still to run, rounded up: the last partial day
+ * is still a day the seller has, so an active subscription never reads as
+ * "0 days left" before it has actually run out.
+ */
+const daysLeft = computed(() => {
+  const seconds = purchase.status.value?.expires_at_unix ?? 0
+  if (!seconds) return 0
+  return Math.max(0, Math.ceil((seconds * 1000 - Date.now()) / 86_400_000))
 })
 
 const quotes = computed(() => purchase.quotes.value)
@@ -53,9 +65,9 @@ onMounted(() => {
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex items-start justify-between gap-3">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div class="min-w-0">
-          <h2 class="text-base font-semibold">
+          <h2 class="text-base font-semibold whitespace-nowrap">
             {{ $t('subscription.title') }}
           </h2>
           <p class="text-sm text-muted">
@@ -66,7 +78,7 @@ onMounted(() => {
           v-if="purchase.status.value"
           :color="purchase.status.value.active ? 'success' : 'neutral'"
           variant="subtle"
-          class="shrink-0"
+          class="shrink-0 self-start"
         >
           {{ purchase.status.value.active ? $t('subscription.active') : $t('subscription.inactive') }}
         </UBadge>
@@ -91,12 +103,20 @@ onMounted(() => {
       </p>
 
       <template v-else-if="purchase.status.value">
-        <p
+        <!-- What the money bought: how much of the paid month is left, and the
+             day it runs out. An active subscription answers with its own
+             period instead of leaving the card's body empty. -->
+        <div
           v-if="purchase.status.value.active"
-          class="text-sm text-muted"
+          class="border-default rounded-lg border p-3"
         >
-          {{ $t('subscription.renewsOn', { date: expiry }) }}
-        </p>
+          <p class="text-sm font-medium">
+            {{ $t('subscription.daysLeft', { count: daysLeft }, daysLeft) }}
+          </p>
+          <p class="text-muted mt-1 text-xs">
+            {{ $t('subscription.renewsOn', { date: expiry }) }}
+          </p>
+        </div>
         <p
           v-else
           class="text-sm text-muted"

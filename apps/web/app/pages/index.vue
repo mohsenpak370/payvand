@@ -13,7 +13,7 @@ const ctaTitle = computed(() =>
 
 const heroLinks = computed<ButtonProps[]>(() => [{
   label: t('home.hero.createCta'),
-  to: '/sell',
+  to: '/payment',
   icon: 'i-lucide-qr-code',
   size: 'xl'
 }, {
@@ -48,9 +48,53 @@ const steps = computed(() => [{
   description: t('home.how.paid.description')
 }])
 
+/**
+ * The questions a shop owner asks before the first payment, and the ones they
+ * ask after it: what this adds over a plain wallet, what it costs, whether the
+ * buyer needs anything installed, and what happens when something goes wrong.
+ * The answers live in the locale files like every other string on the page.
+ */
+const FAQ_COUNT = 10
+
+/**
+ * The guides that answer a question in more depth, where one exists. Only the
+ * questions a guide covers get a line of links, so a link always means there is
+ * more to read rather than a detour back to the same paragraph.
+ */
+const FAQ_LINKS: Record<number, string[]> = {
+  1: ['payingWithWallet', 'stablecoins'],
+  2: ['cryptoWallet'],
+  3: ['payingWithWallet'],
+  5: ['paymentCosts', 'fee'],
+  6: ['fee'],
+  9: ['monthlyAllowance'],
+  10: ['testMoney', 'switchToDevnet']
+}
+
+/** Where each link in `home.faq.links` points on the learning pages. */
+const LEARN_GUIDES: Record<string, string> = {
+  payingWithWallet: '/learn/paying-with-a-wallet',
+  stablecoins: '/learn/stablecoins-explained',
+  cryptoWallet: '/learn/what-is-a-crypto-wallet',
+  paymentCosts: '/learn/what-a-payment-costs',
+  fee: '/learn/what-is-a-fee',
+  monthlyAllowance: '/learn/monthly-allowance-explained',
+  testMoney: '/learn/test-money-on-devnet',
+  switchToDevnet: '/learn/switch-to-devnet'
+}
+
+const faqs = computed(() => Array.from({ length: FAQ_COUNT }, (_, index) => ({
+  label: t(`home.faq.q${index + 1}`),
+  content: t(`home.faq.a${index + 1}`),
+  links: (FAQ_LINKS[index + 1] ?? []).map(key => ({
+    label: t(`home.faq.links.${key}`),
+    to: LEARN_GUIDES[key]
+  }))
+})))
+
 const ctaLinks = computed<ButtonProps[]>(() => [{
   label: t('home.cta.startSelling'),
-  to: '/sell',
+  to: '/payment',
   icon: 'i-lucide-arrow-right'
 }, {
   // The way in for someone who has never held a wallet: one page with the
@@ -145,6 +189,49 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
       :description="$t('home.how.description')"
       :features="steps"
     />
+
+    <!--
+      The FAQ sits after the three steps and before the closing call: it is for
+      the reader who already understands the flow and is now deciding whether
+      it is worth using instead of their wallet.
+    -->
+    <UPageSection
+      id="faq"
+      :title="$t('home.faq.title')"
+      :description="$t('home.faq.description')"
+    >
+      <UAccordion
+        :items="faqs"
+        type="multiple"
+        class="mx-auto max-w-3xl"
+      >
+        <!--
+          The answer, then the guides that go deeper where one exists. They are
+          links rather than part of the answer's text, so the answer still reads
+          as a paragraph and the reader chooses whether to follow one.
+        -->
+        <template #body="{ item }">
+          <p>{{ item.content }}</p>
+          <div
+            v-if="item.links?.length"
+            class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+          >
+            <ULink
+              v-for="link in item.links"
+              :key="link.to"
+              :to="link.to"
+              class="text-primary inline-flex items-center gap-1"
+            >
+              {{ link.label }}
+              <UIcon
+                name="i-lucide-arrow-right"
+                class="size-3.5"
+              />
+            </ULink>
+          </div>
+        </template>
+      </UAccordion>
+    </UPageSection>
 
     <UPageSection>
       <UPageCTA

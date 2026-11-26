@@ -7,10 +7,29 @@
  * instead of typing.
  */
 
+import type { SupportedCurrency } from '~/composables/usePaymentApi'
+import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
+
 export interface Shop {
   id: string
   name: string
   description: string
+  /**
+   * What the menu is priced — and charged — in. The shop's own payment page
+   * prices its invoice in it, so a shop in EURC is paid in EURC.
+   */
+  currency: SupportedCurrency
+}
+
+/**
+ * One price, written in the unit its shop charges in. Every stored price is in
+ * that currency's own base units, so this is the only place that turns one into
+ * money a person reads.
+ */
+export function priceInCurrency(amount: number, currency: SupportedCurrency): string {
+  return currency === 'sol'
+    ? `${lamportsToSol(amount)} SOL`
+    : `${formatTokenAmount(amount, 6)} ${currencySymbol(currency)}`
 }
 
 export interface Product {
@@ -22,7 +41,11 @@ export interface Product {
   details: string
   /** The heading the menu lists it under, empty for no category. */
   category: string
-  /** The canonical price: every receipt line is built from it. */
+  /**
+   * The canonical price, in the shop's currency's base units — every receipt
+   * line and cart total is built from it. The name predates the currency
+   * choice; the unit is always the shop's, never assumed to be SOL.
+   */
   price_lamports: number
   created_at_unix: number
 }
@@ -68,7 +91,7 @@ export interface CartLine {
 }
 
 /** Totals the cart, in the unit the receipt is built from. */
-export function cartTotalLamports(lines: CartLine[]): number {
+export function cartTotal(lines: CartLine[]): number {
   return lines.reduce((total, line) => total + line.product.price_lamports * line.quantity, 0)
 }
 
@@ -86,7 +109,9 @@ export function useShopApi() {
     return await $fetch(`${base}/api/shops/${id}`, { headers: authHeaders() })
   }
 
-  async function createShop(body: { name: string, description: string }): Promise<Shop> {
+  async function createShop(
+    body: { name: string, description: string, currency?: SupportedCurrency }
+  ): Promise<Shop> {
     return await $fetch(`${base}/api/shops`, {
       method: 'POST',
       body,
@@ -96,7 +121,7 @@ export function useShopApi() {
 
   async function updateShop(
     id: string,
-    body: { name: string, description: string }
+    body: { name: string, description: string, currency?: SupportedCurrency }
   ): Promise<Shop> {
     return await $fetch(`${base}/api/shops/${id}`, {
       method: 'PATCH',

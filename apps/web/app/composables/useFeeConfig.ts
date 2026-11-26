@@ -15,7 +15,7 @@ import {
   deriveConfigPda,
   deriveTreasuryTokenAccount
 } from './usePaymentProgram'
-import { clearRentCache, rentMinimum } from './rents'
+import { clearRentCache, primeRentCache, rentMinimum } from './rents'
 
 /**
  * The fee policy the program reads at settlement time.
@@ -50,11 +50,31 @@ const CONFIG_SIZE = 184
  */
 const CACHE_TTL_MS = 60_000
 
-let cache: { readAt: number, config: FeeConfig } | null = null
+/**
+ * One policy per cluster: the fee is a per-cluster account, and a checkout can be
+ * pointed at an invoice on another one than this page's default. Keyed by the
+ * cluster name so the two never answer for each other.
+ */
+const configCache = new Map<string, { readAt: number, config: FeeConfig }>()
 
 /** Drops the cache, so the next quote reads the account again. */
 export function clearFeeConfigCache(): void {
-  cache = null
+  configCache.clear()
+}
+
+/**
+ * The cluster this page's client is pointed at, which is the one a quote assumes
+ * when its caller names none. Empty outside a Nuxt context, where a test or a
+ * script reads the chain itself.
+ */
+function clientCluster(): string {
+  try {
+    if (typeof useRuntimeConfig !== 'function') return ''
+    const configured = useRuntimeConfig().public.cluster
+    return typeof configured === 'string' ? configured : ''
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -86,9 +106,23 @@ export function clearInvoiceRentCache(): void {
 export function useFeeConfig() {
   const { client } = useSolanaClient()
 
-  async function load(options: { force?: boolean } = {}): Promise<FeeConfig> {
-    if (!options.force && cache && Date.now() - cache.readAt < CACHE_TTL_MS) {
-      return cache.config
+  async function load(
+    options: { force?: boolean, cluster?: string } = {}
+  ): Promise<FeeConfig> {
+    // The caller's cluster is the invoice's: a code made on devnet is priced by
+    // devnet's policy even when this page runs against another cluster.
+    const cluster = options.cluster || clientCluster()
+    const cached = configCache.get(cluster)
+    if (!options.force && cached && Date.now() - cached.readAt < CACHE_TTL_MS) {
+      return cached.config
+    }
+
+    // The API's answer is the one every tab shares; the chain read below is the
+    // fallback for a deployment whose API cannot reach the cluster.
+    const fromApi = await loadFromApi(cluster)
+    if (fromApi) {
+      configCache.set(cluster, { readAt: Date.now(), config: fromApi })
+      return fromApi
     }
 
     const pda = await deriveConfigPda()
@@ -128,8 +162,42 @@ export function useFeeConfig() {
       sessionFeeFloat: Number(view.getBigUint64(165, true))
     }
 
-    cache = { readAt: Date.now(), config }
+    configCache.set(cluster, { readAt: Date.now(), config })
     return config
+  }
+
+  /**
+   * The policy, the mints and the rent minimums as `GET /api/config` answers
+   * them: one read a minute on the API's side instead of one per tab here. The
+   * rents arrive with it and prime the shared cache, so the quote that follows
+   * asks the cluster nothing for them. Null when the API does not answer or
+   * answers something a quote cannot use, and then the account is read directly.
+   */
+  async function loadFromApi(cluster: string): Promise<FeeConfig | null> {
+    if (typeof usePaymentApi !== 'function') return null
+    try {
+      const payload = await usePaymentApi().getConfig(cluster || undefined)
+      if (!payload?.mints?.usdc || !payload?.mints?.eurc || !payload?.fees) return null
+      primeRentCache(payload.spaces, payload.rent, payload.cluster)
+      return {
+        admin: address(payload.admin),
+        feeBpsBelow: payload.fees.fee_bps_below,
+        feeBpsAbove: payload.fees.fee_bps_above,
+        solTierLamports: payload.fees.sol_tier_lamports,
+        tokenTierBaseUnits: payload.fees.token_tier_base_units,
+        flatUsdcBaseUnits: payload.fees.flat_usdc_base_units,
+        flatEurcBaseUnits: payload.fees.flat_eurc_base_units,
+        usdcMint: address(payload.mints.usdc),
+        eurcMint: address(payload.mints.eurc),
+        networkFeeLamports: payload.fees.network_fee_lamports,
+        networkFeeUsdcBaseUnits: payload.fees.network_fee_usdc_base_units,
+        networkFeeEurcBaseUnits: payload.fees.network_fee_eurc_base_units,
+        feeMode: payload.fee_mode === 'buyer' ? 'buyer' : 'seller',
+        sessionFeeFloat: payload.session_fee_float
+      }
+    } catch {
+      return null
+    }
   }
 
   return { load }
@@ -149,7 +217,7 @@ export function useInvoiceCosts() {
    * `rents.ts` cache — the same answers the allowance page's quotes use, so the
    * two never ask the cluster the same size twice in a minute.
    */
-  const rentFor = (space: number) => rentMinimum(client, space)
+  const rentFor = (space: number, cluster: string) => rentMinimum(client, space, cluster)
 
   /** `getAccountInfo` as a question with a TTL, answered from `accountCache`. */
   async function accountExists(account: Address): Promise<boolean> {
@@ -173,13 +241,20 @@ export function useInvoiceCosts() {
   async function estimateInvoiceCosts(
     amount: number,
     currency: SupportedCurrency = 'sol',
-    options: { mint?: string, seller?: Address, signatures?: 1 | 2 } = {}
+    options: {
+      mint?: string
+      seller?: Address
+      signatures?: 1 | 2
+      /** The invoice's cluster; this page's own when omitted. */
+      cluster?: string
+    } = {}
   ): Promise<InvoiceCosts> {
-    const policy = await feeConfig.load()
+    const cluster = options.cluster || clientCluster()
+    const policy = await feeConfig.load({ cluster })
     const isToken = currency !== 'sol'
 
-    const invoiceRent = await rentFor(isToken ? TOKEN_PAYMENT_SPACE : PAYMENT_SPACE)
-    const receiptRent = await rentFor(PAYMENT_RECEIPT_SPACE)
+    const invoiceRent = await rentFor(isToken ? TOKEN_PAYMENT_SPACE : PAYMENT_SPACE, cluster)
+    const receiptRent = await rentFor(PAYMENT_RECEIPT_SPACE, cluster)
 
     // A seller prices in a token only once their account exists, so a code
     // without one was made elsewhere: this is what the checkout tells the buyer
@@ -187,7 +262,9 @@ export function useInvoiceCosts() {
     let sellerTokenAccountRent = 0
     if (isToken && options.mint && options.seller) {
       const account = await deriveAssociatedTokenAddress(options.seller, address(options.mint))
-      if (!(await accountExists(account))) sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE)
+      if (!(await accountExists(account))) {
+        sellerTokenAccountRent = await rentFor(TOKEN_ACCOUNT_SPACE, cluster)
+      }
     }
 
     // The fee leaves for the treasury's own account, which only the deployer

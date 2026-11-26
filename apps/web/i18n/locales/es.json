@@ -85,7 +85,7 @@
       "description": "Tres pasos, sin que tu cliente cree una cuenta.",
       "create": {
         "title": "Crea un código de pago",
-        "description": "Escribe el importe que quieres cobrar y muestra el código QR. Sin datáfono, sin facturas, sin cuotas mensuales."
+        "description": "Escribe el importe que quieres cobrar y muestra el código QR. Sin datáfono, sin facturas, sin cuota mensual por cobrar un pago."
       },
       "scan": {
         "title": "Tu cliente escanea y paga",
@@ -101,6 +101,40 @@
       "startSelling": "Empezar a vender",
       "startCta": "¿Nuevo en cripto? Empieza aquí",
       "devnetGuide": "Mira cómo cambiar tu cartera a devnet"
+    },
+    "faq": {
+      "title": "Preguntas frecuentes",
+      "description": "Qué aporta Payvand frente a una cartera, cuánto cuesta y qué necesita tu cliente.",
+      "q1": "¿En qué se diferencia Payvand de enviar USDC desde mi cartera?",
+      "a1": "En la cadena es la misma transferencia: los USDC siguen yendo de la cartera del comprador a la tuya, nunca a través de nosotros. La diferencia está en lo que la acompaña. Una transferencia suelta es un importe que escribes en una dirección pegada: llega sin pedido — la emparejas con una venta a ojo y el cliente tiene que avisarte de que pagó. Un código Payvand lleva el precio, la moneda y el memo que fijas una vez, y el importe forma parte de la dirección de pago: el comprador no puede cambiarlo sin enviar a una dirección que este código no vigila. El código vigila su propio pago, pasa solo a Pagado y guarda la dirección del pagador y la transacción como recibo. Y para el comprador es más fácil: con USDC o EURC Payvand paga la comisión de red, así que no necesita SOL.",
+      "q2": "¿Payvand es una cartera? ¿Guarda mi dinero?",
+      "a2": "No. No hay frase de recuperación que guardar ni saldo de Payvand: cada pago va directo de la cartera del comprador a la tuya, y la app no tiene ninguna clave con la que mover tu dinero. Es la capa de pagos sobre la cartera que ya usas.",
+      "q3": "¿Mis clientes necesitan una cuenta o una app?",
+      "a3": "No. Escanean con cualquier cartera de Solana que entienda enlaces de Solana Pay —Phantom, Solflare, Backpack y casi todas— o con el escáner de este sitio, comprueban el importe y aprueban. Un enlace de pago funciona en cualquier navegador. La cuenta solo la necesitan los vendedores, para conservar sus códigos y comercios.",
+      "q4": "¿En qué monedas puedo cobrar?",
+      "a4": "SOL, USDC o EURC. Eliges la moneda al crear el código y el cliente paga ese importe en ella.",
+      "q5": "¿Cuánto cuesta?",
+      "a5": "1 % hasta 0,1 SOL (o 10 USDC / EURC) y 0,5 % por encima, descontado del precio, así que el cliente paga exactamente lo que muestra el código. En cambio, los importes pequeños pagan un mínimo: la renta del recibo más la comisión de red, unos 0,063 USDC en una factura en USDC. Un café de 4,50 USDC paga ese mínimo y no el 1 %. No hay cuota mensual por cobrar; la página de comercio con lista de productos, opcional, cuesta 1,70 € por 30 días, y un comercio puede bajar su propia tarifa, nunca subirla.",
+      "q6": "¿El comprador necesita SOL para las comisiones de red?",
+      "a6": "En pagos con USDC o EURC, no: Payvand adelanta la comisión de red y la renta de las cuentas temporales, y lo recupera de la comisión. En un pago en SOL, los lamports son del propio comprador, así que necesita exactamente el importe.",
+      "q7": "¿Y si el cliente paga un importe equivocado?",
+      "a7": "El importe forma parte de la dirección de pago, así que otro importe da otra dirección que este código no vigila. El código sigue sin pagar y el pago no cuenta para esa factura.",
+      "q8": "¿Puedo devolver un pago?",
+      "a8": "Sí, enviándolo de vuelta desde tu cartera. Payvand nunca guarda el dinero y no puede moverlo por ti; tu lista de pagos muestra la dirección que pagó, así que una devolución es una transferencia.",
+      "q9": "Tenemos personal, o clientes habituales que pagan cada semana. ¿Encaja?",
+      "a9": "Sí. Un comprador puede fijar un presupuesto mensual del que gasta una clave de sesión, así los habituales aprueban una vez al mes en lugar de en cada caja; y los vendedores tienen códigos de descuento y una página de comercio con productos.",
+      "q10": "¿Puedo probarlo sin dinero real?",
+      "a10": "Sí. La app funciona en devnet de Solana en modo de prueba: una cuenta puede reclamar tokens iniciales gratis y completar un pago real por el programa sin gastar nada.",
+      "links": {
+        "payingWithWallet": "Cómo se paga con una cartera",
+        "stablecoins": "Qué es un stablecoin",
+        "cryptoWallet": "Qué es una cartera cripto",
+        "paymentCosts": "Cuánto cuesta un pago",
+        "fee": "Qué es una comisión",
+        "monthlyAllowance": "Cómo funciona un presupuesto mensual",
+        "testMoney": "Dinero de prueba gratis en devnet",
+        "switchToDevnet": "Cambiar a devnet"
+      }
     }
   },
   "admin": {
@@ -746,7 +780,7 @@
     "startCamera": "Iniciar la cámara"
   },
   "sell": {
-    "metaTitle": "Vender — Payvand",
+    "metaTitle": "Pago — Payvand",
     "pageTitle": "Crear un QR de pago",
     "pageDescription": "Escribe lo que quieres cobrar, crea el código y muéstraselo a tu cliente.",
     "invoiceHeading": "1. Factura",
@@ -824,7 +858,7 @@
     "allowDiscountsLabel": "Dejar que los compradores usen tus códigos",
     "allowDiscountsHelp": "Los compradores pueden aplicar uno de tus códigos a un pago creado con tus productos. Cada cartera puede usar un código una vez.",
     "designLabel": "Diseño de la tarjeta",
-    "designHelp": "El color de la página que abre tu cliente.",
+          "designHelp": "El aspecto de la página que abre tu cliente: su color y su estampado.",
     "designs": {
       "classic": "Clásico",
       "aurora": "Aurora",
@@ -878,7 +912,13 @@
       "saveShop": "Guardar comercio",
       "productsTitle": "Productos",
       "productsSubtitle": "Lo que la página de pago ofrece como recibo.",
-      "pricesInSol": "Los precios se cobran en SOL",
+      "pricesInCharged": "Se cobra en {currency}",
+      "addProductTitle": "Nuevo producto",
+      "editProductTitle": "Editar producto",
+      "ratesNeeded": "El tipo de cambio aún no está disponible, así que no se pudieron convertir los precios. Inténtalo de nuevo en un momento.",
+      "currencyChangeFailure": "No se cambió la moneda: algunos precios no se pudieron actualizar y se restauraron los anteriores.",
+      "pricesInLabel": "Precios en",
+      "pricesInHelp": "Una moneda para toda la carta: los precios se guardan en ella y cada pago de esta tienda se cobra en ella. Cambiarla convierte los precios que ya hay.",
       "editAria": "Editar {name}",
       "removeAria": "Quitar {name}",
       "removeConfirm": "¿Quitar «{name}»?\n\nLas facturas ya creadas conservan su recibo — esto solo lo quita de la carta.",
@@ -908,6 +948,7 @@
       "inactive": "No activa",
       "loading": "Leyendo tu suscripción…",
       "renewsOn": "Pagada hasta el {date}.",
+      "daysLeft": "{count} día restante | {count} días restantes",
       "price": "1,70 € por {days} días, pagadero en cualquiera de estas monedas.",
       "chooseCurrency": "Pagar con",
       "allowanceBadge": "Límite",
@@ -927,6 +968,8 @@
     "shopMetaTitle": "Comercio — Payvand",
     "shopTitle": "Comercio",
     "shopDescription": "Tus productos, los precios que cobra la página de pago y los códigos que has guardado aquí.",
+    "tabPayments": "Pagos",
+    "tabShop": "Tienda",
     "backToShops": "Volver a tus comercios",
     "createPaymentTitle": "Crear un pago",
     "createPaymentDescription": "Todo el formulario de pago, con precios de la carta de este comercio y tus códigos de descuento.",
@@ -953,7 +996,7 @@
       "off": "No — cobro una cosa cada vez"
     },
     "soundsTitle": "Sonidos",
-    "soundsDescription": "Un tono corto que sube cuando un pago pasa y un zumbido grave cuando no.",
+    "soundsDescription": "Un tintineo de moneda cuando un pago pasa y un «womp» grave cuando no.",
     "soundsLabel": "Sonidos de pago",
     "soundsSwitch": "Reproducir un sonido al terminar un pago",
     "notificationsTitle": "Notificaciones",
@@ -975,7 +1018,7 @@
   "terms": {
     "metaTitle": "Términos de uso — Payvand",
     "metaDescription": "Qué hace Payvand, qué no hace y las pocas reglas que trae: los pagos van de cartera a cartera, solo la comisión del protocolo pasa por el programa, y un pago confirmado no se puede deshacer.",
-    "updated": "15 de noviembre de 2026",
+    "updated": "24 de noviembre de 2026",
     "title": "Términos de uso",
     "description": "Qué hace Payvand, qué no hace y el puñado de reglas que acompañan su uso.",
     "what": {
@@ -1016,7 +1059,7 @@
     },
     "fees": {
       "title": "Comisiones",
-      "body": "Crear o escanear un código no cuesta nada al cliente más allá de lo que dice: paga el precio que ve más la comisión de red de Solana por la transacción, y nada más. Los vendedores pagan la comisión del protocolo, que tiene dos partes. Una es un porcentaje del precio, descontado de lo que recibe el vendedor. La otra es una comisión de registro en las facturas pagadas con un token, que cubre la prueba permanente de ese pago en la cadena; en una factura en SOL ese coste sale del precio. La comisión se cobra en la moneda del pago, nunca forma parte del total del cliente, y la app muestra el importe exacto que recibirá el vendedor antes de compartir un código. Los porcentajes y la comisión de registro los fija la plataforma y pueden cambiar con el coste de operar el servicio; se aplica la comisión vigente al pagar, y el precio de un código nunca cambia."
+      "body": "Crear o escanear un código no cuesta nada al cliente más allá de lo que dice: paga el precio que ve y nada más: la comisión de red de Solana y la renta del recibo ya están dentro. Los vendedores pagan la comisión del protocolo, que tiene dos partes. Una es un porcentaje del precio, descontado de lo que recibe el vendedor. La otra es una comisión de registro en las facturas pagadas con un token, que cubre la prueba permanente de ese pago en la cadena; en una factura en SOL ese coste sale del precio. La comisión se cobra en la moneda del pago, nunca forma parte del total del cliente, y la app muestra el importe exacto que recibirá el vendedor antes de compartir un código. Los porcentajes y la comisión de registro los fija la plataforma y pueden cambiar con el coste de operar el servicio; se aplica la comisión vigente al pagar, y el precio de un código nunca cambia."
     },
     "testMoney": {
       "title": "Dinero de prueba",

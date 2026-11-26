@@ -78,11 +78,42 @@ function requiresSubscription(error: unknown): boolean {
   return apiErrorMessage(error, '').toLowerCase().includes('subscription')
 }
 
-/** Keeps the draft, then opens the wallet through the ordinary checkout. */
+/**
+ * Keeps the draft, then opens the payment sheet over this page. The dialog
+ * closes first so the sheet is not stacked underneath it, and comes back —
+ * still filled in, from the draft — once the sheet is gone.
+ */
 async function startSubscription(currency: SupportedCurrency): Promise<void> {
   saveDraft()
+  formOpen.value = false
   await purchase.pay(currency)
+  // No invoice, no sheet: the dialog comes back to say why.
+  if (!purchase.checkout.value && purchase.failure.value) formOpen.value = true
 }
+
+/**
+ * The payment sheet has closed. A shop that was half written comes back with
+ * its two fields intact; the offer that sent the person to pay is gone if the
+ * payment went through, and still stands if it did not.
+ */
+watch(
+  () => purchase.checkout.value,
+  async (current, previous) => {
+    if (!previous || current) return
+    const draft = readDraft()
+    if (!draft) return
+    name.value = draft.name
+    description.value = draft.description
+    // The shared status, read again: `load` confirms the invoice that was just
+    // paid before it answers whether the account is active.
+    await purchase.load()
+    const paid = purchase.active.value
+    if (paid) clearDraft()
+    resumed.value = paid
+    needsSubscription.value = !paid
+    formOpen.value = true
+  }
+)
 
 async function load() {
   loading.value = true
@@ -153,9 +184,9 @@ onMounted(async () => {
 <template>
   <UCard class="min-w-0">
     <template #header>
-      <div class="flex items-start justify-between gap-3">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
         <div class="min-w-0">
-          <h2 class="text-base font-semibold">
+          <h2 class="text-base font-semibold whitespace-nowrap">
             {{ $t('shopsList.title') }}
           </h2>
           <p class="text-sm text-muted">
@@ -166,7 +197,7 @@ onMounted(async () => {
           :label="$t('shopsList.newShop')"
           icon="i-lucide-plus"
           size="sm"
-          class="shrink-0"
+          class="shrink-0 self-start"
           @click="openForm"
         />
       </div>

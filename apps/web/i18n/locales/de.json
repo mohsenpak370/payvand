@@ -85,7 +85,7 @@
       "description": "Drei Schritte, ohne Konto für deine Kundschaft.",
       "create": {
         "title": "Zahlungscode erstellen",
-        "description": "Betrag eingeben und den QR-Code zeigen. Kein Kartenterminal, keine Rechnungen, keine Monatsgebühren."
+        "description": "Betrag eingeben und den QR-Code zeigen. Kein Kartenterminal, keine Rechnungen, keine Monatsgebühr für eine Zahlung."
       },
       "scan": {
         "title": "Dein Kunde scannt und zahlt",
@@ -101,6 +101,40 @@
       "startSelling": "Verkaufen starten",
       "startCta": "Neu bei Krypto? Hier starten",
       "devnetGuide": "So stellst du deine Wallet auf Devnet um"
+    },
+    "faq": {
+      "title": "Häufige Fragen",
+      "description": "Was Payvand über eine Wallet hinaus bietet, was es kostet und was deine Kundschaft braucht.",
+      "q1": "Worin unterscheidet sich Payvand von einer USDC-Überweisung aus meiner Wallet?",
+      "a1": "Auf der Chain ist es dieselbe Überweisung: Die USDC gehen weiterhin von der Wallet des Käufers zu deiner, nie über uns. Der Unterschied liegt in dem, was mitkommt. Eine einfache Überweisung ist ein Betrag, den du in eine eingefügte Adresse tippst – sie kommt ohne Bestellung an: Du ordnest sie mit dem Auge einem Verkauf zu, und der Kunde muss dir sagen, dass er gezahlt hat. Ein Payvand-Code trägt Preis, Währung und Memo, die du einmal festlegst, und der Betrag ist Teil der Zahlungsadresse: Der Käufer kann ihn nicht ändern, ohne an eine Adresse zu senden, die dieser Code nicht überwacht. Der Code überwacht seine eigene Zahlung, springt von selbst auf Bezahlt und bewahrt die Adresse des Zahlers und die Transaktion als Beleg. Und für den Käufer ist es leichter: Bei USDC oder EURC zahlt Payvand die Netzwerkgebühr, er braucht also kein SOL.",
+      "q2": "Ist Payvand eine Wallet? Verwaltet es mein Geld?",
+      "a2": "Nein. Es gibt keine Seed-Phrase und kein Payvand-Guthaben: Jede Zahlung geht direkt von der Wallet des Käufers zu deiner, und die App hat keinen Schlüssel, mit dem sie dein Geld bewegen könnte. Payvand ist die Zahlungsebene für die Wallet, die du schon hast.",
+      "q3": "Brauchen meine Kunden ein Konto oder eine App?",
+      "a3": "Nein. Sie scannen mit einer Solana-Wallet, die Solana-Pay-Links versteht – Phantom, Solflare, Backpack und die meisten anderen – oder mit dem Scanner dieser Seite, prüfen den Betrag und bestätigen. Ein Zahlungslink funktioniert in jedem Browser. Ein Konto brauchen nur Verkäufer, damit ihre Codes und Shops erhalten bleiben.",
+      "q4": "In welchen Währungen kann ich abrechnen?",
+      "a4": "SOL, USDC oder EURC. Du wählst die Währung beim Erstellen des Codes, und der Kunde zahlt den Betrag in dieser Währung.",
+      "q5": "Was kostet es?",
+      "a5": "1 % bis 0,1 SOL (oder 10 USDC / EURC), darüber 0,5 %, vom Preis abgezogen – der Kunde zahlt genau, was der Code zeigt. Bei kleinen Beträgen greift stattdessen eine Untergrenze: die Miete für den Beleg plus die Netzwerkgebühr, bei einer USDC-Rechnung rund 0,063 USDC. Bei einem Kaffee für 4,50 USDC fällt also diese Untergrenze an, nicht 1 %. Für das Kassieren gibt es keine Monatsgebühr; die optionale Shop-Seite mit Produktliste kostet 1,70 € pro 30 Tage, und ein Shop kann seinen eigenen Satz senken, aber nie erhöhen.",
+      "q6": "Braucht der Käufer SOL für Netzwerkgebühren?",
+      "a6": "Bei USDC- oder EURC-Zahlungen nein: Payvand zahlt die Netzwerkgebühr und die Miete für die temporären Konten vor und bekommt beides aus der Gebühr erstattet. Bei einer SOL-Zahlung sind die Lamports des Käufers die Zahlung, er braucht also genau den Betrag.",
+      "q7": "Was, wenn der Kunde den falschen Betrag zahlt?",
+      "a7": "Der Betrag ist Teil der Zahlungsadresse: Ein anderer Betrag ergibt eine andere Adresse, die dieser Code nicht überwacht. Der Code bleibt unbezahlt, und die Zahlung zählt nicht für diese Rechnung.",
+      "q8": "Kann ich eine Zahlung erstatten?",
+      "a8": "Ja, indem du sie von deiner Wallet zurückschickst. Payvand hält das Geld nie und kann es nicht für dich bewegen; deine Zahlungsliste zeigt die Adresse, die gezahlt hat – eine Erstattung ist also eine Überweisung.",
+      "q9": "Wir haben Personal oder Stammkunden, die jede Woche zahlen. Passt das?",
+      "a9": "Ja. Ein Käufer kann ein monatliches Budget einrichten, aus dem ein Sitzungsschlüssel zahlt – Stammkunden bestätigen dann einmal im Monat statt an jeder Kasse. Verkäufer bekommen Rabattcodes und eine Shop-Seite mit Produktliste.",
+      "q10": "Kann ich es ohne echtes Geld ausprobieren?",
+      "a10": "Ja. Die App läuft im Testmodus auf Solana Devnet: Ein Konto kann kostenlose Start-Token abholen und eine ganze Zahlung über das echte Programm abwickeln, ohne etwas auszugeben.",
+      "links": {
+        "payingWithWallet": "So läuft eine Zahlung aus der Wallet",
+        "stablecoins": "Was ein Stablecoin ist",
+        "cryptoWallet": "Was eine Krypto-Wallet ist",
+        "paymentCosts": "Was eine Zahlung kostet",
+        "fee": "Was eine Gebühr ist",
+        "monthlyAllowance": "So funktioniert ein Monatsbudget",
+        "testMoney": "Kostenloses Testgeld auf Devnet",
+        "switchToDevnet": "Auf Devnet umstellen"
+      }
     }
   },
   "admin": {
@@ -746,7 +780,7 @@
     "startCamera": "Kamera starten"
   },
   "sell": {
-    "metaTitle": "Verkaufen — Payvand",
+    "metaTitle": "Zahlung — Payvand",
     "pageTitle": "Zahlungs-QR erstellen",
     "pageDescription": "Gib ein, was du berechnen willst, erstelle den Code und zeig ihn deiner Kundschaft.",
     "invoiceHeading": "1. Rechnung",
@@ -824,7 +858,7 @@
     "allowDiscountsLabel": "Käufer dürfen deine Codes nutzen",
     "allowDiscountsHelp": "Käufer können auf eine Zahlung aus deinen Produkten einen deiner Codes anwenden. Jede Wallet kann einen Code einmal nutzen.",
     "designLabel": "Kartendesign",
-    "designHelp": "Die Farbe der Seite, die Ihre Kundschaft öffnet.",
+    "designHelp": "Das Aussehen der Seite, die Ihre Kundschaft öffnet – Farbe und Muster.",
     "designs": {
       "classic": "Klassisch",
       "aurora": "Polarlicht",
@@ -878,7 +912,13 @@
       "saveShop": "Shop speichern",
       "productsTitle": "Produkte",
       "productsSubtitle": "Was die Zahlungsseite als Rechnung anbietet.",
-      "pricesInSol": "Preise werden in SOL berechnet",
+      "pricesInCharged": "Abrechnung in {currency}",
+      "addProductTitle": "Neues Produkt",
+      "editProductTitle": "Produkt bearbeiten",
+      "ratesNeeded": "Der Wechselkurs ist noch nicht verfügbar, daher konnten die Preise nicht umgerechnet werden. Versuch es gleich noch einmal.",
+      "currencyChangeFailure": "Die Währung wurde nicht geändert: Einige Preise ließen sich nicht aktualisieren, die alten wurden wiederhergestellt.",
+      "pricesInLabel": "Preise in",
+      "pricesInHelp": "Eine Währung für die ganze Karte: Preise werden darin gespeichert, und jede Zahlung aus diesem Shop wird darin berechnet. Beim Wechsel werden die vorhandenen Preise umgerechnet.",
       "editAria": "{name} bearbeiten",
       "removeAria": "{name} entfernen",
       "removeConfirm": "„{name}“ entfernen?\n\nBereits erstellte Rechnungen behalten ihre Position — das nimmt es nur aus der Karte.",
@@ -908,6 +948,7 @@
       "inactive": "Nicht aktiv",
       "loading": "Abo wird geladen…",
       "renewsOn": "Bezahlt bis {date}.",
+      "daysLeft": "{count} Tag übrig | {count} Tage übrig",
       "price": "1,70 € für {days} Tage, zahlbar in einer dieser Währungen.",
       "chooseCurrency": "Bezahlen mit",
       "allowanceBadge": "Budget",
@@ -927,6 +968,8 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Deine Produkte, die Preise, die die Zahlungsseite berechnet, und die Codes, die du hier gespeichert hast.",
+    "tabPayments": "Zahlungen",
+    "tabShop": "Shop",
     "backToShops": "Zurück zu deinen Shops",
     "createPaymentTitle": "Zahlung erstellen",
     "createPaymentDescription": "Das ganze Zahlungsformular, bepreist aus der Karte dieses Shops, mit deinen Rabattcodes.",
@@ -953,7 +996,7 @@
       "off": "Nein — ich berechne jeweils eine Sache"
     },
     "soundsTitle": "Töne",
-    "soundsDescription": "Ein kurzer Anstieg, wenn eine Zahlung durchgeht, ein tiefes Brummen, wenn nicht.",
+    "soundsDescription": "Ein Münzklang, wenn eine Zahlung durchgeht, ein tiefes Womp, wenn nicht.",
     "soundsLabel": "Zahlungstöne",
     "soundsSwitch": "Einen Ton spielen, wenn eine Zahlung endet",
     "notificationsTitle": "Benachrichtigungen",
@@ -975,7 +1018,7 @@
   "terms": {
     "metaTitle": "Nutzungsbedingungen — Payvand",
     "metaDescription": "Was Payvand tut, was es nicht tut, und die wenigen Regeln, die dazugehören: Zahlungen gehen von Wallet zu Wallet, nur die Protokollgebühr läuft über das Programm, und eine bezahlte Transaktion lässt sich nicht zurücknehmen.",
-    "updated": "15. November 2026",
+    "updated": "24. November 2026",
     "title": "Nutzungsbedingungen",
     "description": "Was Payvand tut, was es nicht tut und die paar Regeln, die zur Nutzung gehören.",
     "what": {
@@ -1016,7 +1059,7 @@
     },
     "fees": {
       "title": "Gebühren",
-      "body": "Ein Code zu erstellen oder zu scannen ist für den Kunden kostenlos über den angezeigten Betrag hinaus: er zahlt den sichtbaren Preis plus die Netzwerkgebühr von Solana für die Transaktion, sonst nichts. Verkäufer zahlen die Protokollgebühr, die aus zwei Teilen besteht. Der eine ist ein Prozentsatz des Preises, der vom Betrag des Verkäufers abgezogen wird. Der andere ist eine Beleggebühr bei Rechnungen, die in einem Token bezahlt werden, und deckt den dauerhaften Nachweis dieser Zahlung auf der Blockchain; bei einer SOL-Rechnung wird dieser Betrag stattdessen aus dem Preis genommen. Die Gebühr wird in der Währung der Zahlung berechnet, ist nie im Betrag des Kunden enthalten, und die App zeigt vor dem Teilen eines Codes den genauen Betrag, den der Verkäufer erhält. Prozentsätze und Beleggebühr legt die Plattform fest; sie können sich mit den Kosten des Betriebs ändern. Es gilt die Gebühr, die beim Bezahlen in Kraft ist, und der Preis eines Codes ändert sich nie."
+      "body": "Ein Code zu erstellen oder zu scannen ist für den Kunden kostenlos über den angezeigten Betrag hinaus: er zahlt den sichtbaren Preis und sonst nichts: die Netzwerkgebühr von Solana und die Miete des Belegs stecken schon darin. Verkäufer zahlen die Protokollgebühr, die aus zwei Teilen besteht. Der eine ist ein Prozentsatz des Preises, der vom Betrag des Verkäufers abgezogen wird. Der andere ist eine Beleggebühr bei Rechnungen, die in einem Token bezahlt werden, und deckt den dauerhaften Nachweis dieser Zahlung auf der Blockchain; bei einer SOL-Rechnung wird dieser Betrag stattdessen aus dem Preis genommen. Die Gebühr wird in der Währung der Zahlung berechnet, ist nie im Betrag des Kunden enthalten, und die App zeigt vor dem Teilen eines Codes den genauen Betrag, den der Verkäufer erhält. Prozentsätze und Beleggebühr legt die Plattform fest; sie können sich mit den Kosten des Betriebs ändern. Es gilt die Gebühr, die beim Bezahlen in Kraft ist, und der Preis eines Codes ändert sich nie."
     },
     "testMoney": {
       "title": "Testgeld",

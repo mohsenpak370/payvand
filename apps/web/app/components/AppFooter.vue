@@ -6,7 +6,7 @@ const columns = computed(() => [
   {
     label: t('footer.groups.product'),
     children: [
-      { label: t('footer.links.createPayment'), to: '/sell' },
+      { label: t('footer.links.createPayment'), to: '/payment' },
       { label: t('footer.links.scanAndPay'), to: '/scan' },
       { label: t('footer.links.learn'), to: '/learn' }
     ]

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CartLine, Product, ShopWithProducts } from '~/composables/useShop'
-import { menuGroups } from '~/composables/useShop'
+import { menuGroups, priceInCurrency } from '~/composables/useShop'
 
 // Tapping products is the whole point: a seller behind a counter should price a
 // payment by quantity, not by adding up numbers in their head. The total here
@@ -24,6 +24,9 @@ const rates = useSolRates()
 const total = computed(() =>
   lines.value.reduce((sum, line) => sum + line.product.price_lamports * line.quantity, 0)
 )
+
+/** A shop's menu is written in one currency, and the invoice charges in it. */
+const shelfCurrency = computed(() => shelves.value[0]?.currency ?? 'sol')
 
 function lineFor(product: Product): CartLine | undefined {
   return lines.value.find(line => line.product.id === product.id)
@@ -64,7 +67,10 @@ function clear() {
   lines.value = []
 }
 
-const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, currency.value))
+const fiatTotal = computed(() => {
+  const value = fiatValueOf(shelfCurrency.value, total.value, rates.value, currency.value)
+  return value === null ? null : formatFiat(value, currency.value)
+})
 </script>
 
 <template>
@@ -105,7 +111,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
               {{ product.name }}
             </p>
             <p class="text-xs text-muted tabular-nums">
-              {{ lamportsToSol(product.price_lamports) }} SOL
+              {{ priceInCurrency(product.price_lamports, shop.currency) }}
             </p>
           </div>
 
@@ -139,7 +145,7 @@ const fiatTotal = computed(() => fiatFromLamports(total.value, rates.value, curr
     <div class="flex items-baseline justify-between gap-3 border-t border-default pt-2 text-sm">
       <span class="font-medium">{{ $t('productPicker.total') }}</span>
       <span class="tabular-nums">
-        {{ lamportsToSol(total) }} SOL
+        {{ priceInCurrency(total, shelfCurrency) }}
         <span
           v-if="fiatTotal"
           class="text-muted"

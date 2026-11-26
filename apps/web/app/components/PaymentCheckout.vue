@@ -11,9 +11,24 @@ const props = withDefaults(
      * to save, so the scan flow turns this off.
      */
     permanent?: boolean
+    /**
+     * Drawn inside a dialog instead of owning the page: no page height, no
+     * footer, and the result goes to whoever opened the dialog rather than
+     * being announced over it. The shops subscription buys this way — a
+     * two-tap purchase does not need a checkout page behind it.
+     */
+    embedded?: boolean
+    /**
+     * Whether a finished payment raises the sheet's own result dialog. Off when
+     * embedded, because the dialog's owner has something better to say: the
+     * subscription card, now showing the paid period.
+     */
+    announceResult?: boolean
   }>(),
-  { permanent: true }
+  { permanent: true, embedded: false, announceResult: true }
 )
+
+const emit = defineEmits<{ settled: [] }>()
 
 // The shared link is the checkout: one sheet with what is being sold, its
 // price, and the single action that pays it. It still has to survive being
@@ -28,7 +43,7 @@ const { t } = useI18n()
 const api = usePaymentApi()
 const { user, ensureSession } = useAuth()
 const { wallets, selectedWallet, selectWallet } = useSolanaWallets()
-const { connect, connecting, canConnect, connected } = useSolanaWallet()
+const { connect, connecting, canConnect, connected, publicKey } = useSolanaWallet()
 
 const {
   payload,
@@ -95,7 +110,9 @@ watch([payload, selected], async ([current, option]) => {
   networkFeeCovered.value = false
   if (!current || option?.currency === 'sol') return
   try {
-    const info = await api.getSponsor()
+    // The wallet, when there is one, names whose allowance this is; a buyer who
+    // has not connected yet still gets the deployment's own answer.
+    const info = await api.getSponsor(publicKey.value ?? undefined)
     networkFeeCovered.value = info.available
   } catch {
     networkFeeCovered.value = false
@@ -123,16 +140,23 @@ const { playSuccess, playFailure } = useTransactionSounds()
 // so on the sheet; nobody was waiting for a sound by then.
 watch(settled, (isSettled) => {
   if (!isSettled || !signature.value) return
+  playSuccess()
+  // Whoever opened an embedded sheet closes it on this and shows the outcome
+  // in its place, so the sheet does not announce over it.
+  emit('settled')
+  if (!props.announceResult) return
   resultKind.value = 'success'
   resultOpen.value = true
-  playSuccess()
 })
 
 watch(failure, (message) => {
   if (!message) return
+  playFailure()
+  // Embedded, the refusal is already written on the sheet, under the button
+  // that caused it.
+  if (!props.announceResult) return
   resultKind.value = 'error'
   resultOpen.value = true
-  playFailure()
 })
 
 const successLine = computed(() =>
@@ -375,12 +399,16 @@ watch(() => props.source, (next) => {
   if (next) void load(next)
 })
 
-// The suggested PDF filename is the page title, so the name leads it.
-useSeoMeta({
-  title: () => (paymentName.value
-    ? t('checkout.metaTitleWithName', { name: paymentName.value })
-    : t('checkout.metaTitle'))
-})
+// The suggested PDF filename is the page title, so the name leads it. An
+// embedded sheet sits inside a page that already has a title of its own, and
+// renaming that page while a dialog opens would be a surprise.
+if (!props.embedded) {
+  useSeoMeta({
+    title: () => (paymentName.value
+      ? t('checkout.metaTitleWithName', { name: paymentName.value })
+      : t('checkout.metaTitle'))
+  })
+}
 </script>
 
 <template>
@@ -390,12 +418,18 @@ useSeoMeta({
     the viewport would instead be sized to the paper, and a single pixel of
     overhang is enough for the browser to spill a second, empty page.
   -->
-  <div class="flex min-h-[100svh] flex-col print:block print:min-h-0 print:bg-default">
-    <main class="flex flex-1 items-center justify-center px-5 py-10 print:fixed print:inset-0 print:flex print:items-center print:justify-center print:bg-default print:p-[12mm]">
+  <div
+    class="print:block print:bg-default"
+    :class="embedded ? '' : 'flex min-h-[100svh] flex-col print:min-h-0'"
+  >
+    <main
+      class="print:fixed print:inset-0 print:flex print:items-center print:justify-center print:bg-default print:p-[12mm]"
+      :class="embedded ? '' : 'flex flex-1 items-center justify-center px-5 py-10'"
+    >
       <div class="w-full max-w-sm">
         <section
-          class="rounded-2xl p-6 shadow-sm print:break-inside-avoid print:bg-elevated"
-          :class="cardClass"
+          class="rounded-2xl print:break-inside-avoid print:bg-elevated"
+          :class="[cardClass, embedded ? 'p-5' : 'p-6 shadow-sm']"
         >
           <div
             v-if="stage === 'loading'"
@@ -575,12 +609,16 @@ useSeoMeta({
                 v-if="stage === 'settled'"
                 class="flex flex-col gap-3"
               >
+                <!-- The sheet is centred, and text alignment is inherited: without
+                     `text-start` the title centres itself in the text column
+                     while the icon stays at the left edge. -->
                 <UAlert
                   color="success"
                   variant="subtle"
                   icon="i-lucide-circle-check"
                   :title="$t('checkout.settled.title')"
                   :description="$t('checkout.settled.description')"
+                  class="text-start"
                 />
                 <!-- The code stays on the sheet too, not only in the result
                      dialog the buyer may have already dismissed. -->
@@ -985,9 +1023,9 @@ useSeoMeta({
           <div
             class="relative grid size-18 place-items-center rounded-full bg-success/10 text-success animate-pay-result-pop motion-reduce:animate-none"
           >
-            <UIcon
-              name="i-lucide-circle-check"
-              class="size-12"
+            <PayResultMark
+              state="success"
+              class="size-16"
             />
             <span
               class="absolute inset-0 rounded-full border-2 border-current opacity-0 animate-pay-result-halo motion-reduce:hidden"
@@ -1055,9 +1093,9 @@ useSeoMeta({
           <div
             class="relative grid size-18 place-items-center rounded-full bg-error/10 text-error animate-pay-result-pop-error motion-reduce:animate-none"
           >
-            <UIcon
-              name="i-lucide-circle-alert"
-              class="size-12"
+            <PayResultMark
+              state="error"
+              class="size-16"
             />
           </div>
           <p
@@ -1097,7 +1135,10 @@ useSeoMeta({
       </template>
     </UModal>
 
-    <footer class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]">
+    <footer
+      v-if="!embedded"
+      class="border-t border-default px-5 py-5 text-center text-xs text-muted print:fixed print:inset-x-0 print:bottom-0 print:bg-default print:py-[8mm]"
+    >
       {{ $t('checkout.poweredBy') }}
       <NuxtLink
         to="/"

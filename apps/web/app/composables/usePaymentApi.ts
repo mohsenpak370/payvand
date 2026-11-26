@@ -4,6 +4,32 @@ export type PaymentStatus = 'pending' | 'settled' | 'missing'
 
 export type SupportedCurrency = 'sol' | 'usdc' | 'eurc'
 
+/** `GET /api/config`: everything a quote needs, from one cached read. */
+export interface ConfigResponse {
+  cluster: string
+  program_id: string
+  admin: string
+  fee_mode: 'seller' | 'buyer'
+  /** Lamports `open_budget` parks on a session key. */
+  session_fee_float: number
+  fees: {
+    fee_bps_below: number
+    fee_bps_above: number
+    sol_tier_lamports: number
+    token_tier_base_units: number
+    flat_usdc_base_units: number
+    flat_eurc_base_units: number
+    network_fee_lamports: number
+    network_fee_usdc_base_units: number
+    network_fee_eurc_base_units: number
+  }
+  mints: { usdc: string, eurc: string }
+  /** Account sizes the rent minimums are quoted for. */
+  spaces: Record<string, number>
+  /** `getMinimumBalanceForRentExemption` for each size in `spaces`. */
+  rent: Record<string, number>
+}
+
 /**
  * One way to pay an invoice: a currency, its price, and the address that price
  * is bound to. A seller who takes SOL and USDC puts two of these on one code,
@@ -483,8 +509,11 @@ export function usePaymentApi() {
    * payment asks: Payvand's fee covers the network fee, so the payer needs no
    * SOL of their own.
    */
-  async function getSponsor(): Promise<SponsorInfo> {
-    return await $fetch(`${base}/api/sponsor`, { headers: authHeaders() })
+  async function getSponsor(wallet?: string): Promise<SponsorInfo> {
+    // The wallet names whose daily allowance this is: a buyer without an account
+    // has the same cap, counted against the address that signs.
+    const query = wallet ? `?wallet=${encodeURIComponent(wallet)}` : ''
+    return await $fetch(`${base}/api/sponsor${query}`, { headers: authHeaders() })
   }
 
   /**
@@ -502,7 +531,19 @@ export function usePaymentApi() {
     })
   }
 
+  /**
+   * The fee policy, the mint addresses and the cluster's rent minimums in one
+   * cached answer. A quote reads this instead of the config account and six rent
+   * reads of its own: the API keeps it for a minute and shares it with every
+   * tab, and the CDN keeps it for another.
+   */
+  async function getConfig(cluster?: string): Promise<ConfigResponse> {
+    const query = cluster ? `?cluster=${encodeURIComponent(cluster)}` : ''
+    return await $fetch(`${base}/api/config${query}`)
+  }
+
   return {
+    getConfig,
     createPayment,
     getPayment,
     getSponsor,

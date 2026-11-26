@@ -20,9 +20,9 @@ why small shops sometimes refuse cards under a minimum amount.
 A crypto fee is different in two ways:
 
 - **It is flat.** Paying 2 or paying 2,000 costs the same tiny amount, because the work is the same.
-- **The seller pays it, out of the price.** There is no terminal rental, no monthly contract, and
-  nothing added on top: the customer pays exactly the price on the code, and the network fee and the
-  record's rent come out of the seller's side.
+- **The seller pays it, out of the price.** There is no terminal rental, no monthly fee to take a
+  payment, and nothing added on top: the customer pays exactly the price on the code, and the network
+  fee and the record's rent come out of the seller's side.
 
 ## Why you do not need any SOL, even to pay in USDC
 

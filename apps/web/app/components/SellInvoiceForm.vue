@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { SellPageState } from '~/composables/useSellPage'
-import { cardDesignSwatch } from '~/utils/cardDesigns'
 
 const props = defineProps<{
   sell: SellPageState
@@ -10,7 +9,7 @@ const { t } = useI18n()
 
 const {
   cluster,
-  shopsEnabled,
+  shopScoped,
   hasProducts,
   shops,
   cart,
@@ -24,8 +23,6 @@ const {
   priceCurrency,
   currencyItems,
   calculatorOpen,
-  design,
-  designOptions,
   name,
   description,
   memo,
@@ -50,8 +47,13 @@ const {
 <template>
   <UCard>
     <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-base font-semibold">
+      <!--
+        The title and the wallet sit on two rows, always: side by side, the
+        "No wallet detected" note squeezed "1. Invoice" onto two lines on a
+        phone, and the heading is the one thing that has to read in one piece.
+      -->
+      <div class="flex flex-col gap-2">
+        <h2 class="text-base font-semibold whitespace-nowrap">
           {{ t('sell.invoiceHeading') }}
         </h2>
         <WalletConnect />
@@ -60,7 +62,7 @@ const {
 
     <div class="flex flex-col gap-4">
       <UFormField
-        v-if="shopsEnabled && hasProducts"
+        v-if="shopScoped && hasProducts"
         :label="t('sell.pricingLabel')"
       >
         <URadioGroup
@@ -70,7 +72,7 @@ const {
       </UFormField>
 
       <ProductPicker
-        v-if="shopsEnabled && sellingFromShops"
+        v-if="sellingFromShops"
         v-model="cart"
         :shops="shops"
       />
@@ -200,42 +202,6 @@ const {
           </UFormField>
         </template>
       </div>
-
-      <!-- The look of the page the customer opens. It is part of the code, so
-           it has to be chosen here, before the invoice exists — and only for a
-           payment built from shop products, where the basket is the point of
-           the page. A typed price is one number and one memo. -->
-      <UFormField
-        v-if="sellingFromShops && cartActive"
-        :label="t('sell.designLabel')"
-        :help="t('sell.designHelp')"
-      >
-        <div
-          class="flex flex-wrap gap-2"
-          role="radiogroup"
-          :aria-label="t('sell.designLabel')"
-        >
-          <button
-            v-for="option in designOptions"
-            :key="option.value"
-            type="button"
-            role="radio"
-            :aria-checked="design === option.value"
-            class="flex flex-col items-center gap-1 rounded-lg border p-1.5 text-xs transition-colors"
-            :class="design === option.value
-              ? 'border-primary text-highlighted ring-2 ring-primary/30'
-              : 'border-default text-muted hover:border-primary/40'"
-            @click="design = option.value"
-          >
-            <span
-              :class="cardDesignSwatch(option.value)"
-              class="size-8 rounded-md"
-              aria-hidden="true"
-            />
-            {{ option.label }}
-          </button>
-        </div>
-      </UFormField>
 
       <div class="flex items-center justify-between gap-3 text-sm text-muted">
         <span>{{ networkLabel(cluster) }}</span>

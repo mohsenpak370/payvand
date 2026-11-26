@@ -84,7 +84,6 @@ afterEach(() => {
 function sellFormIn(currency: SupportedCurrency) {
   return useSellInvoiceForm({
     cluster: 'devnet',
-    shopsEnabled: ref(true),
     selectedDiscount: ref(null),
     allowDiscounts: ref(false),
     priceCurrency: ref(currency),
@@ -108,21 +107,18 @@ describe('where a discount code may be attached', () => {
     created_at_unix: 0
   }
 
-  it('offers one on the shared form only for a cart with products', () => {
+  it('offers none on a page that is not a shop\'s', () => {
     const form = sellFormIn('sol')
-    expect(form.discountAllowed.value).toBe(false)
-
     form.priceMode.value = 'products'
-    expect(form.discountAllowed.value).toBe(false)
-
     form.cart.value = [{ product, quantity: 1 }]
-    expect(form.discountAllowed.value).toBe(true)
+
+    expect(form.shopScoped.value).toBe(false)
+    expect(form.discountAllowed.value).toBe(false)
   })
 
   it('offers one on a shop\'s own page only while its menu fills the payment', () => {
     const form = useSellInvoiceForm({
       cluster: 'devnet',
-      shopsEnabled: ref(true),
       shopId: 'shop-1',
       selectedDiscount: ref(null),
       allowDiscounts: ref(false),
@@ -180,10 +176,11 @@ describe('the invoice that invites the buyer\'s own code', () => {
     allowDiscounts?: boolean
     discount?: DiscountCode | null
   }) {
+    // These are all shop payments now: a page not made for a shop prices a
+    // typed amount and offers nothing from the shop feature.
     const form = useSellInvoiceForm({
       cluster: 'devnet',
-      shopsEnabled: ref(true),
-      shopId: options.shopId,
+      shopId: options.shopId ?? 'shop-1',
       selectedDiscount: ref(options.discount ?? null),
       allowDiscounts: ref(options.allowDiscounts ?? false),
       priceCurrency: ref('sol'),
@@ -232,18 +229,27 @@ describe('the sell form\'s net quote', () => {
   it('quotes a USDC price with the USDC mint, so the flat is charged', () => {
     sellFormIn('usdc')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'usdc', { mint: USDC_MINT })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'usdc', {
+      mint: USDC_MINT,
+      cluster: 'devnet'
+    })
   })
 
   it('quotes a EURC price with the EURC mint', () => {
     sellFormIn('eurc')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'eurc', { mint: EURC_MINT })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000, 'eurc', {
+      mint: EURC_MINT,
+      cluster: 'devnet'
+    })
   })
 
   it('quotes a SOL price with no mint, which pays no flat', () => {
     sellFormIn('sol')
 
-    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000_000, 'sol', { mint: undefined })
+    expect(estimateInvoiceCosts).toHaveBeenCalledWith(10_000_000, 'sol', {
+      mint: undefined,
+      cluster: 'devnet'
+    })
   })
 })

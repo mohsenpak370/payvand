@@ -90,6 +90,7 @@ export function usePaymentCheckout() {
     api,
     budget,
     client,
+    restartChainReads,
     execute,
     signTransactions,
     payer: () => publicKey.value,

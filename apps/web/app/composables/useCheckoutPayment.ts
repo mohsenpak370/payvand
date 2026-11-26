@@ -16,6 +16,8 @@ export function useCheckoutPayment(deps: {
   api: ReturnType<typeof usePaymentApi>
   budget: ReturnType<typeof useBudget>
   client: ReturnType<typeof useSolanaClient>['client']
+  /** Starts the page's own minute of receipt reads over after a send. */
+  restartChainReads: () => void
   execute: ReturnType<typeof useSolanaSignAndSendTransaction>['execute']
   signTransactions: ReturnType<typeof useSolanaSignTransactions>['execute']
   payer: () => Address | null
@@ -37,18 +39,19 @@ export function useCheckoutPayment(deps: {
   const {
     api, budget, client, execute, signTransactions, payer, payload, record, busy,
     signature, failure, settled, canPaySilently, canPayFromAllowance, selected,
-    payableAmount, costs, costsError, refreshCosts, addressFor
+    payableAmount, costs, costsError, refreshCosts, addressFor, restartChainReads
   } = deps
 
   /**
    * The relayer to hand this settlement to, or null when the wallet has to pay
    * for it itself. The endpoint answers with its key and whether it will take
-   * this payment; a request that fails is not a failed payment, so it answers
-   * null and leaves the wallet's own path in place.
+   * this payment — and this wallet's own daily allowance, so the answer is the
+   * same for a buyer who never signed in. A request that fails is not a failed
+   * payment, so it answers null and leaves the wallet's own path in place.
    */
-  async function relayerAddress(): Promise<Address | null> {
+  async function relayerAddress(wallet?: string): Promise<Address | null> {
     try {
-      const info = await api.getSponsor()
+      const info = await api.getSponsor(wallet)
       return info.available && info.address ? address(info.address) : null
     } catch {
       return null
@@ -157,7 +160,7 @@ export function useCheckoutPayment(deps: {
           // the signature, and the price repays it in the settled instruction. A
           // wallet holding only the price can then pay a SOL invoice, and the
           // seller is the one who carries the rent and the fee.
-          const relayer = await relayerAddress()
+          const relayer = await relayerAddress(payerAddress)
           const feePayer = relayer ?? payerAddress
           if (!relayer) {
             // Nothing will sponsor this one, so the wallet fronts both records
@@ -253,7 +256,7 @@ export function useCheckoutPayment(deps: {
           // first — a buyer holding no SOL at all can then pay, and the wallet
           // is never asked for lamports it does not need. Only a payment no
           // relayer will take falls back to the wallet fronting them itself.
-          const relayer = await relayerAddress()
+          const relayer = await relayerAddress(payerAddress)
           const feePayer = relayer ?? payerAddress
           if (!relayer) {
             // Nothing will sponsor this one, so the wallet has to hold what a
@@ -321,6 +324,10 @@ export function useCheckoutPayment(deps: {
         }
       }
       signature.value = sent
+      // The send is the other moment the chain leads the API: a fresh minute of
+      // the page's own receipt reads starts here, even on a page that has been
+      // open longer than one.
+      restartChainReads()
 
       record.value = await api.getPayment(payment, {
         cluster: current.cluster,

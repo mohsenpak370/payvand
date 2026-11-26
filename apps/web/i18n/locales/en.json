@@ -85,7 +85,7 @@
       "description": "Three steps, no account setup for your customer.",
       "create": {
         "title": "Create a payment code",
-        "description": "Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fees."
+        "description": "Enter the amount you want to charge and show the QR code. No card reader, no invoices, no monthly fee to take a payment."
       },
       "scan": {
         "title": "Your customer scans and pays",
@@ -101,6 +101,40 @@
       "startSelling": "Start selling",
       "startCta": "New to crypto? Start here",
       "devnetGuide": "See how to switch to devnet on your wallet"
+    },
+    "faq": {
+      "title": "Questions people ask",
+      "description": "What Payvand adds over a wallet, what it costs, and what your customer needs.",
+      "q1": "How is Payvand different from sending USDC from my wallet?",
+      "a1": "On chain it is the same transfer: the USDC still moves from the buyer's wallet to yours, never through us. The difference is what travels with it. A plain transfer is an amount you type into a pasted address, so it arrives with no order attached — you match it to a sale by eye, and the customer has to tell you it was sent. A Payvand code carries the price, currency and memo you set once, and the amount is part of the payment address, so the buyer cannot change it without sending somewhere this code is not watching. The code watches its own payment, turns Paid by itself, and keeps the payer's address and the transaction as a receipt. And it is easier for the buyer too: with USDC or EURC the relayer pays the network fee, so they need no SOL.",
+      "q2": "Is Payvand a wallet? Does it hold my money?",
+      "a2": "No. There is no seed phrase to keep and no Payvand balance: each payment goes straight from the buyer’s wallet to yours, and the app holds no key that can move your funds. It is the payment layer on top of the wallet you already have.",
+      "q3": "Do my customers need an account or an app?",
+      "a3": "No. They scan with any Solana wallet that reads Solana Pay links — Phantom, Solflare, Backpack and most others — or with the scanner on this site, check the amount and approve. A payment link works in any browser. Accounts are for sellers, to keep their codes and shops.",
+      "q4": "Which currencies can I charge in?",
+      "a4": "SOL, USDC or EURC. You choose the currency when you make the code, and the customer pays that amount in it.",
+      "q5": "What does it cost?",
+      "a5": "1% up to 0.1 SOL (or 10 USDC / EURC) and 0.5% above that, taken out of the price, so the customer pays exactly what the code shows. A small payment pays a floor instead — the receipt’s rent plus the network fee, about 0.063 USDC on a USDC invoice — so a 4.50 USDC coffee pays that floor rather than 1%. There is no monthly fee to take payments; the optional shop page with a product list is €1.70 per 30 days, and a shop can set its own lower rate, never a higher one.",
+      "q6": "Does the buyer need SOL for network fees?",
+      "a6": "For USDC or EURC payments, no: Payvand’s relayer pays the network fee and the temporary account rents and is repaid out of the fee. A SOL payment is the buyer’s own lamports, so they need the amount they are paying and nothing else.",
+      "q7": "What if the customer pays the wrong amount?",
+      "a7": "The amount is part of the payment address, so a different amount is a different address that this code is not watching. The code stays unpaid, and the payment is not counted against that invoice.",
+      "q8": "Can I refund a payment?",
+      "a8": "Yes, by sending it back from your wallet. Payvand never holds the money and cannot move it for you; your payment list shows the address that paid, so a refund is one transfer.",
+      "q9": "We have staff, or regulars who pay every week. Does that fit?",
+      "a9": "Yes. A buyer can open a monthly allowance that a session key spends from, so a regular approves once a month instead of at every counter, and sellers get discount codes and a shop page with a product list.",
+      "q10": "Can I try it without real money?",
+      "a10": "Yes. The app runs on Solana devnet in test mode: an account can claim free starter tokens and take a whole payment through the real program without spending anything.",
+      "links": {
+        "payingWithWallet": "How paying with a wallet works",
+        "stablecoins": "What a stablecoin is",
+        "cryptoWallet": "What a crypto wallet is",
+        "paymentCosts": "What a payment costs",
+        "fee": "What a fee is",
+        "monthlyAllowance": "How a monthly allowance works",
+        "testMoney": "Free test money on devnet",
+        "switchToDevnet": "Switching to devnet"
+      }
     }
   },
   "admin": {
@@ -746,7 +780,7 @@
     "startCamera": "Start the camera"
   },
   "sell": {
-    "metaTitle": "Sell — Payvand",
+    "metaTitle": "Payment — Payvand",
     "pageTitle": "Create a payment QR",
     "pageDescription": "Enter what you want to charge, create the code, and show it to your customer.",
     "invoiceHeading": "1. Invoice",
@@ -824,7 +858,7 @@
     "allowDiscountsLabel": "Let buyers use your codes",
     "allowDiscountsHelp": "Buyers can apply one of your codes to a payment built from your products. Each wallet can use a code once.",
     "designLabel": "Card design",
-    "designHelp": "The colour of the page your customer opens.",
+          "designHelp": "The look of the page your customer opens — its colour and its pattern.",
     "designs": {
       "classic": "Classic",
       "aurora": "Aurora",
@@ -878,7 +912,13 @@
       "saveShop": "Save shop",
       "productsTitle": "Products",
       "productsSubtitle": "What the payment page offers as a receipt.",
-      "pricesInSol": "Prices are charged in SOL",
+      "pricesInCharged": "Charged in {currency}",
+      "addProductTitle": "New product",
+      "editProductTitle": "Edit product",
+      "ratesNeeded": "The exchange rate is not available yet, so the prices could not be converted. Try again in a moment.",
+      "currencyChangeFailure": "The currency was not changed: some prices could not be updated, so the old ones were put back.",
+      "pricesInLabel": "Prices in",
+      "pricesInHelp": "One currency for the whole menu: prices are saved in it and every payment from this shop is charged in it. Changing it converts the prices already on the menu.",
       "editAria": "Edit {name}",
       "removeAria": "Remove {name}",
       "removeConfirm": "Remove “{name}”?\n\nInvoices already created keep their receipt — this only takes it off the menu.",
@@ -908,6 +948,7 @@
       "inactive": "Not active",
       "loading": "Reading your subscription…",
       "renewsOn": "Paid until {date}.",
+      "daysLeft": "{count} day left | {count} days left",
       "price": "€1.70 for {days} days, payable in any of these currencies.",
       "chooseCurrency": "Pay with",
       "allowanceBadge": "Allowance",
@@ -927,6 +968,8 @@
     "shopMetaTitle": "Shop — Payvand",
     "shopTitle": "Shop",
     "shopDescription": "Your products, the prices the payment page charges, and the codes you saved here.",
+    "tabPayments": "Payments",
+    "tabShop": "Shop",
     "backToShops": "Back to your shops",
     "createPaymentTitle": "Create a payment",
     "createPaymentDescription": "The whole payment form, priced from this shop’s menu, with your discount codes.",
@@ -953,7 +996,7 @@
       "off": "No — I charge for one thing at a time"
     },
     "soundsTitle": "Sounds",
-    "soundsDescription": "A short rise when a payment goes through, a low buzz when it does not.",
+    "soundsDescription": "A coin sound when a payment goes through, a low womp when it does not.",
     "soundsLabel": "Payment sounds",
     "soundsSwitch": "Play a sound when a payment finishes",
     "notificationsTitle": "Notifications",
@@ -975,7 +1018,7 @@
   "terms": {
     "metaTitle": "Terms of use — Payvand",
     "metaDescription": "What Payvand does, what it does not do, and the handful of rules that come with using it: payments go wallet to wallet, only the protocol fee passes through the program, and a paid transaction cannot be taken back.",
-    "updated": "15 November 2026",
+    "updated": "24 November 2026",
     "title": "Terms of use",
     "description": "What Payvand does, what it does not do, and the handful of rules that come with using it.",
     "what": {
@@ -1016,7 +1059,7 @@
     },
     "fees": {
       "title": "Fees",
-      "body": "Making or scanning a code is free for the customer beyond what it says: they pay the price they see plus the Solana network fee for the transaction, and nothing else. Sellers pay the protocol fee, which has two parts. One is a percentage of the price, taken out of what the seller receives. The other is a record fee on invoices paid in a token, which covers the permanent on-chain proof of that payment; a SOL invoice carries that record cost out of the price instead. The fee is charged in the currency the payment is made in, the customer’s total never includes it, and the app shows the exact amount the seller will receive before a code is shared. The percentages and the record fee are set by the platform and can change with the cost of operating the service; the fee applied is the one in force when a payment is made, and the price on a code never changes."
+      "body": "Making or scanning a code is free for the customer beyond what it says: they pay the price they see and nothing else — the Solana network fee and the record’s rent are already inside it. Sellers pay the protocol fee, which has two parts. One is a percentage of the price, taken out of what the seller receives. The other is a record fee on invoices paid in a token, which covers the permanent on-chain proof of that payment; a SOL invoice carries that record cost out of the price instead. The fee is charged in the currency the payment is made in, the customer’s total never includes it, and the app shows the exact amount the seller will receive before a code is shared. The percentages and the record fee are set by the platform and can change with the cost of operating the service; the fee applied is the one in force when a payment is made, and the price on a code never changes."
     },
     "testMoney": {
       "title": "Test money",

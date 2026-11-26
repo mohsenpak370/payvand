@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SellPageState } from '~/composables/useSellPage'
+import { cardDesignSwatch } from '~/utils/cardDesigns'
 
 const props = defineProps<{
   sell: SellPageState
@@ -13,13 +14,16 @@ const {
   record,
   qrPayload,
   createdItems,
-  shareLink,
   copiedCode,
   copiedLink,
   payloadBox,
   savedLabel,
   paidCode,
   presentOpen,
+  design,
+  designOptions,
+  designOpen,
+  openPaymentPage,
   codeOpen,
   statusColor,
   reset,
@@ -32,8 +36,10 @@ const {
 <template>
   <UCard>
     <template #header>
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="text-base font-semibold">
+      <!-- A heading and its button are one column each: in one row on a phone
+           the heading broke apart instead of the button moving down. -->
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <h2 class="text-base font-semibold whitespace-nowrap">
           {{ t('sell.showHeading') }}
         </h2>
         <UButton
@@ -79,12 +85,15 @@ const {
       </p>
 
       <div class="flex flex-wrap items-center justify-center gap-2">
+        <!--
+          The page opens from a sheet that picks its look first: the design is
+          the one thing about a made code that can still be chosen, and choosing
+          it is part of opening the page rather than part of making it.
+        -->
         <UButton
-          :to="shareLink"
-          target="_blank"
-          rel="noopener"
           :label="t('sell.openPage')"
           icon="i-lucide-external-link"
+          @click="designOpen = true"
         />
         <UButton
           :icon="copiedLink ? 'i-lucide-check' : 'i-lucide-link'"
@@ -126,8 +135,11 @@ const {
             class="flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm"
           >
             <span class="min-w-0 break-words">{{ item.quantity }} × {{ item.name }}</span>
+            <!-- Each line is priced in the invoice's own unit, which for a
+                 shop in EURC is EURC, not the SOL the line's field is named
+                 after. -->
             <span class="shrink-0 text-muted tabular-nums">
-              {{ lamportsToSol(item.amount_lamports * item.quantity) }} SOL
+              {{ priceInCurrency(item.amount_lamports * item.quantity, record.options?.[0]?.currency ?? 'sol') }}
             </span>
           </li>
         </ul>
@@ -153,7 +165,7 @@ const {
           {{ t('sell.percentOff', { percent: record.discount.percent_off }) }}
         </UBadge>
         <UBadge
-          v-if="paidCode && record.amount_lamports > 0"
+          v-if="paidCode && savedLabel"
           color="success"
           variant="subtle"
         >
@@ -240,5 +252,80 @@ const {
     >
       {{ t('sell.emptyCode') }}
     </div>
+
+    <!--
+      Five looks, each shown as the card itself rather than as a colour chip:
+      the wash and the pattern are what tells them apart, and a preview that
+      shows both is the only honest way to choose.
+    -->
+    <UModal
+      v-model:open="designOpen"
+      :title="t('sell.designLabel')"
+      :description="t('sell.designHelp')"
+    >
+      <template #body>
+        <div
+          class="grid gap-3 sm:grid-cols-2"
+          role="radiogroup"
+          :aria-label="t('sell.designLabel')"
+        >
+          <button
+            v-for="option in designOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="design === option.value"
+            class="flex flex-col gap-2 rounded-xl border p-2 text-start transition-colors"
+            :class="design === option.value
+              ? 'border-primary ring-2 ring-primary/30'
+              : 'border-default hover:border-primary/40'"
+            @click="design = option.value"
+          >
+            <span
+              class="block h-24 w-full overflow-hidden rounded-lg"
+              :class="cardDesignSwatch(option.value)"
+              aria-hidden="true"
+            >
+              <span class="flex h-full flex-col justify-between p-3">
+                <span class="flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-semibold">Payvand</span>
+                  <span class="rounded-full bg-white/30 px-1.5 py-0.5 text-[10px] font-medium text-default">4.50</span>
+                </span>
+                <span class="flex items-end justify-between gap-2">
+                  <span class="min-w-0 truncate text-[11px] text-muted">{{ t('home.hero.card.memo') }}</span>
+                  <span class="rounded-md bg-white/30 px-1.5 py-0.5 text-[10px] font-medium">Pay</span>
+                </span>
+              </span>
+            </span>
+            <span class="flex items-center justify-between gap-2 px-1 pb-1 text-xs">
+              <span :class="design === option.value ? 'text-highlighted' : 'text-muted'">
+                {{ option.label }}
+              </span>
+              <UIcon
+                v-if="design === option.value"
+                name="i-lucide-check"
+                class="text-primary size-4"
+              />
+            </span>
+          </button>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center justify-end gap-2">
+          <UButton
+            :label="t('common.cancel')"
+            color="neutral"
+            variant="ghost"
+            @click="designOpen = false"
+          />
+          <UButton
+            :label="t('sell.openPage')"
+            icon="i-lucide-external-link"
+            @click="openPaymentPage()"
+          />
+        </div>
+      </template>
+    </UModal>
   </UCard>
 </template>

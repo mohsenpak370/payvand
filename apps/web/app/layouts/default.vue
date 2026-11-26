@@ -82,7 +82,7 @@ const accountMenu = computed(() => [
             {{ $t('app.nav.start') }}
           </NuxtLink>
           <NuxtLink
-            to="/sell"
+            to="/payment"
             class="text-muted hover:text-primary text-sm font-medium underline-offset-4 hover:underline"
           >
             {{ $t('app.nav.createPayment') }}
@@ -160,7 +160,7 @@ const accountMenu = computed(() => [
             class="justify-start"
           />
           <UButton
-            to="/sell"
+            to="/payment"
             :label="$t('app.nav.createPayment')"
             color="neutral"
             variant="soft"

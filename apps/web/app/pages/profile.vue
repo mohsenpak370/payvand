@@ -108,7 +108,7 @@ function openBudget() {
         :transactions="transactions"
         :loading="txLoading"
         :failure="txFailure"
-        @refresh="refreshTransactions"
+        @refresh="() => refreshTransactions(true)"
       />
     </div>
   </UPageSection>

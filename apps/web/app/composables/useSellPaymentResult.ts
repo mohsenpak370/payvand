@@ -6,6 +6,7 @@ import type {
   SupportedCurrency
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
+import { CARD_DESIGNS, cardDesignOf, type CardDesign } from '~/utils/cardDesigns'
 
 const CODE_SIZE = 320
 
@@ -18,6 +19,7 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
   const { cluster } = useRuntimeConfig().public
   const api = usePaymentApi()
   const { playSuccess } = useTransactionSounds()
+  const { t } = useI18n()
 
   // The code is drawn at 320 and PaymentQr pads it by p-3 (0.75rem) a side, so
   // the piece of paper the seller holds up is 344 wide. The button that presents
@@ -37,6 +39,18 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
   const priceLamports = ref(0)
   const paidCode = ref<string | null>(null)
 
+  /**
+   * The look of the page, chosen when the seller is about to open it. It is
+   * the one part of a code that can still change after the invoice exists,
+   * because it changes nothing about what is owed.
+   */
+  const design = ref<CardDesign>('classic')
+  const designOpen = ref(false)
+  const designOptions = computed(() => CARD_DESIGNS.map(value => ({
+    value,
+    label: t(`sell.designs.${value}`)
+  })))
+
   const copiedCode = ref(false)
   const copiedLink = ref(false)
   const payloadBox = ref<HTMLElement>()
@@ -53,13 +67,38 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
 
   /** What a carried discount code took off, in the currency this code charges. */
   const savedLabel = computed(() => {
-    const currency = record.value?.options?.[0]?.currency ?? options.priceCurrency.value
-    const saved = priceLamports.value - (record.value?.amount_lamports ?? 0)
+    const option = record.value?.options?.[0]
+    const currency = option?.currency ?? options.priceCurrency.value
+    // The invoice's own price, in its own base units: a token invoice keeps its
+    // amount in `options`, while `amount_lamports` is zero for it.
+    const total = option?.amount ?? record.value?.amount_lamports ?? 0
+    const saved = priceLamports.value - total
     return saved > 0 ? priceLabel({ currency, amount: saved }) : ''
   })
 
   /** The public page this invoice opens — the link to share with the buyer. */
   const shareLink = computed(() => (qrPayload.value ? paymentUrl(qrPayload.value) : ''))
+
+  /**
+   * Writes the chosen look into the code itself, so the QR, the copied link and
+   * the page all say the same thing. Only `design` is replaced: the invoice's
+   * own fields — address, price, memo — are what was agreed when it was made.
+   */
+  function withDesign(payload: string, chosen: CardDesign): string {
+    try {
+      return JSON.stringify({ ...JSON.parse(payload), design: chosen })
+    } catch {
+      return payload
+    }
+  }
+
+  /** The page, in the design the seller just picked, in its own tab. */
+  function openPaymentPage() {
+    qrPayload.value = withDesign(qrPayload.value, design.value)
+    const url = shareLink.value
+    designOpen.value = false
+    if (url) window.open(url, '_blank', 'noopener')
+  }
 
   const statusColor = (status: string) =>
     status === 'settled' ? 'success' : status === 'missing' || status === 'pending' ? 'warning' : 'neutral'
@@ -84,6 +123,8 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
     priceLamports.value = created.priceLamports
     paidCode.value = null
     createdItems.value = created.items
+    // A fresh code wears the plain card until the seller picks one.
+    design.value = cardDesignOf(undefined)
   }
 
   function reset() {
@@ -93,6 +134,8 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
     paidCode.value = null
     priceLamports.value = 0
     createdItems.value = []
+    design.value = cardDesignOf(undefined)
+    designOpen.value = false
   }
 
   /**
@@ -240,6 +283,10 @@ export function useSellPaymentResult(options: UseSellPaymentResultOptions) {
     presentOpen,
     priceLamports,
     paidCode,
+    design,
+    designOptions,
+    designOpen,
+    openPaymentPage,
     copiedCode,
     copiedLink,
     payloadBox,

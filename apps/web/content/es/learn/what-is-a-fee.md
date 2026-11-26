@@ -21,7 +21,7 @@ Una comisión cripto es distinta en dos cosas:
 
 - **Es plana.** Pagar 2 o pagar 2.000 cuesta la misma cantidad minúscula, porque el trabajo es el
   mismo.
-- **La paga el vendedor, con cargo al precio.** Sin alquiler de datáfono, sin contrato mensual y sin
+- **La paga el vendedor, con cargo al precio.** Sin alquiler de datáfono, sin cuota mensual por cobrar un pago y sin
   nada añadido: quien paga entrega exactamente el precio del código, y la comisión de red y la renta
   del recibo salen de la parte del vendedor.
 

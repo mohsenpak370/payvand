@@ -7,8 +7,8 @@
     <!--
       A scratch page for choosing the payment sounds. Nothing in the app links
       here: it exists so the files next to it can be compared by ear, on a
-      phone or a laptop. Delete the sounds/ folder in public once one pair is
-      picked.
+      phone or a laptop. The app plays success-coin.wav and failure-womp.wav
+      from this folder.
     -->
     <style>
       :root {
@@ -145,7 +145,7 @@
       <h1>Payment sound alternatives</h1>
       <p class="lead">
         Ten short candidates for the two sounds a payment makes. Tap to play —
-        one at a time. The first in each list is what ships today.
+        one at a time. Coin and Womp are what the app plays.
       </p>
 
       <h2>Payment went through</h2>
@@ -154,7 +154,7 @@
           <button data-src="success-chime.wav">
             <span class="glyph">▶</span>
             <span class="text">
-              <span class="name">Chime — shipping today</span>
+              <span class="name">Chime</span>
               <span class="desc">Two sine notes a fifth apart, G5 up to D6.</span>
             </span>
             <span class="meta">0.3s · 29 KB</span>
@@ -184,7 +184,7 @@
           <button data-src="success-coin.wav">
             <span class="glyph">▶</span>
             <span class="text">
-              <span class="name">Coin</span>
+              <span class="name">Coin — shipping today</span>
               <span class="desc">Two quick metallic dings, like a till opening.</span>
             </span>
             <span class="meta">0.5s · 43 KB</span>
@@ -218,7 +218,7 @@
           <button data-src="failure-buzz.wav">
             <span class="glyph">▶</span>
             <span class="text">
-              <span class="name">Buzz — shipping today</span>
+              <span class="name">Buzz</span>
               <span class="desc">Two triangle notes down, B♭3 to F3.</span>
             </span>
             <span class="meta">0.4s · 36 KB</span>
@@ -238,7 +238,7 @@
           <button data-src="failure-womp.wav">
             <span class="glyph">▶</span>
             <span class="text">
-              <span class="name">Womp</span>
+              <span class="name">Womp — shipping today</span>
               <span class="desc">Two soft notes down, lightly saturated.</span>
             </span>
             <span class="meta">0.6s · 53 KB</span>
@@ -258,10 +258,9 @@
 
       <footer>
         All ten are 44.1 kHz mono 16-bit WAV, synthesised locally — no samples,
-        nothing to license. Peak-normalised, no clipping. The app currently
-        synthesises its two tones at runtime in
-        <code>app/composables/useTransactionSounds.ts</code>; a chosen file can
-        replace that, or its recipe can be copied into the oscillator code.
+        nothing to license. Peak-normalised, no clipping. The app decodes Coin
+        and Womp and plays them through
+        <code>app/composables/useTransactionSounds.ts</code>.
       </footer>
     </main>
 

@@ -10,6 +10,9 @@
  */
 const { generate } = useSolanaQrCode()
 
+/** The code is drawn in its own pixels, and the mark is placed in the same ones. */
+const QR_SIZE = 280
+
 const qrMarkup = ref<string | null>(null)
 
 const qrCells = [
@@ -25,12 +28,69 @@ const qrCells = [
 onMounted(async () => {
   const origin = window.location.origin
   try {
-    qrMarkup.value = await generate(`${origin}/`, { size: 280 })
+    qrMarkup.value = await generate(`${origin}/`, { size: QR_SIZE })
   } catch {
     // A card that cannot draw the code keeps the pattern below instead.
     qrMarkup.value = null
   }
 })
+
+/**
+ * The code with its middle cleared for the mark, and how wide the mark is
+ * against it.
+ *
+ * The plate is a whole number of modules across and centred on the grid, so no
+ * dot is left half covered by it: each one is either under the plate or clear
+ * of it. The code is drawn at error correction level Q, which recovers ~25% of
+ * it, and eleven modules across hides about 19% of the code's area.
+ */
+const qrPlate = computed(() => {
+  const svg = qrMarkup.value
+  if (!svg) return null
+  const grid = readGrid(svg, QR_SIZE)
+  const plate = grid ? coverBox(grid, QR_SIZE) : null
+  if (!plate) return null
+  return {
+    markup: clearMiddle(svg, plate),
+    share: plate.share,
+    /** The mark is drawn at the plate's width, so its tile fills the clearing. */
+    markSize: `${(plate.share * 100).toFixed(2)}%`
+  }
+})
+
+/**
+ * The mark is drawn once, when the card reaches the middle of the screen — not
+ * while it sits below the fold, where nobody sees it play. It is mounted at
+ * that moment, so its CSS animations start from the beginning, and it stays
+ * drawn afterwards: scrolling away and back does not replay it.
+ */
+const markSlot = ref<HTMLElement | null>(null)
+const markDue = ref(false)
+let markObserver: IntersectionObserver | undefined
+
+const watchForCentre = () => {
+  const slot = markSlot.value
+  if (!slot) return
+  if (typeof IntersectionObserver === 'undefined') {
+    markDue.value = true
+    return
+  }
+  markObserver = new IntersectionObserver((entries) => {
+    if (!entries.some(entry => entry.isIntersecting)) return
+    markDue.value = true
+    markObserver?.disconnect()
+  }, { rootMargin: '-40% 0px -40% 0px' })
+  markObserver.observe(slot)
+}
+
+// The plate appears once the code is generated, so the slot is watched from then.
+watch(qrPlate, async (plate) => {
+  if (!plate || markDue.value) return
+  await nextTick()
+  watchForCentre()
+})
+
+onBeforeUnmount(() => markObserver?.disconnect())
 </script>
 
 <template>
@@ -68,12 +128,32 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- A white plate, because a code stays readable only against it. -->
+      <!--
+        A white plate, because a code stays readable only against it. The
+        margin is the code's quiet zone, not decoration: the modules need to
+        end against plain white for a camera to find the edges.
+      -->
       <div
-        v-if="qrMarkup"
-        class="mx-auto w-fit max-w-full rounded-xl bg-white p-3 [&_svg]:h-auto [&_svg]:max-h-[280px] [&_svg]:w-auto [&_svg]:max-w-full"
-        v-html="qrMarkup"
-      />
+        v-if="qrPlate"
+        class="mx-auto w-fit max-w-full rounded-xl bg-white p-3"
+      >
+        <div class="relative aspect-square w-[280px] max-w-full">
+          <div
+            class="h-full w-full [&_svg]:h-full [&_svg]:w-full"
+            v-html="qrPlate.markup"
+          />
+          <!-- The drawn mark sits in the clearing, centred on the same grid. -->
+          <div
+            ref="markSlot"
+            class="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <PayvandLogoDraw
+              v-if="markDue"
+              :size="qrPlate.markSize"
+            />
+          </div>
+        </div>
+      </div>
       <div
         v-else
         class="border-default grid grid-cols-7 gap-1 rounded-xl border p-2"

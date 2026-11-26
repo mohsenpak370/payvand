@@ -227,27 +227,29 @@ describe('a page that loads with the payment already on chain', () => {
     const askedAtLoad = answered.length
 
     // A minute of an unpaid page: twelve API ticks — the poll unchanged — and a
-    // chain read on the first, the third and the seventh of them, because the
-    // wait after each read doubles.
+    // chain read on the first, third, seventh and eleventh of them, because the
+    // wait after each read doubles. The twelfth is the minute's end, where the
+    // page stops reading the chain and leaves it to the poll.
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(answered.length).toBe(askedAtLoad + 12))
-    // A read asked for on the twelfth tick may still be landing; the schedule is
-    // what is being counted, not the node.
-    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(3))
+    // A read asked for on that tick may still be landing; the schedule is what is
+    // being counted, not the node.
+    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(4))
   })
 
-  it('tops the gap out at a minute, so a long-open page still asks now and then', async () => {
+  it('stops reading the chain when its minute is up, leaving the page to the poll', async () => {
     const invoice = await derivePaymentPda(seller, reference, amount)
     chainHolds([])
     await loadInvoice(invoice)
     const readsAtLoad = chainReads
     const askedAtLoad = answered.length
 
-    // Ten minutes: 120 API ticks, and a chain read at 5 s, 15 s and 35 s, then one
-    // a minute — twelve in all, rather than three every five seconds for an hour.
+    // Ten minutes: 120 API ticks — the poll carries the page — and the four
+    // chain reads of the first minute, none after it. An open tab costs the
+    // buyer's RPC nothing from then on.
     await vi.advanceTimersByTimeAsync(600_000)
     await vi.waitFor(() => expect(answered.length).toBe(askedAtLoad + 120))
-    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(12))
+    await vi.waitFor(() => expect(chainReads - readsAtLoad).toBe(4))
   })
 
   it('starts the chain schedule over when the buyer switches currency', async () => {
@@ -261,7 +263,7 @@ describe('a page that loads with the payment already on chain', () => {
     ])
     expect(checkout.selectedCurrency.value).toBe('sol')
 
-    // A minute unpaid: the schedule has read three times and is waiting a minute.
+    // A minute unpaid: the schedule has read four times and is closed.
     await vi.advanceTimersByTimeAsync(60_000)
     await vi.waitFor(() => expect(answered.length).toBe(13))
 
@@ -276,8 +278,8 @@ describe('a page that loads with the payment already on chain', () => {
     const readsAtSwitch = readsOf(usdcReceipt)
 
     // The other currency is paid at a different address, so it is a new question:
-    // it is asked again on the next tick, not the minute the running schedule was
-    // already waiting.
+    // it is asked again on the next tick, not after the minute the closed
+    // schedule would have waited.
     await vi.advanceTimersByTimeAsync(5_000)
     // Bounded, so the read has to be this tick's: an unbounded wait would sit
     // out the rest of the old schedule — another half minute — and pass even if

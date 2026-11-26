@@ -16,12 +16,14 @@
 //! The program routes the treasury's refund of both rents back to the sponsor
 //! (`plans/0004-relayer-sponsored-fees.md`), so a sponsored settlement is not a
 //! lamport faucet for the buyer: the relayer's net cost is the network fee.
-//! Spend is bounded here, not by the client: a rolling 24-hour cap per account
-//! and one for the deployment, both in libSQL.
+//! No session is needed: a buyer who scanned a printed code has no account, and
+//! the buyer's own signature is what authorises the payment. Spend is bounded
+//! here, not by the client: a rolling 24-hour cap per wallet and one for the
+//! deployment, both in libSQL.
 
 use std::str::FromStr;
 
-use axum::extract::{Json, State};
+use axum::extract::{Json, Query, State};
 use axum::http::HeaderMap;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -328,16 +330,16 @@ fn message_bytes(message: &VersionedMessage) -> ApiResult<Vec<u8>> {
 /// Sponsored settlements in the last rolling day, for one account or the whole
 /// deployment. `user_id` is the account because that is what a session proves;
 /// the wallet a sponsored payment pays from is named in the row.
-async fn recent_count(state: &AppState, user_id: Option<&str>) -> ApiResult<i64> {
+async fn recent_count(state: &AppState, wallet: Option<&str>) -> ApiResult<i64> {
     let connection = state.db.connect().map_err(auth::internal)?;
     let since = auth::unix_now() - DAY_SECS;
-    let mut rows = match user_id {
-        Some(user_id) => {
+    let mut rows = match wallet {
+        Some(wallet) => {
             connection
                 .query(
                     "SELECT COUNT(*) FROM sponsored_settlements \
-                     WHERE user_id = ?1 AND created_at > ?2",
-                    (user_id, since),
+                     WHERE wallet = ?1 AND created_at > ?2",
+                    (wallet, since),
                 )
                 .await
         }
@@ -362,7 +364,7 @@ async fn recent_count(state: &AppState, user_id: Option<&str>) -> ApiResult<i64>
 /// count what was actually sponsored rather than what was attempted.
 async fn record(
     state: &AppState,
-    user_id: &str,
+    user_id: Option<&str>,
     wallet: &str,
     cluster: &str,
     amount: u64,
@@ -372,12 +374,15 @@ async fn record(
     connection
         .execute(
             "INSERT INTO sponsored_settlements \
-             (id, user_id, wallet, cluster, amount, created_at) \
+             (id, wallet, user_id, cluster, amount, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             (
                 signature.to_string(),
-                user_id.to_string(),
                 wallet.to_string(),
+                match user_id {
+                    Some(id) => libsql::Value::Text(id.to_owned()),
+                    None => libsql::Value::Null,
+                },
                 cluster.to_string(),
                 amount as i64,
                 auth::unix_now(),
@@ -388,18 +393,40 @@ async fn record(
     Ok(())
 }
 
+/// `?wallet=` — the address the daily cap is counted against. A signed-in
+/// caller's linked wallet stands in when the query omits one.
+#[derive(Debug, Deserialize)]
+pub struct InfoQuery {
+    pub wallet: Option<String>,
+}
+
 /// What the client needs before it builds anything: whether a sponsor exists,
-/// which address to name as fee payer, and when asking for one is worth it.
+/// which address to name as fee payer, and whether this wallet still has its
+/// daily allowance. Readable without a session, because the buyer may not have
+/// one; with no wallet named at all it answers for the deployment, and the
+/// settle endpoint still enforces the wallet's own cap.
 pub async fn info(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<InfoQuery>,
 ) -> ApiResult<Json<InfoResponse>> {
-    let user = auth::require_user(&state.db, &headers).await?;
+    let user = auth::optional_user(&state.db, &headers).await;
     let per_wallet = cap_from_env("SPONSOR_DAILY_PER_WALLET", 10);
     let sponsor = sponsor_keypair();
-    let available = sponsor.is_some()
-        && recent_count(&state, None).await? < cap_from_env("SPONSOR_DAILY_TOTAL", 200) as i64
-        && recent_count(&state, Some(&user.id)).await? < per_wallet as i64;
+    let wallet = query
+        .wallet
+        .as_deref()
+        .map(str::trim)
+        .filter(|wallet| !wallet.is_empty())
+        .map(str::to_owned)
+        .or_else(|| user.and_then(|user| user.wallet));
+    let mut available = sponsor.is_some()
+        && recent_count(&state, None).await? < cap_from_env("SPONSOR_DAILY_TOTAL", 200) as i64;
+    if available {
+        if let Some(wallet) = wallet.as_deref() {
+            available = recent_count(&state, Some(wallet)).await? < per_wallet as i64;
+        }
+    }
     Ok(Json(InfoResponse {
         available,
         address: sponsor.as_ref().map(|key| key.pubkey().to_string()),
@@ -413,25 +440,29 @@ pub async fn settle(
     headers: HeaderMap,
     Json(request): Json<SettleRequest>,
 ) -> ApiResult<Json<SettleResponse>> {
-    let user = auth::require_user(&state.db, &headers).await?;
+    // No session required: the buyer's signature is the authority, and a printed
+    // code is often paid by someone who never signed in. The account, when there
+    // is one, is recorded because we know it — not because the cap needs it.
+    let user = auth::optional_user(&state.db, &headers).await;
     let sponsor = sponsor_keypair().ok_or_else(unavailable)?;
     let sponsor_key = sponsor.pubkey();
 
-    // The caps are checked before a single byte of the transaction is read, so
-    // an account that is over its limit cannot even learn whether its message
-    // would have matched.
+    // The caps are keyed by the wallet that signs, and it has to be a wallet
+    // before it can be a key: a request naming nonsense is a bad request rather
+    // than somebody's spend.
+    let params = Params::read(&request)?;
+    let wallet = params.buyer.to_string();
+
     let per_wallet = cap_from_env("SPONSOR_DAILY_PER_WALLET", 10);
     let total = cap_from_env("SPONSOR_DAILY_TOTAL", 200);
-    if recent_count(&state, Some(&user.id)).await? >= per_wallet as i64 {
+    if recent_count(&state, Some(&wallet)).await? >= per_wallet as i64 {
         return Err(ApiError::TooManyRequests(format!(
-            "You have used today's {per_wallet} sponsored payments. Add a little SOL to your wallet to keep paying."
+            "This wallet has used today's {per_wallet} sponsored payments. Add a little SOL to it to keep paying."
         )));
     }
     if recent_count(&state, None).await? >= total as i64 {
         return Err(unavailable());
     }
-
-    let params = Params::read(&request)?;
 
     let wire = STANDARD
         .decode(request.transaction.trim())
@@ -461,6 +492,12 @@ pub async fn settle(
         ));
     }
 
+    // Counted here, not before the message was matched: a burst limit keyed by
+    // a wallet that anyone can name would let a stranger spend somebody else's
+    // minute with junk requests. Only a settlement the buyer actually signed
+    // reaches this line, and a person pays once or twice a minute at most.
+    crate::rate_limit::hit("sponsor-wallet", &wallet, 6, crate::rate_limit::MINUTE)?;
+
     // Exact match, so the buyer's signature is over these same bytes: keep it,
     // add the sponsor's, and submit. The runtime verifies both.
     let signature = sponsor.sign_message(&ours);
@@ -479,7 +516,7 @@ pub async fn settle(
 
     record(
         &state,
-        &user.id,
+        user.as_ref().map(|user| user.id.as_str()),
         &params.buyer.to_string(),
         &request.cluster,
         params.amount,
@@ -580,7 +617,6 @@ mod tests {
         assert!(instruction.accounts[13].is_signer);
     }
 
-    #[test]
     /// A SOL invoice is settled by `settle_payment`, whose account list is the
     /// program's — and the relayer, not the buyer, is its fee payer, which is
     /// what keeps the buyer from needing lamports it does not have.
@@ -663,26 +699,16 @@ mod tests {
         (AppState { db: Arc::new(db) }, path)
     }
 
-    /// The caps are the deployment's, not the caller's: one account is bounded
-    /// by its own daily count, and every account together by the global one.
+    /// The caps are counted by the wallet that signs and by the deployment: a
+    /// buyer with no account has the same daily bound as one with an account,
+    /// which is what lets a printed code be sponsored.
     #[tokio::test]
-    async fn counts_are_per_account_and_global() {
+    async fn counts_are_per_wallet_and_global() {
         let (state, path) = test_state().await;
-        // The rows reference an account, so the account has to exist.
-        let connection = state.db.connect().expect("connect");
-        for id in ["user-1", "user-2"] {
-            connection
-                .execute(
-                    "INSERT INTO users (id, email, password_hash, wallet, created_at) \
-                     VALUES (?1, ?2, 'x', NULL, 1)",
-                    (id, format!("{id}@example.com")),
-                )
-                .await
-                .expect("user");
-        }
-        drop(connection);
         assert_eq!(
-            recent_count(&state, Some("user-1")).await.expect("count"),
+            recent_count(&state, Some("buyer-wallet"))
+                .await
+                .expect("count"),
             0
         );
         assert_eq!(recent_count(&state, None).await.expect("count"), 0);
@@ -690,21 +716,25 @@ mod tests {
         for index in 0..3 {
             record(
                 &state,
-                "user-1",
+                None,
                 "buyer-wallet",
                 "devnet",
                 1_000_000,
                 &format!("signature-{index}"),
             )
             .await
-            .expect("record");
+            .expect("record with no account");
         }
         assert_eq!(
-            recent_count(&state, Some("user-1")).await.expect("count"),
+            recent_count(&state, Some("buyer-wallet"))
+                .await
+                .expect("count"),
             3
         );
         assert_eq!(
-            recent_count(&state, Some("user-2")).await.expect("count"),
+            recent_count(&state, Some("other-wallet"))
+                .await
+                .expect("count"),
             0
         );
         assert_eq!(recent_count(&state, None).await.expect("count"), 3);

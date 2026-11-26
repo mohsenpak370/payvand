@@ -280,6 +280,53 @@ html[lang='fa-IR'] {
 }
 
 /*
+ * Payment card designs (see `app/utils/cardDesigns.ts`). Each is a wash plus a
+ * pattern drawn in background layers — a dot grid, diagonal stripes, a
+ * cross-hatch, concentric rings — so five designs read as five looks rather
+ * than five tints of one card. The colours are mixed from the theme's own
+ * variables, so a design follows light and dark without a second palette, and
+ * each pattern keeps its own scale: small enough to read as texture at card
+ * size, large enough not to shimmer when a phone moves over it.
+ */
+.card-design {
+  background-color: var(--ui-bg);
+  background-repeat: repeat;
+}
+
+.card-design-aurora {
+  border-color: color-mix(in oklab, var(--ui-primary) 28%, var(--ui-border));
+  background-image:
+    radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--ui-primary) 34%, transparent) 1.2px, transparent 1.7px),
+    linear-gradient(140deg, color-mix(in oklab, var(--ui-primary) 15%, transparent), transparent 52%, color-mix(in oklab, var(--ui-primary) 8%, transparent));
+  background-size: 16px 16px, 100% 100%;
+}
+
+.card-design-sunset {
+  border-color: color-mix(in oklab, var(--ui-warning) 34%, var(--ui-border));
+  background-image:
+    repeating-linear-gradient(135deg, color-mix(in oklab, var(--ui-warning) 26%, transparent) 0 3px, transparent 3px 16px),
+    linear-gradient(135deg, color-mix(in oklab, var(--ui-warning) 16%, transparent), transparent 58%, color-mix(in oklab, var(--ui-error) 12%, transparent));
+  background-size: 100% 100%, 100% 100%;
+}
+
+.card-design-mint {
+  border-color: color-mix(in oklab, var(--ui-success) 34%, var(--ui-border));
+  background-image:
+    repeating-linear-gradient(45deg, color-mix(in oklab, var(--ui-success) 22%, transparent) 0 1.5px, transparent 1.5px 12px),
+    repeating-linear-gradient(-45deg, color-mix(in oklab, var(--ui-success) 22%, transparent) 0 1.5px, transparent 1.5px 12px),
+    linear-gradient(160deg, color-mix(in oklab, var(--ui-success) 13%, transparent), transparent 62%);
+  background-size: 100% 100%, 100% 100%, 100% 100%;
+}
+
+.card-design-ocean {
+  border-color: color-mix(in oklab, #38bdf8 34%, var(--ui-border));
+  background-image:
+    repeating-radial-gradient(circle at 88% -12%, color-mix(in oklab, #38bdf8 24%, transparent) 0 1.5px, transparent 1.5px 26px),
+    linear-gradient(150deg, color-mix(in oklab, #38bdf8 14%, transparent), transparent 55%, color-mix(in oklab, var(--ui-primary) 12%, transparent));
+  background-size: 100% 100%, 100% 100%;
+}
+
+/*
  * A printed payment is the receipt, so it prints as the page looks — page
  * background, bordered card, coloured text — instead of being washed out to a
  * blank sheet. Browsers drop backgrounds from print jobs unless told to keep
@@ -300,5 +347,13 @@ html[lang='fa-IR'] {
     color: var(--ui-text);
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* A design is a screen surface: paper gets the plain card, whose text is
+     the part worth printing. */
+  .card-design {
+    background-image: none;
+    background-color: var(--ui-bg-elevated, var(--ui-bg));
+    border-color: var(--ui-border);
   }
 }

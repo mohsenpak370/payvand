@@ -34,11 +34,22 @@ pub const MAX_PRODUCT_CATEGORY_LEN: usize = 32;
 /// 10,000 SOL — a product priced above that is a typo, not a price.
 pub const MAX_PRICE_LAMPORTS: u64 = 10_000_000_000_000;
 
+/// The currencies a menu may be priced in. A stablecoin price is its own money
+/// rather than a conversion of SOL: the shop charges exactly what it lists.
+pub const SHOP_CURRENCIES: [&str; 3] = ["sol", "usdc", "eurc"];
+
+fn default_currency() -> String {
+    "sol".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Shop {
     pub id: String,
     pub name: String,
     pub description: String,
+    /// What its menu is priced — and charged — in.
+    #[serde(default = "default_currency")]
+    pub currency: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +62,9 @@ pub struct Product {
     pub details: String,
     /// Optional heading the product is listed under, empty for no category.
     pub category: String,
+    /// The price in the shop's currency's own base units — lamports for SOL,
+    /// the token's atoms for USDC or EURC. The name is older than the choice of
+    /// currency; what it holds is always the unit the invoice is built from.
     pub price_lamports: u64,
     pub created_at_unix: i64,
 }
@@ -62,6 +76,8 @@ pub struct ShopWithProducts {
     pub id: String,
     pub name: String,
     pub description: String,
+    /// The currency every price below is in.
+    pub currency: String,
     pub products: Vec<Product>,
 }
 
@@ -70,6 +86,10 @@ pub struct SaveShopRequest {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Left out by a client that is only renaming the shop: the currency it
+    /// already charges in is kept.
+    #[serde(default)]
+    pub currency: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +124,19 @@ fn optional_text(raw: &str, max: usize, field: &str) -> ApiResult<String> {
 
 /// A price of zero would create an invoice nobody can derive an address for,
 /// so it is refused here rather than on the payment page.
+/// One of the currencies the app can charge in, lowercased. Absent means SOL,
+/// which is what a shop created before the choice existed charges in.
+fn valid_shop_currency(raw: Option<&str>) -> ApiResult<String> {
+    let Some(raw) = raw else {
+        return Ok(default_currency());
+    };
+    let currency = raw.trim().to_ascii_lowercase();
+    if !SHOP_CURRENCIES.contains(&currency.as_str()) {
+        return Err(bad("A shop can charge in SOL, USDC or EURC."));
+    }
+    Ok(currency)
+}
+
 fn valid_price(price_lamports: u64) -> ApiResult<u64> {
     if price_lamports == 0 {
         return Err(bad("A price must be greater than 0."));
@@ -137,10 +170,10 @@ async fn require_shop(
     connection: &libsql::Connection,
     user_id: &str,
     shop_id: &str,
-) -> ApiResult<(String, String)> {
+) -> ApiResult<(String, String, String)> {
     let mut rows = connection
         .query(
-            "SELECT name, description FROM shops WHERE id = ?1 AND user_id = ?2",
+            "SELECT name, description, currency FROM shops WHERE id = ?1 AND user_id = ?2",
             (shop_id, user_id),
         )
         .await
@@ -149,6 +182,7 @@ async fn require_shop(
         Some(row) => Ok((
             row.get(0).map_err(auth::internal)?,
             row.get(1).map_err(auth::internal)?,
+            row.get(2).map_err(auth::internal)?,
         )),
         None => Err(bad("That shop no longer exists.")),
     }
@@ -188,7 +222,7 @@ pub async fn list(
 
     let mut rows = connection
         .query(
-            "SELECT id, name, description FROM shops WHERE user_id = ?1 \
+            "SELECT id, name, description, currency FROM shops WHERE user_id = ?1 \
              ORDER BY created_at ASC, rowid ASC",
             [user.id.clone()],
         )
@@ -201,6 +235,7 @@ pub async fn list(
             id: row.get(0).map_err(auth::internal)?,
             name: row.get(1).map_err(auth::internal)?,
             description: row.get(2).map_err(auth::internal)?,
+            currency: row.get(3).map_err(auth::internal)?,
             products: Vec::new(),
         });
     }
@@ -240,12 +275,13 @@ pub async fn get(
 ) -> ApiResult<Json<ShopWithProducts>> {
     let user = auth::require_user(&state.db, &headers).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
-    let (name, description) = require_shop(&connection, &user.id, &id).await?;
+    let (name, description, currency) = require_shop(&connection, &user.id, &id).await?;
     let products = products_for_shop(&connection, &user.id, &id).await?;
     Ok(Json(ShopWithProducts {
         id,
         name,
         description,
+        currency,
         products,
     }))
 }
@@ -263,6 +299,7 @@ pub async fn create(
         MAX_SHOP_DESCRIPTION_LEN,
         "The shop description",
     )?;
+    let currency = valid_shop_currency(request.currency.as_deref())?;
     crate::subscription::require_active(&state, &user.id).await?;
     let connection = state.db.connect().map_err(auth::internal)?;
 
@@ -286,13 +323,14 @@ pub async fn create(
     let id = auth::random_id();
     connection
         .execute(
-            "INSERT INTO shops (id, user_id, name, description, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO shops (id, user_id, name, description, currency, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             (
                 id.clone(),
                 user.id,
                 name.clone(),
                 description.clone(),
+                currency.clone(),
                 auth::unix_now(),
             ),
         )
@@ -303,6 +341,7 @@ pub async fn create(
         id,
         name,
         description,
+        currency,
     }))
 }
 
@@ -321,13 +360,26 @@ pub async fn update(
         "The shop description",
     )?;
     let connection = state.db.connect().map_err(auth::internal)?;
-    require_shop(&connection, &user.id, &id).await?;
+    let (_, _, current_currency) = require_shop(&connection, &user.id, &id).await?;
     crate::subscription::require_active(&state, &user.id).await?;
+    // A rename leaves the currency alone; a client that sends one is changing
+    // what the menu charges, and its prices are converted before it gets here.
+    let currency = match request.currency.as_deref() {
+        Some(raw) => valid_shop_currency(Some(raw))?,
+        None => current_currency,
+    };
 
     connection
         .execute(
-            "UPDATE shops SET name = ?1, description = ?2 WHERE id = ?3 AND user_id = ?4",
-            (name.clone(), description.clone(), id.clone(), user.id),
+            "UPDATE shops SET name = ?1, description = ?2, currency = ?3 \
+             WHERE id = ?4 AND user_id = ?5",
+            (
+                name.clone(),
+                description.clone(),
+                currency.clone(),
+                id.clone(),
+                user.id,
+            ),
         )
         .await
         .map_err(auth::internal)?;
@@ -336,6 +388,7 @@ pub async fn update(
         id,
         name,
         description,
+        currency,
     }))
 }
 
@@ -683,6 +736,11 @@ mod tests {
         assert!(valid_price(0).is_err());
         assert!(valid_price(1).is_ok());
         assert!(valid_price(MAX_PRICE_LAMPORTS + 1).is_err());
+        // A shop that names no currency charges in SOL, and only the three the
+        // app can charge in are accepted.
+        assert_eq!(valid_shop_currency(None).unwrap(), "sol");
+        assert_eq!(valid_shop_currency(Some(" EURC ")).unwrap(), "eurc");
+        assert!(valid_shop_currency(Some("gbp")).is_err());
     }
 
     #[tokio::test]
@@ -714,9 +772,11 @@ mod tests {
             JsonExtractor(SaveShopRequest {
                 name: "Corner Shop".into(),
                 description: String::new(),
+                currency: None,
             }),
         )
         .await;
+
         assert!(matches!(
             unsubscribed,
             Err(crate::payments::ApiError::Forbidden(_))
@@ -728,12 +788,14 @@ mod tests {
             JsonExtractor(SaveShopRequest {
                 name: "Corner Shop".into(),
                 description: "Flat whites".into(),
+                currency: None,
             }),
         )
         .await
         .expect("created")
         .0;
         assert_eq!(cafe.name, "Corner Shop");
+        assert_eq!(cafe.currency, "sol");
 
         let bakery = create(
             StateExtractor(state.clone()),
@@ -741,6 +803,7 @@ mod tests {
             JsonExtractor(SaveShopRequest {
                 name: "Corner Bakery".into(),
                 description: String::new(),
+                currency: Some("eurc".into()),
             }),
         )
         .await
@@ -805,6 +868,7 @@ mod tests {
             JsonExtractor(SaveShopRequest {
                 name: "Corner Shop & Café".into(),
                 description: String::new(),
+                currency: None,
             }),
         )
         .await
@@ -819,6 +883,14 @@ mod tests {
         .0;
         assert_eq!(cafe_row.name, "Corner Shop & Café");
         assert_eq!(cafe_row.products.len(), 1);
+        // The rename kept the currency, and the bakery kept the euro it was
+        // opened with.
+        assert_eq!(cafe_row.currency, "sol");
+        let bakery_row = shops
+            .iter()
+            .find(|shop| shop.id == bakery.id)
+            .expect("bakery");
+        assert_eq!(bakery_row.currency, "eurc");
 
         // Another account sees no shops and cannot touch this one.
         let their_shops = list(StateExtractor(state.clone()), theirs.clone())
