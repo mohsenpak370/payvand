@@ -5,7 +5,6 @@ import type {
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
 import { currenciesForCluster, mintForCurrency } from '~/composables/usePaymentProgram'
-import { CARD_DESIGNS, type CardDesign } from '~/utils/cardDesigns'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 import type { CartLine, ShopWithProducts } from '~/composables/useShop'
 import { cartTotal as totalCart } from '~/composables/useShop'
@@ -55,12 +54,6 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   // The amount field opens a calculator: sellers often price from arithmetic
   // rather than a number they already know.
   const calculatorOpen = ref(false)
-  /** The look of the page the customer opens; the default is the plain card. */
-  const design = ref<CardDesign>('classic')
-  const designOptions = computed(() => CARD_DESIGNS.map(value => ({
-    value,
-    label: t(`sell.designs.${value}`)
-  })))
   const name = ref('')
   const description = ref('')
   const memo = ref('')
@@ -217,17 +210,17 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   }
 
   /**
-   * Stamps the seller's own choices into the invoice code: the currency the
-   * buyer reads prices in, and the card design the page opens with — on any
-   * phone, signed in or not. The API builds the rest of the payload; these two
-   * fields are the seller's, so they are added here.
+   * Stamps the seller's own choice into the invoice code: the currency the
+   * buyer reads prices in — on any phone, signed in or not. The API builds the
+   * rest of the payload. The card design is not stamped here: it is chosen
+   * when the seller opens the page for the customer, and written into the code
+   * then, so it never holds up making the payment.
    */
   function withSellerDetails(payloadJson: string): string {
     try {
       return JSON.stringify({
         ...JSON.parse(payloadJson),
-        currency: currency.value,
-        design: design.value
+        currency: currency.value
       })
     } catch {
       return payloadJson
@@ -334,8 +327,6 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
     priceCurrency,
     currencyItems,
     calculatorOpen,
-    design,
-    designOptions,
     name,
     description,
     memo,

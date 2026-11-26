@@ -858,7 +858,7 @@
     "allowDiscountsLabel": "Käufer dürfen deine Codes nutzen",
     "allowDiscountsHelp": "Käufer können auf eine Zahlung aus deinen Produkten einen deiner Codes anwenden. Jede Wallet kann einen Code einmal nutzen.",
     "designLabel": "Kartendesign",
-    "designHelp": "Die Farbe der Seite, die Ihre Kundschaft öffnet.",
+    "designHelp": "Das Aussehen der Seite, die Ihre Kundschaft öffnet – Farbe und Muster.",
     "designs": {
       "classic": "Klassisch",
       "aurora": "Polarlicht",

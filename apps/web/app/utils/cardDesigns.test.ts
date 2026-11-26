@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_DESIGNS, cardDesignClass, cardDesignOf, isCardDesign } from './cardDesigns'
+import { CARD_DESIGNS, cardDesignClass, cardDesignOf, cardDesignSwatch, isCardDesign } from './cardDesigns'
 
 describe('cardDesignOf', () => {
   it('keeps a design the app knows', () => {
@@ -17,19 +17,16 @@ describe('cardDesignOf', () => {
 })
 
 describe('cardDesignClass', () => {
-  it('tints each design and keeps the plain card plain', () => {
+  it('names the design that draws each surface, and keeps the plain card plain', () => {
     expect(cardDesignClass('classic')).toBe('border-default bg-default')
     for (const design of CARD_DESIGNS.filter(design => design !== 'classic')) {
-      expect(cardDesignClass(design)).toContain('bg-gradient-to-br')
+      expect(cardDesignClass(design)).toBe(`card-design card-design-${design}`)
     }
   })
 
-  it('prints every design as the plain card', () => {
+  it('gives the picker the same surface as the card itself', () => {
     for (const design of CARD_DESIGNS) {
-      const printed = cardDesignClass(design)
-      if (design === 'classic') continue
-      expect(printed).toContain('print:bg-none')
-      expect(printed).toContain('print:bg-elevated')
+      expect(cardDesignSwatch(design)).toBe(cardDesignClass(design))
     }
   })
 

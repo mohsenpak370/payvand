@@ -858,7 +858,7 @@
     "allowDiscountsLabel": "Dejar que los compradores usen tus códigos",
     "allowDiscountsHelp": "Los compradores pueden aplicar uno de tus códigos a un pago creado con tus productos. Cada cartera puede usar un código una vez.",
     "designLabel": "Diseño de la tarjeta",
-    "designHelp": "El color de la página que abre tu cliente.",
+          "designHelp": "El aspecto de la página que abre tu cliente: su color y su estampado.",
     "designs": {
       "classic": "Clásico",
       "aurora": "Aurora",

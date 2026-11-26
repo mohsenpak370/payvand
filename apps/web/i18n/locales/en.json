@@ -858,7 +858,7 @@
     "allowDiscountsLabel": "Let buyers use your codes",
     "allowDiscountsHelp": "Buyers can apply one of your codes to a payment built from your products. Each wallet can use a code once.",
     "designLabel": "Card design",
-    "designHelp": "The colour of the page your customer opens.",
+          "designHelp": "The look of the page your customer opens — its colour and its pattern.",
     "designs": {
       "classic": "Classic",
       "aurora": "Aurora",
