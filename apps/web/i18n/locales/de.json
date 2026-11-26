@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Plattformaufsicht: Konten, Zahlungen, die On-Chain-Konten des Programms und der Startguthaben-Faucet.",
+    "description": "Plattformaufsicht: Konten, Shops und ihre Datensätze, Zahlungen, die On-Chain-Konten des Programms und der Startguthaben-Faucet.",
     "forbiddenTitle": "Kein Admin-Zugriff",
     "forbiddenDescription": "Dieses Konto steht nicht in der Einstellung ADMIN_EMAILS der API, deshalb antworten die Admin-Endpunkte mit 403. Trag die Adresse dort ein (und deploye neu), um Zugriff zu geben.",
     "stats": {
@@ -200,6 +200,7 @@
     "tabs": {
       "overview": "Übersicht",
       "accounts": "Konten",
+      "records": "Datensätze",
       "payments": "Zahlungen",
       "chain": "Chain",
       "airdrops": "Airdrops"
@@ -269,6 +270,47 @@
       "transaction": "Transaktion",
       "pending": "Wird gesendet",
       "range": "{from}–{to} von {total} Anforderungen"
+    },
+    "records": {
+      "kinds": {
+        "shops": "Shops",
+        "products": "Produkte",
+        "codes": "Rabattcodes"
+      },
+      "searchPlaceholder": {
+        "shops": "Nach Shopname oder Inhaber suchen…",
+        "products": "Nach Produkt, Shop oder Inhaber suchen…",
+        "codes": "Nach Code oder Inhaber suchen…"
+      },
+      "loadFailure": "Die Datensätze konnten nicht geladen werden.",
+      "deleteFailure": "Dieser Datensatz konnte nicht gelöscht werden.",
+      "saveFailure": "Die Änderung konnte nicht gespeichert werden.",
+      "confirm": {
+        "shops": "Den Shop {name} löschen?\n\nSeine Produkte und Kategorien werden mitgelöscht. Bereits geleistete Zahlungen behalten ihre Belege. Das lässt sich nicht rückgängig machen.",
+        "products": "Das Produkt {name} löschen?\n\nDas lässt sich nicht rückgängig machen.",
+        "codes": "Den Rabattcode {name} löschen?\n\nKäufer können ihn dann nicht mehr verwenden. Das lässt sich nicht rückgängig machen."
+      },
+      "empty": "Keine passenden Datensätze.",
+      "shop": "Shop",
+      "owner": "Inhaber",
+      "currency": "Währung",
+      "productCount": "Produkte",
+      "created": "Erstellt",
+      "product": "Produkt",
+      "category": "Kategorie",
+      "price": "Preis",
+      "code": "Code",
+      "percentOff": "Rabatt",
+      "range": "{from}–{to} von {total}",
+      "edit": "Bearbeiten",
+      "editShop": "Shop bearbeiten",
+      "editProduct": "Produkt bearbeiten",
+      "name": "Name",
+      "description": "Beschreibung",
+      "details": "Details",
+      "badPrice": "Gib einen Preis über 0 ein, mit nicht mehr Nachkommastellen, als die Währung hat.",
+      "cancel": "Abbrechen",
+      "save": "Speichern"
     }
   },
   "authLayout": {

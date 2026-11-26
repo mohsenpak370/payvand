@@ -1,11 +1,12 @@
 import { useAdminAirdrops } from './useAdminAirdrops'
 import { useAdminChain } from './useAdminChain'
 import { useAdminFeed } from './useAdminFeed'
+import { useAdminRecords } from './useAdminRecords'
 import { useAdminUsers } from './useAdminUsers'
 import { useAdminWaitlist } from './useAdminWaitlist'
 
 /** The dashboard's tabs, in the order they are shown. */
-export const ADMIN_TABS = ['overview', 'accounts', 'payments', 'chain', 'airdrops'] as const
+export const ADMIN_TABS = ['overview', 'accounts', 'records', 'payments', 'chain', 'airdrops'] as const
 export type AdminTab = (typeof ADMIN_TABS)[number]
 
 export function isAdminTab(value: unknown): value is AdminTab {
@@ -28,8 +29,9 @@ export function useAdminPage() {
   const waitlist = useAdminWaitlist()
   const chain = useAdminChain()
   const airdrops = useAdminAirdrops()
+  const records = useAdminRecords()
 
-  const busy = computed(() => users.usersBusy.value || waitlist.waitlistBusy.value)
+  const busy = computed(() => users.usersBusy.value || waitlist.waitlistBusy.value || records.recordsBusy.value)
 
   const opened = new Set<AdminTab>()
   /** Loads what a tab shows, once; its refresh buttons reload after that. */
@@ -37,6 +39,7 @@ export function useAdminPage() {
     if (opened.has(tab)) return
     opened.add(tab)
     if (tab === 'payments') void feed.loadFeed()
+    if (tab === 'records') void records.loadRecords()
     if (tab === 'chain' || tab === 'airdrops') {
       // Both tabs show the server wallets; one read serves the two.
       if (!chain.chain.value && !chain.chainLoading.value) void chain.loadChain()
@@ -50,6 +53,7 @@ export function useAdminPage() {
     ...waitlist,
     ...chain,
     ...airdrops,
+    ...records,
     busy,
     openTab
   }

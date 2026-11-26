@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Supervisión de la plataforma: cuentas, pagos, las cuentas on-chain del programa y el faucet de tokens iniciales.",
+    "description": "Supervisión de la plataforma: cuentas, tiendas y sus registros, pagos, las cuentas on-chain del programa y el faucet de tokens iniciales.",
     "forbiddenTitle": "Sin acceso de admin",
     "forbiddenDescription": "Esta cuenta no aparece en el ajuste ADMIN_EMAILS de la API, así que los endpoints de admin responden 403. Añade la dirección ahí (y vuelve a desplegar) para dar acceso.",
     "stats": {
@@ -200,6 +200,7 @@
     "tabs": {
       "overview": "Resumen",
       "accounts": "Cuentas",
+      "records": "Registros",
       "payments": "Pagos",
       "chain": "Cadena",
       "airdrops": "Airdrops"
@@ -269,6 +270,47 @@
       "transaction": "Transacción",
       "pending": "Enviando",
       "range": "{from}–{to} de {total} solicitudes"
+    },
+    "records": {
+      "kinds": {
+        "shops": "Tiendas",
+        "products": "Productos",
+        "codes": "Códigos de descuento"
+      },
+      "searchPlaceholder": {
+        "shops": "Buscar por nombre de tienda o propietario…",
+        "products": "Buscar por producto, tienda o propietario…",
+        "codes": "Buscar por código o propietario…"
+      },
+      "loadFailure": "No se pudieron cargar los registros.",
+      "deleteFailure": "No se pudo eliminar ese registro.",
+      "saveFailure": "No se pudo guardar el cambio.",
+      "confirm": {
+        "shops": "¿Eliminar la tienda {name}?\n\nSus productos y categorías se eliminan con ella. Los pagos ya hechos conservan sus recibos. No se puede deshacer.",
+        "products": "¿Eliminar el producto {name}?\n\nNo se puede deshacer.",
+        "codes": "¿Eliminar el código de descuento {name}?\n\nLos compradores ya no podrán usarlo. No se puede deshacer."
+      },
+      "empty": "Ningún registro coincide.",
+      "shop": "Tienda",
+      "owner": "Propietario",
+      "currency": "Moneda",
+      "productCount": "Productos",
+      "created": "Creado",
+      "product": "Producto",
+      "category": "Categoría",
+      "price": "Precio",
+      "code": "Código",
+      "percentOff": "Descuento",
+      "range": "{from}–{to} de {total}",
+      "edit": "Editar",
+      "editShop": "Editar tienda",
+      "editProduct": "Editar producto",
+      "name": "Nombre",
+      "description": "Descripción",
+      "details": "Detalles",
+      "badPrice": "Introduce un precio mayor que 0, sin más decimales de los que tiene la moneda.",
+      "cancel": "Cancelar",
+      "save": "Guardar"
     }
   },
   "authLayout": {

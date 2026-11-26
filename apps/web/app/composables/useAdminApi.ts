@@ -127,7 +127,10 @@ export interface AdminProduct {
   name: string
   details: string
   category: string
+  /** In the shop currency's base units: lamports for SOL, atoms for a stablecoin. */
   price_lamports: number
+  /** The shop's currency, which the price is counted in. */
+  currency: string
   created_at: number
 }
 

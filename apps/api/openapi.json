@@ -162,7 +162,8 @@
           "name": { "type": "string" },
           "details": { "type": "string" },
           "category": { "type": "string" },
-          "price_lamports": { "type": "integer", "format": "int64" },
+          "price_lamports": { "type": "integer", "format": "int64", "description": "In the shop currency's base units" },
+          "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] },
           "created_at": { "type": "integer", "format": "int64" }
         }
       },

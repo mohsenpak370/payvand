@@ -142,7 +142,7 @@
   "admin": {
     "metaTitle": "Admin — Payvand",
     "title": "Admin",
-    "description": "Supervision de la plateforme : comptes, paiements, comptes on-chain du programme et faucet de jetons de départ.",
+    "description": "Supervision de la plateforme : comptes, boutiques et leurs enregistrements, paiements, comptes on-chain du programme et faucet de jetons de départ.",
     "forbiddenTitle": "Pas d'accès administrateur",
     "forbiddenDescription": "Ce compte ne figure pas dans le réglage ADMIN_EMAILS de l'API, donc les routes d'administration répondent 403. Ajoutez l'adresse (puis redéployez) pour accorder l'accès.",
     "stats": {
@@ -200,6 +200,7 @@
     "tabs": {
       "overview": "Vue d'ensemble",
       "accounts": "Comptes",
+      "records": "Enregistrements",
       "payments": "Paiements",
       "chain": "Chaîne",
       "airdrops": "Airdrops"
@@ -269,6 +270,47 @@
       "transaction": "Transaction",
       "pending": "Envoi en cours",
       "range": "{from}–{to} sur {total} demandes"
+    },
+    "records": {
+      "kinds": {
+        "shops": "Boutiques",
+        "products": "Produits",
+        "codes": "Codes de remise"
+      },
+      "searchPlaceholder": {
+        "shops": "Rechercher par nom de boutique ou propriétaire…",
+        "products": "Rechercher par produit, boutique ou propriétaire…",
+        "codes": "Rechercher par code ou propriétaire…"
+      },
+      "loadFailure": "Impossible de charger les enregistrements.",
+      "deleteFailure": "Impossible de supprimer cet enregistrement.",
+      "saveFailure": "Impossible d'enregistrer la modification.",
+      "confirm": {
+        "shops": "Supprimer la boutique {name} ?\n\nSes produits et catégories sont supprimés avec elle. Les paiements déjà effectués gardent leurs reçus. Action irréversible.",
+        "products": "Supprimer le produit {name} ?\n\nAction irréversible.",
+        "codes": "Supprimer le code de remise {name} ?\n\nLes acheteurs ne pourront plus l'utiliser. Action irréversible."
+      },
+      "empty": "Aucun enregistrement ne correspond.",
+      "shop": "Boutique",
+      "owner": "Propriétaire",
+      "currency": "Devise",
+      "productCount": "Produits",
+      "created": "Créé",
+      "product": "Produit",
+      "category": "Catégorie",
+      "price": "Prix",
+      "code": "Code",
+      "percentOff": "Remise",
+      "range": "{from}–{to} sur {total}",
+      "edit": "Modifier",
+      "editShop": "Modifier la boutique",
+      "editProduct": "Modifier le produit",
+      "name": "Nom",
+      "description": "Description",
+      "details": "Détails",
+      "badPrice": "Saisissez un prix supérieur à 0, sans plus de décimales que la devise n'en compte.",
+      "cancel": "Annuler",
+      "save": "Enregistrer"
     }
   },
   "authLayout": {

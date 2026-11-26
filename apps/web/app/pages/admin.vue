@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TabsItem } from '@nuxt/ui'
 import { ADMIN_TABS, isAdminTab, type AdminTab } from '~/composables/useAdminPage'
+import type { RecordEdit } from '~/composables/useAdminRecords'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -41,6 +42,20 @@ const {
   loadAirdrops,
   airdropsPrevious,
   airdropsNext,
+  recordKind,
+  shops,
+  products,
+  codes,
+  recordSearches,
+  recordsLoading,
+  recordsFailure,
+  recordsBusy,
+  showRecords,
+  searchRecords,
+  recordsPrevious,
+  recordsNext,
+  removeRecord,
+  saveRecord,
   busy,
   openTab
 } = useAdminPage()
@@ -48,6 +63,7 @@ const {
 const ICONS: Record<AdminTab, string> = {
   overview: 'i-lucide-layout-dashboard',
   accounts: 'i-lucide-users',
+  records: 'i-lucide-database',
   payments: 'i-lucide-receipt',
   chain: 'i-lucide-blocks',
   airdrops: 'i-lucide-droplets'
@@ -69,6 +85,13 @@ const active = computed<AdminTab>({
 })
 
 watch(active, openTab, { immediate: true })
+
+/** The record the edit dialog has open, if any. */
+const editing = shallowRef<RecordEdit | null>(null)
+
+async function saveEdit(edit: RecordEdit, body: Record<string, unknown>, done: (failure: string) => void) {
+  done(await saveRecord(edit, body))
+}
 </script>
 
 <template>
@@ -140,6 +163,34 @@ watch(active, openTab, { immediate: true })
             @delete="removeUser"
             @previous="pageDown"
             @next="pageUp"
+          />
+        </div>
+
+        <div
+          v-show="active === 'records'"
+          class="flex min-w-0 flex-col gap-6"
+        >
+          <AdminRecordsCard
+            :kind="recordKind"
+            :shops="shops"
+            :products="products"
+            :codes="codes"
+            :searches="recordSearches"
+            :loading="recordsLoading"
+            :failure="recordsFailure"
+            :busy="busy"
+            @show="showRecords"
+            @search="searchRecords"
+            @previous="recordsPrevious"
+            @next="recordsNext"
+            @edit="editing = $event"
+            @remove="removeRecord"
+          />
+          <AdminRecordEditModal
+            :edit="editing"
+            :busy="recordsBusy"
+            @close="editing = null"
+            @save="saveEdit"
           />
         </div>
 

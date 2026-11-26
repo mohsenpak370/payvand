@@ -215,6 +215,9 @@ async fn admin_gate_stats_search_and_delete() {
         products.0.total, 1,
         "orphaned product must not inflate total"
     );
+    // The price is in the shop's currency, so the row says which one.
+    assert_eq!(products.0.items[0].currency, "sol");
+    assert_eq!(products.0.items[0].price_lamports, 12_000_000);
     let codes = list_codes(
         StateExtractor(state.clone()),
         admin_headers.clone(),
