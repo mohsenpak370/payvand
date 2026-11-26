@@ -106,7 +106,7 @@
       "title": "Questions fréquentes",
       "description": "Ce que Payvand apporte de plus qu’un portefeuille, ce que ça coûte et ce dont votre client a besoin.",
       "q1": "En quoi Payvand diffère-t-il d’un envoi d’USDC depuis mon portefeuille ?",
-      "a1": "Un virement depuis un portefeuille, c’est un montant saisi dans une adresse collée. Sur un code Payvand, le montant, la devise, le vendeur et le mémo sont fixés avant le scan : rien ne peut être mal saisi, le code passe à Payé et chaque paiement laisse un reçu. C’est là l’apport : un code qui porte déjà le prix, une liste de ce qui rentre et un acheteur qui n’a pas besoin de SOL.",
+      "a1": "Sur la chaîne, c’est le même virement : les USDC vont toujours du portefeuille de l’acheteur au vôtre, jamais par nous. La différence est dans ce qui l’accompagne. Un virement simple, c’est un montant saisi dans une adresse collée : il arrive sans commande – vous le rapprochez d’une vente à l’œil, et le client doit vous prévenir qu’il a payé. Un code Payvand porte le prix, la devise et le mémo que vous fixez une fois, et le montant fait partie de l’adresse de paiement : l’acheteur ne peut pas le changer sans envoyer à une adresse que ce code ne surveille pas. Le code surveille son propre paiement, passe seul à Payé et conserve l’adresse du payeur et la transaction comme reçu. Et c’est plus simple pour l’acheteur : en USDC ou EURC, Payvand paie les frais de réseau, il n’a donc pas besoin de SOL.",
       "q2": "Payvand est-il un portefeuille ? Garde-t-il mon argent ?",
       "a2": "Non. Aucune phrase de récupération à conserver, aucun solde Payvand : chaque paiement va directement du portefeuille de l’acheteur au vôtre, et l’application ne détient aucune clé capable de déplacer vos fonds. C’est la couche de paiement au-dessus du portefeuille que vous avez déjà.",
       "q3": "Mes clients ont-ils besoin d’un compte ou d’une application ?",
@@ -124,7 +124,17 @@
       "q9": "Nous avons du personnel, ou des habitués qui paient chaque semaine. Est-ce compatible ?",
       "a9": "Oui. Un acheteur peut définir un budget mensuel qu’une clé de session dépense : les habitués valident une fois par mois au lieu de chaque passage, et les vendeurs ont des codes de réduction et une page boutique avec produits.",
       "q10": "Puis-je l’essayer sans argent réel ?",
-      "a10": "Oui. L’application tourne sur le devnet de Solana, en mode test : un compte peut réclamer des jetons de départ gratuits et faire un paiement complet via le vrai programme sans rien dépenser."
+      "a10": "Oui. L’application tourne sur le devnet de Solana, en mode test : un compte peut réclamer des jetons de départ gratuits et faire un paiement complet via le vrai programme sans rien dépenser.",
+      "links": {
+        "payingWithWallet": "Comment paie-t-on avec un portefeuille",
+        "stablecoins": "Qu’est-ce qu’un stablecoin",
+        "cryptoWallet": "Qu’est-ce qu’un portefeuille crypto",
+        "paymentCosts": "Combien coûte un paiement",
+        "fee": "Qu’est-ce que les frais",
+        "monthlyAllowance": "Comment fonctionne un budget mensuel",
+        "testMoney": "De l’argent de test gratuit sur devnet",
+        "switchToDevnet": "Passer sur devnet"
+      }
     }
   },
   "admin": {

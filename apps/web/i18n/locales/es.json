@@ -106,7 +106,7 @@
       "title": "Preguntas frecuentes",
       "description": "Qué aporta Payvand frente a una cartera, cuánto cuesta y qué necesita tu cliente.",
       "q1": "¿En qué se diferencia Payvand de enviar USDC desde mi cartera?",
-      "a1": "Una transferencia desde la cartera es un importe que escribes en una dirección que pegas. En un código Payvand el importe, la moneda, el vendedor y el memo ya están fijados antes de escanear: no hay nada que escribir mal, el código pasa a Pagado y cada pago deja un recibo. Ese es el valor añadido: un código que ya lleva el precio, una lista de lo que entra y un comprador que no necesita SOL.",
+      "a1": "En la cadena es la misma transferencia: los USDC siguen yendo de la cartera del comprador a la tuya, nunca a través de nosotros. La diferencia está en lo que la acompaña. Una transferencia suelta es un importe que escribes en una dirección pegada: llega sin pedido — la emparejas con una venta a ojo y el cliente tiene que avisarte de que pagó. Un código Payvand lleva el precio, la moneda y el memo que fijas una vez, y el importe forma parte de la dirección de pago: el comprador no puede cambiarlo sin enviar a una dirección que este código no vigila. El código vigila su propio pago, pasa solo a Pagado y guarda la dirección del pagador y la transacción como recibo. Y para el comprador es más fácil: con USDC o EURC Payvand paga la comisión de red, así que no necesita SOL.",
       "q2": "¿Payvand es una cartera? ¿Guarda mi dinero?",
       "a2": "No. No hay frase de recuperación que guardar ni saldo de Payvand: cada pago va directo de la cartera del comprador a la tuya, y la app no tiene ninguna clave con la que mover tu dinero. Es la capa de pagos sobre la cartera que ya usas.",
       "q3": "¿Mis clientes necesitan una cuenta o una app?",
@@ -124,7 +124,17 @@
       "q9": "Tenemos personal, o clientes habituales que pagan cada semana. ¿Encaja?",
       "a9": "Sí. Un comprador puede fijar un presupuesto mensual del que gasta una clave de sesión, así los habituales aprueban una vez al mes en lugar de en cada caja; y los vendedores tienen códigos de descuento y una página de comercio con productos.",
       "q10": "¿Puedo probarlo sin dinero real?",
-      "a10": "Sí. La app funciona en devnet de Solana en modo de prueba: una cuenta puede reclamar tokens iniciales gratis y completar un pago real por el programa sin gastar nada."
+      "a10": "Sí. La app funciona en devnet de Solana en modo de prueba: una cuenta puede reclamar tokens iniciales gratis y completar un pago real por el programa sin gastar nada.",
+      "links": {
+        "payingWithWallet": "Cómo se paga con una cartera",
+        "stablecoins": "Qué es un stablecoin",
+        "cryptoWallet": "Qué es una cartera cripto",
+        "paymentCosts": "Cuánto cuesta un pago",
+        "fee": "Qué es una comisión",
+        "monthlyAllowance": "Cómo funciona un presupuesto mensual",
+        "testMoney": "Dinero de prueba gratis en devnet",
+        "switchToDevnet": "Cambiar a devnet"
+      }
     }
   },
   "admin": {

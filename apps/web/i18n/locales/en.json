@@ -106,7 +106,7 @@
       "title": "Questions people ask",
       "description": "What Payvand adds over a wallet, what it costs, and what your customer needs.",
       "q1": "How is Payvand different from sending USDC from my wallet?",
-      "a1": "A wallet transfer is an amount typed into a pasted address. On a Payvand code the amount, currency, seller and memo are fixed before the customer scans, so nothing can be mistyped, the code turns Paid, and each payment leaves a receipt. That is the added value: a code that prices itself, a running list of what came in, and a buyer who needs no SOL.",
+      "a1": "On chain it is the same transfer: the USDC still moves from the buyer's wallet to yours, never through us. The difference is what travels with it. A plain transfer is an amount you type into a pasted address, so it arrives with no order attached — you match it to a sale by eye, and the customer has to tell you it was sent. A Payvand code carries the price, currency and memo you set once, and the amount is part of the payment address, so the buyer cannot change it without sending somewhere this code is not watching. The code watches its own payment, turns Paid by itself, and keeps the payer's address and the transaction as a receipt. And it is easier for the buyer too: with USDC or EURC the relayer pays the network fee, so they need no SOL.",
       "q2": "Is Payvand a wallet? Does it hold my money?",
       "a2": "No. There is no seed phrase to keep and no Payvand balance: each payment goes straight from the buyer’s wallet to yours, and the app holds no key that can move your funds. It is the payment layer on top of the wallet you already have.",
       "q3": "Do my customers need an account or an app?",
@@ -124,7 +124,17 @@
       "q9": "We have staff, or regulars who pay every week. Does that fit?",
       "a9": "Yes. A buyer can open a monthly allowance that a session key spends from, so a regular approves once a month instead of at every counter, and sellers get discount codes and a shop page with a product list.",
       "q10": "Can I try it without real money?",
-      "a10": "Yes. The app runs on Solana devnet in test mode: an account can claim free starter tokens and take a whole payment through the real program without spending anything."
+      "a10": "Yes. The app runs on Solana devnet in test mode: an account can claim free starter tokens and take a whole payment through the real program without spending anything.",
+      "links": {
+        "payingWithWallet": "How paying with a wallet works",
+        "stablecoins": "What a stablecoin is",
+        "cryptoWallet": "What a crypto wallet is",
+        "paymentCosts": "What a payment costs",
+        "fee": "What a fee is",
+        "monthlyAllowance": "How a monthly allowance works",
+        "testMoney": "Free test money on devnet",
+        "switchToDevnet": "Switching to devnet"
+      }
     }
   },
   "admin": {
