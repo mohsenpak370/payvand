@@ -200,14 +200,12 @@ GET  /api/solana-pay/icon.svg -> the icon wallets display beside that label
 GET  /api/discounts          -> the signed-in account's discount codes
 POST /api/discounts          -> creates a code {code, percent_off}
 POST /api/discounts/validate -> prices an invoice with a code
-GET  /api/admin/stats        -> account/session/code/reset counts (admin)
-GET  /api/admin/users        -> one page of accounts; ?search=&limit=&offset= (admin)
-DELETE /api/admin/users/{id} -> removes an account and everything it owns (admin)
-GET  /api/admin/payments     -> recent on-chain invoices, newest first (admin)
 DELETE /api/discounts/{id}   -> removes a code
 GET  /api/faucet             -> whether the signed-in account can claim starter tokens
 POST /api/faucet             -> sends them to the account's linked wallet (once per account)
 ```
+
+Admin operations are kept out of this public list; see **Admin** below.
 
 ### Starter tokens
 
@@ -252,15 +250,58 @@ Gmail SMTP with an app password is the free production setup.
 
 ### Admin
 
-The admin panel lives at `/admin` in the web app and is backed by three
-`/api/admin/*` endpoints. Access is **configuration, not schema**: the API
-matches the signed-in account's address against `ADMIN_EMAILS` (comma
-separated), so granting or revoking access never needs a migration — add or
-remove an address and redeploy. Every admin endpoint re-checks the session
-first (401 when signed out) and then the address (403 otherwise). The panel
-shows platform counts and the account list with live session and discount
-code counts, and can delete an account along with its sessions, codes and
-pending reset links; deleting your own account is refused.
+There is one admin UI: the Nuxt web app's `/admin` page. The API host serves
+the protected `/api/admin/*` endpoints that power it; it does not have a
+separate admin page or admin login form. Access is **configuration, not
+schema**: the API matches the signed-in account's address against
+`ADMIN_EMAILS` (comma separated), so granting or revoking access never needs a
+migration — add or remove an address and redeploy. Every admin endpoint
+re-checks the session first (401 when signed out) and then the address (403
+otherwise).
+
+#### In the Nuxt web app
+
+Open `<web-origin>/admin` (`http://localhost:3000/admin` locally). Sign in at
+`/signin?next=/admin` with an account whose email is in the API's
+`ADMIN_EMAILS`. After sign-in the account dropdown gains an **Admin** entry —
+the same check the page performs — and the page itself shows platform counts,
+the account list with live session and discount code counts, the payment feed,
+the waitlist, and the shop/product/discount records. It can delete an account
+along with its sessions, codes and pending reset links; deleting your own
+account is refused.
+
+The dropdown is only a convenience: hiding a link is not authorization. The
+`/admin` page handles `403` on its own, and every API call is independently
+guarded. If the link is missing after sign-in, check `ADMIN_EMAILS` on the API
+deployment and `NUXT_PUBLIC_API_BASE` on the web deployment.
+
+#### On `payvand-api.vercel.app`
+
+There is no HTML admin panel on the API domain. `https://payvand-api.vercel.app/`
+is a JSON route index and `/api/docs` is Swagger UI; both intentionally show
+only the public contract, so `/api/admin/*` paths are not advertised there.
+The canonical specification in `apps/api/openapi.json` still documents them,
+including their `401` and `403` responses.
+
+For manual operations against the API host, sign in first and send the token
+as a bearer credential:
+
+```sh
+curl -sS -X POST https://payvand-api.vercel.app/api/auth/signin \
+  -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}'
+# -> {"user":{...},"token":"..."}
+
+curl -sS https://payvand-api.vercel.app/api/admin/stats \
+  -H "authorization: Bearer $TOKEN"
+```
+
+Replace `/api/admin/stats` with any `/api/admin/*` path from
+`apps/api/openapi.json`, adding query parameters or a JSON body as that
+operation requires. A `401` means the session is missing or expired; a `403`
+means the account is signed in but its email is not in `ADMIN_EMAILS`. Hiding
+the routes from public docs reduces discovery but is **not** the security
+boundary — the server-side session and email check is.
 
 `POST /api/payments` requires a valid session. `GET /api/payments/{pda}` is
 public on purpose — a scanner must be able to read an invoice before deciding

@@ -1,3 +1,4 @@
+import { httpStatus } from '~/utils/httpStatus'
 import type { AdminStats, AdminUser } from './useAdminApi'
 
 export const ADMIN_PAGE_SIZE = 20
@@ -17,17 +18,6 @@ export function useAdminUsers() {
   const usersBusy = shallowRef(false)
   const forbidden = shallowRef(false)
 
-  /** ofetch surfaces the HTTP status in one of several shapes. */
-  function statusOf(error: unknown): number | undefined {
-    if (typeof error !== 'object' || error === null) return undefined
-    const candidate = error as {
-      status?: number
-      statusCode?: number
-      response?: { status?: number }
-    }
-    return candidate.status ?? candidate.statusCode ?? candidate.response?.status
-  }
-
   async function loadUsers() {
     usersFailure.value = ''
     usersLoading.value = true
@@ -42,7 +32,7 @@ export function useAdminUsers() {
       total.value = page.total
       forbidden.value = false
     } catch (error) {
-      if (statusOf(error) === 403) {
+      if (httpStatus(error) === 403) {
         forbidden.value = true
       } else {
         usersFailure.value = apiErrorMessage(error, t('admin.users.loadFailure'))
