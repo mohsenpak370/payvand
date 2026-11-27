@@ -15,7 +15,8 @@
     "postinstall": "nuxt prepare",
     "prepare": "husky",
     "smoke:silent-payment": "node scripts/devnet-silent-payment-check.mjs",
-    "config:migrate": "node scripts/migrate-config.mjs"
+    "config:migrate": "node scripts/migrate-config.mjs",
+    "config:float": "node scripts/set-session-float.mjs"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.160",

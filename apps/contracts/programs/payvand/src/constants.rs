@@ -50,10 +50,18 @@ pub const SESSION_FEE_FLOAT: u64 = 12_000_000;
 /// leaves exactly one settlement's worth.
 pub const TREASURY_RESERVE_SETTLEMENTS: u64 = 1;
 
+/// One signature's base fee: what the runtime charges a transaction's fee payer.
+/// The client adds no priority fee, so this is the whole network cost of a
+/// silent payment.
+pub const SIGNATURE_FEE_LAMPORTS: u64 = 5_000;
+
 /// Lower bound `update_config` accepts for `session_fee_float`: enough to front
-/// the invoice and receipt rents of one SOL payment (`R_p + R_r`), which is
-/// 2,491,680 + 1,224,960 with the 48-byte marker.
-pub const MIN_SESSION_FEE_FLOAT: u64 = 3_716_640;
+/// the invoice and receipt rents of one SOL payment (`R_p + R_r`, 2,491,680 +
+/// 1,224,960 with the 48-byte marker) plus that payment's own signature. The
+/// signature is not part of the instruction, but the runtime reserves it from the
+/// fee payer before anything runs, so a float of the rents alone leaves the key
+/// 5,000 lamports short at the second account creation.
+pub const MIN_SESSION_FEE_FLOAT: u64 = 3_721_640;
 
 /// Seed of the singleton fee policy account.
 pub const CONFIG_SEED: &[u8] = b"config";

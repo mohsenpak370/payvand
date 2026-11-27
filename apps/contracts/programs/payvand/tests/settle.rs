@@ -3370,9 +3370,13 @@ async fn session_float_floor_accepts_the_exact_rent_sum_and_rejects_one_lamport_
         MIN_SESSION_FEE_FLOAT
     );
 
-    // The floor is also the invoice plus receipt rent, read from the program's
-    // own account sizes rather than a copied constant.
-    assert_eq!(MIN_SESSION_FEE_FLOAT, invoice_rent() + receipt_rent());
+    // The floor is the invoice plus receipt rent plus the signature the runtime
+    // reserves before the instruction runs, read from the program's own account
+    // sizes rather than a copied constant.
+    assert_eq!(
+        MIN_SESSION_FEE_FLOAT,
+        invoice_rent() + receipt_rent() + TX_FEE
+    );
 
     // One lamport less cannot front the payment it exists for.
     let under = send(
@@ -3396,6 +3400,82 @@ async fn session_float_floor_accepts_the_exact_rent_sum_and_rejects_one_lamport_
     assert_eq!(
         config(&context, config_pda()).await.session_fee_float,
         MIN_SESSION_FEE_FLOAT
+    );
+}
+
+/// The floor is not only an accepted number: a key holding exactly it can make
+/// a real silent payment. It fronts both rents and its signature out of that
+/// balance and the pot makes it whole in the same transaction, so a config left
+/// at `MIN_SESSION_FEE_FLOAT` still pays.
+#[tokio::test]
+async fn a_session_key_at_the_float_floor_can_make_a_silent_payment() {
+    let session = Keypair::new();
+    let (mut context, admin_keypair) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), MIN_SESSION_FEE_FLOAT)],
+    )
+    .await;
+    let admin = admin_keypair.pubkey();
+
+    send(
+        &mut context,
+        &[update_config_instruction(
+            admin,
+            TEST_FEE_BPS,
+            TEST_FIXED_FEE,
+            FeeMode::SellerPays,
+            MIN_SESSION_FEE_FLOAT,
+        )],
+        &[&admin_keypair],
+    )
+    .await
+    .expect("the exact floor must be accepted");
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    let monthly_limit = LAMPORTS_PER_SOL / 4;
+    send(
+        &mut context,
+        &[open_budget_instruction(
+            buyer,
+            session.pubkey(),
+            monthly_limit,
+        )],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+
+    // The key already holds the float, so opening the budget tops up nothing and
+    // the payment below starts from the floor itself.
+    assert_eq!(
+        lamports(&context, session.pubkey()).await,
+        MIN_SESSION_FEE_FLOAT
+    );
+
+    pay_from_budget(
+        &mut context,
+        budget_address,
+        &session,
+        LAMPORTS_PER_SOL / 20,
+        "at the floor",
+    )
+    .await
+    .expect("a payment from a key at the float floor must still settle");
+
+    // Both rents came back with the pot's reimbursement, so only the signature
+    // is spent — and the invoice and marker the payment wrote survive it.
+    assert_eq!(
+        lamports(&context, session.pubkey()).await,
+        MIN_SESSION_FEE_FLOAT - TX_FEE
+    );
+    assert_eq!(
+        budget(&context, budget_address).await.spent,
+        LAMPORTS_PER_SOL / 20
     );
 }
 
