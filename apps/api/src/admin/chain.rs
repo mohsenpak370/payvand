@@ -17,11 +17,11 @@ use solana_pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 
 use crate::payments::{self, ApiError, ApiResult};
+use crate::spl::{ata_for, TOKEN_PROGRAM};
 use crate::{auth, faucet, sponsor};
 
 use super::require_admin;
 
-const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const UPGRADEABLE_LOADER: &str = "BPFLoaderUpgradeab1e11111111111111111111111";
 
 /// One account the deployment depends on.
@@ -185,7 +185,7 @@ pub async fn chain(
     let mut addresses: Vec<Pubkey> = named.iter().map(|(_, key)| *key).collect();
     for (_, owner) in &holders {
         for mint in mints.iter().flatten() {
-            addresses.push(faucet::ata_for(owner, mint));
+            addresses.push(ata_for(owner, mint));
         }
     }
 
@@ -226,7 +226,7 @@ pub async fn chain(
 
     let token_balance = |owner: &Pubkey, mint: Option<Pubkey>| -> Option<u64> {
         let mint = mint?;
-        let account = by_address.get(&faucet::ata_for(owner, &mint))?.as_ref()?;
+        let account = by_address.get(&ata_for(owner, &mint))?.as_ref()?;
         token_amount(&account.owner, &account.data)
     };
 

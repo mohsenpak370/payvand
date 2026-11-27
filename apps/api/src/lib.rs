@@ -15,6 +15,7 @@ pub mod reusable;
 pub mod saved;
 pub mod shops;
 pub mod solana_pay;
+mod spl;
 pub mod sponsor;
 pub mod subscription;
 pub mod waitlist;

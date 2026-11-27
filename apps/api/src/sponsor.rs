@@ -39,13 +39,11 @@ use solana_sdk::transaction::VersionedTransaction;
 
 use crate::auth;
 use crate::payments::{bad, currency_for_mint, resolve_endpoint, ApiError, ApiResult};
+use crate::spl::{ata_for, system_program, token_program};
 use crate::AppState;
 
 /// The deployed program, overridable for a local cluster.
 const DEFAULT_PROGRAM_ID: &str = "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J";
-const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-const ATA_PROGRAM: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
-const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
 
 /// What a sponsored settle fronts: the 262-byte token invoice's rent, the
 /// 48-byte marker's, and the one signature the relayer pays for. The client asks
@@ -185,18 +183,6 @@ fn pda(seeds: &[&[u8]], program: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(seeds, program).0
 }
 
-/// The buyer's (or seller's, or treasury's) associated token account. Derived
-/// under the classic token program, because that is the only program the
-/// program settles.
-fn ata(owner: &Pubkey, mint: &Pubkey) -> Pubkey {
-    let token = Pubkey::from_str(TOKEN_PROGRAM).expect("the token program id parses");
-    let ata_program = Pubkey::from_str(ATA_PROGRAM).expect("the ATA program id parses");
-    pda(
-        &[owner.as_ref(), token.as_ref(), mint.as_ref()],
-        &ata_program,
-    )
-}
-
 /// Anchor's instruction selector: the first eight bytes of
 /// `sha256("global:<name>")`.
 fn discriminator(name: &str) -> [u8; 8] {
@@ -217,7 +203,7 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
     let program = program_id();
     let treasury = pda(&[b"treasury"], &program);
     let config = pda(&[b"config"], &program);
-    let system = Pubkey::from_str(SYSTEM_PROGRAM).expect("the system program id parses");
+    let system = system_program();
 
     // A SOL invoice: no mint, no token accounts, and `sponsor` is the account
     // that funds both records, as the program requires.
@@ -271,7 +257,7 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
         ],
         &program,
     );
-    let token = Pubkey::from_str(TOKEN_PROGRAM).expect("the token program id parses");
+    let token = token_program();
 
     let mut data = discriminator("settle_token_payment").to_vec();
     data.extend_from_slice(&params.amount.to_le_bytes());
@@ -282,8 +268,8 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
         AccountMeta::new(params.buyer, true),
         AccountMeta::new(invoice, false),
         AccountMeta::new(params.seller, false),
-        AccountMeta::new(ata(&params.seller, &mint), false),
-        AccountMeta::new(ata(&params.buyer, &mint), false),
+        AccountMeta::new(ata_for(&params.seller, &mint), false),
+        AccountMeta::new(ata_for(&params.buyer, &mint), false),
         AccountMeta::new_readonly(mint, false),
         AccountMeta::new(
             pda(&[b"payment-receipt", invoice.as_ref()], &program),
@@ -292,7 +278,7 @@ fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
         AccountMeta::new_readonly(params.reference, false),
         AccountMeta::new_readonly(config, false),
         AccountMeta::new(treasury, false),
-        AccountMeta::new(ata(&treasury, &mint), false),
+        AccountMeta::new(ata_for(&treasury, &mint), false),
         AccountMeta::new_readonly(token, false),
         AccountMeta::new_readonly(system, false),
         AccountMeta::new(*sponsor, true),

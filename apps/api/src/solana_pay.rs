@@ -31,8 +31,6 @@ use crate::AppState;
 
 /// Seed prefix for every payment PDA, mirroring the Anchor program.
 const PAYMENT_SEED: &[u8] = b"payment";
-/// The System program, whose transfer moves the lamports to the seller.
-const SYSTEM_PROGRAM_ID: &str = "11111111111111111111111111111111";
 
 /// The invoice a QR code hands out. Unknown fields in the token are ignored,
 /// so the web app can add detail without breaking an older API.
@@ -329,8 +327,7 @@ struct SettlePaymentRequest<'a> {
 /// change in layout cannot pass unnoticed.
 fn settle_payment_transaction(request: SettlePaymentRequest<'_>) -> Vec<u8> {
     let program = program_id().expect("the program id in this crate is valid");
-    let system_program =
-        Pubkey::from_str(SYSTEM_PROGRAM_ID).expect("the system program id is valid");
+    let system_program = crate::spl::system_program();
 
     // Account order follows the runtime's rules: signers first, then the
     // writable accounts, then the readonly ones. The payer is the only
