@@ -146,7 +146,8 @@ pub async fn recorded_invoices(
         db,
         wallet,
         cluster,
-        "AND (reusable_id = '' OR id IN (SELECT invoice FROM settled_payments))",
+        "AND (reusable_id = '' OR paid_at > 0 \
+             OR id IN (SELECT invoice FROM settled_payments))",
         limit,
     )
     .await
@@ -165,10 +166,43 @@ pub async fn reusable_invoices_awaiting(
         db,
         wallet,
         cluster,
-        "AND reusable_id <> '' AND id NOT IN (SELECT invoice FROM settled_payments)",
+        "AND reusable_id <> '' AND paid_at = 0 \
+             AND id NOT IN (SELECT invoice FROM settled_payments)",
         limit,
     )
     .await
+}
+
+/// Marks reusable invoices a feed found settled, so they are history from then
+/// on whether or not their settlement row was ever written: that row needs a
+/// history read that can be out of budget or fail, and an unpaid visit that
+/// newer visits pushed out of [`AWAITING_REUSABLE_LIMIT`] is never asked about
+/// again. Best effort, like every write here — the next load marks it again.
+pub async fn mark_reusable_paid(db: &libsql::Database, ids: &[String]) {
+    if ids.is_empty() {
+        return;
+    }
+    let placeholders = (2..=ids.len() + 1)
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut params: Vec<libsql::Value> = vec![crate::auth::unix_now().into()];
+    params.extend(ids.iter().cloned().map(libsql::Value::from));
+    let written = async {
+        db.connect()?
+            .execute(
+                &format!(
+                    "UPDATE invoice_meta SET paid_at = ?1 \
+                     WHERE paid_at = 0 AND reusable_id <> '' AND id IN ({placeholders})"
+                ),
+                libsql::params_from_iter(params),
+            )
+            .await
+    }
+    .await;
+    if let Err(error) = written {
+        tracing::info!(%error, "paid reusable invoices were not marked");
+    }
 }
 
 /// One seller's invoice rows, newest first, narrowed by `selection`.

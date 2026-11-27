@@ -486,7 +486,7 @@
     },
     "success": {
       "rotated": "Dieses Gerät zahlt jetzt ohne Nachfrage, und der Schlüssel des anderen Geräts funktioniert sofort nicht mehr. Nichts wurde bewegt: Das Limit ist jetzt {limit}, das war bereits im Topf, und die Ausgaben dieses Monats zählen weiter dagegen. Füll hier auf, wenn du ein größeres Limit willst.",
-      "refilled": "Aufgefüllt — der Topf hält wieder {limit} und der Monat beginnt neu, das ganze Limit steht dir also zur Verfügung.",
+      "refilled": "Aufgefüllt — der Topf hält wieder {limit} und jede Zahlung darin läuft ohne Fenster. Was du diesen Monat schon ausgegeben hast, zählt weiter, ausgeben kannst du also den Rest.",
       "restarted": "Neues Limit gespeichert — {limit}, und der Monat beginnt neu, das ganze Limit steht dir also zur Verfügung.",
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
@@ -624,6 +624,7 @@
     "notSent": "Die Zahlung konnte nicht gesendet werden.",
     "paymentNeedsSol": "Diese Zahlung braucht ein wenig SOL für die Solana-Netzwerkgebühr, und Payvand konnte sie diesmal nicht übernehmen. Fülle SOL in deine Wallet und versuche es erneut — auf Devnet sendet https://faucet.solana.com kostenloses Test-SOL.",
     "walletShortOnPrice": "Diese Rechnung kostet {price}, und deine Wallet hält nicht so viel. Fülle die Wallet auf und versuche es erneut.",
+    "balanceUnreadable": "Der Kontostand deiner Wallet ließ sich gerade nicht lesen, daher wurde nichts gesendet. Versuche es gleich noch einmal.",
     "discountFailed": "Dieser Rabattcode konnte nicht angewendet werden.",
     "notBudgetAccount": "Diese Adresse ist kein Budgetkonto.",
     "feeConfigUnavailable": "Die Gebühreneinstellungen sind gerade nicht verfügbar. Versuche es gleich noch einmal.",

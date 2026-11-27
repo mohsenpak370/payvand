@@ -452,13 +452,20 @@ pub async fn transactions(
         })
         .collect();
     // Only a lookup that was paid belongs on the page: the rest stay watched and
-    // unlisted until they settle.
-    records.extend(awaiting.into_iter().filter_map(|row| {
-        settled
-            .get(&row.id)
-            .filter(|chain| chain.status == PaymentStatus::Settled)
-            .cloned()
-    }));
+    // unlisted until they settle. A paid one is marked as such, so it stays
+    // history even if its settlement row was never written.
+    let paid: Vec<PaymentRecord> = awaiting
+        .into_iter()
+        .filter_map(|row| {
+            settled
+                .get(&row.id)
+                .filter(|chain| chain.status == PaymentStatus::Settled)
+                .cloned()
+        })
+        .collect();
+    let paid_ids: Vec<String> = paid.iter().map(|record| record.id.clone()).collect();
+    payments::mark_reusable_paid(&state.db, &paid_ids).await;
+    records.extend(paid);
     // A payment from an allowance is signed by its session key, so its settle
     // names a payer that is not the wallet. Which key spends for which wallet is
     // on chain — the budget account holds both — so it is looked up once and

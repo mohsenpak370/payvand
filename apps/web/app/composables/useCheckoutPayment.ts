@@ -19,9 +19,10 @@ import { HOLD_TICK_MS, HOLD_TO_PAY_MS } from './checkoutVerification'
 /** The price as the buyer reads it: "1 SOL", "1.5 USDC". */
 function priceLabel(option: PaymentOption, amount: number): string {
   const decimals = option.currency === 'sol' ? 9 : option.decimals
+  // Only a fractional part loses its trailing zeros: a whole "10" stays 10.
   const value = option.currency === 'sol'
     ? lamportsToSol(amount)
-    : (amount / 10 ** decimals).toFixed(decimals).replace(/\.?0+$/, '')
+    : (amount / 10 ** decimals).toFixed(decimals).replace(/\.(\d*?)0+$/, '.$1').replace(/\.$/, '')
   return `${value} ${option.currency.toUpperCase()}`
 }
 
@@ -35,23 +36,27 @@ function shortOnPrice(option: PaymentOption, amount: number): string {
   return appT('errors.walletShortOnPrice', { price: priceLabel(option, amount) })
 }
 
-/** The buyer's balance in one token, or 0 when the account does not exist. */
+/**
+ * The buyer's balance in one token, or 0 when the account does not exist. Any
+ * other failure is thrown: a cluster that did not answer is not a wallet that
+ * cannot afford the price, and saying so would send the buyer to add funds
+ * they already have.
+ */
 async function tokenBalance(
   client: ReturnType<typeof useSolanaClient>['client'],
   owner: Address,
   mint: Address
 ): Promise<number> {
-  try {
-    const balance = await client.rpc
-      .getTokenAccountBalance(await deriveAssociatedTokenAddress(owner, mint), {
-        commitment: 'confirmed'
-      })
-      .send()
-    return Number(balance.value.amount)
-  } catch {
-    // No account is no balance to pay with, and the refusal names the price.
-    return 0
-  }
+  const account = await deriveAssociatedTokenAddress(owner, mint)
+  const info = await client.rpc
+    .getAccountInfo(account, { commitment: 'confirmed', encoding: 'base64' })
+    .send()
+  // No account is no balance to pay with, and the refusal names the price.
+  if (!info.value) return 0
+  const balance = await client.rpc
+    .getTokenAccountBalance(account, { commitment: 'confirmed' })
+    .send()
+  return Number(balance.value.amount)
 }
 
 /**
@@ -309,7 +314,9 @@ export function useCheckoutPayment(deps: {
           // The price is in the token, so the wallet has to hold it whether or
           // not a relayer pays the fee: an account with less than the price can
           // only end in a signature the chain refuses.
-          const heldTokens = await tokenBalance(client, payerAddress, mint)
+          const heldTokens = await tokenBalance(client, payerAddress, mint).catch(() => {
+            throw new Error(appT('errors.balanceUnreadable'))
+          })
           if (heldTokens < amount) throw new Error(shortOnPrice(option, amount))
 
           // The fee leaves the buyer's account for the treasury's own token

@@ -16,6 +16,7 @@ import {
   sponsorSettle,
   teardownCheckout,
   walletLamports,
+  walletTokenAccount,
   walletTokens
 } from '../test-utils/usePaymentCheckout'
 
@@ -245,6 +246,27 @@ describe('a token price the wallet has to pay', () => {
 
     expect(checkout.failure.value).toBe('errors.walletShortOnPrice')
     expect(buildInstructionMock).not.toHaveBeenCalled()
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(sponsorSettle).not.toHaveBeenCalled()
+  })
+  it('treats a token account that does not exist as holding nothing', async () => {
+    walletTokenAccount.exists = false
+
+    const checkout = checkoutFor(quoteFor(false))
+    await checkout.pay()
+
+    expect(checkout.failure.value).toBe('errors.walletShortOnPrice')
+    expect(signTransactions).not.toHaveBeenCalled()
+  })
+
+  it('does not call a wallet short on the price when the cluster did not answer', async () => {
+    walletTokenAccount.unreachable = true
+
+    const checkout = checkoutFor(quoteFor(false))
+    await checkout.pay()
+
+    // The buyer is told the read failed, not sent off to add funds they have.
+    expect(checkout.failure.value).toBe('errors.balanceUnreadable')
     expect(signTransactions).not.toHaveBeenCalled()
     expect(sponsorSettle).not.toHaveBeenCalled()
   })

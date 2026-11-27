@@ -486,7 +486,7 @@
     },
     "success": {
       "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y lo gastado este mes sigue contando. Rellena desde aquí cuando quieras uno mayor.",
-      "refilled": "Rellenado — la reserva vuelve a tener {limit} y el mes empieza de nuevo, así que puedes gastar todo el límite.",
+      "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. Lo que ya has gastado este mes sigue contando, así que lo que queda es lo que puedes gastar.",
       "restarted": "Nuevo límite guardado — {limit}, con el mes empezando de nuevo, así que puedes gastarlo todo.",
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
@@ -624,6 +624,7 @@
     "notSent": "No se pudo enviar el pago.",
     "paymentNeedsSol": "Este pago necesita un poco de SOL para la comisión de red de Solana, y Payvand no ha podido cubrirla esta vez. Añade SOL a tu cartera y vuelve a intentarlo: en devnet, https://faucet.solana.com envía SOL de prueba gratis.",
     "walletShortOnPrice": "Esta factura cuesta {price} y tu cartera no tiene esa cantidad. Añade fondos a la cartera y vuelve a intentarlo.",
+    "balanceUnreadable": "No se pudo leer el saldo de tu billetera en este momento, así que no se envió nada. Inténtalo de nuevo en un momento.",
     "discountFailed": "No se pudo aplicar ese código de descuento.",
     "notBudgetAccount": "Esa dirección no es una cuenta de presupuesto.",
     "feeConfigUnavailable": "La configuración de comisiones no está disponible ahora. Inténtalo de nuevo en un momento.",

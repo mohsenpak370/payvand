@@ -20,8 +20,8 @@ import type { BudgetPageState } from './useBudgetPageState'
  * funding the pot to the limit, topping up the session key's fee float, and
  * registering (or rotating) the session key that pays silently afterwards.
  * Everything a person can change about the allowance is that same approval, and
- * a limit set mid-month starts the month over, so the limit they typed is the
- * limit they can actually spend (see `applyLimit`).
+ * a *different* limit set mid-month starts the month over, so the limit they
+ * typed is the limit they can actually spend (see `applyLimit`).
  */
 export function useBudgetApply(deps: {
   state: BudgetPageState
@@ -81,9 +81,9 @@ export function useBudgetApply(deps: {
   }
 
   /**
-   * Gives the month back its whole limit, in one approval. The pot is topped up
-   * to the limit and the counter starts over, so a buyer who spent half of it
-   * and refills has the whole limit again — not just the money.
+   * Puts the pot back to the monthly limit mid-month, in one approval. What was
+   * already spent this month still counts: a refill is not a way past the
+   * buyer's own ceiling, only a new limit starts the month over.
    */
   async function refill() {
     const current = view.value
@@ -171,18 +171,24 @@ export function useBudgetApply(deps: {
       //    then simulate it before the popup: a transaction that reaches the
       //    wallet is one that will actually succeed.
       //
-      //    A limit set mid-month is a new month. The program keeps `spent`
-      //    across a top-up on purpose — that is what stops a refill from being a
-      //    way past your own ceiling — so setting 20 after spending 5 of 10
-      //    would leave 15 spendable, not 20. Retiring the allowance and opening
-      //    it again in this same transaction is the one start-over the deployed
-      //    program allows: one approval, the same session key, and the counter
-      //    back at zero. A rotation is not a new month (it moves the same
-      //    allowance to this device), so it stays a plain top-up.
+      //    A different limit set mid-month is a new month. The program keeps
+      //    `spent` across a top-up on purpose — that is what stops a refill from
+      //    being a way past your own ceiling — so setting 20 after spending 5 of
+      //    10 would leave 15 spendable, not 20. Retiring the allowance and
+      //    opening it again in this same transaction is the one start-over the
+      //    deployed program allows: one approval, the same session key, and the
+      //    counter back at zero. Only a saved limit that differs from the
+      //    current one does this: a refill at the same limit keeps the spent
+      //    part counting, and a rotation moves the same allowance to this
+      //    device, so both stay a plain top-up.
       const current = view.value
       const spentThisMonth
         = current && !current.rolledOver ? Math.max(0, current.limit - current.remaining) : 0
-      const restarts = intent !== 'rotate' && spentThisMonth > 0
+      const restarts = intent === 'save'
+        && Boolean(existing)
+        && current !== null
+        && limit !== current.limit
+        && spentThisMonth > 0
 
       const budgetAddress = mint
         ? await deriveTokenBudgetPda(buyer, mint)
@@ -234,8 +240,8 @@ export function useBudgetApply(deps: {
       if (intent === 'rotate') {
         memoText = 'Payvand: pay from this device, same limit, other devices revoked'
       } else if (intent === 'refill') {
-        memoText = `Payvand: refill your own ${unitLabel.value} budget to ${amountLabel(limit)}`
-          + `${freshMonth} (still your funds)`
+        memoText = `Payvand: refill your own ${unitLabel.value} budget to ${amountLabel(limit)} `
+          + '(still your funds)'
       } else if (existing) {
         memoText = `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)}`
           + `${freshMonth} (still your funds)`

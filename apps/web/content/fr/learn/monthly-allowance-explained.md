@@ -55,11 +55,12 @@ abonnement ni prélèvement récurrent là-dedans.
 ## Les boutons
 
 - **Définir / enregistrer la limite** — la seule validation. Elle déplace l'argent dans la
-  cagnotte, enregistre cet appareil et démarre le mois.
-- **Recharger** — rend au mois sa limite entière, par exemple quand il reste 20 sur 50. Même
-  validation unique : la cagnotte revient à la limite pleine et le compteur repart de zéro, donc la
-  limite affichée est celle que vous pouvez dépenser. Le compteur repart aussi de lui-même au
-  changement de mois calendaire.
+  cagnotte, enregistre cet appareil et démarre le mois. Enregistrer une autre limite en cours de mois
+  fait repartir le mois à cette limite.
+- **Recharger** — remet la cagnotte à la limite pleine en cours de mois, par exemple quand il
+  reste 20 sur 50. Même validation unique. Elle ne déplace que ce qui manque, et ce que vous avez
+  déjà dépensé ce mois-ci compte toujours : une recharge ne rend pas l'argent dépensé. Le compteur
+  repart de lui-même au changement de mois calendaire.
 - **Utiliser cet appareil à la place** — si l'autorisation a été créée sur un autre téléphone ou
   ordinateur portable, ce bouton la reprend en une validation et empêche l'ancien appareil de
   dépenser.

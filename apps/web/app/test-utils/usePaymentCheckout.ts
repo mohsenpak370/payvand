@@ -44,6 +44,8 @@ export const sponsorSettle = vi.fn(async (_body: SponsoredSettleInput) => ({
 export const walletLamports = { value: 5_000_000 }
 /** What the wallet holds in the invoice's token, in base units. */
 export const walletTokens = { value: 5_000_000 }
+/** Whether the buyer's token account exists, and whether the cluster answers. */
+export const walletTokenAccount = { exists: true, unreachable: false }
 export const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
 /** The transfers a spent float needs; most payments here need none. */
 export const tokenFloatTopUpInstructions = vi.fn(async () => [] as unknown[])
@@ -194,6 +196,8 @@ export function setupCheckout() {
   sponsorSettle.mockImplementation(async () => ({ signature: 'SPONSORED_SIGNATURE' }))
   walletLamports.value = 5_000_000
   walletTokens.value = 5_000_000
+  walletTokenAccount.exists = true
+  walletTokenAccount.unreachable = false
   wallet.canSign = true
 
   vi.stubGlobal('ref', ref)
@@ -218,6 +222,12 @@ export function setupCheckout() {
     client: {
       rpc: {
         getBalance: () => ({ send: async () => ({ value: walletLamports.value }) }),
+        getAccountInfo: () => ({
+          send: async () => {
+            if (walletTokenAccount.unreachable) throw new Error('fetch failed')
+            return { value: walletTokenAccount.exists ? { data: ['', 'base64'] } : null }
+          }
+        }),
         getTokenAccountBalance: () => ({
           send: async () => ({ value: { amount: String(walletTokens.value) } })
         })

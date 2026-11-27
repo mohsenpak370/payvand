@@ -435,6 +435,10 @@ mod tests {
             .expect("read");
         let row = rows.next().await.expect("row").expect("invoice");
         assert_eq!(row.get::<String>(0).expect("tag"), link.id);
+        // An open cursor holds the file's read lock, and the writes below come
+        // from other connections.
+        drop(row);
+        drop(rows);
 
         // Two visits, nothing sold: a lookup is not the seller's history.
         let recorded = crate::payments::recorded_invoices(&db, seller, "devnet", 10).await;
@@ -473,6 +477,25 @@ mod tests {
                 .len(),
             1,
             "only the unpaid one is still watched"
+        );
+
+        // A visit a feed saw settled but could not read the settlement of is
+        // marked paid instead: history from then on, and no longer watched, so
+        // newer visits cannot push it out of the seller's page.
+        let second_id = second.options[0].payment_pda.clone();
+        crate::payments::mark_reusable_paid(&db, std::slice::from_ref(&second_id)).await;
+        let recorded = crate::payments::recorded_invoices(&db, seller, "devnet", 10).await;
+        assert_eq!(
+            recorded.len(),
+            2,
+            "a marked visit is a sale without its row"
+        );
+        assert!(recorded.iter().any(|record| record.id == second_id));
+        assert!(
+            crate::payments::reusable_invoices_awaiting(&db, seller, "devnet", 10)
+                .await
+                .is_empty(),
+            "nothing paid is still watched"
         );
 
         std::fs::remove_file(path).ok();

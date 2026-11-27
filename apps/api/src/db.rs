@@ -168,7 +168,7 @@ const SCHEMA: &[&str] = &[
     // chain keeps neither — and the feed lists from it now: `amount` and
     // `reference` are what a status read needs, so the history asks the cluster
     // whether an invoice settled rather than for every payment ever made.
-    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        reference   TEXT NOT NULL DEFAULT '',\n        cluster     TEXT NOT NULL DEFAULT '',\n        endpoint    TEXT NOT NULL DEFAULT '',\n        currency    TEXT NOT NULL DEFAULT '',\n        mint        TEXT NOT NULL DEFAULT '',\n        amount      INTEGER NOT NULL DEFAULT 0,\n        memo        TEXT NOT NULL DEFAULT '',\n        seller_user TEXT,\n        reusable_id TEXT NOT NULL DEFAULT '',\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
+    "CREATE TABLE IF NOT EXISTS invoice_meta (\n        id          TEXT PRIMARY KEY,\n        seller      TEXT NOT NULL,\n        reference   TEXT NOT NULL DEFAULT '',\n        cluster     TEXT NOT NULL DEFAULT '',\n        endpoint    TEXT NOT NULL DEFAULT '',\n        currency    TEXT NOT NULL DEFAULT '',\n        mint        TEXT NOT NULL DEFAULT '',\n        amount      INTEGER NOT NULL DEFAULT 0,\n        memo        TEXT NOT NULL DEFAULT '',\n        seller_user TEXT,\n        reusable_id TEXT NOT NULL DEFAULT '',\n        paid_at     INTEGER NOT NULL DEFAULT 0,\n        name        TEXT NOT NULL,\n        description TEXT NOT NULL,\n        items       TEXT NOT NULL DEFAULT '',\n        created_at  INTEGER NOT NULL\n    )",
     // A reusable code: one offer — price, currency, title, words — that any
     // visitor pays by minting a fresh one-time invoice from it. The chain can
     // settle an invoice once, so the repeatable thing is the row, not an
@@ -500,6 +500,11 @@ async fn migrate_invoice_columns(connection: &libsql::Connection) -> Result<(), 
         // opened far more often than it is paid, so this is what lets history
         // leave a lookup out until it settles.
         ("reusable_id", "TEXT NOT NULL DEFAULT ''"),
+        // When a feed first saw that invoice settled, for a reusable one. The
+        // settlement row needs a history read that can fail; this does not, so
+        // a paid visit stays history even after newer visits push it out of
+        // the handful that are still watched.
+        ("paid_at", "INTEGER NOT NULL DEFAULT 0"),
     ];
     for (column, definition) in additions {
         if !has_column(connection, "invoice_meta", column).await? {

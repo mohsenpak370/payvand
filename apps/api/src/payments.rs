@@ -32,8 +32,8 @@ pub use config::{currency_for_mint, mint_for, PAYVAND_PROGRAM_ID};
 pub use create::{create_payment, CreateOption, CreatePaymentRequest};
 pub use db::backfill::backfill_invoice_rows;
 pub use db::invoices::{
-    recorded_invoices, remember_invoice, remember_scanned, reusable_invoices_awaiting,
-    AWAITING_REUSABLE_LIMIT,
+    mark_reusable_paid, recorded_invoices, remember_invoice, remember_scanned,
+    reusable_invoices_awaiting, AWAITING_REUSABLE_LIMIT,
 };
 pub use db::settlements::{settlements_paid_by, settlements_paid_by_any};
 pub use error::{ApiError, ApiResult};
