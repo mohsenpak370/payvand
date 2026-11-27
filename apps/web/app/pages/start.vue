@@ -31,9 +31,6 @@ const guides = computed(() => [
 
     <UPageSection>
       <div class="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
-        <!-- 1. A wallet. Solflare first because it switches networks in two
-             clicks, and other wallets are named so nobody thinks this is the
-             only door. -->
         <UCard class="min-w-0">
           <div class="flex flex-col gap-3">
             <h3 class="text-base font-semibold">
