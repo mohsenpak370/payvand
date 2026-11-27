@@ -48,19 +48,8 @@ const steps = computed(() => [{
   description: t('home.how.paid.description')
 }])
 
-/**
- * The questions a shop owner asks before the first payment, and the ones they
- * ask after it: what this adds over a plain wallet, what it costs, whether the
- * buyer needs anything installed, and what happens when something goes wrong.
- * The answers live in the locale files like every other string on the page.
- */
 const FAQ_COUNT = 10
 
-/**
- * The guides that answer a question in more depth, where one exists. Only the
- * questions a guide covers get a line of links, so a link always means there is
- * more to read rather than a detour back to the same paragraph.
- */
 const FAQ_LINKS: Record<number, string[]> = {
   1: ['payvandVsWallet', 'stablecoins', 'checkingBeforeSign'],
   2: ['cryptoWallet'],
@@ -120,20 +109,9 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
 
 <template>
   <div>
-    <!--
-      The opening screen: the pitch, what it promises, and one picture of the
-      result. `svh` rather than `vh` so a phone's collapsing browser chrome does
-      not push the next section half into view.
-    -->
     <section
       class="relative isolate flex min-h-[calc(100svh-var(--ui-header-height))] flex-col items-center justify-center overflow-hidden px-4 py-16"
     >
-      <!--
-        The two texture layers are decoration and only that: a soft primary glow
-        behind the title, and a faint grid that fades out before it reaches the
-        copy, so the background reads as deliberate rather than as empty space.
-        Both are `pointer-events-none` and hidden from assistive tech.
-      -->
       <div
         aria-hidden="true"
         class="pointer-events-none absolute inset-0 -z-10"
@@ -161,8 +139,6 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
           />
         </div>
 
-        <!-- Outlined chips rather than a line of loose text: each promise is
-             one thing, and the border says so at a glance. -->
         <div class="flex flex-wrap items-center justify-center gap-2">
           <UBadge
             v-for="proof in proofs"
@@ -176,8 +152,6 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
         </div>
       </div>
 
-      <!-- The receipt gets its own row under the pitch: on a wide screen it is
-           the one thing on the page that shows what a payment looks like. -->
       <HeroPaymentCard class="mt-10 w-full max-w-sm sm:mt-12" />
     </section>
 
@@ -192,40 +166,20 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
       :features="steps"
     />
 
-    <!--
-      The FAQ sits after the three steps and before the closing call: it is for
-      the reader who already understands the flow and is now deciding whether
-      it is worth using instead of their wallet.
-    -->
     <UPageSection
       id="faq"
       :title="$t('home.faq.title')"
       :description="$t('home.faq.description')"
     >
-      <!--
-        The rows are read as prose, not as a list of controls, so both sides of
-        each one are a step larger than the component's `text-sm`, and the
-        question is semibold against the answer's regular weight. On a phone
-        each row also carries the same inner padding as the cards above it (a
-        card's body is `p-4` there), so the question is not flush with the
-        row's edge; from `sm` up the rows keep the component's own spacing,
-        where the section is wide enough that the extra inset only shortens the
-        line.
-      -->
       <UAccordion
         :items="faqs"
         type="multiple"
         :ui="{
-          trigger: 'text-base font-semibold px-4 py-4 sm:px-0 sm:py-3.5',
+          trigger: 'text-lg font-semibold px-4 py-4 sm:px-0 sm:py-3.5',
           body: 'text-base px-4 pb-4 sm:px-0 sm:pb-3.5'
         }"
         class="mx-auto max-w-3xl"
       >
-        <!--
-          The answer, then the guides that go deeper where one exists. They are
-          links rather than part of the answer's text, so the answer still reads
-          as a paragraph and the reader chooses whether to follow one.
-        -->
         <template #body="{ item }">
           <p>{{ item.content }}</p>
           <div

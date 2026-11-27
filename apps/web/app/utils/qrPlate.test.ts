@@ -126,7 +126,7 @@ describe('clearMiddle', () => {
 
     expect(cleared.endsWith('</svg>')).toBe(true)
     expect(cleared).toContain(
-      `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="${MARK_BACKGROUND}"/>`
+      `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" rx="${plate.side * 0.05}" ry="${plate.side * 0.05}" fill="${MARK_BACKGROUND}"/>`
     )
     // Not the code's white: before the mark is drawn the clearing has to look
     // like the tile that will be drawn on it.

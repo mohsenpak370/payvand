@@ -1,3 +1,5 @@
+> **Deprecated / not needed:** This feature (per-shop fee multiplier) is not exposed in the webapp and the fee is deducted from the seller's side, so a shop lowering its rate only benefits the seller and costs the protocol. It has been removed from user-facing documentation (FAQ). Retain for historical context only.
+
 # 0005 — Per-shop fee overrides
 
 Status: `In Progress` (2026-11-22). Follow-up to `0002`, which keeps one global
@@ -349,3 +351,12 @@ needs none either, and `0007` took version 4 for the network-fee fields.)*
 - Who approves a rate change — the admin, or the seller within the band?
 - Do discounts (`discount_codes`) and shop rates interact, and in what order do
   they apply to the price shown?
+
+## Removal (not needed)
+
+Reason: the fee is deducted from the seller's side, not charged to the buyer, so a shop lowering its rate only benefits the seller and costs the protocol; buyers always pay the listed price. The feature is not exposed in the webapp and adds complexity for no user-facing benefit.
+
+- [ ] Remove per-shop fee multiplier from the contract: drop `ShopPolicy` PDA, `set_shop_policy`, and the optional trailing account on settle paths; settle always uses `Config`'s rate.
+- [ ] Remove shop-rate handling from the API and web composables (`shopPolicy`).
+- [ ] Remove related tests and keep a migration that ignores any stale shop-policy accounts.
+- [ ] Remove the FAQ/README mentions of shop-set rates.

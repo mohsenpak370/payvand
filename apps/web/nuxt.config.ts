@@ -120,7 +120,6 @@ export default defineNuxtConfig({
     prerender: {
       routes: ['/learn', ...learnGuides]
     },
-
     // `pnpm dev` forwards API calls to the local Axum server. The prefixes
     // are listed explicitly instead of a single `/api` rule: Nuxt Icon also
     // serves its collections from `/api/_nuxt_icon/*`, and a blanket `/api`
@@ -231,6 +230,14 @@ export default defineNuxtConfig({
       // @vue-solana/core, and without pre-bundling Vite serves that file raw,
       // where `require` does not exist and the QR never appears.
       include: ['qrcode']
+    },
+    // @vue-solana/nuxt (4.4+) builds an RPC context in a server plugin, which
+    // brings @solana/kit's WebSocket channel, and with it `ws`, into the
+    // server build. `ws` is CommonJS: inlined into the ESM server bundle its
+    // `require` calls throw and every prerendered page answers 500. Kept
+    // external, Node loads it as the CommonJS package it is.
+    ssr: {
+      external: ['ws']
     }
   },
 
