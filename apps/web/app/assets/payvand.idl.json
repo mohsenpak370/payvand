@@ -1978,6 +1978,12 @@
         },
         {
           "name": "payer_token_account",
+          "docs": [
+            "The same account as `seller_token_account` when the shop's owner is",
+            "paying their own invoice — one wallet, one account for the mint. Anchor",
+            "refuses two mutable accounts with one key unless the alias is named, and",
+            "the payout skips the seller's leg for exactly that case."
+          ],
           "writable": true
         },
         {

@@ -34,13 +34,20 @@ impl<'info> TokenPayout<'info> {
         decimals: u8,
         signer_seeds: &[&[&[u8]]],
     ) -> Result<()> {
-        self.transfer(
-            &self.seller_token_account,
-            amount - fee,
-            decimals,
-            signer_seeds,
-        )?;
-        if fee > 0 {
+        // A shopkeeper paying their own invoice passes one account for both
+        // sides, and then the price has nowhere to go: the token program refuses
+        // a transfer to the account it leaves (`SelfTransferNotSupported`). It
+        // does not need to move — the seller's account *is* the payer's — so the
+        // fee is the only leg such a settlement pays.
+        if self.from.key() != self.seller_token_account.key() {
+            self.transfer(
+                &self.seller_token_account,
+                amount - fee,
+                decimals,
+                signer_seeds,
+            )?;
+        }
+        if fee > 0 && self.from.key() != self.treasury_token_account.key() {
             self.transfer(&self.treasury_token_account, fee, decimals, signer_seeds)?;
         }
         Ok(())

@@ -59,7 +59,11 @@ pub struct SettleTokenPayment<'info> {
     #[account(mut, token::mint = mint, token::authority = seller)]
     pub seller_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    #[account(mut, token::mint = mint, token::authority = payer)]
+    /// The same account as `seller_token_account` when the shop's owner is
+    /// paying their own invoice — one wallet, one account for the mint. Anchor
+    /// refuses two mutable accounts with one key unless the alias is named, and
+    /// the payout skips the seller's leg for exactly that case.
+    #[account(mut, dup, token::mint = mint, token::authority = payer)]
     pub payer_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// CHECK: The SPL Token mint this invoice is priced in. Its owner is the fee

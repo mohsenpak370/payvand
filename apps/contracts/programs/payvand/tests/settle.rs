@@ -4340,6 +4340,67 @@ async fn settle_token_payment_splits_the_price_between_seller_and_treasury() {
     );
 }
 
+/// A shopkeeper who pays their own invoice: the buyer and the seller are one
+/// wallet, so the price's account is both sides' and nothing moves for it. Only
+/// the fee leaves, and the receipt is written as for any other settlement.
+#[tokio::test]
+async fn a_buyer_can_pay_their_own_shop_in_a_token() {
+    let (mut context, world) = TokenWorld::start().await;
+
+    // The shop is priced from the buyer's own wallet, so its token account is
+    // the one the world already funded.
+    let seller = world.buyer.pubkey();
+    assert_eq!(
+        associated_token_address(seller, world.mint),
+        world.buyer_token_account
+    );
+
+    let reference = Keypair::new().pubkey();
+    let amount = 700_000;
+    let fee_t = token_fee(amount);
+    let invoice = token_payment_pda(&seller, &reference, &world.mint, amount);
+    let treasury_before = lamports(&context, treasury_pda()).await;
+
+    send(
+        &mut context,
+        &[settle_token_payment_instruction(
+            world.buyer.pubkey(),
+            seller,
+            reference,
+            world.mint,
+            amount,
+            "spl",
+        )],
+        &[&world.buyer],
+    )
+    .await
+    .expect("a buyer paying their own shop should settle");
+
+    // The price stayed in the account that already held it; the fee is the only
+    // token balance that moved.
+    assert_eq!(
+        token_balance(&context, world.buyer_token_account).await,
+        TEST_TOKEN_BALANCE - fee_t
+    );
+    assert_eq!(
+        token_balance(
+            &context,
+            associated_token_address(treasury_pda(), world.mint)
+        )
+        .await,
+        fee_t
+    );
+
+    // Still one receipt, and the pool one record rent down for it.
+    let kept = receipt(&context, receipt_pda(&invoice)).await;
+    assert_eq!(kept.invoice, invoice);
+    assert!(kept.settled_at > 0);
+    assert_eq!(
+        lamports(&context, treasury_pda()).await,
+        treasury_before - receipt_rent()
+    );
+}
+
 /// The token seller's floor is the record's rent **and** the network fee, and the
 /// sponsor is refunded the fee it paid as well as both rents it advanced — so the
 /// seller ends up paying what the settlement cost us, and the payer nothing.
