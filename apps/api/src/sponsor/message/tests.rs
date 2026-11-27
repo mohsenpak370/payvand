@@ -213,6 +213,13 @@ fn the_settlement_plus_a_wallet_priority_fee_is_still_the_settlement() {
     v0_of(&mut price_only).instructions[0].data[1..9].copy_from_slice(&10_000u64.to_le_bytes());
     assert!(same_settlement(&ours, &price_only));
     assert_eq!(priority_fee_lamports(&price_only), 2_000);
+
+    // The shape this app's own client sends: a compute-unit limit and no price.
+    // A wallet has nothing to add to it, and the fee stays the base fee.
+    let mut limit_only = with_wallet_priority_fee(&ours);
+    v0_of(&mut limit_only).instructions.remove(1);
+    assert!(same_settlement(&ours, &limit_only));
+    assert_eq!(priority_fee_lamports(&limit_only), 0);
 }
 
 /// The tolerance is for fee instructions and nothing else: an extra account on
