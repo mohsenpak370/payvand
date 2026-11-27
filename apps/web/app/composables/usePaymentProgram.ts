@@ -78,6 +78,29 @@ export function currenciesForCluster(cluster: string): ('sol' | 'usdc' | 'eurc')
 /** The SPL Memo program — present on every Solana cluster. */
 export const MEMO_PROGRAM_ID = address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
+/** Where a wallet's own fee instructions live. */
+export const COMPUTE_BUDGET_PROGRAM_ID = address(
+  'ComputeBudget111111111111111111111111111111'
+)
+
+/**
+ * `setComputeUnitLimit` — the one instruction that tells a wallet this app has
+ * already chosen its compute budget.
+ *
+ * Phantom adds a compute-unit limit *and* a priority price of its own to any
+ * transaction that carries neither, at the moment it signs. Both change the
+ * message a relayer is about to co-sign, and the price is charged to the fee
+ * payer — the relayer — which never gets it back. Naming the limit keeps the
+ * sponsored transaction the one this app built, and 200,000 units is the limit
+ * the runtime assumes anyway, so nothing that settles today runs short.
+ */
+export function computeUnitLimitInstruction(units = 200_000): Instruction {
+  const data = new Uint8Array(5)
+  data[0] = 2
+  new DataView(data.buffer).setUint32(1, units, true)
+  return { programAddress: COMPUTE_BUDGET_PROGRAM_ID, accounts: [], data }
+}
+
 type IdlType = 'u64' | 'u8' | 'string' | 'pubkey'
 
 interface IdlAccountDef {

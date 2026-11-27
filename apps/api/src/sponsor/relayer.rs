@@ -38,6 +38,20 @@ pub(super) fn sponsor_keypair() -> Option<Keypair> {
     crate::keypair_from_env("SPONSOR_KEYPAIR")
 }
 
+/// The most priority fee a sponsored settle will pay, in lamports.
+///
+/// The sponsor is the fee payer and the program repays it the policy's network
+/// fee and the two rents, so a priority fee is its own money: a wallet that adds
+/// one (Phantom does by default) spends it, and this is what bounds that spend.
+/// The client names its own compute-unit limit so Phantom stays out of the way;
+/// this cap is for a wallet that adds one anyway.
+pub(super) fn max_priority_fee() -> u64 {
+    std::env::var("SPONSOR_MAX_PRIORITY_FEE_LAMPORTS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(100_000)
+}
+
 pub(super) fn program_id() -> Pubkey {
     std::env::var("PAYVAND_PROGRAM_ID")
         .ok()

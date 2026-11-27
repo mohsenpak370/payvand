@@ -2,6 +2,7 @@ import { address, type Address } from '@vue-solana/nuxt/kit'
 import type { ComputedRef, Ref } from 'vue'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 import {
+  computeUnitLimitInstruction,
   deriveAssociatedTokenAddress,
   deriveConfigPda,
   derivePaymentReceiptPda,
@@ -260,9 +261,13 @@ export function useCheckoutPayment(deps: {
 
           if (sponsored) {
             // The relayer submits it as fee payer; the wallet's slot is empty and
-            // the endpoint compares the message byte for byte before signing.
+            // the endpoint compares this transaction with the settlement it
+            // rebuilt before it signs anything.
             const transaction = await compileTransactionForSigning({
-              instruction,
+              // Named so the wallet adds no budget of its own: an injected
+              // priority fee is the relayer's money and a message the endpoint
+              // never compared.
+              instruction: [computeUnitLimitInstruction(), instruction],
               payer: feePayer,
               rpc: client.rpc
             })
@@ -367,9 +372,11 @@ export function useCheckoutPayment(deps: {
           if (relayer) {
             // The buyer signs the transaction the relayer will submit, and the
             // relayer's own slot is left empty: the endpoint rebuilds this
-            // message, compares it byte for byte, and only then signs its half.
+            // settlement, compares it, and only then signs its half.
             const transaction = await compileTransactionForSigning({
-              instruction,
+              // As on the SOL path, the limit is named so the wallet adds no
+              // priority fee of its own to a transaction the relayer pays for.
+              instruction: [computeUnitLimitInstruction(), instruction],
               payer: feePayer,
               rpc: client.rpc
             })

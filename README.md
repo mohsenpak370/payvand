@@ -378,7 +378,9 @@ carries two — the payer's and the relayer's — and one that pays its own way
 carries a single signature, so `fee_for_signatures` multiplies the policy figure
 by the count the path actually uses, and the settlement charges the seller and
 refunds the sponsor that same figure. Priority fees above the base fee remain the
-relayer's own cost.
+relayer's own cost, so the endpoint prices them and refuses to sign above
+`SPONSOR_MAX_PRIORITY_FEE_LAMPORTS` (100,000 by default); a sponsored transaction
+names a compute-unit limit so a wallet adds no price of its own.
 
 | Who | Pays | Ends up with |
 | --- | --- | --- |
@@ -423,8 +425,10 @@ sponsored this way — the buyer's own lamports are the payment.
 
 A budget payment is the same ledger with the pot in place of the wallet: the pot
 pays exactly the price, and a float fronts the temporary rents and is reimbursed
-inside the same transaction. In SOL the session key carries the whole 30,000,000
-lamports (`Config::session_fee_float`). In a token the budget account holds its
+inside the same transaction. In SOL the session key carries
+`Config::session_fee_float`, set by the admin with `pnpm config:float`; the
+program's floor is one payment's two rents plus its signature, 3,721,640
+lamports, and devnet runs at that floor. In a token the budget account holds its
 own rent and nothing more: the session key fronts the invoice and receipt rents
 and the fee out of `SESSION_FEE_FLOAT` (12,000,000), and the treasury pool
 refunds the two records in the same transaction, so a payment costs the float

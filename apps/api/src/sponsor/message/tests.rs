@@ -120,6 +120,41 @@ fn reordered(message: &VersionedMessage) -> VersionedMessage {
     })
 }
 
+/// What a wallet hands back after signing: the same settlement plus the two
+/// instructions Phantom adds when the transaction carries neither — a 200,000
+/// unit limit and a 1,000 micro-lamport price.
+fn with_wallet_priority_fee(message: &VersionedMessage) -> VersionedMessage {
+    let mut out = reordered(message);
+    let budget = compute_budget_program();
+    let message = v0_of(&mut out);
+    message.account_keys.push(budget);
+    // The key is read-only and unsigned: raising both counts keeps every other
+    // key in the group it was in.
+    message.header.num_readonly_unsigned_accounts += 1;
+    let program_id_index = (message.account_keys.len() - 1) as u8;
+    let limit = CompiledInstruction {
+        program_id_index,
+        accounts: vec![],
+        data: {
+            let mut data = vec![2u8];
+            data.extend_from_slice(&200_000u32.to_le_bytes());
+            data
+        },
+    };
+    let price = CompiledInstruction {
+        program_id_index,
+        accounts: vec![],
+        data: {
+            let mut data = vec![3u8];
+            data.extend_from_slice(&1_000u64.to_le_bytes());
+            data
+        },
+    };
+    message.instructions.insert(0, limit);
+    message.instructions.insert(1, price);
+    out
+}
+
 fn v0_of(message: &mut VersionedMessage) -> &mut v0::Message {
     match message {
         VersionedMessage::V0(message) => message,
@@ -148,6 +183,68 @@ fn the_same_settlement_in_another_account_order_is_accepted() {
     };
     let ours = expected_message(&sol, &sponsor, Hash::default()).unwrap();
     assert!(same_settlement(&ours, &reordered(&ours)));
+}
+
+/// The second compiler to touch a sponsored settle is the wallet itself. Phantom
+/// adds a compute-unit limit and a priority price to anything that carries
+/// neither, so the message that comes back is the settlement plus two
+/// instructions and one key — and a comparison that counts either refuses a
+/// settlement nobody disputes.
+#[test]
+fn the_settlement_plus_a_wallet_priority_fee_is_still_the_settlement() {
+    let sponsor = Pubkey::new_from_array([9; 32]);
+    let ours = expected_message(&params("flat white"), &sponsor, Hash::default()).unwrap();
+    let theirs = with_wallet_priority_fee(&ours);
+
+    assert_ne!(
+        message_bytes(&ours).unwrap(),
+        message_bytes(&theirs).unwrap()
+    );
+    assert!(same_settlement(&ours, &theirs));
+    // 1,000 micro-lamports over 200,000 units is 200 lamports, which the
+    // endpoint compares with its own cap.
+    assert_eq!(priority_fee_lamports(&theirs), 200);
+    assert_eq!(priority_fee_lamports(&ours), 0);
+
+    // A price with no limit is priced against the runtime's own default.
+    let mut price_only = with_wallet_priority_fee(&ours);
+    let message = v0_of(&mut price_only);
+    message.instructions.remove(0);
+    v0_of(&mut price_only).instructions[0].data[1..9].copy_from_slice(&10_000u64.to_le_bytes());
+    assert!(same_settlement(&ours, &price_only));
+    assert_eq!(priority_fee_lamports(&price_only), 2_000);
+}
+
+/// The tolerance is for fee instructions and nothing else: an extra account on
+/// one, an instruction from another program, or a third instruction the
+/// settlement does not have is still a different transaction.
+#[test]
+fn only_a_priced_compute_budget_instruction_is_tolerated() {
+    let sponsor = Pubkey::new_from_array([9; 32]);
+    let ours = expected_message(&params("flat white"), &sponsor, Hash::default()).unwrap();
+
+    // A compute-budget instruction that names an account.
+    let mut other = with_wallet_priority_fee(&ours);
+    v0_of(&mut other).instructions[0].accounts.push(0);
+    assert!(!same_settlement(&ours, &other));
+
+    // A compute-budget instruction of a shape this module cannot price.
+    let mut other = with_wallet_priority_fee(&ours);
+    v0_of(&mut other).instructions[1].data = vec![3, 1, 2];
+    assert!(!same_settlement(&ours, &other));
+
+    // An extra instruction from another program: its key is not in ours.
+    let mut other = with_wallet_priority_fee(&ours);
+    let foreign = Pubkey::new_from_array([4; 32]);
+    v0_of(&mut other).account_keys.push(foreign);
+    v0_of(&mut other).header.num_readonly_unsigned_accounts += 1;
+    let program_id_index = (v0_of(&mut other).account_keys.len() - 1) as u8;
+    v0_of(&mut other).instructions.push(CompiledInstruction {
+        program_id_index,
+        accounts: vec![],
+        data: vec![9],
+    });
+    assert!(!same_settlement(&ours, &other));
 }
 
 #[test]

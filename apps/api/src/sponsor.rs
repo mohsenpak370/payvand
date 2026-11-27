@@ -7,11 +7,18 @@
 //! request's parameters — `settle_token_payment` with the invoice, the receipt,
 //! the three token accounts, `Config` and the treasury, or `settle_payment` with
 //! the invoice, the receipt, `Config` and the treasury when the request names no
-//! mint — plus the sponsor's own account and, when the invoice was priced by a
-//! shop, that shop's policy as the trailing optional account. Only if that
-//! message is byte-for-byte the one the buyer signed does it add its fee-payer
-//! signature and submit. A different instruction, account, amount or mint is a
-//! mismatch, and a mismatch is refused before anything is signed.
+//! mint — plus the sponsor's own account. Only if that message asks the chain for
+//! the same thing the buyer signed does it add its fee-payer signature and
+//! submit. A different instruction, account, amount or mint is a mismatch, and a
+//! mismatch is refused before anything is signed.
+//!
+//! The comparison is over meaning, not bytes: the client's compiler and this
+//! one order a version 0 message's accounts differently, and the wallet is a
+//! second compiler — Phantom adds its own compute-unit limit and priority price
+//! at signing time. Those two are tolerated because they name no account and set
+//! no state; the priority fee they cost is the sponsor's money, so the endpoint
+//! prices it (`SPONSOR_MAX_PRIORITY_FEE_LAMPORTS`, 100,000 by default) and
+//! refuses anything above that.
 //!
 //! The program routes the treasury's refund of both rents back to the sponsor
 //! (`plans/0004-relayer-sponsored-fees.md`), so a sponsored settlement is not a

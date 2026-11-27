@@ -13,10 +13,12 @@ use crate::payments::{bad, resolve_endpoint, ApiError, ApiResult};
 use crate::AppState;
 
 use super::diagnostics::{first_difference, logged, mint_label, shape};
-use super::message::{expected_message, message_bytes, same_settlement};
+use super::message::{expected_message, message_bytes, priority_fee_lamports, same_settlement};
 use super::model::{InfoQuery, InfoResponse, SettleRequest, SettleResponse};
 use super::params::Params;
-use super::relayer::{cap_from_env, sponsor_keypair, unavailable, SPONSORED_LAMPORTS};
+use super::relayer::{
+    cap_from_env, max_priority_fee, sponsor_keypair, unavailable, SPONSORED_LAMPORTS,
+};
 use super::store::{recent_count, record};
 
 /// What the client needs before it builds anything: whether a sponsor exists,
@@ -190,6 +192,24 @@ pub async fn settle(
         );
         return Err(bad(
             "This transaction is not the settlement this invoice is priced at.",
+        ));
+    }
+
+    // The buyer's wallet may have added its own priority fee, which the sponsor
+    // pays and the program never repays. A small one is the cost of sponsorship;
+    // an unbounded one is the caller spending the platform's money.
+    let priority_fee = priority_fee_lamports(&transaction.message);
+    let cap = max_priority_fee();
+    if priority_fee > cap {
+        tracing::warn!(
+            cluster = %logged(&request.cluster),
+            buyer = %params.buyer,
+            priority_fee,
+            cap,
+            "a sponsored settle carried a priority fee above the cap"
+        );
+        return Err(bad(
+            "Your wallet added a priority fee this payment's sponsor does not cover. Turn the wallet's priority fee off, or add a little SOL and pay from the wallet.",
         ));
     }
 

@@ -1,9 +1,12 @@
 //! The one settle message the relayer will sign, rebuilt from the request's
 //! parameters rather than taken from the caller's transaction.
 
+use std::str::FromStr;
+
 use sha2::{Digest, Sha256};
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
+use solana_sdk::message::compiled_instruction::CompiledInstruction;
 use solana_sdk::message::{v0, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
 
@@ -132,6 +135,76 @@ pub(super) fn expected_message(
     Ok(VersionedMessage::V0(message))
 }
 
+/// The Compute Budget program, where a wallet's own fee instructions live.
+///
+/// Phantom (and some other wallets) adds two of them at signing time to any
+/// transaction that carries neither: a compute-unit limit and a priority-fee
+/// price. They name no account and set no state, so they cannot move a lamport —
+/// but they do change the message, and whoever pays the fee pays the price.
+pub(super) fn compute_budget_program() -> Pubkey {
+    Pubkey::from_str("ComputeBudget111111111111111111111111111111")
+        .expect("the compute budget id parses")
+}
+
+/// The limit a transaction runs under when it sets none, which is what a
+/// priority fee is priced against.
+const DEFAULT_COMPUTE_UNITS: u64 = 200_000;
+
+/// `setComputeUnitLimit` (discriminator 2, a `u32`) and `setComputeUnitPrice`
+/// (discriminator 3, micro-lamports per unit) — the only two compute-budget
+/// instructions this module will price. Anything else the wallet put there is a
+/// shape it does not know, so the comparison refuses it rather than signing it.
+enum BudgetSetter {
+    Limit(u64),
+    Price(u64),
+}
+
+fn budget_setter(instruction: &CompiledInstruction) -> Option<BudgetSetter> {
+    match (instruction.data.first().copied()?, instruction.data.len()) {
+        (2, 5) => Some(BudgetSetter::Limit(u64::from(u32::from_le_bytes(
+            instruction.data[1..5].try_into().ok()?,
+        )))),
+        (3, 9) => Some(BudgetSetter::Price(u64::from_le_bytes(
+            instruction.data[1..9].try_into().ok()?,
+        ))),
+        _ => None,
+    }
+}
+
+/// What the wallet's own compute-budget instructions cost the fee payer, in
+/// lamports: the price per unit times the limit (the default when the wallet
+/// set none). Zero when the message carries none.
+///
+/// The sponsor pays the transaction's fee and is repaid the policy's network fee
+/// and the two rents, so a priority fee is money it does not get back. The
+/// endpoint refuses anything above its cap instead of signing it blind.
+pub(super) fn priority_fee_lamports(message: &VersionedMessage) -> u64 {
+    let VersionedMessage::V0(message) = message else {
+        return 0;
+    };
+    let program = compute_budget_program();
+    let mut limit = None;
+    let mut price = 0u64;
+    for instruction in &message.instructions {
+        let named = message
+            .account_keys
+            .get(usize::from(instruction.program_id_index));
+        if named != Some(&program) || !instruction.accounts.is_empty() {
+            continue;
+        }
+        match budget_setter(instruction) {
+            Some(BudgetSetter::Limit(units)) => limit = Some(units),
+            Some(BudgetSetter::Price(micros)) => price = price.saturating_add(micros),
+            None => {}
+        }
+    }
+    let units = limit.unwrap_or(DEFAULT_COMPUTE_UNITS);
+    // Round up: the runtime charges a whole lamport for any fraction of one.
+    (price as u128 * units as u128)
+        .div_ceil(1_000_000)
+        .min(u128::from(u64::MAX)) as u64
+}
+
 /// What a version 0 message asks of one of its static accounts — whether it
 /// must sign and whether it is locked writable — read from the header alone, the
 /// same way the runtime reads it.
@@ -152,32 +225,58 @@ fn role(message: &v0::Message, index: usize) -> (bool, bool) {
 
 /// Whether the buyer's message asks the chain for exactly what the rebuilt one
 /// does: the same fee payer, the same accounts each with the same role, and the
-/// same instructions over them — the same program, account list and data.
+/// same settlement over them — the same program, account list and data.
 ///
 /// Bytes are the wrong test. A version 0 message lists its accounts in an order
 /// its compiler chooses within each role, and the web client's compiler (Kit)
 /// sorts them by their base58 text while `solana-sdk` sorts them by their bytes:
 /// the same settlement then serializes differently and a byte match refuses
-/// nearly every one. Nothing the order changes is something the chain acts on,
-/// so the comparison is over meaning, and every other part of the message —
-/// header, blockhash, lookups, key count — still has to match exactly.
+/// nearly every one.
+///
+/// A wallet is the second compiler to touch the message: Phantom adds its own
+/// compute-unit limit and priority price to any transaction that carries
+/// neither, at the moment it signs, so a message the settlement matches exactly
+/// can still arrive with two instructions and the program's key that ours never
+/// had. Dropping those from the comparison is safe because neither names an
+/// account nor sets state, and `priority_fee_lamports` prices them for the
+/// endpoint's cap. Everything else — the blockhash, the lookups, the settle
+/// instruction, its account order, every other key's role — still has to match.
 pub(super) fn same_settlement(ours: &VersionedMessage, theirs: &VersionedMessage) -> bool {
     let (VersionedMessage::V0(ours), VersionedMessage::V0(theirs)) = (ours, theirs) else {
         return false;
     };
-    if ours.header != theirs.header
-        || ours.recent_blockhash != theirs.recent_blockhash
+    if ours.recent_blockhash != theirs.recent_blockhash
         || !ours.address_table_lookups.is_empty()
         || !theirs.address_table_lookups.is_empty()
-        || ours.account_keys.len() != theirs.account_keys.len()
-        || ours.instructions.len() != theirs.instructions.len()
         || ours.account_keys.first() != theirs.account_keys.first()
     {
         return false;
     }
 
-    // Every key of theirs is one of ours, once, in the same role. With equal
-    // lengths and our keys distinct, that makes the two key sets the same.
+    let budget = compute_budget_program();
+    // The wallet's own fee instructions: no accounts, and one of the two shapes
+    // this module can price. Anything else is not a difference we can read, so
+    // it stays in the list the settlement must match.
+    let settles: Vec<&CompiledInstruction> = theirs
+        .instructions
+        .iter()
+        .filter(|instruction| {
+            let named = theirs
+                .account_keys
+                .get(usize::from(instruction.program_id_index));
+            if named == Some(&budget) && instruction.accounts.is_empty() {
+                return budget_setter(instruction).is_none();
+            }
+            true
+        })
+        .collect();
+    if ours.instructions.len() != settles.len() {
+        return false;
+    }
+
+    // Every key of theirs is one of ours, once, in the same role. The wallet's
+    // compute-budget program key is the only key allowed to be extra, and it is
+    // only extra when a priced instruction above named it.
     let index: std::collections::HashMap<&Pubkey, usize> = ours
         .account_keys
         .iter()
@@ -187,11 +286,18 @@ pub(super) fn same_settlement(ours: &VersionedMessage, theirs: &VersionedMessage
     let mut seen = std::collections::HashSet::new();
     for (position, key) in theirs.account_keys.iter().enumerate() {
         let Some(&mine) = index.get(key) else {
+            if *key == budget {
+                continue;
+            }
             return false;
         };
         if !seen.insert(key) || role(ours, mine) != role(theirs, position) {
             return false;
         }
+    }
+    // Ours has no key theirs lacks: equal lengths counted after the one extra.
+    if seen.len() != ours.account_keys.len() {
+        return false;
     }
 
     let key = |message: &v0::Message, position: u8| -> Option<Pubkey> {
@@ -199,7 +305,7 @@ pub(super) fn same_settlement(ours: &VersionedMessage, theirs: &VersionedMessage
     };
     ours.instructions
         .iter()
-        .zip(theirs.instructions.iter())
+        .zip(settles.iter())
         .all(|(mine, other)| {
             mine.data == other.data
                 && mine.accounts.len() == other.accounts.len()

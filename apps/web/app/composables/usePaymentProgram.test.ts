@@ -1,7 +1,12 @@
 import { address, type Address } from '@vue-solana/nuxt/kit'
 import { describe, expect, it } from 'vitest'
 import idl from '~/assets/payvand.idl.json'
-import { TOKEN_PROGRAM_ID, buildInstruction } from './usePaymentProgram'
+import {
+  COMPUTE_BUDGET_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  buildInstruction,
+  computeUnitLimitInstruction
+} from './usePaymentProgram'
 
 /**
  * The settle paths take no optional account since the per-shop fee feature was
@@ -33,6 +38,22 @@ function settleAccounts() {
     sponsor: payer
   }
 }
+
+describe('computeUnitLimitInstruction', () => {
+  /**
+   * A sponsored settle carries this so the wallet adds no budget of its own:
+   * Phantom appends a compute-unit limit *and* a priority price to any
+   * transaction that has neither, and that price is the relayer's money. The
+   * bytes are the program's: discriminator 2, then the limit as a `u32`.
+   */
+  it('asks for 200,000 units and names no account', () => {
+    const instruction = computeUnitLimitInstruction()
+
+    expect(instruction.programAddress).toBe(COMPUTE_BUDGET_PROGRAM_ID)
+    expect(instruction.accounts).toEqual([])
+    expect(Array.from(instruction.data!)).toEqual([2, 0x40, 0x0d, 0x03, 0x00])
+  })
+})
 
 describe('buildInstruction', () => {
   it('builds the settle account list in the IDL order, sponsor last', () => {
