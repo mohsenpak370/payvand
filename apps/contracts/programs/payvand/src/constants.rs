@@ -102,16 +102,6 @@ pub const FEE_ANCHOR_SEED: &[u8] = b"fee-anchor";
 /// `8` (discriminator) + `8` (USD micros) + `8` (EUR micros) + `1` (bump).
 pub const FEE_ANCHOR_SPACE: usize = 8 + 8 + 8 + 1;
 
-/// Seed prefix for a shop's fee multiplier: `["shop-policy", seller, shop_key]`,
-/// where `shop_key` is the address the API stores beside its `shops` row. The
-/// seller in the seeds is what keeps two sellers' shops apart even if one learns
-/// the other's key.
-pub const SHOP_POLICY_SEED: &[u8] = b"shop-policy";
-/// `8` (discriminator) + `32 + 32 + 2 + 1` (seller, shop key, multiplier, bump).
-pub const SHOP_POLICY_SPACE: usize = 8 + 32 + 32 + 2 + 1;
-/// The multiplier that means "`Config`'s rate, unchanged".
-pub const SHOP_FEE_BASE_BPS: u16 = 10_000;
-
 /// Micro-units in one whole currency unit. A price arrives as `micros` per
 /// SOL — 61_990_000 for €61.99 — and a flat is that price times the marker's
 /// rent in SOL, in the mint's own base units.
@@ -130,9 +120,8 @@ pub const MAX_SOL_PRICE_MICROS: u64 = 10_000 * 1_000_000;
 /// makes the fee behave like a rate for the everyday and like a flat cost for the
 /// unusual, so a high-volume payment is never punished for being large.
 ///
-/// It bounds the fee actually charged, after the rate, the shop's multiplier and
-/// the marker's rent have all had their say, so no combination of them can carry
-/// the fee past this.
+/// It bounds the fee actually charged, after the rate and the marker's rent have
+/// had their say, so neither can carry the fee past this.
 pub const MAX_SOL_FEE_LAMPORTS: u64 = 100_000_000;
 
 /// The same ceiling in each token currency's base units: 10 USDC or 10 EURC.

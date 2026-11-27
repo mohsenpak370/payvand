@@ -11,7 +11,6 @@
 //! - `events` — the structured events emitted beside the `msg!` logs
 //! - `helpers` — the calendar month, and token invoice bookkeeping
 //! - `instructions::config` — the fee policy, its price anchor and the treasury
-//! - `instructions::shop` — a shop's multiplier on the global fee policy
 //! - `instructions::sol` — SOL invoices and the SOL allowance
 //! - `instructions::token` — SPL token invoices and per-mint allowances
 
@@ -33,7 +32,6 @@ pub use state::*;
 // beside them have to be reachable from the crate root, where `#[program]`
 // looks them up.
 pub use instructions::config::*;
-pub use instructions::shop::*;
 pub use instructions::sol::*;
 pub use instructions::token::*;
 
@@ -100,21 +98,6 @@ pub mod payvand {
     /// `set_fee_price_anchor` prices them.
     pub fn migrate_config(ctx: Context<MigrateConfig>, policy: FeePolicy) -> Result<()> {
         instructions::config::migrate_config_handler(ctx, policy)
-    }
-
-    /// Sets a shop's multiplier on the global fee policy — its own rate, in
-    /// basis points on `Config`'s two rates, `10_000` being `Config` unchanged.
-    ///
-    /// Signed by the seller and seeded by the seller plus the key the API keeps
-    /// beside its `shops` row, so a shop is priced on chain by the wallet that
-    /// owns it and two shops of one wallet can charge differently. The cap is
-    /// enforced here rather than at settle time: a shop may discount itself and
-    /// never surcharge a buyer, and no settlement has an out-of-band rate to
-    /// handle. The account is optional on every settle path — an invoice that
-    /// names none pays `Config`'s rate, which is what keeps every QR printed
-    /// before this landed working.
-    pub fn set_shop_policy(ctx: Context<SetShopPolicy>, multiplier_bps: u16) -> Result<()> {
-        instructions::shop::set_shop_policy_handler(ctx, multiplier_bps)
     }
 
     /// Moves treasury surplus to the admin. It always leaves the account's

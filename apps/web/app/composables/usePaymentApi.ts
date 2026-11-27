@@ -106,12 +106,6 @@ export interface SponsoredSettleInput {
   mint: string
   amount: number
   memo: string
-  /**
-   * The shop's `ShopPolicy`, when the invoice was priced by one. The relayer
-   * rebuilds the settle message with it as its trailing account, so omitting it
-   * for a shop invoice means the rebuild is a slot short and is refused.
-   */
-  shopPolicy?: string
   cluster: string
   endpoint?: string
 }

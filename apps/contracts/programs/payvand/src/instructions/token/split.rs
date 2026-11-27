@@ -12,8 +12,8 @@ use anchor_lang::prelude::*;
 
 use crate::constants::*;
 use crate::errors::PaymentError;
-use crate::helpers::{fee_for_signatures, shop_multiplier};
-use crate::state::{Config, FeeMode, ShopPolicy};
+use crate::helpers::fee_for_signatures;
+use crate::state::{Config, FeeMode};
 
 /// The price's destinations, and what the pool hands back for them.
 pub(crate) struct TokenSplit {
@@ -32,8 +32,6 @@ pub(crate) fn token_split(
     config: &Config,
     amount: u64,
     mint: &Pubkey,
-    shop_policy: Option<&ShopPolicy>,
-    seller: &Pubkey,
     signatures: u64,
 ) -> Result<TokenSplit> {
     // Same policy as the SOL paths: nothing but `SellerPays` is settled.
@@ -44,17 +42,7 @@ pub(crate) fn token_split(
 
     let payment_rent = Rent::get()?.minimum_balance(TOKEN_PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
-    // The shop's rate when the invoice names a policy of its own seller, and
-    // `Config`'s otherwise.
-    let multiplier = shop_multiplier(shop_policy, seller)?;
-    let fee = fee_for_signatures(
-        config,
-        amount,
-        Some(mint),
-        receipt_rent,
-        multiplier,
-        signatures,
-    )?;
+    let fee = fee_for_signatures(config, amount, Some(mint), receipt_rent, signatures)?;
     // The seller must still receive something. The `amount - 1` cap in the fee
     // makes this hold at any `fee_bps`; the guard says so out loud.
     require!(amount > fee, PaymentError::InvoiceTooSmall);

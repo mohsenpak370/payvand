@@ -44,8 +44,7 @@ use payvand::constants::{
     CONFIG_SPACE_V3, CONFIG_VERSION, FEE_ANCHOR_SEED, FLATS_REFRESH_SECS, MAX_NETWORK_FEE_LAMPORTS,
     MAX_SOL_FEE_LAMPORTS, MAX_TOKEN_FEE_BASE_UNITS, MIN_SESSION_FEE_FLOAT, PAYMENT_MAX_MEMO,
     PAYMENT_RECEIPT_SEED, PAYMENT_RECEIPT_SPACE, PAYMENT_SEED, PAYMENT_SPACE,
-    PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, SHOP_POLICY_SEED, SHOP_POLICY_SPACE,
-    TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
+    PRICE_ANCHOR_BAND_BPS, TREASURY_RESERVE_SETTLEMENTS, TREASURY_SEED,
 };
 use payvand::constants::{
     SESSION_FEE_FLOAT, TOKEN_BUDGET_SEED, TOKEN_BUDGET_SPACE, TOKEN_PAYMENT_SEED,
@@ -54,8 +53,8 @@ use payvand::constants::{
 use payvand::events::{BudgetOpened, ConfigUpdated, PaymentSettled};
 use payvand::helpers::{fee_for, fee_for_signatures};
 use payvand::state::{
-    Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, ShopPolicy,
-    TokenBudget, TokenPayment,
+    Budget, Config, FeeMode, FeePolicy, Payment, PaymentReceipt, PaymentState, TokenBudget,
+    TokenPayment,
 };
 use sha2::{Digest, Sha256};
 use solana_account::Account;
@@ -100,12 +99,6 @@ const INVALID_CONFIG_VERSION: &str = "Custom(6018)";
 const INVALID_FEE_PRICE: &str = "Custom(6019)";
 /// `PaymentError::FeePriceTooSoon`.
 const FEE_PRICE_TOO_SOON: &str = "Custom(6020)";
-/// `PaymentError::ShopFeeTooHigh`: a shop's multiplier above `10_000`, refused
-/// when it is written rather than when it settles.
-const SHOP_FEE_TOO_HIGH: &str = "Custom(6021)";
-/// `PaymentError::ShopPolicySellerMismatch`: a shop policy recorded under a
-/// seller other than the invoice's.
-const SHOP_POLICY_SELLER_MISMATCH: &str = "Custom(6022)";
 /// `PaymentError::InvalidNetworkFee`: a policy whose network fee is larger than
 /// the program will reimburse.
 const INVALID_NETWORK_FEE: &str = "Custom(6023)";
@@ -1286,75 +1279,6 @@ async fn config(context: &ProgramTestContext, address: Pubkey) -> Config {
         .await
         .expect("config account missing");
     Config::try_deserialize(&mut account.data.as_slice()).expect("config did not decode")
-}
-
-async fn shop_policy(context: &ProgramTestContext, address: Pubkey) -> ShopPolicy {
-    let account = account(context, address)
-        .await
-        .expect("shop policy account missing");
-    ShopPolicy::try_deserialize(&mut account.data.as_slice()).expect("shop policy did not decode")
-}
-
-/// `["shop-policy", seller, shop_key]`: one account per shop, so two shops of
-/// one seller are two policies.
-fn shop_policy_pda(seller: &Pubkey, shop_key: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(
-        &[SHOP_POLICY_SEED, seller.as_ref(), shop_key.as_ref()],
-        &payvand::id(),
-    )
-    .0
-}
-
-/// `set_shop_policy`, in the account order the program declares them.
-fn set_shop_policy_instruction(
-    seller: Pubkey,
-    shop_key: Pubkey,
-    multiplier_bps: u16,
-) -> Instruction {
-    Instruction {
-        program_id: payvand::id(),
-        accounts: vec![
-            AccountMeta::new(seller, true),
-            AccountMeta::new_readonly(shop_key, false),
-            AccountMeta::new(shop_policy_pda(&seller, &shop_key), false),
-            AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
-        ],
-        data: instruction_data("set_shop_policy", &multiplier_bps.to_le_bytes()),
-    }
-}
-
-/// The same instruction with a caller-chosen account in the policy slot, so a
-/// test can prove the seeds refuse a stand-in.
-fn set_shop_policy_instruction_to(
-    seller: Pubkey,
-    shop_key: Pubkey,
-    shop_policy: Pubkey,
-    multiplier_bps: u16,
-) -> Instruction {
-    let mut instruction = set_shop_policy_instruction(seller, shop_key, multiplier_bps);
-    instruction.accounts[2] = AccountMeta::new(shop_policy, false);
-    instruction
-}
-
-/// A settle instruction with a shop's policy appended as the trailing optional
-/// account the four settle paths take. The builders above leave it off, which is
-/// what an invoice with no shop — or one printed before shop rates existed —
-/// sends: no account at all, and `Config`'s rate.
-fn with_shop_policy(mut instruction: Instruction, shop_policy: Pubkey) -> Instruction {
-    instruction
-        .accounts
-        .push(AccountMeta::new_readonly(shop_policy, false));
-    instruction
-}
-
-/// The seller-side fee on a token path at a shop's multiplier: the same
-/// arithmetic `fee_for` does, with the percentage scaled before the flat's
-/// comparison. The flat is `TEST_FIXED_FEE`, which the default test policy keeps
-/// at zero, so the larger of the two is the scaled percentage.
-fn token_fee_at(amount: u64, multiplier_bps: u16) -> u64 {
-    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    let scaled = (proportional as u128 * multiplier_bps as u128 / 10_000) as u64;
-    scaled.min(MAX_TOKEN_FEE_BASE_UNITS).min(amount - 1)
 }
 
 /// What `init` puts in a receipt account. The payer fronts it and the seller
@@ -2609,49 +2533,10 @@ async fn buyer_pays_policy_is_rejected_before_it_is_implemented() {
     );
 }
 
-/// A shop's multiplier scales the rate and nothing else: half is half of the
-/// percentage, zero charges no percentage at all, and the boundaries, the
-/// marker's flat and the `amount - 1` cap are `Config`'s. That is what lets a
-/// shop discount itself without moving the record's cost onto the treasury — on
-/// a token invoice a free shop still pays the flat, and on SOL it pays nothing
-/// because its seller already hands over the rent.
-#[test]
-fn a_shop_multiplier_scales_the_rate_and_never_the_record() {
-    let rent = receipt_rent();
-    let flat = 89_400u64;
-    let policy = test_policy(TEST_FEE_BPS, flat);
-    let amount = 10_000_000; // 10 USDC: 2% is 200,000, above the flat.
-
-    let full = fee_for(&policy, amount, Some(&usdc_mint()), rent, SHOP_FEE_BASE_BPS).expect("fits");
-    assert_eq!(
-        fee_for(&policy, amount, Some(&usdc_mint()), rent, 5_000).expect("fits"),
-        full / 2
-    );
-    // Free of the percentage, but not of the record.
-    assert_eq!(
-        fee_for(&policy, amount, Some(&usdc_mint()), rent, 0).expect("fits"),
-        flat
-    );
-
-    let sol_amount = 1_000_000_000;
-    let sol_full = fee_for(&policy, sol_amount, None, rent, SHOP_FEE_BASE_BPS).expect("fits");
-    // 2% of 1 SOL is 20,000,000; at half it is 10,000,000, still less the rent.
-    assert_eq!(
-        fee_for(&policy, sol_amount, None, rent, 5_000).expect("fits"),
-        10_000_000 - rent
-    );
-    assert!(sol_full > 10_000_000 - rent);
-    assert_eq!(
-        fee_for(&policy, sol_amount, None, rent, 0).expect("fits"),
-        0
-    );
-}
-
 /// The percentage has a ceiling in every currency: a large invoice pays at most
 /// 0.1 SOL, 10 USDC or 10 EURC. Without it the rate would keep scaling with the
 /// price, so a 10 SOL sale would cost 0.2 SOL at 2% however routine the work is.
-/// The ceiling is the program's, so a shop's multiplier can lower the rate but
-/// no policy can raise the maximum.
+/// The ceiling is the program's: no rate in a policy can raise it.
 #[test]
 fn the_fee_has_a_ceiling_in_every_currency() {
     let rent = receipt_rent();
@@ -2660,59 +2545,38 @@ fn the_fee_has_a_ceiling_in_every_currency() {
     // 10 SOL at 2% is 0.2 SOL; the ceiling takes it to 0.1 SOL exactly.
     let sol_amount = 10 * LAMPORTS_PER_SOL;
     assert_eq!(
-        fee_for(&policy, sol_amount, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, sol_amount, None, rent).expect("fits"),
         MAX_SOL_FEE_LAMPORTS
     );
     // Below the ceiling the rate is untouched: 1 SOL still costs 2% less the
     // record rent its seller already paid.
     assert_eq!(
-        fee_for(&policy, LAMPORTS_PER_SOL, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, LAMPORTS_PER_SOL, None, rent).expect("fits"),
         20_000_000 - rent
     );
 
     // 1,000 USDC or EURC at 2% is 20 units; ten is the most either pays.
     let token_amount = 1_000_000_000u64;
     assert_eq!(
-        fee_for(
-            &policy,
-            token_amount,
-            Some(&usdc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, token_amount, Some(&usdc_mint()), rent,).expect("fits"),
         MAX_TOKEN_FEE_BASE_UNITS
     );
     assert_eq!(
-        fee_for(
-            &policy,
-            token_amount,
-            Some(&eurc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, token_amount, Some(&eurc_mint()), rent,).expect("fits"),
         MAX_TOKEN_FEE_BASE_UNITS
     );
 
-    // Halving the rate on 40 SOL still lands on the ceiling: 0.4 SOL of fee is
-    // over it whatever the multiplier did on the way there.
+    // 40 SOL at any rate above 0.25% lands on the ceiling: 0.4 SOL of fee is
+    // over it whatever the rate did on the way there.
     assert_eq!(
-        fee_for(&policy, 40 * LAMPORTS_PER_SOL, None, rent, 5_000).expect("fits"),
+        fee_for(&policy, 40 * LAMPORTS_PER_SOL, None, rent).expect("fits"),
         MAX_SOL_FEE_LAMPORTS
     );
 
     // A whole-invoice rate on 1 SOL reaches it too, so the ceiling is the cap in
     // a live policy's whole range, not only above the two rates' usual sizes.
     assert_eq!(
-        fee_for(
-            &test_policy(10_000, 89_400),
-            LAMPORTS_PER_SOL,
-            None,
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&test_policy(10_000, 89_400), LAMPORTS_PER_SOL, None, rent,).expect("fits"),
         MAX_SOL_FEE_LAMPORTS
     );
 }
@@ -2733,68 +2597,37 @@ fn the_record_fee_is_the_floor_of_the_fee() {
     // 1 token: 2% is 20,000 base units, under the rent. 100,000,000 lamports:
     // 2% is 2,000,000, still under it at 1,224,960.
     assert_eq!(
-        fee_for(
-            &policy,
-            1_000_000,
-            Some(&usdc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, 1_000_000, Some(&usdc_mint()), rent,).expect("fits"),
         flat
     );
-    assert_eq!(
-        fee_for(&policy, 50_000_000, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
-        0
-    );
+    assert_eq!(fee_for(&policy, 50_000_000, None, rent).expect("fits"), 0);
 
     // Above the crossover the rate is the larger share, and the SOL side takes
     // the rent off it because the seller pays that rent separately.
     assert_eq!(
-        fee_for(
-            &policy,
-            10_000_000,
-            Some(&usdc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, 10_000_000, Some(&usdc_mint()), rent,).expect("fits"),
         200_000
     );
     assert_eq!(
-        fee_for(
-            &policy,
-            10_000_000,
-            Some(&eurc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, 10_000_000, Some(&eurc_mint()), rent,).expect("fits"),
         200_000
     );
     assert_eq!(
-        fee_for(&policy, 1_000_000_000, None, rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 1_000_000_000, None, rent).expect("fits"),
         20_000_000 - rent
     );
 
     // A mint that is neither currency has no flat to pay, so it keeps the rate.
     let other = Pubkey::new_from_array([3u8; 32]);
     assert_eq!(
-        fee_for(&policy, 1_000_000, Some(&other), rent, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 1_000_000, Some(&other), rent).expect("fits"),
         20_000
     );
 
     // The cap still guards the small end: a 100% policy cannot take the price.
     let total = test_policy(10_000, 0);
     assert_eq!(
-        fee_for(
-            &total,
-            1_000_000,
-            Some(&usdc_mint()),
-            rent,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&total, 1_000_000, Some(&usdc_mint()), rent,).expect("fits"),
         999_999
     );
 }
@@ -2808,21 +2641,21 @@ fn the_tier_boundary_is_marginal() {
 
     // 1% up to and including the boundary.
     assert_eq!(
-        fee_for(&policy, 99_999_999, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 99_999_999, None, 0).expect("fits"),
         999_999
     );
     assert_eq!(
-        fee_for(&policy, 100_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 100_000_000, None, 0).expect("fits"),
         1_000_000
     );
     // One lamport past it owes 1% of 0.1 SOL plus 0.5% of that lamport, floored.
     assert_eq!(
-        fee_for(&policy, 100_000_001, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 100_000_001, None, 0).expect("fits"),
         1_000_000
     );
     // 0.2 SOL: 1,000,000 plus 0.5% of the second 0.1 SOL.
     assert_eq!(
-        fee_for(&policy, 200_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&policy, 200_000_000, None, 0).expect("fits"),
         1_500_000
     );
 
@@ -2830,25 +2663,11 @@ fn the_tier_boundary_is_marginal() {
     // is not added on top: it is a floor, and at these sizes the rate is above
     // it.
     assert_eq!(
-        fee_for(
-            &policy,
-            10_000_000,
-            Some(&usdc_mint()),
-            0,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, 10_000_000, Some(&usdc_mint()), 0,).expect("fits"),
         100_000
     );
     assert_eq!(
-        fee_for(
-            &policy,
-            20_000_000,
-            Some(&usdc_mint()),
-            0,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&policy, 20_000_000, Some(&usdc_mint()), 0,).expect("fits"),
         150_000
     );
 }
@@ -2868,31 +2687,24 @@ fn the_token_floor_is_the_record_rent_plus_the_network_fee() {
     // 2% of 1,000,000 is 20,000, below the 89,400 + 2,000 the record and the fee
     // cost, so the seller pays the costs and the protocol takes nothing.
     assert_eq!(
-        fee_for(&config, 1_000_000, Some(&usdc_mint()), 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&config, 1_000_000, Some(&usdc_mint()), 0).expect("fits"),
         91_400
     );
     // The EURC pair is its own: the same rent, its own fee.
     assert_eq!(
-        fee_for(&config, 1_000_000, Some(&eurc_mint()), 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&config, 1_000_000, Some(&eurc_mint()), 0).expect("fits"),
         91_200
     );
     // Ten units of the stablecoin: 2% is 200,000, above the floor, so the seller
     // pays the percentage and the costs come out of it.
     assert_eq!(
-        fee_for(
-            &config,
-            10_000_000,
-            Some(&usdc_mint()),
-            0,
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&config, 10_000_000, Some(&usdc_mint()), 0,).expect("fits"),
         200_000
     );
     // The SOL path's two costs are both lamports: the marker's rent comes off the
     // percentage and the network fee floors what is left.
     assert_eq!(
-        fee_for(&config, 10_000_000, None, 0, SHOP_FEE_BASE_BPS).expect("fits"),
+        fee_for(&config, 10_000_000, None, 0).expect("fits"),
         200_000
     );
     // With a rent the percentage cannot cover, the SOL fee is the network fee
@@ -2901,42 +2713,20 @@ fn the_token_floor_is_the_record_rent_plus_the_network_fee() {
     sol_policy.network_fee_lamports = 5_000;
     let sol_config = config_with_policy(sol_policy);
     assert_eq!(
-        fee_for(
-            &sol_config,
-            1_000_000,
-            None,
-            receipt_rent(),
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&sol_config, 1_000_000, None, receipt_rent(),).expect("fits"),
         5_000,
         "below the costs, the seller pays the network fee and no percentage"
     );
     // With a percentage that covers them, the fee is the percentage less the
     // marker's rent, and the platform keeps what the network fee leaves.
     assert_eq!(
-        fee_for(
-            &sol_config,
-            LAMPORTS_PER_SOL / 10,
-            None,
-            receipt_rent(),
-            SHOP_FEE_BASE_BPS
-        )
-        .expect("fits"),
+        fee_for(&sol_config, LAMPORTS_PER_SOL / 10, None, receipt_rent(),).expect("fits"),
         2_000_000 - receipt_rent()
     );
     // The policy names one signature, and a sponsored settle costs two: the
     // floor a relayer settlement charges (and refunds) is doubled, not guessed.
     assert_eq!(
-        fee_for_signatures(
-            &sol_config,
-            1_000_000,
-            None,
-            receipt_rent(),
-            SHOP_FEE_BASE_BPS,
-            2
-        )
-        .expect("fits"),
+        fee_for_signatures(&sol_config, 1_000_000, None, receipt_rent(), 2).expect("fits"),
         2 * 5_000
     );
 }
@@ -3644,21 +3434,15 @@ async fn zero_fee_policy_charges_no_fee() {
 #[test]
 fn fee_floors_rather_than_rounds_at_ninety_nine_lamports() {
     let policy = test_policy(TEST_FEE_BPS, 0);
-    let fee = fee_for(&policy, 99, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits in a u64");
+    let fee = fee_for(&policy, 99, None, 0).expect("the fee fits in a u64");
 
     assert_eq!(fee, 1, "2% of 99 floored is one lamport, not two");
     assert_eq!(99 - fee, 98);
 
     // A floor, not a rounding: 2% of 199 is 3.98 and still 3. The first amount
     // whose rate is a whole lamport is 100.
-    assert_eq!(
-        fee_for(&policy, 199, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits"),
-        3
-    );
-    assert_eq!(
-        fee_for(&policy, 100, None, 0, SHOP_FEE_BASE_BPS).expect("the fee fits"),
-        2
-    );
+    assert_eq!(fee_for(&policy, 199, None, 0).expect("the fee fits"), 3);
+    assert_eq!(fee_for(&policy, 100, None, 0).expect("the fee fits"), 2);
 }
 
 /// Task 1.6's cap on the SOL path, for an invoice the 0.1 SOL ceiling cannot
@@ -4135,14 +3919,6 @@ fn serialized_accounts_fit_their_space_constants() {
         version: CONFIG_VERSION,
     };
     assert_eq!(borsh_len(&config) + 8, CONFIG_SPACE);
-
-    let shop_policy = ShopPolicy {
-        seller: Pubkey::from(key),
-        shop_key: Pubkey::from(key),
-        multiplier_bps: 5_000,
-        bump: 255,
-    };
-    assert_eq!(borsh_len(&shop_policy) + 8, SHOP_POLICY_SPACE);
 }
 
 // The spaces are hand-written byte sums; a pin on the arithmetic catches a
@@ -4187,10 +3963,6 @@ fn account_spaces_match_the_sizes_used_by_the_program() {
     // The version 1 layout `migrate_config` upgrades from.
     assert_eq!(CONFIG_SPACE_V1, 8 + 32 + 2 + 8 + 1 + 8 + 1 + 1 + 1);
     assert_eq!(CONFIG_SPACE_V1, 62);
-
-    // seller, the shop key it is seeded by, the multiplier, the bump.
-    assert_eq!(SHOP_POLICY_SPACE, 8 + 32 + 32 + 2 + 1);
-    assert_eq!(SHOP_POLICY_SPACE, 75);
 }
 
 /// The config bootstrap reads the upgradeable loader's `ProgramData` metadata
@@ -6264,489 +6036,4 @@ async fn open_token_budget_emits_the_mint_and_the_limit() {
     assert_eq!(event.session_key, world.session.pubkey());
     assert_eq!(event.mint, world.mint);
     assert_eq!(event.monthly_limit, limit);
-}
-
-// ---------------------------------------------------------------------------
-// shop policies
-// ---------------------------------------------------------------------------
-
-/// The shop policy's layout is the space the setter allocates: the seller, the
-/// shop key the seeds carry, the multiplier and the bump — a shop's rate costs
-/// one 75-byte account and nothing else.
-#[test]
-fn shop_policy_layout_fits_its_space() {
-    let key = Pubkey::new_from_array([7u8; 32]);
-    let policy = ShopPolicy {
-        seller: key,
-        shop_key: Pubkey::new_from_array([8u8; 32]),
-        multiplier_bps: 5_000,
-        bump: 255,
-    };
-    assert_eq!(borsh_len(&policy) + 8, SHOP_POLICY_SPACE);
-}
-
-/// A seller writes its shop's rate, and the cap is enforced when it is written:
-/// `10_000` is `Config` unchanged and accepted, anything above it is refused by
-/// name and leaves nothing behind. A second write updates the same account, so
-/// changing a rate is one signature and no close in between.
-#[tokio::test]
-async fn set_shop_policy_writes_the_rate_and_refuses_one_above_the_cap() {
-    let mut context = started().await;
-    let seller = Keypair::new();
-    context.set_account(
-        &seller.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    let shop_key = Keypair::new().pubkey();
-    let policy_address = shop_policy_pda(&seller.pubkey(), &shop_key);
-
-    let over = send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            SHOP_FEE_BASE_BPS + 1,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect_err("a surcharge on buyers must not be writable");
-    assert!(
-        over.contains(SHOP_FEE_TOO_HIGH),
-        "expected {SHOP_FEE_TOO_HIGH}, got {over}"
-    );
-    assert!(
-        account(&context, policy_address).await.is_none(),
-        "a refused write must not leave the account behind"
-    );
-
-    // The account's address is derived from its seeds, so a caller cannot park
-    // a policy anywhere it likes.
-    let decoy = send(
-        &mut context,
-        &[set_shop_policy_instruction_to(
-            seller.pubkey(),
-            shop_key,
-            Keypair::new().pubkey(),
-            5_000,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect_err("the policy address is derived, not chosen");
-    assert!(
-        decoy.contains("Custom(2006)"),
-        "expected the seeds constraint, got {decoy}"
-    );
-
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            SHOP_FEE_BASE_BPS,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect("the cap itself is a valid rate");
-    let written = shop_policy(&context, policy_address).await;
-    assert_eq!(written.seller, seller.pubkey());
-    assert_eq!(written.shop_key, shop_key);
-    assert_eq!(written.multiplier_bps, SHOP_FEE_BASE_BPS);
-
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            2_500,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect("a rate change should land");
-    assert_eq!(
-        shop_policy(&context, policy_address).await.multiplier_bps,
-        2_500
-    );
-}
-
-/// The SOL wallet path takes the shop's rate: the seller keeps
-/// `amount - invoice rent - receipt rent - fee`, and `fee` is `Config`'s rate
-/// scaled by the shop's multiplier — half here, which is less than the full rate
-/// but more than the rent's floor.
-#[tokio::test]
-async fn the_sol_path_charges_the_shop_rate() {
-    let mut context = started().await;
-    let payer = context.payer.pubkey();
-    let seller = Keypair::new();
-    context.set_account(
-        &seller.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    let shop_key = Keypair::new().pubkey();
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            5_000,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect("set_shop_policy failed");
-
-    let reference = Keypair::new().pubkey();
-    let amount = LAMPORTS_PER_SOL / 5;
-    // Writing the policy is the seller's own cost: the 75-byte account's rent,
-    // and nothing else.
-    let seller_before = lamports(&context, seller.pubkey()).await;
-    assert_eq!(
-        seller_before,
-        LAMPORTS_PER_SOL / 10 - Rent::default().minimum_balance(SHOP_POLICY_SPACE)
-    );
-    send(
-        &mut context,
-        &[with_shop_policy(
-            settle_instruction(payer, seller.pubkey(), reference, amount, "shop"),
-            shop_policy_pda(&seller.pubkey(), &shop_key),
-        )],
-        &[],
-    )
-    .await
-    .expect("a SOL settle with a shop policy should succeed");
-
-    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    let half = (proportional as u128 * 5_000u128 / 10_000) as u64;
-    let fee_shop = half.saturating_sub(receipt_rent());
-    // The full rate would have charged more: the multiplier moved the fee.
-    assert!(fee(amount) > fee_shop);
-    // The invoice rent cancels — advanced from the payer, returned when the
-    // account closes to the seller — so the seller's gain is the price less the
-    // marker's rent, which they carry, and the shop's fee.
-    assert_eq!(
-        lamports(&context, seller.pubkey()).await - seller_before,
-        amount - receipt_rent() - fee_shop
-    );
-}
-
-/// Two shops under one seller, at different rates, for the same price: each
-/// invoice pays its own shop's fee, and a third with no policy at all pays
-/// `Config`'s — the fallback every QR printed before shop rates existed relies
-/// on. One seller, two rates, enforced on chain.
-#[tokio::test]
-async fn two_shops_of_one_seller_settle_at_their_own_rates() {
-    let (mut context, world) = TokenWorld::start().await;
-    let seller = Keypair::new();
-    context.set_account(
-        &seller.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
-
-    let half = Keypair::new().pubkey();
-    let fifth = Keypair::new().pubkey();
-    for (shop_key, multiplier_bps) in [(half, 5_000u16), (fifth, 2_000u16)] {
-        send(
-            &mut context,
-            &[set_shop_policy_instruction(
-                seller.pubkey(),
-                shop_key,
-                multiplier_bps,
-            )],
-            &[&seller],
-        )
-        .await
-        .expect("set_shop_policy failed");
-    }
-
-    let amount = 300_000;
-    for shop_key in [half, fifth] {
-        let reference = Keypair::new().pubkey();
-        send(
-            &mut context,
-            &[with_shop_policy(
-                settle_token_payment_instruction(
-                    world.buyer.pubkey(),
-                    seller.pubkey(),
-                    reference,
-                    world.mint,
-                    amount,
-                    "shop",
-                ),
-                shop_policy_pda(&seller.pubkey(), &shop_key),
-            )],
-            &[&world.buyer],
-        )
-        .await
-        .expect("a shop settlement should succeed");
-    }
-
-    // No policy account: an invoice that names no shop, or any invoice printed
-    // before this feature, keeps `Config`'s rate.
-    let reference = Keypair::new().pubkey();
-    send(
-        &mut context,
-        &[settle_token_payment_instruction(
-            world.buyer.pubkey(),
-            seller.pubkey(),
-            reference,
-            world.mint,
-            amount,
-            "no shop",
-        )],
-        &[&world.buyer],
-    )
-    .await
-    .expect("the fallback should settle");
-
-    let fee_half = token_fee_at(amount, 5_000);
-    let fee_fifth = token_fee_at(amount, 2_000);
-    let fee_full = token_fee(amount);
-    assert!(fee_half > fee_fifth, "the two shops charge differently");
-    assert!(fee_full > fee_half, "the fallback is Config's whole rate");
-
-    assert_eq!(
-        token_balance(
-            &context,
-            associated_token_address(seller.pubkey(), world.mint)
-        )
-        .await,
-        (amount - fee_half) + (amount - fee_fifth) + (amount - fee_full)
-    );
-    assert_eq!(
-        token_balance(
-            &context,
-            associated_token_address(treasury_pda(), world.mint)
-        )
-        .await,
-        fee_half + fee_fifth + fee_full
-    );
-}
-
-/// The SOL allowance path takes the shop's rate too: a payment from a pot is
-/// still a payment to that shop, so the seller's share carries the shop's fee and
-/// the treasury receives it. The pot pays the price either way, so the split
-/// moves without the buyer's cost moving.
-#[tokio::test]
-async fn the_budget_path_charges_the_shop_rate() {
-    // Large enough that the shop's half still clears the marker's rent: the
-    // point is the split, not the floor.
-    let amount = LAMPORTS_PER_SOL / 5;
-    let session = Keypair::new();
-    let (mut context, _admin) = started_with_policy(
-        None,
-        TEST_FEE_BPS,
-        TEST_FIXED_FEE,
-        FeeMode::SellerPays,
-        TREASURY_LAMPORTS,
-        &[(session.pubkey(), LAMPORTS_PER_SOL)],
-    )
-    .await;
-
-    let buyer = context.payer.pubkey();
-    let budget_address = budget_pda(&buyer);
-    send(
-        &mut context,
-        &[open_budget_instruction(buyer, session.pubkey(), amount * 2)],
-        &[],
-    )
-    .await
-    .expect("open_budget failed");
-
-    let seller = Keypair::new();
-    context.set_account(
-        &seller.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    let shop_key = Keypair::new().pubkey();
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            5_000,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect("set_shop_policy failed");
-
-    let reference = Keypair::new().pubkey();
-    let invoice = payment_pda(&seller.pubkey(), &reference, amount);
-    // Read after the policy write: its rent is the seller's own cost, not part
-    // of what the settlement moves.
-    let seller_before = lamports(&context, seller.pubkey()).await;
-    let pot_before = lamports(&context, budget_address).await;
-    let treasury_before = lamports(&context, treasury_pda()).await;
-
-    send_with_fee_payer(
-        &mut context,
-        &[with_shop_policy(
-            pay_from_budget_instruction(
-                session.pubkey(),
-                budget_address,
-                seller.pubkey(),
-                reference,
-                amount,
-                "shop allowance",
-            ),
-            shop_policy_pda(&seller.pubkey(), &shop_key),
-        )],
-        &session,
-    )
-    .await
-    .expect("a budget payment with a shop policy should succeed");
-
-    let proportional = (amount as u128 * TEST_FEE_BPS as u128 / 10_000) as u64;
-    let half = (proportional as u128 * 5_000u128 / 10_000) as u64;
-    let fee_shop = half.saturating_sub(receipt_rent());
-    // The shop's rate, not `Config`'s: half the full fee and no less than the
-    // marker's rent. The seller's gain is the price less the marker, which they
-    // carry, and the shop's fee.
-    assert!(fee(amount) > fee_shop);
-    assert_eq!(
-        lamports(&context, seller.pubkey()).await - seller_before,
-        amount - receipt_rent() - fee_shop
-    );
-    assert_eq!(
-        lamports(&context, treasury_pda()).await - treasury_before,
-        fee_shop,
-        "the treasury's share is the shop's fee"
-    );
-    // Whatever the split, the pot pays exactly the price.
-    assert_eq!(
-        pot_before - lamports(&context, budget_address).await,
-        amount
-    );
-    let spent = budget(&context, budget_address).await;
-    assert_eq!(spent.spent, amount);
-    assert!(account(&context, invoice).await.is_none());
-}
-
-/// The token allowance path, the last of the four: the invoice's seller carries
-/// the policy, so a pot paying a shop's invoice pays that shop's rate. The
-/// vault pays the price and the seller receives it less the shop's fee, which
-/// the treasury's account for the mint receives.
-#[tokio::test]
-async fn the_token_allowance_charges_the_shop_rate() {
-    let (mut context, world) = TokenWorld::start().await;
-    let amount = 700_000;
-    // The whole balance, so the vault's leftover after the payment is visible:
-    // the pot pays the price and the shop only changes how it is split.
-    open_token_budget(&mut context, &world, TEST_TOKEN_BALANCE).await;
-
-    let seller = Keypair::new();
-    context.set_account(
-        &seller.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
-    let shop_key = Keypair::new().pubkey();
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(
-            seller.pubkey(),
-            shop_key,
-            5_000,
-        )],
-        &[&seller],
-    )
-    .await
-    .expect("set_shop_policy failed");
-
-    let reference = Keypair::new().pubkey();
-    send_with_fee_payer(
-        &mut context,
-        &[with_shop_policy(
-            pay_from_token_budget_instruction(
-                &world,
-                world.mint,
-                world.vault,
-                seller.pubkey(),
-                reference,
-                amount,
-                "shop allowance",
-            ),
-            shop_policy_pda(&seller.pubkey(), &shop_key),
-        )],
-        &world.session,
-    )
-    .await
-    .expect("a token allowance payment with a shop policy should succeed");
-
-    let fee_shop = token_fee_at(amount, 5_000);
-    assert!(token_fee(amount) > fee_shop);
-    assert_eq!(
-        token_balance(
-            &context,
-            associated_token_address(seller.pubkey(), world.mint)
-        )
-        .await,
-        amount - fee_shop
-    );
-    assert_eq!(
-        token_balance(
-            &context,
-            associated_token_address(treasury_pda(), world.mint)
-        )
-        .await,
-        fee_shop,
-        "the treasury's share is the shop's fee"
-    );
-    // The vault pays the price and keeps the rest of the allowance.
-    assert_eq!(
-        token_balance(&context, world.vault).await,
-        TEST_TOKEN_BALANCE - amount
-    );
-    assert_eq!(token_budget(&context, world.budget).await.spent, amount);
-}
-
-/// A policy recorded under one seller cannot price another seller's invoice.
-/// The account is canonical for its own contents, so the seeds pass; the refusal
-/// is the program's named check that the policy belongs to *this* invoice's
-/// seller.
-#[tokio::test]
-async fn a_policy_of_another_seller_is_refused_by_name() {
-    let (mut context, world) = TokenWorld::start().await;
-    let owner = Keypair::new();
-    context.set_account(
-        &owner.pubkey(),
-        &system_account(LAMPORTS_PER_SOL / 10).into(),
-    );
-    let shop_key = Keypair::new().pubkey();
-    send(
-        &mut context,
-        &[set_shop_policy_instruction(owner.pubkey(), shop_key, 5_000)],
-        &[&owner],
-    )
-    .await
-    .expect("set_shop_policy failed");
-
-    let seller = Keypair::new();
-    seed_seller_token_account(&mut context, world.mint, seller.pubkey());
-    let reference = Keypair::new().pubkey();
-    let attempt = send(
-        &mut context,
-        &[with_shop_policy(
-            settle_token_payment_instruction(
-                world.buyer.pubkey(),
-                seller.pubkey(),
-                reference,
-                world.mint,
-                300_000,
-                "wrong shop",
-            ),
-            shop_policy_pda(&owner.pubkey(), &shop_key),
-        )],
-        &[&world.buyer],
-    )
-    .await;
-    let error = attempt.expect_err("another seller's rate must not apply");
-    assert!(
-        error.contains(SHOP_POLICY_SELLER_MISMATCH),
-        "expected {SHOP_POLICY_SELLER_MISMATCH}, got {error}"
-    );
 }

@@ -91,7 +91,7 @@ full prepare/canopy/init/replaceLeaf sequence is executed there successfully.
 - `DEV.md` — local cluster addresses and commands
 - `plans/archive/0002-fee-model-and-treasury.md` — the fee/rent model this plan changes
 - `plans/0004-relayer-sponsored-fees.md` — sponsored path also moves receipt rent
-- `plans/0005-per-shop-fees.md` — fee overrides share `Config::policy`
+- `plans/archive/0005-per-shop-fees.md` (cancelled, removed 2026-11-27) — fee overrides share `Config::policy`
 - `apps/contracts/programs/payvand/src/state.rs` — the current `PaymentReceipt` marker
 
 ## What exists today

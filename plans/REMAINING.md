@@ -66,16 +66,17 @@ or proof left, not only checking:
   a refusal naming the actual `needs_lamports`, the SOL cost panel showing two
   signatures, stale "payer needs SOL" copy, and a per-seller cap decision. The
   balance gate and drained session-float borrow are decided away.
-- `0005` — In Progress. The `ShopPolicy` type, `fee_for` multiplier, seller-signed
-  `set_shop_policy` with its `0..=10_000` write cap, optional policy accounts on
-  all four settle paths and the relayer's trailing account shipped. Left: the
-  policy identity in `PaymentSettled`, the shop-row column, the API/client wiring
-  (quote, checkout, allowance and seller UI), a settlement through a policy
-  written at `10_000`, client quote tests and a devnet record. The `Config` band,
-  admin approve/revoke path and API fee-field migration are decided away.
 - `0007` — In Progress after the 2026-11-26 audit. Program upgrades, the v4
   network-fee fields, the relayer's SOL rebuild and all three devnet paths are
   done. Left: deployed API key and endpoint smoke, the SOL cost panel/quote,
   stale copy in README/DEV/learn/i18n, the legacy one-signer Solana Pay builder,
   full verification, and the archive step. Its open question about reporting the
   fee payer on an externally built settle is unresolved.
+
+## Cancelled
+
+- `0005` — Cancelled and archived 2026-11-27. The per-shop fee multiplier was
+  built on chain and in the relayer, never reached the product, and has been
+  removed end to end (program, IDL, relayer request, web composables, tests and
+  docs); `InvalidNetworkFee` keeps `Custom(6023)`. See
+  [`archive/0005-per-shop-fees.md`](archive/0005-per-shop-fees.md).

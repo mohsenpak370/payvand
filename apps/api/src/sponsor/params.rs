@@ -22,9 +22,6 @@ pub(super) struct Params {
     pub(super) mint: Option<Pubkey>,
     pub(super) amount: u64,
     pub(super) memo: String,
-    /// The shop's policy, absent for a shop that has none — the same absence
-    /// that makes the program charge `Config`'s rate.
-    pub(super) shop_policy: Option<Pubkey>,
 }
 
 impl Params {
@@ -58,15 +55,11 @@ impl Params {
             mint,
             amount: request.amount,
             memo: request.memo.clone(),
-            shop_policy: match request.shop_policy.as_deref() {
-                Some(address) if !address.trim().is_empty() => Some(key(address, "shop policy")?),
-                _ => None,
-            },
         })
     }
 }
 
-/// A token settle the tests build messages from: USDC on devnet, no policy.
+/// A token settle the tests build messages from: USDC on devnet.
 #[cfg(test)]
 pub(super) fn fixture(memo: &str) -> Params {
     Params {
@@ -76,7 +69,6 @@ pub(super) fn fixture(memo: &str) -> Params {
         mint: Some(crate::payments::mint_for("usdc", "devnet").expect("USDC on devnet")),
         amount: 4_500_000,
         memo: memo.into(),
-        shop_policy: None,
     }
 }
 

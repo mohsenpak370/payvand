@@ -5,6 +5,5 @@
 //! directory of submodules.
 
 pub mod config;
-pub mod shop;
 pub mod sol;
 pub mod token;

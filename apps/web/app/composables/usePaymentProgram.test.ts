@@ -1,17 +1,17 @@
-import { AccountRole, address, type Address } from '@vue-solana/nuxt/kit'
+import { address, type Address } from '@vue-solana/nuxt/kit'
 import { describe, expect, it } from 'vitest'
 import idl from '~/assets/payvand.idl.json'
 import { TOKEN_PROGRAM_ID, buildInstruction } from './usePaymentProgram'
 
 /**
- * The settle paths name a shop's `ShopPolicy` as their last account and mark it
- * optional in the IDL: the program reads the shorter list as "none", which is
- * what keeps an invoice with no shop — and every QR printed before shops had
- * rates — settling at `Config`'s rate.
+ * The settle paths take no optional account since the per-shop fee feature was
+ * removed (plan 0005): the IDL's list is the whole instruction, with `sponsor`
+ * last. The builder still stops at an account the IDL marks optional — Anchor's
+ * trailing-optional rule, kept for any future one — and refuses a missing
+ * account that is not.
  *
- * The builder is what decides the account list the app sends, so stopping at a
- * missing optional account is the whole compatibility rule. Without it every
- * settle the app builds would ask for a `shop_policy` the seller never wrote.
+ * The builder is what decides the account list the app sends, so those two rules
+ * are what keep a built settle shippable.
  */
 
 const payer = address('3rpBzUBbZPXFKhGywCRduD3hrREDjvDtaw2Mos2yUUPx')
@@ -19,7 +19,7 @@ const seller = address('6dQgFZDTkhDMTZv9ftZe4ufU9jG5fvJEw6zpw6WCKjPz')
 const reference = address('A8yxpWod2xrPd6YbXnaKWCTkk2WduzQKdKPUANZFQpft')
 const elsewhere = reference
 
-/** The eight accounts `settle_payment` needs besides the optional policy. */
+/** The eight accounts `settle_payment` needs before the sponsor. */
 function settleAccounts() {
   return {
     payer,
@@ -35,28 +35,13 @@ function settleAccounts() {
 }
 
 describe('buildInstruction', () => {
-  it('ends the account list at the optional shop policy', () => {
+  it('builds the settle account list in the IDL order, sponsor last', () => {
     const instruction = buildInstruction('settle_payment', { amount: 1, memo: '' }, settleAccounts())
 
-    // v4 puts the required sponsor before the optional shop policy, so a settle
-    // with no shop names nine accounts and stops at the sponsor.
+    // The program declares nine accounts for a SOL settle, and `sponsor` is the
+    // last of them.
     expect(instruction.accounts).toHaveLength(9)
     expect(instruction.accounts!.at(-1)?.address).toBe(settleAccounts().sponsor)
-  })
-
-  it('adds it when the shop has one', () => {
-    const shopPolicy = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')
-    const instruction = buildInstruction(
-      'settle_payment',
-      { amount: 1, memo: '' },
-      { ...settleAccounts(), shop_policy: shopPolicy }
-    )
-
-    expect(instruction.accounts).toHaveLength(10)
-    expect(instruction.accounts!.at(-1)).toEqual({
-      address: shopPolicy,
-      role: AccountRole.READONLY
-    })
   })
 
   it('still refuses a missing account the IDL does not mark optional', () => {

@@ -17,12 +17,6 @@ pub struct SettleRequest {
     pub amount: u64,
     #[serde(default)]
     pub memo: String,
-    /// The shop policy that priced this invoice, when its seller has one. The
-    /// program takes it as a trailing optional account, so a sponsored settle
-    /// of a shop invoice has to name it or its message is one account short of
-    /// the buyer's and can never match.
-    #[serde(default)]
-    pub shop_policy: Option<String>,
     pub cluster: String,
     pub endpoint: Option<String>,
 }

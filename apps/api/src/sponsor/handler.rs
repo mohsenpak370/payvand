@@ -13,7 +13,7 @@ use crate::payments::{bad, resolve_endpoint, ApiError, ApiResult};
 use crate::AppState;
 
 use super::diagnostics::{first_difference, logged, mint_label, shape};
-use super::message::{expected_message, message_bytes};
+use super::message::{expected_message, message_bytes, same_settlement};
 use super::model::{InfoQuery, InfoResponse, SettleRequest, SettleResponse};
 use super::params::Params;
 use super::relayer::{cap_from_env, sponsor_keypair, unavailable, SPONSORED_LAMPORTS};
@@ -163,11 +163,11 @@ pub async fn settle(
     )?;
     let ours = message_bytes(&expected)?;
     let theirs = message_bytes(&transaction.message)?;
-    if ours != theirs {
+    if !same_settlement(&expected, &transaction.message) {
         // The one refusal a buyer cannot act on: their signature is over some
         // other message. Both shapes and the offset where they diverge say
-        // whether a stale client, a wrong invoice or a policy-less shop is the
-        // cause, and the buyer's signature stays here so support can look the
+        // whether a stale client or a wrong invoice is the cause, and the
+        // buyer's signature stays here so support can look the
         // transaction up instead of asking for a screenshot of a network tab.
         let (our_accounts, our_instruction_accounts, our_data) = shape(&expected);
         let (their_accounts, their_instruction_accounts, their_data) = shape(&transaction.message);
@@ -178,10 +178,6 @@ pub async fn settle(
             amount = params.amount,
             mint = %mint_label(&params),
             memo_len = params.memo.len(),
-            shop_policy = %params
-                .shop_policy
-                .map(|policy| policy.to_string())
-                .unwrap_or_else(|| "none".into()),
             buyer_signature = %transaction.signatures[1],
             accounts = their_accounts,
             expected_accounts = our_accounts,
@@ -203,12 +199,13 @@ pub async fn settle(
     // reaches this line, and a person pays once or twice a minute at most.
     crate::rate_limit::hit("sponsor-wallet", &wallet, 6, crate::rate_limit::MINUTE)?;
 
-    // Exact match, so the buyer's signature is over these same bytes: keep it,
-    // add the sponsor's, and submit. The runtime verifies both.
-    let signature = sponsor.sign_message(&ours);
+    // The same settlement, though perhaps not the same bytes: the buyer's
+    // signature is over their own serialization, so that is the message the
+    // sponsor signs too and the one submitted. The runtime verifies both.
+    let signature = sponsor.sign_message(&theirs);
     let signed = VersionedTransaction {
         signatures: vec![signature, transaction.signatures[1]],
-        message: expected,
+        message: transaction.message,
     };
 
     let endpoint = resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?;

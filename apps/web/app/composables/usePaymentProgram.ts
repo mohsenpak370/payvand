@@ -200,7 +200,7 @@ export function buildInstruction(
       ?? IMPLIED_ACCOUNTS[account.name]
     if (!resolved) {
       // Anchor's optional accounts are trailing, and the program reads the
-      // shorter list as "none" — a shop invoice with no `ShopPolicy`, say, is
+      // shorter list as "none" — a settle with no trailing optional account is
       // the same transaction it always was. Anything missing that the IDL does
       // not mark optional is a caller mistake.
       if (account.optional) break

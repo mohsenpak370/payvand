@@ -95,7 +95,7 @@ function programInstruction(idl, name, placements, args = new Uint8Array()) {
   const accounts = definition.accounts.flatMap(({ name: accountName, writable, signer, optional }) => {
     const resolved = placements[accountName]
     // A trailing optional account the caller does not have is left out, which
-    // is what the program reads as "no shop policy for this invoice".
+    // is what the program reads as "none" for that slot.
     if (!resolved) {
       if (optional === true) return []
       fail(`${name} asks for an account this script cannot place: ${accountName}`)

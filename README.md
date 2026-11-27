@@ -363,18 +363,6 @@ bps up to 0.1 SOL (or 10 token units) and `50` bps above it, `SellerPays` — th
 buyer is charged the price the QR shows, never the price plus something — and a
 permanent 48-byte receipt for every settled invoice.
 
-**A shop can cut the rate, never raise it.** `set_shop_policy` writes a
-`ShopPolicy` PDA (`["shop-policy", seller, shop_key]`, 75 bytes) holding one
-multiplier in basis points on `Config`'s two rates, signed by the shop's own
-seller. The band is the write: `0..=10_000`, so a shop can discount itself to
-nothing — a token invoice still pays the receipt's flat, so a free shop cannot
-put the record on the treasury — and `ShopFeeTooHigh` refuses anything above
-`10_000`, which is `Config` unchanged. The settle paths take that account as an
-optional trailing account; an invoice that names none, including every QR
-printed before this existed, pays `Config`'s rate exactly as it did. A policy
-recorded under another seller is refused with `ShopPolicySellerMismatch`, so one
-shop cannot price another's invoice.
-
 **The record and the signature are the floor of the fee.** A seller's deduction
 is `max(platform rate, record rent + network fee)`: a payment too small for the
 rate to cover them is charged the costs and nothing else, so the treasury neither

@@ -10,8 +10,8 @@ use anchor_lang::{AccountsClose, Lamports};
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::PaymentSettled;
-use crate::helpers::{current_month_index, fee_for, shop_multiplier};
-use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState, ShopPolicy};
+use crate::helpers::{current_month_index, fee_for};
+use crate::state::{Budget, Config, FeeMode, Payment, PaymentReceipt, PaymentState};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -72,20 +72,6 @@ pub struct PayFromBudget<'info> {
     pub treasury: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
-
-    /// The shop that priced this invoice: optional and trailing, exactly as on
-    /// `settle_payment`. The allowance path is where a shop rate matters most —
-    /// a buyer paying silently from a pot still pays the shop's rate, because the
-    /// policy travels with the invoice's seller.
-    #[account(
-        seeds = [
-            SHOP_POLICY_SEED,
-            shop_policy.seller.as_ref(),
-            shop_policy.shop_key.as_ref()
-        ],
-        bump = shop_policy.bump
-    )]
-    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 pub fn pay_from_budget_handler<'info, 'ctx>(
@@ -146,11 +132,7 @@ pub fn pay_from_budget_handler<'info, 'ctx>(
 
     let payment_rent = Rent::get()?.minimum_balance(PAYMENT_SPACE);
     let receipt_rent = Rent::get()?.minimum_balance(PAYMENT_RECEIPT_SPACE);
-    let multiplier = shop_multiplier(
-        ctx.accounts.shop_policy.as_deref(),
-        &ctx.accounts.seller.key(),
-    )?;
-    let fee = fee_for(config, amount, None, receipt_rent, multiplier)?;
+    let fee = fee_for(config, amount, None, receipt_rent)?;
     let budget_rent = Rent::get()?.minimum_balance(BUDGET_SPACE);
     require!(
         amount

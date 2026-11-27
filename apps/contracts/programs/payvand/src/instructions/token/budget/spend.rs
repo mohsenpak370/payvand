@@ -21,7 +21,7 @@ use crate::helpers::{
 };
 use crate::instructions::token::payout::TokenPayout;
 use crate::instructions::token::split::token_split;
-use crate::state::{Config, PaymentReceipt, PaymentState, ShopPolicy, TokenBudget, TokenPayment};
+use crate::state::{Config, PaymentReceipt, PaymentState, TokenBudget, TokenPayment};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -118,19 +118,6 @@ pub struct PayFromTokenBudget<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
-
-    /// The shop that priced this invoice: optional and trailing, as on the other
-    /// three settle paths, so an allowance payment from a pot pays the shop's
-    /// rate when the invoice names one and `Config`'s when it does not.
-    #[account(
-        seeds = [
-            SHOP_POLICY_SEED,
-            shop_policy.seller.as_ref(),
-            shop_policy.shop_key.as_ref()
-        ],
-        bump = shop_policy.bump
-    )]
-    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 pub fn pay_from_token_budget_handler<'info, 'ctx>(
@@ -162,14 +149,7 @@ pub fn pay_from_token_budget_handler<'info, 'ctx>(
 
     // Same pricing as `settle_token_payment`, at one signature: the session key
     // is the only signer.
-    let split = token_split(
-        &ctx.accounts.config,
-        amount,
-        &ctx.accounts.mint.key(),
-        ctx.accounts.shop_policy.as_deref(),
-        &ctx.accounts.seller.key(),
-        1,
-    )?;
+    let split = token_split(&ctx.accounts.config, amount, &ctx.accounts.mint.key(), 1)?;
     let (fee, refund) = (split.fee, split.refund);
 
     let now = current_month_index()?;

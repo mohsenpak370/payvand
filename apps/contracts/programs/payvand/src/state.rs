@@ -136,7 +136,7 @@ pub enum PaymentState {
 /// 10 EURC (`MAX_SOL_FEE_LAMPORTS` / `MAX_TOKEN_FEE_BASE_UNITS`), so the
 /// percentage serves the everyday payment without letting a large invoice pay a
 /// large multiple of what the service costs. The ceiling is the program's, not a
-/// per-shop setting: a shop scales the rate down, never the maximum up.
+/// per-policy setting: no rate field raises it.
 ///
 /// The two flat fields exist because a token settlement cannot charge its
 /// non-signing seller lamports, so the treasury — not the seller — funds the
@@ -249,37 +249,6 @@ pub struct FeeAnchor {
     pub sol_usd_micros: u64,
     /// The EUR price of one SOL, from the same decision.
     pub sol_eurc_micros: u64,
-    pub bump: u8,
-}
-
-/// A shop's multiplier on `Config`'s rates.
-///
-/// A shop is an API row, not an account, so the on-chain identity is the seller
-/// that owns it plus a key the API generates when the row is created —
-/// `["shop-policy", seller, shop_key]`. The account is optional: an invoice that
-/// names none settles at `Config`'s rate, which is what keeps every QR printed
-/// before this landed working.
-///
-/// The multiplier is the whole policy, not a second copy of one. It scales the
-/// two rates and leaves the boundaries and the per-currency flats to `Config`,
-/// so every shop is priced from the same live numbers and a refresh still has
-/// one place to write. `10_000` is `Config` unchanged, `0` charges no
-/// percentage at all — the marker's flat still applies on a token invoice, so a
-/// free shop cannot make the treasury pay for the record.
-///
-/// A multiplier cannot exceed `10_000`: the band is the type's range plus the
-/// program's own check on write, which is why this needs no `Config` field and
-/// no version bump. A shop can discount itself, never surcharge a buyer.
-#[account]
-#[derive(Debug)]
-pub struct ShopPolicy {
-    /// The wallet that owns the shop. Every settle compares this against the
-    /// invoice's seller, so one shop's policy cannot price another's invoice.
-    pub seller: Pubkey,
-    /// The key the API stores beside its `shops` row; part of the PDA seeds.
-    pub shop_key: Pubkey,
-    /// Basis points applied to `Config`'s two rates: `10_000` is unchanged.
-    pub multiplier_bps: u16,
     pub bump: u8,
 }
 

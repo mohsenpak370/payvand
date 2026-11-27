@@ -598,7 +598,6 @@
                   "mint": { "type": "string" },
                   "amount": { "type": "integer", "format": "int64" },
                   "memo": { "type": "string" },
-                  "shop_policy": { "type": "string" },
                   "cluster": { "type": "string" },
                   "endpoint": { "type": "string" }
                 }

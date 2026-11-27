@@ -1,8 +1,21 @@
-> **Deprecated / not needed:** This feature (per-shop fee multiplier) is not exposed in the webapp and the fee is deducted from the seller's side, so a shop lowering its rate only benefits the seller and costs the protocol. It has been removed from user-facing documentation (FAQ). Retain for historical context only.
+# Plan: Per-shop fee overrides
 
-# 0005 — Per-shop fee overrides
+## Status
 
-Status: `In Progress` (2026-11-22). Follow-up to `0002`, which keeps one global
+**Cancelled — removed end to end on 2026-11-27; archived the same day.** The
+per-shop multiplier shipped on chain and in the relayer and was never reachable
+from the product: the seller pays the fee, so a shop rate could only cut the
+protocol's own revenue and never changed the buyer's price, and no shop row, UI
+or client ever named a policy. `ShopPolicy`, `set_shop_policy`, the multiplier in
+`fee_for`/`fee_for_signatures`, the trailing optional account on all four settle
+paths, the relayer's `shop_policy` field, the IDL entry and the README mentions
+are gone. `InvalidNetworkFee` keeps `Custom(6023)`: the two retired error
+variants stay in `PaymentError` as reserved, never-returned slots, so removing
+them cannot renumber it.
+
+Everything below is the design record, kept as history; none of it is work to do.
+
+Historical status: `In Progress` (2026-11-22). Follow-up to `0002`, which keeps one global
 policy (`Config`) and lists "per-shop fee overrides" as out of scope and as an
 open question. This file is where the override is designed.
 
@@ -352,11 +365,33 @@ needs none either, and `0007` took version 4 for the network-fee fields.)*
 - Do discounts (`discount_codes`) and shop rates interact, and in what order do
   they apply to the price shown?
 
-## Removal (not needed)
+## Removal (done 2026-11-27)
 
-Reason: the fee is deducted from the seller's side, not charged to the buyer, so a shop lowering its rate only benefits the seller and costs the protocol; buyers always pay the listed price. The feature is not exposed in the webapp and adds complexity for no user-facing benefit.
+Reason: the fee is deducted from the seller's side, not charged to the buyer, so a shop lowering its rate only benefits the seller and costs the protocol; buyers always pay the listed price. The feature was not exposed in the webapp and added complexity for no user-facing benefit.
 
-- [ ] Remove per-shop fee multiplier from the contract: drop `ShopPolicy` PDA, `set_shop_policy`, and the optional trailing account on settle paths; settle always uses `Config`'s rate.
-- [ ] Remove shop-rate handling from the API and web composables (`shopPolicy`).
-- [ ] Remove related tests and keep a migration that ignores any stale shop-policy accounts.
-- [ ] Remove the FAQ/README mentions of shop-set rates.
+- [x] Remove per-shop fee multiplier from the contract: drop `ShopPolicy` PDA, `set_shop_policy`, and the optional trailing account on settle paths; settle always uses `Config`'s rate.
+- [x] Remove shop-rate handling from the API and web composables (`shopPolicy`).
+- [x] Remove related tests and keep a migration that ignores any stale shop-policy accounts.
+- [x] Remove the FAQ/README mentions of shop-set rates.
+
+Removal record:
+
+- Program: `instructions/shop.rs`, `set_shop_policy` and its module export, the
+  `ShopPolicy` account, `SHOP_POLICY_SEED`/`SHOP_POLICY_SPACE`/`SHOP_FEE_BASE_BPS`,
+  `helpers::{shop_multiplier, validate_shop_multiplier}`, the multiplier
+  parameter of `fee_for`/`fee_for_signatures`, and the trailing
+  `Option<Account<ShopPolicy>>` on `settle_payment`, `pay_from_budget`,
+  `settle_token_payment` and `pay_from_token_budget`.
+- Errors: `ShopFeeTooHigh` (6021) and `ShopPolicySellerMismatch` (6022) are kept
+  in `PaymentError` as reserved, never-returned variants with retired messages,
+  so `InvalidNetworkFee` stays `Custom(6023)` for every client that matches it.
+- Tests: the six shop settlements, the setter/cap/seeds test, the layout and
+  space pins, the multiplier arithmetic test, and the two retired error-code
+  constants are gone; the remaining suite calls `fee_for` without a multiplier.
+- Relayer: `shop_policy` removed from `SettleRequest`/`Params`/`settle_instruction`,
+  the mismatch log, `openapi.json`, and the trailing-account test.
+- Web: `SponsoredSettleInput.shopPolicy` and the builder test's shop example are
+  gone; the builder still honours an IDL `optional` flag for any future account.
+- Docs: the README's shop-rate paragraph is gone. No database migration is
+  needed because no `shops` column ever stored a policy address; a stale
+  `ShopPolicy` account on chain is simply never read again.

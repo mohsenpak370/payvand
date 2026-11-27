@@ -11,7 +11,6 @@ fn a_mint_outside_the_list_is_refused() {
         mint: Pubkey::new_from_array([7; 32]).to_string(),
         amount: 1_000_000,
         memo: String::new(),
-        shop_policy: None,
         cluster: "devnet".into(),
         endpoint: None,
     };
@@ -20,15 +19,6 @@ fn a_mint_outside_the_list_is_refused() {
         .expect("USDC")
         .to_string();
     assert!(Params::read(&request).is_ok());
-    request.shop_policy = Some("not-a-key".into());
-    assert!(Params::read(&request).is_err());
-    request.shop_policy = Some(String::new());
-    assert_eq!(
-        Params::read(&request)
-            .expect("blank means no policy")
-            .shop_policy,
-        None
-    );
     request.amount = 0;
     assert!(Params::read(&request).is_err());
     request.amount = 1;

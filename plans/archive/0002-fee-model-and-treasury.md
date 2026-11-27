@@ -184,7 +184,7 @@ line says where it stands, so a later pass does not have to re-derive it.
   merging the two float constants onto `Config::session_fee_float` (revision 8).
 - Payer-side gasless/relayer support —
   [0004-relayer-sponsored-fees.md](../0004-relayer-sponsored-fees.md) — and
-  per-shop fee overrides — [0005-per-shop-fees.md](../0005-per-shop-fees.md). Both
+  per-shop fee overrides — [0005-per-shop-fees.md](0005-per-shop-fees.md). Both
   are drafts, and both wait on this plan's global policy being deployed.
 
 ### Archival
@@ -625,7 +625,7 @@ full form costs a devnet upgrade and buys no new evidence.
 - `plans/deferred/0003-token-interface-migration.md` — the deferred Token-2022 migration
   this plan's Task 4.4 hands over.
 - `plans/0004-relayer-sponsored-fees.md` — the sponsor the payer's SOL gap needs.
-- `plans/0005-per-shop-fees.md` — the per-shop override this plan's global
+- `plans/archive/0005-per-shop-fees.md` — the per-shop override this plan's global
   policy leaves out.
 - `plans/archive/0001-contract-security-hardening.md` — prerequisite: receipt-backed
   settlement, auto-close, and the status model. This plan assumes `0001` is
@@ -710,7 +710,7 @@ Out of scope:
   [0003-token-interface-migration.md](../deferred/0003-token-interface-migration.md)).
 - Mainnet deployment, discounts, a full event indexer.
 - Per-shop fee overrides — designed in
-  [0005-per-shop-fees.md](../0005-per-shop-fees.md). One global policy ships here.
+  [0005-per-shop-fees.md](0005-per-shop-fees.md). One global policy ships here.
 
 ## Dependencies
 
@@ -2893,7 +2893,7 @@ Acceptance criteria:
       issues or new plans. All three are plans as of 2026-11-19:
       [0003](../deferred/0003-token-interface-migration.md),
       [0004](../0004-relayer-sponsored-fees.md) and
-      [0005](../0005-per-shop-fees.md), each listed in `plans/README.md`; only the
+      [0005](0005-per-shop-fees.md), each listed in `plans/README.md`; only the
       `plans/README.md` status change and the move to `plans/archive/` remain in
       this criterion.
 
@@ -2987,7 +2987,7 @@ Estimated scope: Small.
 - Initial treasury funding amount and the alert threshold before a top-up is
   required?
 - Per-shop fee overrides now, later, or never? Deferred; designed in
-  [0005-per-shop-fees.md](../0005-per-shop-fees.md).
+  [0005-per-shop-fees.md](0005-per-shop-fees.md).
 - Should `Config.admin` (and therefore `update_config` and
   `withdraw_treasury`) move to a multisig before mainnet? The treasury itself
   stays a PDA; only the authority over it would change.

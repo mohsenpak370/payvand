@@ -46,9 +46,12 @@ pub enum PaymentError {
     InvalidFeePrice,
     #[msg("The flats were refreshed a moment ago")]
     FeePriceTooSoon,
-    #[msg("A shop's multiplier cannot exceed 100%")]
+    // Retired with the per-shop fee feature (plan 0005, cancelled 2026-11-27).
+    // Kept, never returned, so removing them cannot shift `InvalidNetworkFee`
+    // (6023) and any client matching that code keeps working.
+    #[msg("Retired: per-shop fee cap")]
     ShopFeeTooHigh,
-    #[msg("This shop policy belongs to another seller")]
+    #[msg("Retired: shop policy belongs to another seller")]
     ShopPolicySellerMismatch,
     #[msg("The network fee is larger than this program allows a policy to name")]
     InvalidNetworkFee,

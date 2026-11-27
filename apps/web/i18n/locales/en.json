@@ -427,7 +427,7 @@
     },
     "whereMoney": {
       "title": "Where the money sits.",
-      "body": "The pot is a program account derived from your wallet: setting or refilling a limit moves that amount out of your wallet and into it, and only your wallet can take it back out. This device's session key can spend from it, but never more than the limit. The limit resets on the 1st of each month, the pot keeps whatever you did not spend, and closing the budget returns every unit to your wallet."
+      "body": "The pot is a program account derived from your wallet: setting or refilling a limit moves that amount out of your wallet and into it, and only your wallet can take it back out. This device's session key can spend from it, but never more than the limit. The limit resets on the 1st of each month, the pot keeps whatever you did not spend, and closing the budget returns what is left in it to your wallet. The small float on the session key comes back too as long as this device still holds that key."
     },
     "keepSmall": {
       "title": "Keep it small on purpose.",
@@ -454,7 +454,7 @@
     "closeBudget": "Close {currency} budget & reclaim funds",
     "killSwitch": {
       "title": "Closing the budget is the kill switch.",
-      "body": "It revokes the session key on every device, returns everything left to your wallet, and stops silent payments at once — then a new limit can be set whenever you are ready."
+      "body": "It revokes the session key on every device, returns the pot to your wallet, and stops silent payments at once — then a new limit can be set whenever you are ready."
     },
     "enable": "Enable monthly budget",
     "oneApproval": {
@@ -491,6 +491,7 @@
       "updated": "Budget updated — your limit and pot are in sync again.",
       "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
       "closed": "{currency} budget closed — everything left in it went back to your wallet.",
+      "closedFloatElsewhere": "{currency} budget closed — the pot came back, but {amount} SOL of session-key float is still on the session key, which this device does not hold. Only a device that holds it can send it back.",
       "floatRecovered": "Recovered {amount} SOL from the session key."
     },
     "cost": {

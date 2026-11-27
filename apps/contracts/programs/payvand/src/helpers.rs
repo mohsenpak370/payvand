@@ -6,10 +6,10 @@ use anchor_lang::prelude::*;
 use crate::constants::{
     MAX_NETWORK_FEE_BASE_UNITS, MAX_NETWORK_FEE_LAMPORTS, MAX_SOL_FEE_LAMPORTS,
     MAX_SOL_PRICE_MICROS, MAX_TOKEN_FEE_BASE_UNITS, MICROS, MINT_DECIMALS_OFFSET,
-    MIN_SESSION_FEE_FLOAT, PRICE_ANCHOR_BAND_BPS, SHOP_FEE_BASE_BPS, TREASURY_SEED,
+    MIN_SESSION_FEE_FLOAT, PRICE_ANCHOR_BAND_BPS, TREASURY_SEED,
 };
 use crate::errors::PaymentError;
-use crate::state::{Config, FeePolicy, ShopPolicy};
+use crate::state::{Config, FeePolicy};
 
 /// `year * 12 + month` (month 1-based) for the current clock, so a monthly
 /// allowance resets on a real calendar-month boundary rather than every 30
@@ -53,19 +53,11 @@ pub fn current_month_index() -> Result<u64> {
 /// the seller's deduction above the marker's rent, and the settlement splits it
 /// into the sponsor's reimbursement and the platform's margin.
 ///
-/// `multiplier_bps` is the shop's own policy when the invoice named one, and
-/// `SHOP_FEE_BASE_BPS` otherwise. It scales the percentage only — the
-/// boundaries, the flats and the cap are `Config`'s, so a shop is priced from
-/// the same live numbers as every other and a refresh still has one place to
-/// write. A `0` multiplier therefore charges no percentage while a token invoice
-/// still pays the marker's flat: a free shop cannot make the treasury fund the
-/// record.
-///
 /// The result is capped twice. `MAX_SOL_FEE_LAMPORTS` (0.1 SOL) or
 /// `MAX_TOKEN_FEE_BASE_UNITS` (10 USDC/EURC) is the ceiling a percentage fee may
 /// reach, so a large invoice pays a plausibly-sized fee rather than a slice of
-/// itself that keeps growing — the ceiling is applied last, after the rate, the
-/// multiplier and the rent, so nothing can carry the fee past it. Then
+/// itself that keeps growing — the ceiling is applied last, after the rate and
+/// the rent, so nothing can carry the fee past it. Then
 /// `amount - 1` keeps the guard on the price (`amount > rent + fee`) from being
 /// satisfiable by taking the whole invoice; that one is a safety net, not a
 /// policy.
@@ -74,9 +66,8 @@ pub fn fee_for(
     amount: u64,
     mint: Option<&Pubkey>,
     receipt_rent: u64,
-    multiplier_bps: u16,
 ) -> Result<u64> {
-    fee_for_signatures(config, amount, mint, receipt_rent, multiplier_bps, 1)
+    fee_for_signatures(config, amount, mint, receipt_rent, 1)
 }
 
 /// The network fee a settlement of `signatures` signatures costs, and therefore
@@ -92,7 +83,6 @@ pub fn fee_for_signatures(
     amount: u64,
     mint: Option<&Pubkey>,
     receipt_rent: u64,
-    multiplier_bps: u16,
     signatures: u64,
 ) -> Result<u64> {
     let policy = &config.policy;
@@ -138,14 +128,6 @@ pub fn fee_for_signatures(
         })
         .ok_or(PaymentError::FeeOverflow)?
         / 10_000;
-    // The shop's discount, applied to the rate before the carriers below read
-    // it: the flat is the marker's rent and is never scaled, and the SOL path's
-    // rent subtraction is not either, so a shop can reach zero percentage but
-    // not shift the record onto the treasury.
-    let proportional = proportional
-        .checked_mul(multiplier_bps.min(SHOP_FEE_BASE_BPS) as u128)
-        .ok_or(PaymentError::FeeOverflow)?
-        / SHOP_FEE_BASE_BPS as u128;
 
     let fee = match mint {
         // The floor is everything the payment costs us, in this mint's units:
@@ -163,44 +145,6 @@ pub fn fee_for_signatures(
         Some(_) => MAX_TOKEN_FEE_BASE_UNITS as u128,
     };
     Ok(fee.min(ceiling).min(amount.saturating_sub(1)) as u64)
-}
-
-/// The multiplier a settlement charges: the shop's own when the invoice named
-/// its policy, `SHOP_FEE_BASE_BPS` when it did not.
-///
-/// The account is optional, which is the whole reason every invoice printed
-/// before shop rates existed still settles: an invoice that names none pays
-/// `Config`'s rate exactly as it always did. A policy whose recorded seller is
-/// not the invoice's seller is refused by name — the seeds prove an account is
-/// the canonical PDA for its own contents, not that it belongs to this
-/// settlement's seller, so that comparison is what stops one shop pricing
-/// another's invoice at its own discount.
-pub fn shop_multiplier(shop_policy: Option<&ShopPolicy>, seller: &Pubkey) -> Result<u16> {
-    match shop_policy {
-        None => Ok(SHOP_FEE_BASE_BPS),
-        Some(policy) => {
-            require_keys_eq!(
-                policy.seller,
-                *seller,
-                PaymentError::ShopPolicySellerMismatch
-            );
-            Ok(policy.multiplier_bps)
-        }
-    }
-}
-
-/// The multiplier `set_shop_policy` accepts: `0..=10_000`.
-///
-/// The cap is checked on write rather than at settle time, so there is no
-/// out-of-band state to handle: a shop can discount itself to nothing and can
-/// never surcharge a buyer above `Config`'s rate, and every settlement reads a
-/// number that is already known to be in range.
-pub fn validate_shop_multiplier(multiplier_bps: u16) -> Result<()> {
-    require!(
-        multiplier_bps <= SHOP_FEE_BASE_BPS,
-        PaymentError::ShopFeeTooHigh
-    );
-    Ok(())
 }
 
 /// The decimals of the mint an invoice is priced in.

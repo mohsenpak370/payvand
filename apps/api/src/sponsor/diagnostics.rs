@@ -23,9 +23,9 @@ pub(super) fn mint_label(params: &Params) -> String {
 }
 
 /// The shape of a settle message: its account count, the instruction's account
-/// count, and the instruction data's length. A missing shop policy, a different
-/// buyer token account or a different price each change one of the three, which
-/// is what makes a refusal readable without the transaction itself.
+/// count, and the instruction data's length. A different buyer token account or
+/// a different price each change one of the three, which is what makes a refusal
+/// readable without the transaction itself.
 pub(super) fn shape(message: &VersionedMessage) -> (usize, usize, usize) {
     match message {
         VersionedMessage::V0(message) => {

@@ -427,7 +427,7 @@
     },
     "whereMoney": {
       "title": "Wo das Geld liegt.",
-      "body": "Der Topf ist ein Programmkonto, das aus deinem Wallet abgeleitet wird: Ein Limit zu setzen oder aufzufüllen bewegt diesen Betrag aus deinem Wallet dorthin, und nur dein Wallet kann ihn wieder herausnehmen. Der Sitzungsschlüssel dieses Geräts kann daraus zahlen, aber nie mehr als das Limit. Das Limit erneuert sich am 1. jedes Monats, der Topf behält, was du nicht ausgegeben hast, und das Schließen des Budgets gibt jede Einheit an dein Wallet zurück."
+      "body": "Der Topf ist ein Programmkonto, das aus deinem Wallet abgeleitet wird: Ein Limit zu setzen oder aufzufüllen bewegt diesen Betrag aus deinem Wallet dorthin, und nur dein Wallet kann ihn wieder herausnehmen. Der Sitzungsschlüssel dieses Geräts kann daraus zahlen, aber nie mehr als das Limit. Das Limit erneuert sich am 1. jedes Monats, der Topf behält, was du nicht ausgegeben hast, und das Schließen des Budgets gibt den Rest an dein Wallet zurück. Der kleine Restbetrag auf dem Sitzungsschlüssel kommt ebenfalls zurück, solange dieses Gerät den Schlüssel noch hat."
     },
     "keepSmall": {
       "title": "Bewusst klein halten.",
@@ -454,7 +454,7 @@
     "closeBudget": "{currency}-Budget schließen & Geld zurückholen",
     "killSwitch": {
       "title": "Das Budget zu schließen ist der Notaus.",
-      "body": "Es entzieht den Sitzungsschlüssel auf jedem Gerät, gibt alles Verbliebene an dein Wallet zurück und stoppt stille Zahlungen sofort — ein neues Limit kannst du setzen, wann immer du bereit bist."
+      "body": "Es entzieht den Sitzungsschlüssel auf jedem Gerät, gibt den Topf an dein Wallet zurück und stoppt stille Zahlungen sofort — ein neues Limit kannst du setzen, wann immer du bereit bist."
     },
     "enable": "Monatliches Budget aktivieren",
     "oneApproval": {
@@ -491,6 +491,7 @@
       "updated": "Budget aktualisiert — Limit und Topf stimmen wieder überein.",
       "enabled": "{currency}-Budget aktiviert. Die Token liegen in einem aus deinem Wallet abgeleiteten Konto, das nur deine privaten Schlüssel kontrollieren — Zahlungen innerhalb des Limits brauchen keine Bestätigung, und „Budget schließen“ gibt alles Verbliebene jederzeit zurück.",
       "closed": "{currency}-Budget geschlossen — alles, was darin lag, ist zurück in deinem Wallet.",
+      "closedFloatElsewhere": "{currency}-Budget geschlossen — der Topf ist zurück, aber {amount} SOL des Sitzungsschlüssel-Restbetrags liegen noch auf dem Sitzungsschlüssel, den dieses Gerät nicht hat. Nur ein Gerät, das ihn hält, kann sie zurückschicken.",
       "floatRecovered": "{amount} SOL vom Sitzungsschlüssel zurückgeholt."
     },
     "cost": {

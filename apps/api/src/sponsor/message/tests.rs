@@ -30,31 +30,6 @@ fn rebuilds_the_settle_message_the_program_expects() {
     assert_eq!(instruction.accounts.len(), 14);
 }
 
-/// A shop invoice's settle has one more account, and the relayer's rebuild
-/// must carry it: without it the message is a slot short and no sponsored
-/// settle of a shop invoice could ever match what the buyer signed.
-#[test]
-fn a_shop_policy_travels_as_the_trailing_account() {
-    let sponsor = Pubkey::new_from_array([9; 32]);
-    let shop_policy = Pubkey::new_from_array([8; 32]);
-    let plain = settle_instruction(&params(""), &sponsor);
-    let mut shop = params("");
-    shop.shop_policy = Some(shop_policy);
-    let priced = settle_instruction(&shop, &sponsor);
-
-    assert_eq!(priced.accounts.len(), plain.accounts.len() + 1);
-    assert_eq!(priced.accounts.len(), 15);
-    let last = priced.accounts.last().expect("the policy account");
-    assert_eq!(last.pubkey, shop_policy);
-    assert!(!last.is_writable, "the policy is read-only");
-    assert!(!last.is_signer, "the relayer never signs for a seller");
-    assert_eq!(
-        &priced.accounts[..14],
-        &plain.accounts[..],
-        "everything before the policy is the wallet settle's own list"
-    );
-}
-
 #[test]
 fn the_instruction_is_the_idl_shape() {
     let sponsor = Pubkey::new_from_array([9; 32]);
@@ -106,4 +81,106 @@ fn rebuilds_the_sol_settle_message() {
         sponsor,
         "the sponsor is the account that funds the records"
     );
+}
+
+/// The rebuilt message with its static keys put in another order inside each
+/// role group — what a compiler that sorts differently (Kit sorts base58 text,
+/// `solana-sdk` sorts bytes) produces for the same settlement.
+fn reordered(message: &VersionedMessage) -> VersionedMessage {
+    let VersionedMessage::V0(message) = message else {
+        panic!("version 0");
+    };
+    let header = message.header;
+    let signed = usize::from(header.num_required_signatures);
+    let readonly_unsigned = usize::from(header.num_readonly_unsigned_accounts);
+    let total = message.account_keys.len();
+    // Reverse the writable unsigned group and the read-only unsigned group.
+    let mut order: Vec<usize> = (0..signed).collect();
+    order.extend((signed..total - readonly_unsigned).rev());
+    order.extend((total - readonly_unsigned..total).rev());
+    let account_keys: Vec<Pubkey> = order.iter().map(|&old| message.account_keys[old]).collect();
+    let new_index = |old: u8| order.iter().position(|&o| o == usize::from(old)).unwrap() as u8;
+    let instructions = message
+        .instructions
+        .iter()
+        .map(
+            |instruction| solana_sdk::message::compiled_instruction::CompiledInstruction {
+                program_id_index: new_index(instruction.program_id_index),
+                accounts: instruction.accounts.iter().map(|&a| new_index(a)).collect(),
+                data: instruction.data.clone(),
+            },
+        )
+        .collect();
+    VersionedMessage::V0(v0::Message {
+        header,
+        account_keys,
+        recent_blockhash: message.recent_blockhash,
+        instructions,
+        address_table_lookups: vec![],
+    })
+}
+
+fn v0_of(message: &mut VersionedMessage) -> &mut v0::Message {
+    match message {
+        VersionedMessage::V0(message) => message,
+        _ => panic!("version 0"),
+    }
+}
+
+/// The bug a buyer met above their allowance: the wallet signed the right
+/// settlement compiled by Kit, its accounts in Kit's order, and a byte match
+/// refused it. The same settlement in another order is the same settlement.
+#[test]
+fn the_same_settlement_in_another_account_order_is_accepted() {
+    let sponsor = Pubkey::new_from_array([9; 32]);
+    let ours = expected_message(&params("flat white"), &sponsor, Hash::default()).unwrap();
+    let theirs = reordered(&ours);
+    assert_ne!(
+        message_bytes(&ours).unwrap(),
+        message_bytes(&theirs).unwrap()
+    );
+    assert!(same_settlement(&ours, &theirs));
+    assert!(same_settlement(&ours, &ours));
+
+    let sol = Params {
+        mint: None,
+        ..params("coffee")
+    };
+    let ours = expected_message(&sol, &sponsor, Hash::default()).unwrap();
+    assert!(same_settlement(&ours, &reordered(&ours)));
+}
+
+#[test]
+fn a_different_settlement_is_refused_whatever_its_order() {
+    let sponsor = Pubkey::new_from_array([9; 32]);
+    let ours = expected_message(&params("flat white"), &sponsor, Hash::default()).unwrap();
+
+    // Another price.
+    let mut other = reordered(&ours);
+    v0_of(&mut other).instructions[0].data[8] ^= 1;
+    assert!(!same_settlement(&ours, &other));
+
+    // Another account in a slot: the seller's token account swapped for a stranger's.
+    let mut other = reordered(&ours);
+    let position = v0_of(&mut other).instructions[0].accounts[3] as usize;
+    v0_of(&mut other).account_keys[position] = Pubkey::new_from_array([7; 32]);
+    assert!(!same_settlement(&ours, &other));
+
+    // Two instruction accounts swapped: same keys, different meaning.
+    let mut other = reordered(&ours);
+    v0_of(&mut other).instructions[0].accounts.swap(2, 3);
+    assert!(!same_settlement(&ours, &other));
+
+    // A read-only account made writable by moving the header's boundary.
+    let mut other = reordered(&ours);
+    v0_of(&mut other).header.num_readonly_unsigned_accounts -= 1;
+    assert!(!same_settlement(&ours, &other));
+
+    // Another blockhash, or another fee payer.
+    let mut other = reordered(&ours);
+    v0_of(&mut other).recent_blockhash = Hash::new_from_array([5; 32]);
+    assert!(!same_settlement(&ours, &other));
+    let mut other = ours.clone();
+    v0_of(&mut other).account_keys.swap(0, 1);
+    assert!(!same_settlement(&ours, &other));
 }

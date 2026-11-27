@@ -427,7 +427,7 @@
     },
     "whereMoney": {
       "title": "Dónde está el dinero.",
-      "body": "La reserva es una cuenta de programa derivada de tu cartera: fijar o rellenar un límite mueve ese importe de tu cartera a ella, y solo tu cartera puede sacarlo de vuelta. La clave de sesión de este dispositivo puede pagar desde ella, pero nunca más que el límite. El límite se reinicia el día 1 de cada mes, la reserva conserva lo que no gastaste y cerrar el presupuesto devuelve cada unidad a tu cartera."
+      "body": "La reserva es una cuenta de programa derivada de tu cartera: fijar o rellenar un límite mueve ese importe de tu cartera a ella, y solo tu cartera puede sacarlo de vuelta. La clave de sesión de este dispositivo puede pagar desde ella, pero nunca más que el límite. El límite se reinicia el día 1 de cada mes, la reserva conserva lo que no gastaste y cerrar el presupuesto devuelve lo que queda en ella a tu cartera. El pequeño saldo de la clave de sesión también vuelve si este dispositivo aún tiene la clave."
     },
     "keepSmall": {
       "title": "Mantenlo pequeño a propósito.",
@@ -454,7 +454,7 @@
     "closeBudget": "Cerrar el presupuesto de {currency} y recuperar los fondos",
     "killSwitch": {
       "title": "Cerrar el presupuesto es el botón de emergencia.",
-      "body": "Revoca la clave de sesión en todos los dispositivos, devuelve a tu cartera todo lo que quede y detiene los pagos silenciosos al instante — después puedes fijar un límite nuevo cuando quieras."
+      "body": "Revoca la clave de sesión en todos los dispositivos, devuelve la reserva a tu cartera y detiene los pagos silenciosos al instante — después puedes fijar un límite nuevo cuando quieras."
     },
     "enable": "Activar presupuesto mensual",
     "oneApproval": {
@@ -491,6 +491,7 @@
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
       "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba en él ha vuelto a tu cartera.",
+      "closedFloatElsewhere": "Presupuesto de {currency} cerrado — la reserva ha vuelto, pero {amount} SOL del saldo de la clave de sesión siguen en la clave de sesión, que este dispositivo no tiene. Solo un dispositivo que la tenga puede devolverlos.",
       "floatRecovered": "Recuperados {amount} SOL de la clave de sesión."
     },
     "cost": {

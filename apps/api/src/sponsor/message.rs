@@ -27,12 +27,9 @@ fn discriminator(name: &str) -> [u8; 8] {
 }
 
 /// The settle instruction as the IDL declares it, in the IDL's account order,
-/// with `sponsor` after the system program (before the optional shop policy).
-/// A request with no mint is `settle_payment`; anything else is
-/// `settle_token_payment` with the three token accounts the client's own
-/// builder uses. The shop policy trails only when the invoice names one — the
-/// program's optional account takes the program id in that slot to mean "none",
-/// which is a message the client never builds.
+/// with `sponsor` last. A request with no mint is `settle_payment`; anything
+/// else is `settle_token_payment` with the three token accounts the client's
+/// own builder uses. The list is the whole instruction: nothing trails it.
 pub(super) fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instruction {
     let program = program_id();
     let treasury = pda(&[b"treasury"], &program);
@@ -56,7 +53,7 @@ pub(super) fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instructi
         data.extend_from_slice(&(params.memo.len() as u32).to_le_bytes());
         data.extend_from_slice(params.memo.as_bytes());
 
-        let mut accounts = vec![
+        let accounts = vec![
             AccountMeta::new(params.buyer, true),
             AccountMeta::new(invoice, false),
             AccountMeta::new(params.seller, false),
@@ -70,9 +67,6 @@ pub(super) fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instructi
             AccountMeta::new_readonly(system, false),
             AccountMeta::new(*sponsor, true),
         ];
-        if let Some(shop_policy) = params.shop_policy.as_ref() {
-            accounts.push(AccountMeta::new_readonly(*shop_policy, false));
-        }
         return Instruction {
             program_id: program,
             accounts,
@@ -98,7 +92,7 @@ pub(super) fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instructi
     data.extend_from_slice(&(params.memo.len() as u32).to_le_bytes());
     data.extend_from_slice(params.memo.as_bytes());
 
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(params.buyer, true),
         AccountMeta::new(invoice, false),
         AccountMeta::new(params.seller, false),
@@ -117,11 +111,6 @@ pub(super) fn settle_instruction(params: &Params, sponsor: &Pubkey) -> Instructi
         AccountMeta::new_readonly(system, false),
         AccountMeta::new(*sponsor, true),
     ];
-    // Trailing and read-only, exactly as the program declares it: absent for a
-    // shop with no policy, never a placeholder in its slot.
-    if let Some(shop_policy) = params.shop_policy.as_ref() {
-        accounts.push(AccountMeta::new_readonly(*shop_policy, false));
-    }
 
     Instruction {
         program_id: program,
@@ -141,6 +130,90 @@ pub(super) fn expected_message(
     let message = v0::Message::try_compile(sponsor, &[instruction], &[], blockhash)
         .map_err(|_| ApiError::Internal("the settle message could not be compiled".into()))?;
     Ok(VersionedMessage::V0(message))
+}
+
+/// What a version 0 message asks of one of its static accounts — whether it
+/// must sign and whether it is locked writable — read from the header alone, the
+/// same way the runtime reads it.
+fn role(message: &v0::Message, index: usize) -> (bool, bool) {
+    let header = &message.header;
+    let signed = usize::from(header.num_required_signatures);
+    if index < signed {
+        let writable_signed =
+            signed.saturating_sub(usize::from(header.num_readonly_signed_accounts));
+        (true, index < writable_signed)
+    } else {
+        let unsigned = message.account_keys.len().saturating_sub(signed);
+        let writable_unsigned =
+            unsigned.saturating_sub(usize::from(header.num_readonly_unsigned_accounts));
+        (false, index - signed < writable_unsigned)
+    }
+}
+
+/// Whether the buyer's message asks the chain for exactly what the rebuilt one
+/// does: the same fee payer, the same accounts each with the same role, and the
+/// same instructions over them — the same program, account list and data.
+///
+/// Bytes are the wrong test. A version 0 message lists its accounts in an order
+/// its compiler chooses within each role, and the web client's compiler (Kit)
+/// sorts them by their base58 text while `solana-sdk` sorts them by their bytes:
+/// the same settlement then serializes differently and a byte match refuses
+/// nearly every one. Nothing the order changes is something the chain acts on,
+/// so the comparison is over meaning, and every other part of the message —
+/// header, blockhash, lookups, key count — still has to match exactly.
+pub(super) fn same_settlement(ours: &VersionedMessage, theirs: &VersionedMessage) -> bool {
+    let (VersionedMessage::V0(ours), VersionedMessage::V0(theirs)) = (ours, theirs) else {
+        return false;
+    };
+    if ours.header != theirs.header
+        || ours.recent_blockhash != theirs.recent_blockhash
+        || !ours.address_table_lookups.is_empty()
+        || !theirs.address_table_lookups.is_empty()
+        || ours.account_keys.len() != theirs.account_keys.len()
+        || ours.instructions.len() != theirs.instructions.len()
+        || ours.account_keys.first() != theirs.account_keys.first()
+    {
+        return false;
+    }
+
+    // Every key of theirs is one of ours, once, in the same role. With equal
+    // lengths and our keys distinct, that makes the two key sets the same.
+    let index: std::collections::HashMap<&Pubkey, usize> = ours
+        .account_keys
+        .iter()
+        .enumerate()
+        .map(|(position, key)| (key, position))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    for (position, key) in theirs.account_keys.iter().enumerate() {
+        let Some(&mine) = index.get(key) else {
+            return false;
+        };
+        if !seen.insert(key) || role(ours, mine) != role(theirs, position) {
+            return false;
+        }
+    }
+
+    let key = |message: &v0::Message, position: u8| -> Option<Pubkey> {
+        message.account_keys.get(usize::from(position)).copied()
+    };
+    ours.instructions
+        .iter()
+        .zip(theirs.instructions.iter())
+        .all(|(mine, other)| {
+            mine.data == other.data
+                && mine.accounts.len() == other.accounts.len()
+                && key(ours, mine.program_id_index).is_some()
+                && key(ours, mine.program_id_index) == key(theirs, other.program_id_index)
+                && mine
+                    .accounts
+                    .iter()
+                    .zip(other.accounts.iter())
+                    .all(|(a, b)| {
+                        let a = key(ours, *a);
+                        a.is_some() && a == key(theirs, *b)
+                    })
+        })
 }
 
 pub(super) fn message_bytes(message: &VersionedMessage) -> ApiResult<Vec<u8>> {

@@ -1133,46 +1133,6 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "shop_policy",
-          "docs": [
-            "The shop that priced this invoice: optional and trailing, exactly as on",
-            "`settle_payment`. The allowance path is where a shop rate matters most —",
-            "a buyer paying silently from a pot still pays the shop's rate, because the",
-            "policy travels with the invoice's seller."
-          ],
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  111,
-                  112,
-                  45,
-                  112,
-                  111,
-                  108,
-                  105,
-                  99,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.seller",
-                "account": "ShopPolicy"
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.shop_key",
-                "account": "ShopPolicy"
-              }
-            ]
-          }
         }
       ],
       "args": [
@@ -1519,45 +1479,6 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "shop_policy",
-          "docs": [
-            "The shop that priced this invoice: optional and trailing, as on the other",
-            "three settle paths, so an allowance payment from a pot pays the shop's",
-            "rate when the invoice names one and `Config`'s when it does not."
-          ],
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  111,
-                  112,
-                  45,
-                  112,
-                  111,
-                  108,
-                  105,
-                  99,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.seller",
-                "account": "ShopPolicy"
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.shop_key",
-                "account": "ShopPolicy"
-              }
-            ]
-          }
         }
       ],
       "args": [
@@ -1751,97 +1672,6 @@
       ]
     },
     {
-      "name": "set_shop_policy",
-      "docs": [
-        "Sets a shop's multiplier on the global fee policy — its own rate, in",
-        "basis points on `Config`'s two rates, `10_000` being `Config` unchanged.",
-        "",
-        "Signed by the seller and seeded by the seller plus the key the API keeps",
-        "beside its `shops` row, so a shop is priced on chain by the wallet that",
-        "owns it and two shops of one wallet can charge differently. The cap is",
-        "enforced here rather than at settle time: a shop may discount itself and",
-        "never surcharge a buyer, and no settlement has an out-of-band rate to",
-        "handle. The account is optional on every settle path — an invoice that",
-        "names none pays `Config`'s rate, which is what keeps every QR printed",
-        "before this landed working."
-      ],
-      "discriminator": [
-        120,
-        171,
-        36,
-        196,
-        241,
-        54,
-        245,
-        139
-      ],
-      "accounts": [
-        {
-          "name": "seller",
-          "docs": [
-            "The shop's seller: the only key that may write this shop's rate, and the",
-            "one that pays the account's rent. It is also the first seed, so no",
-            "caller can write a policy attributed to a wallet that did not sign."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "shop_key",
-          "docs": [
-            "only ever a PDA seed — the program never reads it — so it needs no data",
-            "and no owner, and it must not be a signer (a shop is not a wallet)."
-          ]
-        },
-        {
-          "name": "shop_policy",
-          "docs": [
-            "Created on the first write and rewritten on every later one, so a seller",
-            "changing a rate does not need a second instruction or a close."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  111,
-                  112,
-                  45,
-                  112,
-                  111,
-                  108,
-                  105,
-                  99,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "seller"
-              },
-              {
-                "kind": "account",
-                "path": "shop_key"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "multiplier_bps",
-          "type": "u16"
-        }
-      ]
-    },
-    {
       "name": "settle_payment",
       "docs": [
         "Buyer pays an invoice. The invoice account is created inside this same",
@@ -2029,54 +1859,12 @@
             "relayer's key, which turns a payer who cannot afford a signature into a",
             "payer without renting it the rest.",
             "",
-            "Required rather than optional, unlike `shop_policy`: an absent sponsor",
-            "would have to mean the payer fronts the records, which is the cost this",
-            "account exists to move off the payer."
+            "Required rather than optional: an absent sponsor would have to mean the",
+            "payer fronts the records, which is the cost this account exists to move",
+            "off the payer."
           ],
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "shop_policy",
-          "docs": [
-            "The shop that priced this invoice, when its seller has one. Optional and",
-            "trailing, so every invoice printed before shop rates existed settles",
-            "exactly as it did: no account means `Config`'s rate. The seeds derive it",
-            "from the seller and shop key it records, so a stand-in address is refused",
-            "here; whether it belongs to *this* invoice's seller is the handler's",
-            "named check."
-          ],
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  111,
-                  112,
-                  45,
-                  112,
-                  111,
-                  108,
-                  105,
-                  99,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.seller",
-                "account": "ShopPolicy"
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.shop_key",
-                "account": "ShopPolicy"
-              }
-            ]
-          }
         }
       ],
       "args": [
@@ -2316,47 +2104,6 @@
           ],
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "shop_policy",
-          "docs": [
-            "The shop that priced this invoice, when its seller has one: optional and",
-            "trailing, so a funded or sponsored settle that names none pays `Config`'s",
-            "rate exactly as before. The seeds prove the account is the canonical PDA",
-            "for its own contents; the handler refuses one recorded under another",
-            "seller by name."
-          ],
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  111,
-                  112,
-                  45,
-                  112,
-                  111,
-                  108,
-                  105,
-                  99,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.seller",
-                "account": "ShopPolicy"
-              },
-              {
-                "kind": "account",
-                "path": "shop_policy.shop_key",
-                "account": "ShopPolicy"
-              }
-            ]
-          }
         }
       ],
       "args": [
@@ -2582,19 +2329,6 @@
       ]
     },
     {
-      "name": "ShopPolicy",
-      "discriminator": [
-        137,
-        252,
-        106,
-        25,
-        11,
-        191,
-        217,
-        83
-      ]
-    },
-    {
       "name": "TokenBudget",
       "discriminator": [
         123,
@@ -2771,12 +2505,12 @@
     {
       "code": 6021,
       "name": "ShopFeeTooHigh",
-      "msg": "A shop's multiplier cannot exceed 100%"
+      "msg": "Retired: per-shop fee cap"
     },
     {
       "code": 6022,
       "name": "ShopPolicySellerMismatch",
-      "msg": "This shop policy belongs to another seller"
+      "msg": "Retired: shop policy belongs to another seller"
     },
     {
       "code": 6023,
@@ -3061,7 +2795,7 @@
         "10 EURC (`MAX_SOL_FEE_LAMPORTS` / `MAX_TOKEN_FEE_BASE_UNITS`), so the",
         "percentage serves the everyday payment without letting a large invoice pay a",
         "large multiple of what the service costs. The ceiling is the program's, not a",
-        "per-shop setting: a shop scales the rate down, never the maximum up.",
+        "per-policy setting: no rate field raises it.",
         "",
         "The two flat fields exist because a token settlement cannot charge its",
         "non-signing seller lamports, so the treasury — not the seller — funds the",
@@ -3389,60 +3123,6 @@
           },
           {
             "name": "Settled"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ShopPolicy",
-      "docs": [
-        "A shop's multiplier on `Config`'s rates.",
-        "",
-        "A shop is an API row, not an account, so the on-chain identity is the seller",
-        "that owns it plus a key the API generates when the row is created —",
-        "`[\"shop-policy\", seller, shop_key]`. The account is optional: an invoice that",
-        "names none settles at `Config`'s rate, which is what keeps every QR printed",
-        "before this landed working.",
-        "",
-        "The multiplier is the whole policy, not a second copy of one. It scales the",
-        "two rates and leaves the boundaries and the per-currency flats to `Config`,",
-        "so every shop is priced from the same live numbers and a refresh still has",
-        "one place to write. `10_000` is `Config` unchanged, `0` charges no",
-        "percentage at all — the marker's flat still applies on a token invoice, so a",
-        "free shop cannot make the treasury pay for the record.",
-        "",
-        "A multiplier cannot exceed `10_000`: the band is the type's range plus the",
-        "program's own check on write, which is why this needs no `Config` field and",
-        "no version bump. A shop can discount itself, never surcharge a buyer."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "seller",
-            "docs": [
-              "The wallet that owns the shop. Every settle compares this against the",
-              "invoice's seller, so one shop's policy cannot price another's invoice."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "shop_key",
-            "docs": [
-              "The key the API stores beside its `shops` row; part of the PDA seeds."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "multiplier_bps",
-            "docs": [
-              "Basis points applied to `Config`'s two rates: `10_000` is unchanged."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }

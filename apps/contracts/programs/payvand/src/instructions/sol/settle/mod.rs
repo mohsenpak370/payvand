@@ -15,7 +15,7 @@ use anchor_lang::AccountsClose;
 use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::PaymentSettled;
-use crate::state::{Config, Payment, PaymentReceipt, PaymentState, ShopPolicy};
+use crate::state::{Config, Payment, PaymentReceipt, PaymentState};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -84,27 +84,11 @@ pub struct SettlePayment<'info> {
     /// relayer's key, which turns a payer who cannot afford a signature into a
     /// payer without renting it the rest.
     ///
-    /// Required rather than optional, unlike `shop_policy`: an absent sponsor
-    /// would have to mean the payer fronts the records, which is the cost this
-    /// account exists to move off the payer.
+    /// Required rather than optional: an absent sponsor would have to mean the
+    /// payer fronts the records, which is the cost this account exists to move
+    /// off the payer.
     #[account(mut)]
     pub sponsor: Signer<'info>,
-
-    /// The shop that priced this invoice, when its seller has one. Optional and
-    /// trailing, so every invoice printed before shop rates existed settles
-    /// exactly as it did: no account means `Config`'s rate. The seeds derive it
-    /// from the seller and shop key it records, so a stand-in address is refused
-    /// here; whether it belongs to *this* invoice's seller is the handler's
-    /// named check.
-    #[account(
-        seeds = [
-            SHOP_POLICY_SEED,
-            shop_policy.seller.as_ref(),
-            shop_policy.shop_key.as_ref()
-        ],
-        bump = shop_policy.bump
-    )]
-    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 pub fn settle_payment_handler<'info, 'ctx>(
@@ -138,13 +122,7 @@ pub fn settle_payment_handler<'info, 'ctx>(
     } else {
         1
     };
-    let split = split::settle_split(
-        &ctx.accounts.config,
-        amount,
-        ctx.accounts.shop_policy.as_deref(),
-        &ctx.accounts.seller.key(),
-        signatures,
-    )?;
+    let split = split::settle_split(&ctx.accounts.config, amount, signatures)?;
 
     anchor_lang::system_program::transfer(
         CpiContext::new(

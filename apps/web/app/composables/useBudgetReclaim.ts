@@ -80,9 +80,25 @@ export function useBudgetReclaim(deps: {
   /**
    * Hands the float back after the last allowance is gone, and says what
    * happened to it: the close worked either way, so the message must not claim
-   * everything came back when the float is still on this device's key.
+   * everything came back when the float is still out there.
+   *
+   * A key this device does not hold cannot be swept from here, and it cannot be
+   * recovered from here later either — only the device that holds it can sign
+   * its transfer. So that case reads the balance and names the float instead of
+   * reporting a plain success, which is the difference between "your money is
+   * back" and "0.03 SOL is on a key you do not have".
    */
-  async function handBackFloat(buyer: Address) {
+  async function handBackFloat(buyer: Address, sessionKey: Address, heldHere: boolean) {
+    if (!heldHere) {
+      const stranded = await budgetApi.sweepableFloat(sessionKey).catch(() => 0)
+      success.value = stranded > 0
+        ? t('budget.success.closedFloatElsewhere', {
+            currency: unitLabel.value,
+            amount: lamportsToSol(stranded)
+          })
+        : t('budget.success.closed', { currency: unitLabel.value })
+      return
+    }
     try {
       await sweepHomeAndForget(buyer)
       success.value = t('budget.success.closed', { currency: unitLabel.value })
@@ -110,6 +126,10 @@ export function useBudgetReclaim(deps: {
       failure.value = t('budget.errors.noBudgetToClose')
       return
     }
+    // Captured before the account is gone: whose key it named, and whether this
+    // device is the one that can sign the float's transfer home.
+    const sessionKey = view.value.sessionKey
+    const heldHere = deviceKeyAddress.value === sessionKey
     busy.value = true
     try {
       const mint = activeMint.value
@@ -158,7 +178,7 @@ export function useBudgetReclaim(deps: {
       if (anyLeft) {
         success.value = t('budget.success.closed', { currency: unitLabel.value })
       } else {
-        await handBackFloat(buyer)
+        await handBackFloat(buyer, sessionKey, heldHere)
       }
     } catch (error) {
       recordFailure(error)

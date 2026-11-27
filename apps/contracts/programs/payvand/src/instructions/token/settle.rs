@@ -21,7 +21,7 @@ use crate::constants::*;
 use crate::errors::PaymentError;
 use crate::events::PaymentSettled;
 use crate::helpers::{ensure_treasury_funded, mint_decimals, pay_from_treasury};
-use crate::state::{Config, PaymentReceipt, PaymentState, ShopPolicy, TokenPayment};
+use crate::state::{Config, PaymentReceipt, PaymentState, TokenPayment};
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
@@ -116,21 +116,6 @@ pub struct SettleTokenPayment<'info> {
     /// one signature.
     #[account(mut)]
     pub sponsor: Signer<'info>,
-
-    /// The shop that priced this invoice, when its seller has one: optional and
-    /// trailing, so a funded or sponsored settle that names none pays `Config`'s
-    /// rate exactly as before. The seeds prove the account is the canonical PDA
-    /// for its own contents; the handler refuses one recorded under another
-    /// seller by name.
-    #[account(
-        seeds = [
-            SHOP_POLICY_SEED,
-            shop_policy.seller.as_ref(),
-            shop_policy.shop_key.as_ref()
-        ],
-        bump = shop_policy.bump
-    )]
-    pub shop_policy: Option<Account<'info, ShopPolicy>>,
 }
 
 pub fn settle_token_payment_handler<'info, 'ctx>(
@@ -162,8 +147,6 @@ pub fn settle_token_payment_handler<'info, 'ctx>(
         &ctx.accounts.config,
         amount,
         &ctx.accounts.mint.key(),
-        ctx.accounts.shop_policy.as_deref(),
-        &ctx.accounts.seller.key(),
         signatures,
     )?;
     let (fee, refund) = (split.fee, split.refund);

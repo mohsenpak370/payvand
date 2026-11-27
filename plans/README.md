@@ -71,7 +71,6 @@ sequential filename. Templates live in `plans/templates/`.
 | ID | Plan | Status |
 | ---- | ---- | -------- |
 | 0004 | [Relayer and sponsored fees (gasless payments)](0004-relayer-sponsored-fees.md) | In Progress |
-| 0005 | [Per-shop fee overrides](0005-per-shop-fees.md) | In Progress |
 | 0007 | [SOL sponsored fees](0007-sol-sponsored-fees.md) | In Progress |
 
 The 2026-11-09 contract review originally lived in one plan. It was split on
@@ -119,15 +118,18 @@ second policy: a `ShopPolicy` PDA seeded by the seller and a key the API stores
 beside its row, `0..=10_000` set by the seller, scaling `Config`'s two rates and
 leaving the boundaries and the token flats shared. That shape needs no `Config`
 field, so it takes no version bump. The setter and the optional accounts on all
-four settle paths have since shipped; the API/client side is what remains.
+four settle paths shipped, then were removed again on 2026-11-27 when the plan
+was cancelled: the seller pays the fee, so a shop rate only cut the protocol's
+own revenue and never changed the buyer's price, and nothing in the product ever
+named a policy. See [`archive/0005-per-shop-fees.md`](archive/0005-per-shop-fees.md).
 
 Re-audited 2026-11-26 against `92010cb`: `0003` moved from **On hold** to
 **Deferred** (no current intent to implement Token-2022; the on-chain owner check
 is even stricter than its policy text — SPL Token only); `0004` remains **In
 Progress** because its API-endpoint devnet run, deployed sponsor key,
-client refusal text, SOL cost panel and copy are still owed; `0005` remains **In
-Progress** with the program/relayer shipped and the shop-row, client/quote,
-cap-settlement test and devnet work left; `0007` was added to the active table —
+client refusal text, SOL cost panel and copy are still owed; `0005` was **In
+Progress** at that audit and was cancelled and removed on 2026-11-27; `0007` was
+added to the active table —
 its program, relayer and checkout code plus the devnet runs are done, but the
 same deployment/copy/verification items and its archive step remain. A fresh
 `cargo build-sbf` followed by `cargo test --test settle` passes 74/74; clippy
@@ -168,3 +170,4 @@ to be reopened for it.
 | ---- | ---- | -------- |
 | 0001 | [Contract Security Hardening](archive/0001-contract-security-hardening.md) | Completed |
 | 0002 | [Fee Model, Treasury, and Budget Accounting](archive/0002-fee-model-and-treasury.md) | Completed |
+| 0005 | [Per-shop fee overrides](archive/0005-per-shop-fees.md) | Cancelled |

@@ -427,7 +427,7 @@
     },
     "whereMoney": {
       "title": "Où se trouve l'argent.",
-      "body": "La cagnotte est un compte de programme dérivé de votre portefeuille : fixer ou recharger une limite déplace ce montant de votre portefeuille vers ce compte, et seul votre portefeuille peut le retirer. La clé de session de cet appareil peut y dépenser, mais jamais au-delà de la limite. La limite repart le 1er de chaque mois, la cagnotte garde ce que vous n'avez pas dépensé, et fermer le budget rend chaque unité à votre portefeuille."
+      "body": "La cagnotte est un compte de programme dérivé de votre portefeuille : fixer ou recharger une limite déplace ce montant de votre portefeuille vers ce compte, et seul votre portefeuille peut le retirer. La clé de session de cet appareil peut y dépenser, mais jamais au-delà de la limite. La limite repart le 1er de chaque mois, la cagnotte garde ce que vous n'avez pas dépensé, et fermer le budget rend ce qu'il contient à votre portefeuille. Le petit solde de la clé de session revient aussi tant que cet appareil détient la clé."
     },
     "keepSmall": {
       "title": "Gardez-la volontairement basse.",
@@ -454,7 +454,7 @@
     "closeBudget": "Fermer le budget {currency} et récupérer les fonds",
     "killSwitch": {
       "title": "Fermer le budget, c'est le coupe-circuit.",
-      "body": "Cela révoque la clé de session sur tous les appareils, rend tout ce qui reste à votre portefeuille et arrête aussitôt les paiements silencieux — puis une nouvelle limite peut être fixée quand vous le souhaitez."
+      "body": "Cela révoque la clé de session sur tous les appareils, rend la cagnotte à votre portefeuille et arrête aussitôt les paiements silencieux — puis une nouvelle limite peut être fixée quand vous le souhaitez."
     },
     "enable": "Activer le budget mensuel",
     "oneApproval": {
@@ -491,6 +491,7 @@
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
       "closed": "Budget {currency} fermé — tout ce qu’il contenait est revenu dans votre portefeuille.",
+      "closedFloatElsewhere": "Budget {currency} fermé — la cagnotte est revenue, mais {amount} SOL du solde de la clé de session restent sur la clé de session, que cet appareil ne détient pas. Seul un appareil qui la détient peut les renvoyer.",
       "floatRecovered": "{amount} SOL récupérés depuis la clé de session."
     },
     "cost": {
