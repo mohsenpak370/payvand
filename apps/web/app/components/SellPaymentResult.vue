@@ -29,8 +29,41 @@ const {
   reset,
   copyLink,
   copyPayload,
-  paidAmountLabel
+  paidAmountLabel,
+  reusable
 } = props.sell
+
+// A reusable code is shown as the link it is: the same code, pointing at the
+// offer rather than at one invoice, so every visitor gets an invoice of their
+// own instead of finding the first payer's already settled.
+const origin = useRequestURL().origin
+const reusableUrl = computed(
+  () => (reusable.value ? `${origin}${reusable.value.path}` : '')
+)
+const reusablePrice = computed(() => {
+  const link = reusable.value
+  if (!link) return ''
+  return link.currency === 'sol'
+    ? `${lamportsToSol(link.amount)} SOL`
+    : `${formatTokenAmount(link.amount, 6)} ${currencySymbol(link.currency)}`
+})
+const reusableCopied = ref(false)
+let reusableCopiedTimer: ReturnType<typeof setTimeout> | undefined
+
+async function copyReusable() {
+  try {
+    await navigator.clipboard.writeText(reusableUrl.value)
+  } catch {
+    return
+  }
+  reusableCopied.value = true
+  clearTimeout(reusableCopiedTimer)
+  reusableCopiedTimer = setTimeout(() => {
+    reusableCopied.value = false
+  }, 2_000)
+}
+
+onBeforeUnmount(() => clearTimeout(reusableCopiedTimer))
 </script>
 
 <template>
@@ -43,7 +76,7 @@ const {
           {{ t('sell.showHeading') }}
         </h2>
         <UButton
-          v-if="record"
+          v-if="record || reusable"
           :label="t('sell.newPayment')"
           color="neutral"
           variant="soft"
@@ -53,8 +86,61 @@ const {
       </div>
     </template>
 
+    <!-- A reusable code, not an invoice: the price it charges and the way to
+         hand the code over, with no single payment to watch. -->
     <div
-      v-if="qrPayload && record"
+      v-if="reusable"
+      class="flex flex-col items-center gap-4"
+    >
+      <div
+        class="flex w-full flex-col items-center gap-3"
+        :style="{ maxWidth: codePaperWidth }"
+      >
+        <PaymentQr
+          :url="reusable.path"
+          :size="CODE_SIZE"
+        />
+        <UButton
+          :icon="reusableCopied ? 'i-lucide-check' : 'i-lucide-link'"
+          :label="reusableCopied ? t('sell.reusableCopied') : t('sell.reusableCopy')"
+          block
+          color="neutral"
+          variant="soft"
+          @click="copyReusable()"
+        />
+      </div>
+
+      <div
+        v-if="reusable.name || reusable.description"
+        class="text-center"
+      >
+        <p
+          v-if="reusable.name"
+          class="text-base font-medium"
+        >
+          {{ reusable.name }}
+        </p>
+        <p
+          v-if="reusable.description"
+          class="mt-0.5 text-sm text-muted"
+        >
+          {{ reusable.description }}
+        </p>
+      </div>
+
+      <p class="text-center text-sm font-medium tabular-nums">
+        {{ reusablePrice }}
+      </p>
+      <p class="text-center text-sm text-muted">
+        {{ t('sell.reusableHelp', { price: reusablePrice }) }}
+      </p>
+      <p class="text-center text-xs text-muted">
+        {{ t('sell.reusableNote') }}
+      </p>
+    </div>
+
+    <div
+      v-else-if="qrPayload && record"
       class="flex flex-col items-center gap-4"
     >
       <!-- The code and the way to present it share one width. -->

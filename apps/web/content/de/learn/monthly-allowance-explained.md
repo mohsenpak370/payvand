@@ -54,7 +54,8 @@ eine wiederkehrende Abbuchung gibt es darin nirgends.
 ## Die Buttons
 
 - **Limit setzen / speichern** — die eine Bestätigung. Sie bewegt das Geld in den Topf, registriert
-  dieses Gerät und startet den Monat.
+  dieses Gerät und startet den Monat. Ein anderes Limit mitten im Monat startet den Monat mit diesem
+  Limit neu.
 - **Auffüllen** — setzt den Topf mitten im Monat wieder auf das volle Limit, etwa wenn von 50 noch 20
   übrig sind. Dieselbe einzelne Bestätigung. Es bewegt nur das Fehlende, und was du diesen Monat schon
   ausgegeben hast, zählt weiter: Auffüllen gibt ausgegebenes Geld nicht zurück. Der Zähler startet von

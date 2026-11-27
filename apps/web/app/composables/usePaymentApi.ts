@@ -142,6 +142,39 @@ export interface CreatePaymentResponse {
   qrPayload: string
 }
 
+/**
+ * A reusable code: one offer — a price, a currency and the words around it —
+ * that any buyer can pay, as often as they like. It is not an invoice: the chain
+ * settles an invoice once, so every visit mints a fresh one from this offer.
+ */
+export interface ReusableLink {
+  id: string
+  seller: string
+  cluster: string
+  currency: SupportedCurrency
+  /** Price in the currency's base units: lamports, or the token's own units. */
+  amount: number
+  memo: string
+  name: string
+  description: string
+  /** The path the code opens, with this app's origin in front of it. */
+  path: string
+  created_at_unix: number
+}
+
+/** What a seller posts to store a reusable code. */
+export interface CreateReusableLinkInput {
+  seller: string
+  currency: SupportedCurrency
+  amount: number
+  memo?: string
+  name?: string
+  description?: string
+  shop_id?: string
+  cluster: string
+  endpoint?: string
+}
+
 /** A payment code kept on the account, filed under a shop, so it opens again. */
 export interface SavedPayment {
   id: string
@@ -419,6 +452,25 @@ export function usePaymentApi() {
     })
   }
 
+  /**
+   * Stores an offer the account can be paid for again and again. The offer is
+   * all that is made here; the invoices come one per visitor.
+   */
+  async function createReusableLink(body: CreateReusableLinkInput): Promise<ReusableLink> {
+    return await $fetch(`${base}/api/reusable`, {
+      method: 'POST',
+      body,
+      headers: authHeaders()
+    })
+  }
+
+  /** This visit's own invoice for a reusable code. The buyer needs no account. */
+  async function reusableInvoice(id: string): Promise<CreatePaymentResponse> {
+    return await $fetch(`${base}/api/reusable/${encodeURIComponent(id)}/invoice`, {
+      method: 'POST'
+    })
+  }
+
   async function getPayment(
     id: string,
     params: { cluster: string, endpoint?: string }
@@ -545,6 +597,8 @@ export function usePaymentApi() {
   return {
     getConfig,
     createPayment,
+    createReusableLink,
+    reusableInvoice,
     getPayment,
     getSponsor,
     sponsorSettle,

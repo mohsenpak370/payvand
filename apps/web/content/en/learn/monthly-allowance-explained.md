@@ -53,7 +53,7 @@ and no recurring charge anywhere in it.
 ## The buttons
 
 - **Set / save limit** — the one approval. It moves the money into the pot, registers this device,
-  and starts the month.
+  and starts the month. Saving a different limit mid-month starts the month over at that limit.
 - **Refill** — puts the pot back to the full limit mid-month, for example when 20 is left of 50.
   Same single approval. It moves only what is missing, and what you already spent this month still
   counts: a refill does not hand spent money back. The counter starts over on its own when the

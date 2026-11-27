@@ -517,6 +517,56 @@
         "responses": { "200": { "description": "A base64 wire transaction" }, "400": { "$ref": "#/components/responses/BadRequest" } }
       }
     },
+    "/api/reusable": {
+      "post": {
+        "tags": ["payments"],
+        "summary": "Make a reusable payment code",
+        "description": "Stores an offer — one price, one currency, one set of words — that any buyer can pay, any number of times. Each visit mints a fresh one-time invoice from it, so two payers never share an invoice address.",
+        "security": [{ "session": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["seller", "currency", "amount", "cluster"],
+                "properties": {
+                  "seller": { "type": "string", "description": "The account's own wallet address; it is the one paid." },
+                  "currency": { "type": "string", "enum": ["sol", "usdc", "eurc"] },
+                  "amount": { "type": "integer", "description": "Price in the currency's base units." },
+                  "memo": { "type": "string" },
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "shop_id": { "type": "string" },
+                  "cluster": { "type": "string" },
+                  "endpoint": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "The stored code, with the path it opens" },
+          "400": { "description": "The price or the words were refused" },
+          "401": { "description": "No session" },
+          "403": { "description": "The wallet is not this account's" }
+        }
+      }
+    },
+    "/api/reusable/{id}/invoice": {
+      "post": {
+        "tags": ["payments"],
+        "summary": "Mint an invoice from a reusable code",
+        "description": "Hands this visit its own one-time invoice for the stored offer: new reference, new address, the same terms. The buyer needs no account.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "The invoice and the code that carries it" },
+          "404": { "description": "No such code" }
+        }
+      }
+    },
     "/api/solana-pay/icon.svg": {
       "get": { "tags": ["solana-pay"], "summary": "The icon a wallet shows for this merchant", "responses": { "200": { "description": "SVG" } } }
     },

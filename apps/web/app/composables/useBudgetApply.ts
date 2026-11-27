@@ -19,7 +19,9 @@ import type { BudgetPageState } from './useBudgetPageState'
  * Each currency's allowance asks for exactly one wallet approval in its life:
  * funding the pot to the limit, topping up the session key's fee float, and
  * registering (or rotating) the session key that pays silently afterwards.
- * Everything a person can change about the allowance is that same instruction.
+ * Everything a person can change about the allowance is that same approval, and
+ * a *different* limit set mid-month starts the month over, so the limit they
+ * typed is the limit they can actually spend (see `applyLimit`).
  */
 export function useBudgetApply(deps: {
   state: BudgetPageState
@@ -78,7 +80,11 @@ export function useBudgetApply(deps: {
     await applyLimit(funded, 'rotate')
   }
 
-  /** Puts the pot back to the monthly limit mid-month, in one approval. */
+  /**
+   * Puts the pot back to the monthly limit mid-month, in one approval. What was
+   * already spent this month still counts: a refill is not a way past the
+   * buyer's own ceiling, only a new limit starts the month over.
+   */
   async function refill() {
     const current = view.value
     if (!current) return
@@ -164,19 +170,39 @@ export function useBudgetApply(deps: {
       // 2. Build it with a memo so the wallet and explorers can describe it,
       //    then simulate it before the popup: a transaction that reaches the
       //    wallet is one that will actually succeed.
-      const instruction = mint
+      //
+      //    A different limit set mid-month is a new month. The program keeps
+      //    `spent` across a top-up on purpose — that is what stops a refill from
+      //    being a way past your own ceiling — so setting 20 after spending 5 of
+      //    10 would leave 15 spendable, not 20. Retiring the allowance and
+      //    opening it again in this same transaction is the one start-over the
+      //    deployed program allows: one approval, the same session key, and the
+      //    counter back at zero. Only a saved limit that differs from the
+      //    current one does this: a refill at the same limit keeps the spent
+      //    part counting, and a rotation moves the same allowance to this
+      //    device, so both stay a plain top-up.
+      const current = view.value
+      const spentThisMonth
+        = current && !current.rolledOver ? Math.max(0, current.limit - current.remaining) : 0
+      const restarts = intent === 'save'
+        && Boolean(existing)
+        && current !== null
+        && limit !== current.limit
+        && spentThisMonth > 0
+
+      const budgetAddress = mint
+        ? await deriveTokenBudgetPda(buyer, mint)
+        : await deriveBudgetPda(buyer)
+      const reopen = mint
         ? buildInstruction(
             'open_token_budget',
             { monthly_limit: limit },
             {
               buyer,
-              budget: await deriveTokenBudgetPda(buyer, mint),
+              budget: budgetAddress,
               mint,
               buyer_token_account: await deriveAssociatedTokenAddress(buyer, mint),
-              vault: await deriveAssociatedTokenAddress(
-                await deriveTokenBudgetPda(buyer, mint),
-                mint
-              ),
+              vault: await deriveAssociatedTokenAddress(budgetAddress, mint),
               session_key: session.address
             }
           )
@@ -185,11 +211,30 @@ export function useBudgetApply(deps: {
             { monthly_limit: limit },
             {
               buyer,
-              budget: await deriveBudgetPda(buyer),
+              budget: budgetAddress,
               session_key: session.address,
               config: await deriveConfigPda()
             }
           )
+      // Retiring first returns the pot (and the rent) before the reopen asks for
+      // the new limit, so the wallet is only ever asked for the difference.
+      const retire = !restarts
+        ? null
+        : mint
+          ? buildInstruction(
+              'close_token_budget',
+              {},
+              {
+                buyer,
+                budget: budgetAddress,
+                mint,
+                buyer_token_account: await deriveAssociatedTokenAddress(buyer, mint),
+                vault: await deriveAssociatedTokenAddress(budgetAddress, mint)
+              }
+            )
+          : buildInstruction('close_budget', {}, { budget: budgetAddress, buyer })
+
+      const freshMonth = restarts ? ' for a new month' : ''
       let memoText = `Payvand: keep ${amountLabel(limit)} as your monthly budget `
         + '(still your funds, withdrawable anytime)'
       if (intent === 'rotate') {
@@ -198,12 +243,12 @@ export function useBudgetApply(deps: {
         memoText = `Payvand: refill your own ${unitLabel.value} budget to ${amountLabel(limit)} `
           + '(still your funds)'
       } else if (existing) {
-        memoText = `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)} `
-          + '(still your funds)'
+        memoText = `Payvand: top up your own ${unitLabel.value} budget to ${amountLabel(limit)}`
+          + `${freshMonth} (still your funds)`
       }
       const memo = buildMemoInstruction(memoText, buyer)
       const wire = await compileWireTransaction({
-        instruction: [instruction, memo],
+        instruction: retire ? [retire, reopen, memo] : [reopen, memo],
         payer: buyer,
         rpc: client.rpc
       })
@@ -218,7 +263,9 @@ export function useBudgetApply(deps: {
       } else if (intent === 'refill') {
         success.value = t('budget.success.refilled', { limit: amountLabel(limit) })
       } else if (existing) {
-        success.value = t('budget.success.updated')
+        success.value = restarts
+          ? t('budget.success.restarted', { limit: amountLabel(limit) })
+          : t('budget.success.updated')
       } else {
         success.value = t('budget.success.enabled', { currency: unitLabel.value })
       }

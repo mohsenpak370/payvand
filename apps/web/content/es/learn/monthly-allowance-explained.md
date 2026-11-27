@@ -52,7 +52,8 @@ acerca a cero, lo dice y ofrece el relleno. No hay ninguna suscripción ni cargo
 ## Los botones
 
 - **Fijar / guardar límite** — la única aprobación. Mueve el dinero a la reserva, registra este
-  dispositivo y arranca el mes.
+  dispositivo y arranca el mes. Guardar un límite distinto a mitad de mes vuelve a empezar el mes con
+  ese límite.
 - **Rellenar** — devuelve la reserva al límite completo a mitad de mes, por ejemplo cuando quedan 20 de
   50. La misma aprobación única. Solo mueve lo que falta, y lo que ya gastaste este mes sigue contando:
   rellenar no devuelve el dinero gastado. El contador se reinicia solo cuando cambia el mes natural.

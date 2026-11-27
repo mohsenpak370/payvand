@@ -106,7 +106,7 @@
       "title": "Preguntas frecuentes",
       "description": "Qué aporta Payvand frente a una cartera, cuánto cuesta y qué necesita tu cliente.",
       "q1": "¿En qué se diferencia Payvand de enviar USDC desde mi cartera?",
-      "a1": "Una cartera también puede mostrar un código QR, y el dinero se mueve igual: de la cartera del comprador directamente a la tuya, nunca a través de nosotros. Lo que una cartera te deja a ti es comprobar. Cualquiera puede crear una moneda sin valor, llamarla USDC y ponerle el mismo logo, y la única forma de distinguirla de la real es comparar una larga cadena de letras y números. Un código Payvand hace esa comprobación por ti: solo cuenta el USDC o el EURC reales, así que nunca pasa a Pagado con una imitación. Tu cliente tampoco escribe nunca una dirección ni un importe. Aprueba una solicitud sencilla — este importe, en esta moneda, para ti — sin nada más escondido, así que hay menos margen para un error de tecleo o para una solicitud que pide más a escondidas. El precio y la moneda quedan fijados en el código, el pago va ligado a esta venta y el código pasa solo a Pagado en cuanto llega el dinero, con el pagador y la transacción como recibo. Nada de emparejar transferencias a ojo ni de fiarse de una captura de «ya lo envié». Y con USDC o EURC el comprador no necesita SOL para la comisión de red.",
+      "a1": "Una cartera también puede mostrar un código QR, y el dinero se mueve igual: de la cartera del comprador directamente a la tuya, nunca a través de nosotros. Lo que una cartera te deja a ti es comprobar: cualquiera puede crear una moneda sin valor llamada USDC con el mismo logo, y solo comparar la dirección las distingue. Un código Payvand hace esa comprobación por ti: solo cuenta USDC o EURC reales, así que una imitación nunca pasa a Pagado. Tu cliente tampoco escribe nada: aprueba una solicitud — este importe, en esta moneda, para ti — y el código pasa solo a Pagado en cuanto llega el dinero, con el pagador y la transacción como recibo. Y con USDC o EURC no necesita SOL para la comisión de red.",
       "q2": "¿Payvand es una cartera? ¿Guarda mi dinero?",
       "a2": "No. No hay frase de recuperación que guardar ni saldo de Payvand: cada pago va directo de la cartera del comprador a la tuya, y la app no tiene ninguna clave con la que mover tu dinero. Es la capa de pagos sobre la cartera que ya usas.",
       "q3": "¿Mis clientes necesitan una cuenta o una app?",
@@ -487,6 +487,7 @@
     "success": {
       "rotated": "Este dispositivo ya paga sin preguntar, y la clave del otro dispositivo ha dejado de funcionar al instante. No se ha movido nada: el límite es ahora {limit}, lo que ya tenía la reserva, y lo gastado este mes sigue contando. Rellena desde aquí cuando quieras uno mayor.",
       "refilled": "Rellenado — la reserva vuelve a tener {limit} y todos los pagos dentro de ella pasan otra vez sin ventanas. Lo que ya has gastado este mes sigue contando, así que lo que queda es lo que puedes gastar.",
+      "restarted": "Nuevo límite guardado — {limit}, con el mes empezando de nuevo, así que puedes gastarlo todo.",
       "updated": "Presupuesto actualizado — tu límite y la reserva vuelven a coincidir.",
       "enabled": "Presupuesto de {currency} activado. Los tokens están en una cuenta derivada de tu cartera que solo controlan tus claves privadas — los pagos dentro del límite no necesitan aprobación, y «Cerrar el presupuesto» devuelve todo lo que quede en cualquier momento.",
       "closed": "Presupuesto de {currency} cerrado — todo lo que quedaba en él ha vuelto a tu cartera.",
@@ -622,6 +623,8 @@
     "unreadableLink": "No se pudo leer este enlace de pago.",
     "notSent": "No se pudo enviar el pago.",
     "paymentNeedsSol": "Este pago necesita un poco de SOL para la comisión de red de Solana, y Payvand no ha podido cubrirla esta vez. Añade SOL a tu cartera y vuelve a intentarlo: en devnet, https://faucet.solana.com envía SOL de prueba gratis.",
+    "walletShortOnPrice": "Esta factura cuesta {price} y tu cartera no tiene esa cantidad. Añade fondos a la cartera y vuelve a intentarlo.",
+    "balanceUnreadable": "No se pudo leer el saldo de tu billetera en este momento, así que no se envió nada. Inténtalo de nuevo en un momento.",
     "discountFailed": "No se pudo aplicar ese código de descuento.",
     "notBudgetAccount": "Esa dirección no es una cuenta de presupuesto.",
     "feeConfigUnavailable": "La configuración de comisiones no está disponible ahora. Inténtalo de nuevo en un momento.",
@@ -901,6 +904,15 @@
     "pageTitle": "Crear un QR de pago",
     "pageDescription": "Escribe lo que quieres cobrar, crea el código y muéstraselo a tu cliente.",
     "invoiceHeading": "1. Factura",
+    "paymentTypeLabel": "Tipo de pago",
+    "paymentTypeHelp": "Un código único se cierra al pagarse. Un código reutilizable sigue abierto: cualquiera puede pagarlo, tantas veces como quiera.",
+    "paymentTypesSingle": "Único",
+    "paymentTypesReusable": "Reutilizable",
+    "createReusableCode": "Crear código reutilizable",
+    "reusableHelp": "Cualquiera con este código puede pagar {price}, tantas veces como quiera. Cada pago recibe su propia factura y aparece en tu historial.",
+    "reusableCopy": "Copiar enlace",
+    "reusableCopied": "Enlace copiado",
+    "reusableNote": "Ponlo donde tus clientes lo alcancen: un mostrador, una página o un recibo.",
     "showHeading": "2. Muestra el código",
     "pricingLabel": "Cómo fijar el precio",
     "priceModes": {
@@ -1058,6 +1070,14 @@
       "categoryDelete": "Eliminar la categoría {name}",
       "categoryNew": "Categoría nueva — se añadirá a la lista del comercio al guardar."
     },
+  "reusable": {
+    "metaTitle": "Pagar — Payvand",
+    "opening": "Preparando tu pago…",
+    "failureTitle": "No se pudo abrir este código",
+    "failureBody": "No se pudo abrir este código de pago.",
+    "goHome": "Ir al inicio"
+  },
+
   "subscription": {
       "title": "Suscripción de tiendas",
       "description": "1,70 € al mes mantienen las tiendas y productos de esta cuenta.",

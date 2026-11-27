@@ -1,4 +1,4 @@
-import type { SupportedCurrency } from '~/composables/usePaymentApi'
+import type { ReusableLink, SupportedCurrency } from '~/composables/usePaymentApi'
 
 export function useSellPage(shopId?: string) {
   const { cluster } = useRuntimeConfig().public
@@ -33,6 +33,13 @@ export function useSellPage(shopId?: string) {
   // Shared by the form (source of truth) and the result (saved-label fallback).
   const priceCurrency = ref<SupportedCurrency>('sol')
 
+  /**
+   * The reusable code just made, if that is what was made. It replaces the
+   * invoice on the result card: there is no single invoice to show, only the
+   * offer every visitor will pay.
+   */
+  const reusable = ref<ReusableLink | null>(null)
+
   const paymentResult = useSellPaymentResult({
     discounts: discountCodes.discounts,
     priceCurrency
@@ -45,8 +52,13 @@ export function useSellPage(shopId?: string) {
     allowDiscounts: discountCodes.allowDiscounts,
     priceCurrency,
     applyCreated: (created) => {
+      reusable.value = null
       paymentResult.applyCreated(created)
       invoiceForm.clearFailure()
+    },
+    applyReusable: (link) => {
+      paymentResult.reset()
+      reusable.value = link
     }
   })
 
@@ -57,7 +69,8 @@ export function useSellPage(shopId?: string) {
     loadActivation,
     discountCodes,
     invoiceForm,
-    paymentResult
+    paymentResult,
+    reusable
   })
 }
 
@@ -69,8 +82,9 @@ function buildSellPage(state: {
   discountCodes: ReturnType<typeof useSellDiscountCodes>
   invoiceForm: ReturnType<typeof useSellInvoiceForm>
   paymentResult: ReturnType<typeof useSellPaymentResult>
+  reusable: Ref<ReusableLink | null>
 }) {
-  const { cluster, shopScoped, shopsActivated, loadActivation, discountCodes, invoiceForm, paymentResult } = state
+  const { cluster, shopScoped, shopsActivated, loadActivation, discountCodes, invoiceForm, paymentResult, reusable } = state
 
   onMounted(() => {
     // The seller's codes and the shop's subscription are only read where they
@@ -84,6 +98,7 @@ function buildSellPage(state: {
 
   function reset() {
     invoiceForm.clearFailure()
+    reusable.value = null
     paymentResult.reset()
   }
 
@@ -91,6 +106,7 @@ function buildSellPage(state: {
     cluster,
     // `shopScoped` rides along with the form's own state.
     shopsActivated,
+    reusable,
     ...discountCodes,
     ...invoiceForm,
     ...paymentResult,

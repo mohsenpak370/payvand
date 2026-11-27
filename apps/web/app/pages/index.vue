@@ -202,9 +202,23 @@ const ctaLinks = computed<ButtonProps[]>(() => [{
       :title="$t('home.faq.title')"
       :description="$t('home.faq.description')"
     >
+      <!--
+        The rows are read as prose, not as a list of controls, so both sides of
+        each one are a step larger than the component's `text-sm`, and the
+        question is semibold against the answer's regular weight. On a phone
+        each row also carries the same inner padding as the cards above it (a
+        card's body is `p-4` there), so the question is not flush with the
+        row's edge; from `sm` up the rows keep the component's own spacing,
+        where the section is wide enough that the extra inset only shortens the
+        line.
+      -->
       <UAccordion
         :items="faqs"
         type="multiple"
+        :ui="{
+          trigger: 'text-base font-semibold px-4 py-4 sm:px-0 sm:py-3.5',
+          body: 'text-base px-4 pb-4 sm:px-0 sm:pb-3.5'
+        }"
         class="mx-auto max-w-3xl"
       >
         <!--

@@ -134,12 +134,36 @@ const sellerShort = computed(() => {
   const seller = payload.value?.seller ?? ''
   return seller.length > 12 ? `${seller.slice(0, 4)}…${seller.slice(-4)}` : seller
 })
-const { playSuccess, playFailure } = useTransactionSounds()
+const { playSuccess, playFailure, discardPending } = useTransactionSounds()
 
-// Only a payment made here is announced. A link that opens already paid says
-// so on the sheet; nobody was waiting for a sound by then.
+// A coin the browser refused waits for this sheet's next tap, so it must not
+// outlive what it announces: dismissing the result or loading a different
+// invoice drops it, and unmounting the sheet (the composable's own scope
+// disposal) drops it too. Without that, the tap that left this page would play
+// the previous payment's sound on the next one.
+watch(resultOpen, (open) => {
+  if (!open) discardPending()
+})
 watch(settled, (isSettled) => {
-  if (!isSettled || !signature.value) return
+  if (!isSettled) discardPending()
+})
+
+/**
+ * Whether this visit saw the invoice unpaid. A link that opens already settled
+ * says so on the sheet and stays quiet, because nobody was waiting for a sound
+ * by then. A sheet that was open while the money arrived announces it either
+ * way: this tab's own send carries a signature, and a payment made in the
+ * buyer's wallet app arrives through the poll with none — so the sheet's first
+ * load is the guard, not the signature.
+ */
+const witnessed = ref(false)
+watch(stage, (value) => {
+  if (value === 'loading') witnessed.value = false
+  else if (value !== 'settled') witnessed.value = true
+}, { immediate: true })
+
+watch(settled, (isSettled) => {
+  if (!isSettled || !witnessed.value) return
   playSuccess()
   // Whoever opened an embedded sheet closes it on this and shows the outcome
   // in its place, so the sheet does not announce over it.

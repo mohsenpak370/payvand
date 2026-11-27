@@ -7,6 +7,7 @@
  * grid: it starts and ends between modules, which makes every dot either wholly
  * inside it (hidden) or wholly outside it (visible).
  */
+import { MARK_BACKGROUND } from './brand'
 
 /** The quiet zone the generator draws, in the SVG's own units. */
 export const QR_MARGIN = 2
@@ -77,10 +78,11 @@ export function coverBox(grid: QrGrid, size: number, cells = 11): QrPlate | null
 }
 
 /**
- * The code with its middle cleared: a white plate on the code's own background,
- * drawn over the dots inside it and touching nothing outside it.
+ * The code with its middle cleared: a plate in the mark's own background
+ * (`MARK_BACKGROUND`, the tile `PayvandLogoDraw.vue` draws), over the dots inside
+ * it and touching nothing outside it.
  */
 export function clearMiddle(svg: string, plate: QrPlate): string {
-  const rect = `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="#fff"/>`
+  const rect = `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="${MARK_BACKGROUND}"/>`
   return svg.replace('</svg>', `${rect}</svg>`)
 }

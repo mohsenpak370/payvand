@@ -834,6 +834,18 @@ fn open_budget_instruction(buyer: Pubkey, session: Pubkey, monthly_limit: u64) -
     }
 }
 
+/// `close_budget`, in the account order the program declares them.
+fn close_budget_instruction(buyer: Pubkey) -> Instruction {
+    Instruction {
+        program_id: payvand::id(),
+        accounts: vec![
+            AccountMeta::new(budget_pda(&buyer), false),
+            AccountMeta::new(buyer, true),
+        ],
+        data: instruction_data("close_budget", &[]),
+    }
+}
+
 /// `open_token_budget`, in the account order the program declares them.
 fn open_token_budget_instruction(
     buyer: Pubkey,
@@ -2183,6 +2195,127 @@ async fn open_budget_keeps_spent_until_the_month_changes() {
     let next_month = budget(&context, budget_address).await;
     assert_eq!(next_month.spent, 0);
     assert_ne!(next_month.month_index, refilled.month_index);
+}
+
+/// Setting a new limit has to leave the buyer the whole of it, which a top-up
+/// alone cannot do: `open_budget` keeps `spent` on purpose. Closing the
+/// allowance and opening it again in one transaction is what the app does
+/// instead — one signature, the same session key, and the month starts over at
+/// the limit they typed.
+#[tokio::test]
+async fn closing_and_reopening_budget_starts_the_month_over() {
+    let session = Keypair::new();
+    let (mut context, _admin) = started_with_policy(
+        None,
+        TEST_FEE_BPS,
+        TEST_FIXED_FEE,
+        FeeMode::SellerPays,
+        TREASURY_LAMPORTS,
+        &[(session.pubkey(), LAMPORTS_PER_SOL)],
+    )
+    .await;
+
+    let buyer = context.payer.pubkey();
+    let budget_address = budget_pda(&buyer);
+    let first_limit = LAMPORTS_PER_SOL / 4;
+    send(
+        &mut context,
+        &[open_budget_instruction(
+            buyer,
+            session.pubkey(),
+            first_limit,
+        )],
+        &[],
+    )
+    .await
+    .expect("open_budget failed");
+
+    let amount = LAMPORTS_PER_SOL / 20;
+    pay_from_budget(&mut context, budget_address, &session, amount, "first")
+        .await
+        .expect("pay_from_budget failed");
+    assert_eq!(budget(&context, budget_address).await.spent, amount);
+
+    // The same month, a bigger limit: close and open in the one transaction the
+    // app sends, so the buyer never sits without an allowance in between.
+    let second_limit = LAMPORTS_PER_SOL / 2;
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[
+            close_budget_instruction(buyer),
+            open_budget_instruction(buyer, session.pubkey(), second_limit),
+        ],
+        &[],
+    )
+    .await
+    .expect("close and reopen failed");
+
+    let reopened = budget(&context, budget_address).await;
+    assert_eq!(reopened.spent, 0, "a new limit starts the month over");
+    assert_eq!(reopened.monthly_limit, second_limit);
+    assert_eq!(reopened.session_key, session.pubkey());
+    assert_eq!(
+        lamports(&context, budget_address).await - budget_rent(),
+        second_limit
+    );
+
+    // The whole new limit is spendable, not just the part the old month left.
+    pay_from_budget(
+        &mut context,
+        budget_address,
+        &session,
+        second_limit,
+        "the whole new month",
+    )
+    .await
+    .expect("the new limit should be spendable in full");
+}
+
+/// The same pair on the token path: the vault drains back into the buyer's own
+/// account and is funded again to the new limit, in one transaction, with the
+/// counter at zero.
+#[tokio::test]
+async fn closing_and_reopening_a_token_budget_starts_the_month_over() {
+    let (mut context, world) = TokenWorld::start().await;
+    open_token_budget(&mut context, &world, 500_000).await;
+    pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), 200_000).await;
+    assert_eq!(token_budget(&context, world.budget).await.spent, 200_000);
+
+    refresh_blockhash(&mut context).await;
+    send(
+        &mut context,
+        &[
+            close_token_budget_instruction(
+                world.buyer.pubkey(),
+                world.budget,
+                world.mint,
+                world.vault,
+                world.buyer_token_account,
+            ),
+            open_token_budget_instruction(
+                world.buyer.pubkey(),
+                world.budget,
+                world.mint,
+                world.buyer_token_account,
+                world.vault,
+                world.session.pubkey(),
+                600_000,
+            ),
+        ],
+        &[&world.buyer],
+    )
+    .await
+    .expect("close and reopen failed");
+
+    let reopened = token_budget(&context, world.budget).await;
+    assert_eq!(reopened.spent, 0, "a new limit starts the month over");
+    assert_eq!(reopened.monthly_limit, 600_000);
+    assert_eq!(token_balance(&context, world.vault).await, 600_000);
+
+    // More than the old month had left (500_000 - 200_000), so what is spendable
+    // is the new limit and not the remainder of the old one.
+    pay_from_token_budget(&mut context, &world, Keypair::new().pubkey(), 400_000).await;
 }
 
 /// The token budget runs the same rule, so it gets the same proof. The counter

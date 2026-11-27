@@ -106,7 +106,7 @@
       "title": "Questions fréquentes",
       "description": "Ce que Payvand apporte de plus qu’un portefeuille, ce que ça coûte et ce dont votre client a besoin.",
       "q1": "En quoi Payvand diffère-t-il d’un envoi d’USDC depuis mon portefeuille ?",
-      "a1": "Un portefeuille sait aussi afficher un QR code, et l’argent circule de la même façon : du portefeuille de l’acheteur directement au vôtre, jamais par nous. Ce qu’un portefeuille vous laisse, ce sont les vérifications. N’importe qui peut créer un jeton sans valeur, l’appeler USDC et lui donner le même logo, et la seule façon de le distinguer du vrai est de comparer une longue suite de lettres et de chiffres. Un code Payvand fait cette vérification pour vous : il ne compte que les vrais USDC ou EURC, et ne passe donc jamais à Payé pour une imitation. Votre client ne saisit jamais d’adresse ni de montant non plus. Il approuve une demande toute simple – ce montant, dans ce jeton, pour vous – sans rien d’autre de caché, ce qui laisse moins de place à une faute de frappe ou à une demande qui réclame plus en douce. Le prix et la devise sont fixés dans le code, le paiement est lié à cette vente, et le code passe seul à Payé dès que l’argent arrive, en gardant le payeur et la transaction comme reçu. Plus de virements à rapprocher à l’œil, ni de capture « je l’ai envoyé » à croire sur parole. Et en USDC ou en EURC, l’acheteur n’a pas besoin de SOL pour les frais de réseau.",
+      "a1": "Un portefeuille sait aussi afficher un QR code, et l’argent circule de la même façon : du portefeuille de l’acheteur directement au vôtre, jamais par nous. Ce qu’un portefeuille vous laisse, ce sont les vérifications : n’importe qui peut créer un jeton sans valeur nommé USDC avec le même logo, et seule la comparaison de l’adresse les distingue. Un code Payvand fait cette vérification pour vous : il ne compte que les vrais USDC ou EURC, et une imitation ne passe donc jamais à Payé. Votre client ne saisit rien non plus : il approuve une demande — ce montant, dans ce jeton, pour vous — et le code passe seul à Payé dès que l’argent arrive, en gardant le payeur et la transaction comme reçu. Et en USDC ou en EURC, il n’a pas besoin de SOL pour les frais de réseau.",
       "q2": "Payvand est-il un portefeuille ? Garde-t-il mon argent ?",
       "a2": "Non. Aucune phrase de récupération à conserver, aucun solde Payvand : chaque paiement va directement du portefeuille de l’acheteur au vôtre, et l’application ne détient aucune clé capable de déplacer vos fonds. C’est la couche de paiement au-dessus du portefeuille que vous avez déjà.",
       "q3": "Mes clients ont-ils besoin d’un compte ou d’une application ?",
@@ -487,6 +487,7 @@
     "success": {
       "rotated": "Cet appareil paie désormais silencieusement, et la clé détenue par l'autre appareil a cessé de fonctionner aussitôt. Rien n'a bougé : la limite est maintenant {limit}, ce que la cagnotte contenait déjà, et les dépenses du mois comptent toujours. Rechargez d'ici quand vous voulez une limite plus élevée.",
       "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et chaque paiement dans cette limite se fait sans fenêtre. Ce que vous avez déjà dépensé ce mois-ci compte toujours, il ne reste donc que le solde à dépenser.",
+      "restarted": "Nouvelle limite enregistrée — {limit}, avec le mois qui repart de zéro, tout est donc dépensable.",
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
       "closed": "Budget {currency} fermé — tout ce qu’il contenait est revenu dans votre portefeuille.",
@@ -622,6 +623,8 @@
     "unreadableLink": "Impossible de lire ce lien de paiement.",
     "notSent": "Le paiement n'a pas pu être envoyé.",
     "paymentNeedsSol": "Ce paiement a besoin d’un peu de SOL pour les frais de réseau Solana, et Payvand n’a pas pu les couvrir cette fois. Ajoutez du SOL à votre portefeuille puis réessayez — sur devnet, https://faucet.solana.com envoie des SOL de test gratuits.",
+    "walletShortOnPrice": "Cette facture coûte {price} et votre portefeuille n’en contient pas autant. Ajoutez des fonds au portefeuille et réessayez.",
+    "balanceUnreadable": "Le solde de ton portefeuille n'a pas pu être lu pour l'instant, donc rien n'a été envoyé. Réessaie dans un instant.",
     "discountFailed": "Ce code de remise n'a pas pu être appliqué.",
     "notBudgetAccount": "Cette adresse n'est pas un compte de budget.",
     "feeConfigUnavailable": "Les réglages de frais ne sont pas disponibles pour le moment. Réessaie dans un instant.",
@@ -901,6 +904,15 @@
     "pageTitle": "Créer un QR de paiement",
     "pageDescription": "Saisissez ce que vous voulez encaisser, créez le code et montrez-le à votre client.",
     "invoiceHeading": "1. Facture",
+    "paymentTypeLabel": "Type de paiement",
+    "paymentTypeHelp": "Un code unique se ferme une fois payé. Un code réutilisable reste ouvert : n’importe qui peut le payer, autant de fois qu’il le souhaite.",
+    "paymentTypesSingle": "Unique",
+    "paymentTypesReusable": "Réutilisable",
+    "createReusableCode": "Créer un code réutilisable",
+    "reusableHelp": "Toute personne disposant de ce code peut payer {price}, autant de fois qu’elle le souhaite. Chaque paiement reçoit sa propre facture et apparaît dans votre historique.",
+    "reusableCopy": "Copier le lien",
+    "reusableCopied": "Lien copié",
+    "reusableNote": "Placez-le là où vos clients peuvent l’atteindre : un comptoir, une page ou un reçu.",
     "showHeading": "2. Affichez le code",
     "pricingLabel": "Tarification",
     "priceModes": {
@@ -1058,6 +1070,14 @@
       "categoryDelete": "Supprimer la catégorie {name}",
       "categoryNew": "Nouvelle catégorie — elle sera ajoutée à la liste du commerce à l’enregistrement."
     },
+  "reusable": {
+    "metaTitle": "Payer — Payvand",
+    "opening": "Préparation de votre paiement…",
+    "failureTitle": "Impossible d’ouvrir ce code",
+    "failureBody": "Impossible d’ouvrir ce code de paiement.",
+    "goHome": "Retour à l’accueil"
+  },
+
   "subscription": {
       "title": "Abonnement boutiques",
       "description": "1,70 € par mois gardent les boutiques et produits de ce compte.",

@@ -9,8 +9,6 @@
 //! Everything here is pure: bytes in, numbers out. No database, no RPC, no
 //! notification, which is why it is separate from the sending half in `push`.
 
-use std::str::FromStr;
-
 use solana_pubkey::Pubkey;
 
 /// Mirrors `BUDGET_SPACE` in the program: 8 + 32 + 32 + 8 + 8 + 8 + 1.
@@ -30,10 +28,6 @@ const TOKEN_BUDGET_MONTH_OFFSET: usize = 120;
 /// The seed prefix the program derives a token budget from: `["token-budget",
 /// buyer, mint]`.
 const TOKEN_BUDGET_SEED: &[u8] = b"token-budget";
-/// SPL's token program and associated-token program, which is all this needs of
-/// them: the address a token budget's vault sits at.
-const TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-const ASSOCIATED_TOKEN_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 /// An SPL token account's `amount`, after the mint and owner each take 32 bytes.
 const TOKEN_AMOUNT_OFFSET: usize = 64;
 
@@ -139,14 +133,7 @@ pub fn token_budget_address(buyer: &Pubkey, mint: &Pubkey, program: &Pubkey) -> 
 /// `open_token_budget` puts the pot, and therefore where a reminder looks for
 /// what is left.
 pub fn token_vault_address(budget: &Pubkey, mint: &Pubkey) -> Pubkey {
-    let token_program = Pubkey::from_str(TOKEN_PROGRAM_ID).expect("SPL token program id");
-    let associated =
-        Pubkey::from_str(ASSOCIATED_TOKEN_PROGRAM_ID).expect("SPL associated token program id");
-    Pubkey::find_program_address(
-        &[budget.as_ref(), token_program.as_ref(), mint.as_ref()],
-        &associated,
-    )
-    .0
+    crate::spl::ata_for(budget, mint)
 }
 
 #[cfg(test)]

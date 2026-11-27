@@ -8,8 +8,67 @@ import {
   deriveTreasuryPda,
   deriveTreasuryTokenAccount
 } from './usePaymentProgram'
-import type { PaymentOption, PaymentQrPayload, PaymentRecord } from './usePaymentApi'
+import {
+  lamportsToSol,
+  type PaymentOption,
+  type PaymentQrPayload,
+  type PaymentRecord
+} from './usePaymentApi'
 import { HOLD_TICK_MS, HOLD_TO_PAY_MS } from './checkoutVerification'
+
+/** The price as the buyer reads it: "1 SOL", "1.5 USDC". */
+function priceLabel(option: PaymentOption, amount: number): string {
+  const decimals = option.currency === 'sol' ? 9 : option.decimals
+  // Only a fractional part loses its trailing zeros: a whole "10" stays 10.
+  const value = option.currency === 'sol'
+    ? lamportsToSol(amount)
+    : (amount / 10 ** decimals).toFixed(decimals).replace(/\.(\d*?)0+$/, '.$1').replace(/\.$/, '')
+  return `${value} ${option.currency.toUpperCase()}`
+}
+
+/**
+ * The refusal a wallet gets when the price is more than it holds. Both paths
+ * pay the price from the wallet — a relayer only covers the fee and the two
+ * record rents — so this is the one thing no sponsorship can make up for, and
+ * the chain would refuse the settlement after the buyer had signed it.
+ */
+function shortOnPrice(option: PaymentOption, amount: number): string {
+  return appT('errors.walletShortOnPrice', { price: priceLabel(option, amount) })
+}
+
+/**
+ * The buyer's balance in one token, or 0 when the account does not exist. Any
+ * other failure is thrown: a cluster that did not answer is not a wallet that
+ * cannot afford the price, and saying so would send the buyer to add funds
+ * they already have.
+ */
+async function tokenBalance(
+  client: ReturnType<typeof useSolanaClient>['client'],
+  owner: Address,
+  mint: Address
+): Promise<number> {
+  const account = await deriveAssociatedTokenAddress(owner, mint)
+  const info = await client.rpc
+    .getAccountInfo(account, { commitment: 'confirmed', encoding: 'base64' })
+    .send()
+  // No account is no balance to pay with, and the refusal names the price.
+  if (!info.value) return 0
+  const balance = await client.rpc
+    .getTokenAccountBalance(account, { commitment: 'confirmed' })
+    .send()
+  return Number(balance.value.amount)
+}
+
+/**
+ * What to show when a payment fails. The API explains a refused send in
+ * `{ error }`, which `$fetch` buries in the thrown value's `data`: without this
+ * the buyer reads "400 Bad Request" and nothing about what was objected to.
+ */
+function failureMessage(cause: unknown): string {
+  const data = (cause as { data?: { error?: unknown } } | null)?.data
+  if (data && typeof data.error === 'string' && data.error.trim()) return data.error
+  return cause instanceof Error ? cause.message : appT('errors.notSent')
+}
 
 /** The two ways of paying: the held allowance press and the wallet's approval. */
 export function useCheckoutPayment(deps: {
@@ -156,27 +215,33 @@ export function useCheckoutPayment(deps: {
             memo
           })
         } else {
+          // A relayer pays the fee and fronts the two records, never the price:
+          // a wallet that does not hold the price cannot pay this invoice at
+          // all, whatever it sends. Saying so before the wallet opens is what
+          // keeps it from signing a transaction the chain refuses — which a
+          // wallet with nothing to simulate reports as a meaningless estimate.
+          const held = Number(
+            (await client.rpc.getBalance(payerAddress, { commitment: 'confirmed' }).send()).value
+          )
+          if (held < amount) throw new Error(shortOnPrice(option, amount))
+
           // Same rule as a token payment: the relayer fronts the two records and
-          // the signature, and the price repays it in the settled instruction. A
-          // wallet holding only the price can then pay a SOL invoice, and the
-          // seller is the one who carries the rent and the fee.
+          // the signature, and the price repays it in the settled instruction.
+          // The wallet pays its own way whenever it can afford to, because a
+          // sponsored settle is compiled with the relayer as fee payer and the
+          // wallet's preview cannot then show the price it is charged. A relayer
+          // is for a wallet that holds the price but not the fee and the rents:
+          // the refusal below names what is missing, and `sponsorshipFee` is the
+          // policy's own figure for this path's signature — the same one the
+          // program charges and refunds.
+          const advances = amount
+            + quote.invoiceRent
+            + quote.receiptRent
+            + quote.sponsorshipFee
           const relayer = await relayerAddress(payerAddress)
-          const feePayer = relayer ?? payerAddress
-          if (!relayer) {
-            // Nothing will sponsor this one, so the wallet fronts both records
-            // and the signature for the length of its own transaction and is
-            // repaid from the price. The refusal names what is missing, and
-            // `sponsorshipFee` is the policy's own figure for this path's
-            // signature — the same one the program charges and refunds.
-            const advances = amount
-              + quote.invoiceRent
-              + quote.receiptRent
-              + quote.sponsorshipFee
-            const held = Number(
-              (await client.rpc.getBalance(payerAddress, { commitment: 'confirmed' }).send()).value
-            )
-            if (held < advances) throw new Error(appT('errors.paymentNeedsSol'))
-          }
+          const sponsored = Boolean(relayer) && held < advances
+          if (!sponsored && held < advances) throw new Error(appT('errors.paymentNeedsSol'))
+          const feePayer = sponsored && relayer ? relayer : payerAddress
 
           const instruction = buildInstruction(
             'settle_payment',
@@ -193,7 +258,7 @@ export function useCheckoutPayment(deps: {
             }
           )
 
-          if (relayer) {
+          if (sponsored) {
             // The relayer submits it as fee payer; the wallet's slot is empty and
             // the endpoint compares the message byte for byte before signing.
             const transaction = await compileTransactionForSigning({
@@ -246,6 +311,14 @@ export function useCheckoutPayment(deps: {
             memo
           })
         } else {
+          // The price is in the token, so the wallet has to hold it whether or
+          // not a relayer pays the fee: an account with less than the price can
+          // only end in a signature the chain refuses.
+          const heldTokens = await tokenBalance(client, payerAddress, mint).catch(() => {
+            throw new Error(appT('errors.balanceUnreadable'))
+          })
+          if (heldTokens < amount) throw new Error(shortOnPrice(option, amount))
+
           // The fee leaves the buyer's account for the treasury's own token
           // account and the pool refunds the record rents, so the price is all
           // the buyer spends. The seller's account is theirs to have opened.
@@ -334,7 +407,7 @@ export function useCheckoutPayment(deps: {
         endpoint: current.endpoint
       })
     } catch (cause) {
-      failure.value = cause instanceof Error ? cause.message : appT('errors.notSent')
+      failure.value = failureMessage(cause)
     } finally {
       busy.value = false
     }

@@ -1,6 +1,7 @@
 import type {
   DiscountCode,
   PaymentRecord,
+  ReusableLink,
   SupportedCurrency
 } from '~/composables/usePaymentApi'
 import { currencySymbol, formatTokenAmount } from '~/composables/usePaymentApi'
@@ -29,6 +30,8 @@ interface UseSellInvoiceFormOptions {
   allowDiscounts: Ref<boolean>
   priceCurrency: Ref<SupportedCurrency>
   applyCreated: (created: CreatedPaymentPayload) => void
+  /** A reusable code was stored: the price is shown as a code to keep. */
+  applyReusable?: (link: ReusableLink) => void
 }
 
 export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
@@ -64,6 +67,22 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   /** Whether this form belongs to a shop's own payment page. */
   const shopScoped = computed(() => Boolean(options.shopId))
 
+  /**
+   * What the code is for. A one-time code is paid once and closes — the payment
+   * this app has always made. A reusable one stays open: a shop can put it on a
+   * counter or a page and be paid for the same thing, by anyone, any number of
+   * times. Only a shop's page offers the second; the plain payment page keeps
+   * making one invoice for one payer, exactly as before.
+   */
+  const paymentType = ref<'single' | 'reusable'>('single')
+  const paymentTypes = computed(() => [
+    { label: t('sell.paymentTypesSingle'), value: 'single' },
+    { label: t('sell.paymentTypesReusable'), value: 'reusable' }
+  ])
+  const reusableSelected = computed(
+    () => shopScoped.value && paymentType.value === 'reusable'
+  )
+
   // The seller's own menus, offered as taps instead of typing. Only a shop's
   // page has one, and it is read then; a plain payment page never asks.
   const shops = ref<ShopWithProducts[]>([])
@@ -88,7 +107,9 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
   // from the shop's products. With an empty tray — or a typed price — there is
   // nothing for a percentage to price, and the fields would only ask a question
   // that cannot apply to the code being made.
-  const discountAllowed = computed(() => sellingFromShops.value && cartActive.value)
+  const discountAllowed = computed(
+    () => sellingFromShops.value && cartActive.value && !reusableSelected.value
+  )
   // A buyer's own code prices a basket too, and never sits beside a code the
   // seller already attached.
   const canInviteBuyerCodes = computed(
@@ -277,6 +298,26 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
         throw new Error(t('sell.tokenAccountFailure'))
       }
 
+      if (reusableSelected.value) {
+        // A reusable code is an offer, not an invoice: the API stores the price
+        // and the words, and every visit to the code is handed a fresh invoice
+        // of its own. Nothing to sign here either — the seller is paid directly.
+        const link = await api.createReusableLink({
+          seller,
+          currency: priceCurrency.value,
+          amount: priceUnits.value,
+          memo: memo.value,
+          name: name.value.trim(),
+          description: description.value.trim(),
+          shop_id: options.shopId,
+          cluster: options.cluster
+        })
+        options.applyReusable?.(link)
+        // The offer is stored; the next one starts from an empty tray.
+        cart.value = []
+        return
+      }
+
       // Nothing else to sign: derive the invoice address from the amount locally,
       // then record the details. The customer's payment funds the account.
       const reference = createReference()
@@ -323,6 +364,9 @@ export function useSellInvoiceForm(options: UseSellInvoiceFormOptions) {
 
   return {
     shopScoped,
+    paymentType,
+    paymentTypes,
+    reusableSelected,
     priceInput,
     priceCurrency,
     currencyItems,

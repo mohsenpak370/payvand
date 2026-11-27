@@ -128,21 +128,15 @@ onBeforeUnmount(() => markObserver?.disconnect())
         </div>
       </div>
 
-      <!--
-        A white plate, because a code stays readable only against it. The
-        margin is the code's quiet zone, not decoration: the modules need to
-        end against plain white for a camera to find the edges.
-      -->
       <div
         v-if="qrPlate"
         class="mx-auto w-fit max-w-full rounded-xl bg-white p-3"
       >
-        <div class="relative aspect-square w-[280px] max-w-full">
+        <div class="relative aspect-square w-70 max-w-full">
           <div
             class="h-full w-full [&_svg]:h-full [&_svg]:w-full"
             v-html="qrPlate.markup"
           />
-          <!-- The drawn mark sits in the clearing, centred on the same grid. -->
           <div
             ref="markSlot"
             class="pointer-events-none absolute inset-0 flex items-center justify-center"
