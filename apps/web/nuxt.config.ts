@@ -289,10 +289,10 @@ export default defineNuxtConfig({
     // The worker is ours now, not Workbox's generated one: it has to listen for
     // `push` and `notificationclick`, which a generated worker has nowhere to
     // put. It still precaches the build's hashed assets, and it still waits for
-    // the update prompt to say `SKIP_WAITING`.
-    strategies: 'injectManifest',
-    srcDir: 'service-worker',
-    filename: 'sw.js',
+    // the update prompt to say `SKIP_WAITING`. `build-sw` because the source
+    // lives in app/, not public/: the module bundles it and fills in
+    // `self.__WB_MANIFEST`. The output takes the source's name, sw.js.
+    strategies: 'build-sw',
     manifest: {
       id: '/',
       // The launch splash prints this under the icon and truncates anything
@@ -317,7 +317,9 @@ export default defineNuxtConfig({
         { src: '/pwa-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
       ]
     },
-    injectManifest: {
+    buildSW: {
+      // Resolved from the project root, not from `app/`.
+      swSrc: 'app/service-worker/sw.js',
       globPatterns: ['**/*.{js,css,png,svg,ico,woff2}']
     }
   },
