@@ -83,7 +83,8 @@ const qrWithLogo = computed(() => {
   const plate = grid ? coverBox(grid, size, cells) : null
   if (!plate) return null
 
-  const logo = `<image x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" href="${logoDataUrl}" preserveAspectRatio="xMidYMid meet"/>`
+  const radius = plate.side * 0.05
+  const logo = `<image x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" rx="${radius}" ry="${radius}" href="${logoDataUrl}" preserveAspectRatio="xMidYMid meet"/>`
 
   return clearMiddle(svg, plate).replace('</svg>', `${logo}</svg>`)
 })

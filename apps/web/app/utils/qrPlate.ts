@@ -83,6 +83,7 @@ export function coverBox(grid: QrGrid, size: number, cells = 11): QrPlate | null
  * it and touching nothing outside it.
  */
 export function clearMiddle(svg: string, plate: QrPlate): string {
-  const rect = `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" fill="${MARK_BACKGROUND}"/>`
+  const radius = plate.side * 0.05
+  const rect = `<rect x="${plate.x}" y="${plate.y}" width="${plate.side}" height="${plate.side}" rx="${radius}" ry="${radius}" fill="${MARK_BACKGROUND}"/>`
   return svg.replace('</svg>', `${rect}</svg>`)
 }
