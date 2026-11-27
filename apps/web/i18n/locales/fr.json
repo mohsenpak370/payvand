@@ -486,7 +486,8 @@
     },
     "success": {
       "rotated": "Cet appareil paie désormais silencieusement, et la clé détenue par l'autre appareil a cessé de fonctionner aussitôt. Rien n'a bougé : la limite est maintenant {limit}, ce que la cagnotte contenait déjà, et les dépenses du mois comptent toujours. Rechargez d'ici quand vous voulez une limite plus élevée.",
-      "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et chaque paiement dans cette limite se fait sans fenêtre. Ce que vous avez déjà dépensé ce mois-ci compte toujours, il ne reste donc que le solde à dépenser.",
+      "refilled": "Rechargé — la cagnotte contient de nouveau {limit} et le mois repart de zéro, tout le plafond est donc dépensable.",
+      "restarted": "Nouvelle limite enregistrée — {limit}, avec le mois qui repart de zéro, tout est donc dépensable.",
       "updated": "Budget mis à jour — votre limite et votre cagnotte sont de nouveau synchronisées.",
       "enabled": "{currency} activé. Les jetons se trouvent dans un compte dérivé de votre portefeuille que seules vos clés privées contrôlent — les paiements dans la limite ne demandent aucune validation, et « Fermer le budget » rend tout ce qui reste à tout moment.",
       "closed": "Budget {currency} fermé — tout ce qu’il contenait est revenu dans votre portefeuille.",
@@ -622,6 +623,7 @@
     "unreadableLink": "Impossible de lire ce lien de paiement.",
     "notSent": "Le paiement n'a pas pu être envoyé.",
     "paymentNeedsSol": "Ce paiement a besoin d’un peu de SOL pour les frais de réseau Solana, et Payvand n’a pas pu les couvrir cette fois. Ajoutez du SOL à votre portefeuille puis réessayez — sur devnet, https://faucet.solana.com envoie des SOL de test gratuits.",
+    "walletShortOnPrice": "Cette facture coûte {price} et votre portefeuille n’en contient pas autant. Ajoutez des fonds au portefeuille et réessayez.",
     "discountFailed": "Ce code de remise n'a pas pu être appliqué.",
     "notBudgetAccount": "Cette adresse n'est pas un compte de budget.",
     "feeConfigUnavailable": "Les réglages de frais ne sont pas disponibles pour le moment. Réessaie dans un instant.",

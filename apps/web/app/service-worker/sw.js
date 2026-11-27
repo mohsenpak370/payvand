@@ -101,8 +101,15 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
+      // The large icon: the marker tile, drawn in colour on every platform
+      // that has room for it.
       icon: '/pwa-192x192.png',
-      badge: '/pwa-192x192.png',
+      // The status-bar badge is not a thumbnail of `icon`: Android keeps only
+      // the alpha channel and paints it as a silhouette, so a full-colour
+      // square came out as a filled square in the shade. This one is the mark
+      // as white on transparent, 96px for a 4x screen. iOS ignores `badge` and
+      // uses the installed app's own icon, which the manifest already sets.
+      badge: '/badge-96x96.png',
       // One tag per topic, so a second reminder replaces the first instead of
       // stacking up in the notification shade.
       tag: 'payvand-allowance',

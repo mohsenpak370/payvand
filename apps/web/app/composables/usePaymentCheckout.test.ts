@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   buildInstructionMock,
   checkoutFor,
+  checkoutForSol,
   execute,
   getSponsor,
   mint,
@@ -14,7 +15,8 @@ import {
   sponsor,
   sponsorSettle,
   teardownCheckout,
-  walletLamports
+  walletLamports,
+  walletTokens
 } from '../test-utils/usePaymentCheckout'
 
 /**
@@ -130,5 +132,120 @@ describe('who pays the settle', () => {
     expect(execute).not.toHaveBeenCalled()
     expect(signTransactions).not.toHaveBeenCalled()
     expect(buildInstructionMock).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A sponsored settle is compiled with the relayer as fee payer, and the wallet
+ * has nothing to simulate while that signature is empty, so a wallet that is
+ * asked to sign one shows an estimate that has nothing to do with the price.
+ * These are the two answers that keep that from happening on a payment the
+ * wallet can make itself — and the refusal that stops a payment it cannot make
+ * at all, which the chain would reject after the buyer had signed.
+ */
+describe('a SOL price the wallet has to pay', () => {
+  const price = 1_000_000_000
+  const relayer = {
+    available: true,
+    address: sponsor,
+    needs_lamports: 3_944_360,
+    per_wallet_daily: 10
+  }
+
+  it('pays its own fee and rents when it can, so the preview is the price', async () => {
+    getSponsor.mockResolvedValueOnce(relayer)
+    walletLamports.value = price + 3_000_000
+
+    const checkout = checkoutForSol(price)
+    await checkout.pay()
+
+    // One signer, so the wallet simulates a payment it can actually price.
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(sponsorSettle).not.toHaveBeenCalled()
+    expect(buildInstructionMock).toHaveBeenCalledWith(
+      'settle_payment',
+      expect.objectContaining({ amount: price }),
+      expect.objectContaining({ sponsor: payer })
+    )
+    expect(checkout.signature.value).toBe('SIGNATURE')
+  })
+
+  it('hands it to the relayer when it holds the price but not the rent', async () => {
+    getSponsor.mockResolvedValueOnce(relayer)
+    walletLamports.value = price
+
+    const checkout = checkoutForSol(price)
+    await checkout.pay()
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(sponsorSettle).toHaveBeenCalledTimes(1)
+    expect(sponsorSettle.mock.calls[0]![0]).toMatchObject({
+      transaction: 'BASE64_WIRE',
+      buyer: payer,
+      seller,
+      reference,
+      mint: '',
+      amount: price
+    })
+    expect(buildInstructionMock).toHaveBeenCalledWith(
+      'settle_payment',
+      expect.anything(),
+      expect.objectContaining({ sponsor })
+    )
+    expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
+  })
+
+  it('refuses a price the wallet does not hold, before the wallet opens', async () => {
+    getSponsor.mockResolvedValueOnce(relayer)
+    walletLamports.value = 5_500_000
+
+    const checkout = checkoutForSol(price)
+    await checkout.pay()
+
+    // A relayer covers the fee and the rents, never the price, so nothing can
+    // be built: the buyer is told what the invoice costs instead.
+    expect(checkout.failure.value).toBe('errors.walletShortOnPrice')
+    expect(buildInstructionMock).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(sponsorSettle).not.toHaveBeenCalled()
+  })
+})
+
+describe('a send the API refuses', () => {
+  it('shows the API reason instead of the bare status', async () => {
+    getSponsor.mockResolvedValueOnce({
+      available: true,
+      address: sponsor,
+      needs_lamports: 3_944_360,
+      per_wallet_daily: 10
+    })
+    // `$fetch` rejects with the response body on `data`, which is where the
+    // endpoint says what the chain or the policy objected to.
+    sponsorSettle.mockRejectedValueOnce({
+      data: { error: 'The sponsored payment was not accepted: custom program error: 0x1' }
+    })
+
+    const checkout = checkoutFor(quoteFor(false))
+    await checkout.pay()
+
+    expect(checkout.failure.value).toBe(
+      'The sponsored payment was not accepted: custom program error: 0x1'
+    )
+  })
+})
+
+describe('a token price the wallet has to pay', () => {
+  it('refuses a price it does not hold, before the wallet opens', async () => {
+    walletTokens.value = 0
+
+    const checkout = checkoutFor(quoteFor(false))
+    await checkout.pay()
+
+    expect(checkout.failure.value).toBe('errors.walletShortOnPrice')
+    expect(buildInstructionMock).not.toHaveBeenCalled()
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(sponsorSettle).not.toHaveBeenCalled()
   })
 })

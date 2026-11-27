@@ -54,10 +54,9 @@ and no recurring charge anywhere in it.
 
 - **Set / save limit** — the one approval. It moves the money into the pot, registers this device,
   and starts the month.
-- **Refill** — puts the pot back to the full limit mid-month, for example when 20 is left of 50.
-  Same single approval. It moves only what is missing, and what you already spent this month still
-  counts: a refill does not hand spent money back. The counter starts over on its own when the
-  calendar month turns.
+- **Refill** — gives the month its whole limit back, for example when 20 is left of 50. Same single
+  approval: the pot goes back to the full limit and the counter starts over, so the limit you see is
+  the limit you can spend. The counter also starts over on its own when the calendar month turns.
 - **Use this device instead** — if the allowance was set up on another phone or laptop, this takes
   it over in one approval and stops the old device being able to spend.
 - **Close budget** — the kill switch. It returns everything left to your wallet and cancels the key

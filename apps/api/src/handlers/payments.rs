@@ -21,7 +21,7 @@ pub(crate) async fn create_payment(
     // The invoice is recorded here, with its name, its facts and the account
     // that made it: the feed lists these rows and asks the cluster only whether
     // each one settled.
-    crate::payments::remember_invoice(&state.db, &payment, Some(&user.id)).await;
+    crate::payments::remember_invoice(&state.db, &payment, Some(&user.id), None).await;
 
     // The buyer's scan-to-pay screen asks the API for this seller's codes.
     payment.seller_user = Some(user.id.clone());

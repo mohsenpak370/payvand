@@ -401,10 +401,24 @@ pub async fn transactions(
     // whether each invoice has settled — and that is one batched read for the
     // page instead of a scan of every account the program owns.
     let own = payments::recorded_invoices(&state.db, &wallet, &cluster, TRANSACTION_LIMIT).await;
+    // The invoices a reusable code minted and nobody paid are not history, but
+    // the newest of them are still watched: a payment made while no one was
+    // polling its status is discovered here, stored, and listed from then on.
+    let awaiting = payments::reusable_invoices_awaiting(
+        &state.db,
+        &wallet,
+        &cluster,
+        payments::AWAITING_REUSABLE_LIMIT,
+    )
+    .await;
     // What only the cluster knows: whether each of those invoices has settled,
     // and by whom. One batched read for the page, and a row that survives the
     // cluster not answering at all.
-    let ids: Vec<String> = own.iter().map(|record| record.id.clone()).collect();
+    let ids: Vec<String> = own
+        .iter()
+        .chain(awaiting.iter())
+        .map(|record| record.id.clone())
+        .collect();
     let settled = if ids.is_empty() {
         std::collections::HashMap::new()
     } else {
@@ -437,6 +451,14 @@ pub async fn transactions(
             None => row,
         })
         .collect();
+    // Only a lookup that was paid belongs on the page: the rest stay watched and
+    // unlisted until they settle.
+    records.extend(awaiting.into_iter().filter_map(|row| {
+        settled
+            .get(&row.id)
+            .filter(|chain| chain.status == PaymentStatus::Settled)
+            .cloned()
+    }));
     // A payment from an allowance is signed by its session key, so its settle
     // names a payer that is not the wallet. Which key spends for which wallet is
     // on chain — the budget account holds both — so it is looked up once and

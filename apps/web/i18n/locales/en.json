@@ -486,7 +486,8 @@
     },
     "success": {
       "rotated": "This device now pays silently, and the key the other device held stopped working at once. Nothing moved: the limit is now {limit}, what the pot already held, and this month's spending still counts against it. Top up from here whenever you want a bigger one.",
-      "refilled": "Refilled — the pot holds {limit} again and every payment inside it is back to no popups. What you already spent this month still counts, so the rest is what you can spend.",
+      "refilled": "Refilled — the pot holds {limit} again and this month starts over, so the whole limit is yours to spend.",
+      "restarted": "New limit saved — {limit}, with the month starting over, so all of it is yours to spend.",
       "updated": "Budget updated — your limit and pot are in sync again.",
       "enabled": "{currency} allowance enabled. The tokens sit in an account derived from your wallet that only your private keys control — payments inside the limit need no approval, and \"Close budget\" returns everything left at any time.",
       "closed": "{currency} budget closed — everything left in it went back to your wallet.",
@@ -622,6 +623,7 @@
     "unreadableLink": "Could not read this payment link.",
     "notSent": "The payment could not be sent.",
     "paymentNeedsSol": "This payment needs a little SOL for the Solana network fee, and Payvand could not cover it this time. Add SOL to your wallet and try again — on devnet, https://faucet.solana.com sends free test SOL.",
+    "walletShortOnPrice": "This invoice costs {price} and your wallet does not hold that much. Add funds to the wallet and try again.",
     "discountFailed": "That discount code could not be applied.",
     "notBudgetAccount": "That address is not a budget account.",
     "feeConfigUnavailable": "The fee settings are not available right now. Try again in a moment.",

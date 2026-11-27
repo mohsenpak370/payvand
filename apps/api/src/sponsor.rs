@@ -327,6 +327,52 @@ fn message_bytes(message: &VersionedMessage) -> ApiResult<Vec<u8>> {
     Ok(message.serialize())
 }
 
+/// A caller's word as a log line may keep it: trimmed and bounded, so a request
+/// cannot choose the size of the log. Only fields that are public anyway are
+/// logged — an address, a cluster — never the memo, which is the buyer's.
+fn logged(value: &str) -> String {
+    value.trim().chars().take(64).collect()
+}
+
+/// The mint a refusal names, with `SOL` standing for the wallet path's absence
+/// of one — an operator reading the log should not have to know that an empty
+/// mint is the lamport invoice.
+fn mint_label(params: &Params) -> String {
+    params
+        .mint
+        .map(|mint| mint.to_string())
+        .unwrap_or_else(|| "SOL".into())
+}
+
+/// The shape of a settle message: its account count, the instruction's account
+/// count, and the instruction data's length. A missing shop policy, a different
+/// buyer token account or a different price each change one of the three, which
+/// is what makes a refusal readable without the transaction itself.
+fn shape(message: &VersionedMessage) -> (usize, usize, usize) {
+    match message {
+        VersionedMessage::V0(message) => {
+            let instruction = message.instructions.first();
+            (
+                message.account_keys.len(),
+                instruction.map_or(0, |instruction| instruction.accounts.len()),
+                instruction.map_or(0, |instruction| instruction.data.len()),
+            )
+        }
+        _ => (0, 0, 0),
+    }
+}
+
+/// Where two serialized settle messages first part ways. A version 0 message
+/// ends with the blockhash, so an offset inside the keys or the instruction is
+/// a stale client, a wrong invoice or a missing policy — and each of those is a
+/// different bug for whoever reads the log.
+fn first_difference(ours: &[u8], theirs: &[u8]) -> Option<usize> {
+    ours.iter()
+        .zip(theirs.iter())
+        .position(|(ours, theirs)| ours != theirs)
+        .or_else(|| (ours.len() != theirs.len()).then_some(ours.len().min(theirs.len())))
+}
+
 /// Sponsored settlements in the last rolling day, for one account or the whole
 /// deployment. `user_id` is the account because that is what a session proves;
 /// the wallet a sponsored payment pays from is named in the row.
@@ -449,8 +495,23 @@ pub async fn settle(
 
     // The caps are keyed by the wallet that signs, and it has to be a wallet
     // before it can be a key: a request naming nonsense is a bad request rather
-    // than somebody's spend.
-    let params = Params::read(&request)?;
+    // than somebody's spend. The refusal is logged — the caller gets a sentence,
+    // and the fields an operator needs to tell a client bug from a probing
+    // caller stay on our side.
+    let params = Params::read(&request).map_err(|error| {
+        tracing::warn!(
+            %error,
+            cluster = %logged(&request.cluster),
+            buyer = %logged(&request.buyer),
+            seller = %logged(&request.seller),
+            reference = %logged(&request.reference),
+            mint = %logged(&request.mint),
+            amount = request.amount,
+            memo_len = request.memo.len(),
+            "a sponsored settle named an invoice that cannot exist"
+        );
+        error
+    })?;
     let wallet = params.buyer.to_string();
 
     let per_wallet = cap_from_env("SPONSOR_DAILY_PER_WALLET", 10);
@@ -466,14 +527,57 @@ pub async fn settle(
 
     let wire = STANDARD
         .decode(request.transaction.trim())
-        .map_err(|_| bad("That transaction is not valid base64."))?;
-    let transaction: VersionedTransaction =
-        bincode::deserialize(&wire).map_err(|_| bad("That transaction could not be read."))?;
+        .map_err(|error| {
+            tracing::warn!(
+                %error,
+                cluster = %logged(&request.cluster),
+                buyer = %params.buyer,
+                bytes = request.transaction.len(),
+                "a sponsored settle's transaction was not base64"
+            );
+            bad("That transaction is not valid base64.")
+        })?;
+    let transaction: VersionedTransaction = bincode::deserialize(&wire).map_err(|error| {
+        tracing::warn!(
+            %error,
+            cluster = %logged(&request.cluster),
+            buyer = %params.buyer,
+            bytes = wire.len(),
+            "a sponsored settle's transaction could not be decoded"
+        );
+        bad("That transaction could not be read.")
+    })?;
 
-    if transaction.message.static_account_keys().first() != Some(&sponsor_key) {
+    // Signature shape: the fee payer has to be this sponsor, and the only
+    // signature present is the buyer's, in the second slot, with the sponsor's
+    // own left empty for us to fill. Both refusals are logged with the slots
+    // that were wrong.
+    let fee_payer = transaction.message.static_account_keys().first().copied();
+    if fee_payer != Some(sponsor_key) {
+        tracing::warn!(
+            cluster = %logged(&request.cluster),
+            buyer = %params.buyer,
+            expected = %sponsor_key,
+            actual = %fee_payer.map(|key| key.to_string()).unwrap_or_else(|| "none".into()),
+            "a sponsored settle was addressed to another fee payer"
+        );
         return Err(bad("The transaction's fee payer is not this sponsor."));
     }
     if transaction.signatures.len() != 2 || transaction.signatures[0] != Signature::default() {
+        tracing::warn!(
+            cluster = %logged(&request.cluster),
+            buyer = %params.buyer,
+            signatures = transaction.signatures.len(),
+            fee_payer_slot_empty = transaction
+                .signatures
+                .first()
+                .is_none_or(|signature| *signature == Signature::default()),
+            buyer_slot_empty = transaction
+                .signatures
+                .get(1)
+                .is_none_or(|signature| *signature == Signature::default()),
+            "a sponsored settle did not carry exactly one buyer signature"
+        );
         return Err(bad(
             "The transaction must carry exactly the buyer's signature and no fee-payer one.",
         ));
@@ -487,6 +591,34 @@ pub async fn settle(
     let ours = message_bytes(&expected)?;
     let theirs = message_bytes(&transaction.message)?;
     if ours != theirs {
+        // The one refusal a buyer cannot act on: their signature is over some
+        // other message. Both shapes and the offset where they diverge say
+        // whether a stale client, a wrong invoice or a policy-less shop is the
+        // cause, and the buyer's signature stays here so support can look the
+        // transaction up instead of asking for a screenshot of a network tab.
+        let (our_accounts, our_instruction_accounts, our_data) = shape(&expected);
+        let (their_accounts, their_instruction_accounts, their_data) = shape(&transaction.message);
+        tracing::warn!(
+            cluster = %logged(&request.cluster),
+            buyer = %params.buyer,
+            seller = %params.seller,
+            amount = params.amount,
+            mint = %mint_label(&params),
+            memo_len = params.memo.len(),
+            shop_policy = %params
+                .shop_policy
+                .map(|policy| policy.to_string())
+                .unwrap_or_else(|| "none".into()),
+            buyer_signature = %transaction.signatures[1],
+            accounts = their_accounts,
+            expected_accounts = our_accounts,
+            instruction_accounts = their_instruction_accounts,
+            expected_instruction_accounts = our_instruction_accounts,
+            data_len = their_data,
+            expected_data_len = our_data,
+            first_difference = ?first_difference(&ours, &theirs),
+            "a sponsored settle was not the settlement its invoice is priced at"
+        );
         return Err(bad(
             "This transaction is not the settlement this invoice is priced at.",
         ));
@@ -506,11 +638,28 @@ pub async fn settle(
         message: expected,
     };
 
+    let endpoint = resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?;
     let rpc = solana_rpc_client::nonblocking::rpc_client::RpcClient::new_with_commitment(
-        resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?,
+        endpoint.clone(),
         solana_commitment_config::CommitmentConfig::confirmed(),
     );
+    // The cluster's own words, with both signatures: a preflight failure, an
+    // expired blockhash and a program error all read differently here, and the
+    // buyer's screen says only that the payment was not accepted.
     let sent = rpc.send_transaction(&signed).await.map_err(|error| {
+        tracing::warn!(
+            %error,
+            details = ?error,
+            cluster = %logged(&request.cluster),
+            endpoint = %endpoint,
+            buyer = %params.buyer,
+            seller = %params.seller,
+            amount = params.amount,
+            mint = %mint_label(&params),
+            sponsor_signature = %signature,
+            buyer_signature = %transaction.signatures[1],
+            "the cluster refused a sponsored settle"
+        );
         ApiError::BadRequest(format!("The sponsored payment was not accepted: {error}"))
     })?;
 
@@ -740,6 +889,50 @@ mod tests {
         assert_eq!(recent_count(&state, None).await.expect("count"), 3);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    /// The refusal lines are only useful if they point somewhere: the offset
+    /// where two settles differ, and the shape that says which part of the
+    /// message it was.
+    #[test]
+    fn a_refusal_can_say_where_the_two_settles_differ() {
+        assert_eq!(first_difference(b"abc", b"abc"), None);
+        assert_eq!(first_difference(b"abc", b"abd"), Some(2));
+        assert_eq!(first_difference(b"abc", b"abcd"), Some(3));
+        assert_eq!(first_difference(b"", b"a"), Some(0));
+
+        let sponsor = Pubkey::new_from_array([9; 32]);
+        let message = expected_message(&params(""), &sponsor, Hash::default()).expect("compiles");
+        let (accounts, instruction_accounts, data) = shape(&message);
+        assert_eq!(instruction_accounts, 14, "the token settle's account list");
+        assert_eq!(data, 20, "selector, amount and the memo's length prefix");
+        assert!(
+            accounts >= instruction_accounts,
+            "the static keys also carry the program and the sponsor"
+        );
+
+        // An address is logged as given; a field nobody should see at length is
+        // cut, so the request cannot choose how big the log line is.
+        assert_eq!(logged("  devnet  "), "devnet");
+        assert_eq!(logged(&"x".repeat(200)).len(), 64);
+    }
+
+    /// The mint a refusal names reads the same on both settle paths.
+    #[test]
+    fn a_refusal_names_the_mint_or_says_sol() {
+        assert_eq!(
+            mint_label(&params("")),
+            crate::payments::mint_for("usdc", "devnet")
+                .expect("USDC")
+                .to_string()
+        );
+        assert_eq!(
+            mint_label(&Params {
+                mint: None,
+                ..params("")
+            }),
+            "SOL"
+        );
     }
 
     /// A `SPONSOR_KEYPAIR` the API cannot use is the same as no sponsor: the

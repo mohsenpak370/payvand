@@ -219,8 +219,10 @@ pub async fn mint_invoice(db: &libsql::Database, id: &str) -> ApiResult<(Payment
     let mut payment = crate::payments::create_payment(request)?;
     // The invoice is recorded like any other, under the account that made the
     // offer: this is what puts a reusable code's payments in the seller's
-    // history and answer the buyer's status reads from our own rows.
-    crate::payments::remember_invoice(db, &payment, Some(&link.seller_user)).await;
+    // history and answer the buyer's status reads from our own rows. The code's
+    // id travels with the row, so history can leave this lookup out until it is
+    // paid — a visit is not a sale.
+    crate::payments::remember_invoice(db, &payment, Some(&link.seller_user), Some(id)).await;
     payment.seller_user = Some(link.seller_user.clone());
     payment.created_at_unix = crate::auth::unix_now();
     let qr_payload = payment.qr_payload();
@@ -401,7 +403,7 @@ mod tests {
     }
 
     /// The row is the thing that repeats: one stored offer, one invoice per
-    /// visit, each of them in the seller's history.
+    /// visit, and only the ones that are paid reach the seller's history.
     #[tokio::test]
     async fn an_offer_is_stored_and_mints_a_fresh_invoice_per_visit() {
         let (db, path) = test_db().await;
@@ -421,8 +423,57 @@ mod tests {
         assert_eq!(first.seller, seller);
         assert_eq!(first.seller_user.as_deref(), Some("user-1"));
 
+        // Every mint names the code it came from, which is what the history
+        // filter reads.
+        let connection = db.connect().expect("connect");
+        let mut rows = connection
+            .query(
+                "SELECT reusable_id FROM invoice_meta WHERE id = ?1",
+                libsql::params![first.options[0].payment_pda.clone()],
+            )
+            .await
+            .expect("read");
+        let row = rows.next().await.expect("row").expect("invoice");
+        assert_eq!(row.get::<String>(0).expect("tag"), link.id);
+
+        // Two visits, nothing sold: a lookup is not the seller's history.
         let recorded = crate::payments::recorded_invoices(&db, seller, "devnet", 10).await;
-        assert_eq!(recorded.len(), 2, "both payments belong to the seller");
+        assert!(
+            recorded.is_empty(),
+            "an unpaid visit must not be listed as a payment"
+        );
+        // It is watched instead, so the payment below is found without anyone
+        // polling that invoice.
+        let awaiting = crate::payments::reusable_invoices_awaiting(&db, seller, "devnet", 10).await;
+        assert_eq!(awaiting.len(), 2, "both lookups are still watched");
+
+        // Marking one settled puts exactly that one in the seller's history.
+        connection
+            .execute(
+                "INSERT INTO settled_payments \
+                    (invoice, endpoint, seller, reference, mint, amount, memo, payer, \
+                     created_at, settled_at) \
+                 VALUES (?1, 'https://api.devnet.solana.com', ?2, 'ref', '', 5000000, \
+                         'Album', ?3, 0, 0)",
+                libsql::params![
+                    first.options[0].payment_pda.clone(),
+                    seller.to_string(),
+                    "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
+                ],
+            )
+            .await
+            .expect("settlement");
+
+        let recorded = crate::payments::recorded_invoices(&db, seller, "devnet", 10).await;
+        assert_eq!(recorded.len(), 1, "the paid visit is the seller's sale");
+        assert_eq!(recorded[0].id, first.options[0].payment_pda);
+        assert_eq!(
+            crate::payments::reusable_invoices_awaiting(&db, seller, "devnet", 10)
+                .await
+                .len(),
+            1,
+            "only the unpaid one is still watched"
+        );
 
         std::fs::remove_file(path).ok();
     }

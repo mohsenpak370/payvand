@@ -42,6 +42,8 @@ export const sponsorSettle = vi.fn(async (_body: SponsoredSettleInput) => ({
 }))
 /** What the wallet holds, in lamports: a funded wallet by default. */
 export const walletLamports = { value: 5_000_000 }
+/** What the wallet holds in the invoice's token, in base units. */
+export const walletTokens = { value: 5_000_000 }
 export const sendSilentTokenPayment = vi.fn(async () => 'SILENT_SIGNATURE')
 /** The transfers a spent float needs; most payments here need none. */
 export const tokenFloatTopUpInstructions = vi.fn(async () => [] as unknown[])
@@ -98,6 +100,46 @@ export function checkoutFor(quote: InvoiceCosts) {
   return checkout
 }
 
+/** A SOL invoice, priced the way the program prices one. */
+export function quoteForSol(amount: number): InvoiceCosts {
+  return invoiceCosts({
+    policy: {
+      feeBpsBelow: 200,
+      feeBpsAbove: 50,
+      solTierLamports: 100_000_000,
+      tokenTierBaseUnits: 0,
+      flatUsdcBaseUnits: 0,
+      flatEurcBaseUnits: 0,
+      usdcMint: mint,
+      eurcMint: mint,
+      feeMode: 'seller'
+    },
+    amount,
+    currency: 'sol',
+    invoiceRent: 1_000_000,
+    receiptRent: 1_000_000
+  })
+}
+
+/** A SOL invoice at `amount` lamports, with no code loaded. */
+export function checkoutForSol(amount: number) {
+  const checkout = usePaymentCheckout()
+  checkout.payload.value = {
+    v: 1,
+    id: reference,
+    seller,
+    reference,
+    amount_lamports: amount,
+    options: [{ currency: 'sol', mint: '', decimals: 9, amount, payment_pda: reference }],
+    memo: '',
+    name: 'Coffee',
+    cluster: 'devnet',
+    endpoint: 'https://api.devnet.solana.com'
+  }
+  checkout.costs.value = quoteForSol(amount)
+  return checkout
+}
+
 /** The same invoice with a USDC allowance this device can sign for. */
 export function withAllowance(checkout: ReturnType<typeof usePaymentCheckout>) {
   checkout.tokenBudgetState.value = {
@@ -151,6 +193,7 @@ export function setupCheckout() {
   sponsorSettle.mockClear()
   sponsorSettle.mockImplementation(async () => ({ signature: 'SPONSORED_SIGNATURE' }))
   walletLamports.value = 5_000_000
+  walletTokens.value = 5_000_000
   wallet.canSign = true
 
   vi.stubGlobal('ref', ref)
@@ -174,7 +217,10 @@ export function setupCheckout() {
   vi.stubGlobal('useSolanaClient', () => ({
     client: {
       rpc: {
-        getBalance: () => ({ send: async () => ({ value: walletLamports.value }) })
+        getBalance: () => ({ send: async () => ({ value: walletLamports.value }) }),
+        getTokenAccountBalance: () => ({
+          send: async () => ({ value: { amount: String(walletTokens.value) } })
+        })
       }
     }
   }))
