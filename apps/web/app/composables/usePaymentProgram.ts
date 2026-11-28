@@ -7,14 +7,16 @@ import {
   getAddressDecoder,
   getAddressEncoder,
   getBase64Decoder,
+  getBase64Encoder,
+  getCompiledTransactionMessageDecoder,
   getProgramDerivedAddress,
+  getTransactionDecoder,
   getTransactionEncoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   type AccountMeta,
   type Address,
-  type Instruction,
-  type Transaction
+  type Instruction
 } from '@vue-solana/nuxt/kit'
 import idl from '~/assets/payvand.idl.json'
 
@@ -438,7 +440,8 @@ export async function compileWireTransaction(params: WireTransactionParams) {
 export type WireBytes = ReturnType<ReturnType<typeof getTransactionEncoder>['encode']>
 
 /**
- * Wire bytes as base64: what `POST /api/sponsor/settle` takes. The copy into a
+ * Wire bytes as base64: what `POST /api/sponsor/settle` takes back once the
+ * wallet has signed the relayer's prepared transaction. The copy into a
  * plain `Uint8Array` is only to satisfy the decoder's buffer generic — the bytes
  * are the ones the wallet handed back, unchanged.
  */
@@ -446,18 +449,59 @@ export function base64WireTransaction(wire: ArrayLike<number>): string {
   return getBase64Decoder().decode(new Uint8Array(wire))
 }
 
+/** Base64 wire bytes from the API, as the bytes a wallet signs. */
+export function wireFromBase64(transaction: string): WireBytes {
+  return getBase64Encoder().encode(transaction) as WireBytes
+}
+
+function sameBytes(a: ArrayLike<number> | undefined, b: ArrayLike<number> | undefined): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
 /**
- * The transaction a relayer is handed, as wire bytes the buyer's wallet can
- * sign: the fee payer's signature slot is left empty, which the encoder writes
- * as sixty-four zero bytes. That is the shape the endpoint checks for — it
- * fills the slot itself, and only after the message matches the one it expects.
+ * Whether a transaction the relayer prepared is exactly this page's settle,
+ * checked before the buyer's wallet is asked to sign it.
+ *
+ * The relayer builds the settle itself and signs first, which is what lets the
+ * wallet preview it (`docs/payment-costs.md`) — but then the bytes the buyer is
+ * asked to sign come from a server. This is the buyer's own check on them: the
+ * relayer is the fee payer, nothing is looked up from a table, and the message
+ * holds two instructions — a compute-unit limit and `settle` — where `settle`
+ * is this page's instruction, the same program, data and accounts in order.
+ * Anything else (another invoice, an extra transfer, a priority price) is
+ * refused without a wallet prompt.
  */
-export function signableWireTransaction(
-  transaction: Transaction,
-  feePayer: Address
-): WireBytes {
-  return getTransactionEncoder().encode({
-    ...transaction,
-    signatures: { ...transaction.signatures, [feePayer]: null }
-  })
+export function preparedSettleMatches(
+  wire: ArrayLike<number>,
+  relayer: Address,
+  settle: Instruction
+): boolean {
+  try {
+    const transaction = getTransactionDecoder().decode(new Uint8Array(wire))
+    const message = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes)
+    // The relayer builds version 0 and nothing else.
+    if (message.version !== 0) return false
+    const keys = message.staticAccounts
+    if (keys[0] !== relayer) return false
+    if ((message.addressTableLookups?.length ?? 0) > 0) return false
+    if (message.instructions.length !== 2) return false
+    const [limit, settled] = message.instructions
+    const expectedLimit = computeUnitLimitInstruction()
+    if (keys[limit!.programAddressIndex] !== expectedLimit.programAddress) return false
+    if ((limit!.accountIndices?.length ?? 0) !== 0) return false
+    if (!sameBytes(limit!.data, expectedLimit.data)) return false
+    if (keys[settled!.programAddressIndex] !== settle.programAddress) return false
+    if (!sameBytes(settled!.data, settle.data)) return false
+    const named = (settled!.accountIndices ?? []).map(index => keys[index])
+    const wanted = (settle.accounts ?? []).map(account => account.address)
+    return named.length === wanted.length && named.every((key, index) => key === wanted[index])
+  } catch {
+    return false
+  }
 }

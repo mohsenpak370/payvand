@@ -235,8 +235,11 @@ export function useInvoiceCosts() {
    * Costs for paying `amount` in `currency`. `mint` and `seller` are optional
    * and only used to tell whether a token payment would have to create the
    * seller's token account. `signatures` says how many signatures the path
-   * being quoted will carry — 2 when a relayer signs as fee payer, 1 when the
-   * wallet sponsors itself — because the policy's network fee is per signature.
+   * being quoted will carry, because the policy's network fee is per signature
+   * and the seller is charged it for each. It defaults to 2 — the relayer's and
+   * the buyer's — because the relayer pays for every wallet payment
+   * (`docs/payment-costs.md`); pass 1 only for a path that is known to carry one
+   * (a session key paying from an allowance, or a wallet paying its own way).
    */
   async function estimateInvoiceCosts(
     amount: number,
@@ -286,7 +289,7 @@ export function useInvoiceCosts() {
       receiptRent,
       sellerTokenAccountRent,
       treasuryTokenAccountMissing,
-      signatures: options.signatures
+      signatures: options.signatures ?? 2
     })
   }
 

@@ -3,16 +3,22 @@ import {
   buildInstructionMock,
   checkoutFor,
   checkoutForSol,
+  compileWireTransactionMock,
+  eurcMint,
   execute,
   getSponsor,
   mint,
   payer,
+  preparedSettleMatchesMock,
+  preparedWire,
   quoteFor,
   reference,
+  relayerUnavailable,
   seller,
   setupCheckout,
   signTransactions,
   sponsor,
+  sponsorPrepare,
   sponsorSettle,
   teardownCheckout,
   walletLamports,
@@ -28,11 +34,11 @@ import {
  * test calls `pay()` directly, the way the stage machine would. If the guard
  * goes away, `pay()` builds and sends the transaction and this fails.
  *
- * The other subject here is who pays the settle's lamports. A token settle
- * fronts the network fee and both record rents, and Payvand's own fee is what
- * pays for them: every token payment asks the relayer first, so a payer holding
- * no SOL can pay. Only a payment no relayer will take falls back to the wallet
- * paying them itself — and when it cannot, the refusal comes before a signature.
+ * The other subject here is who pays the settle's lamports, which is the rule
+ * in `docs/payment-costs.md`: the platform does, on every wallet payment, SOL
+ * or token. The relayer builds and signs the settle first, the page checks it
+ * is this invoice's, the wallet signs, the API sends. The wallet pays its own
+ * way only when no relayer will — and then is refunded in the same transaction.
  */
 
 beforeEach(setupCheckout)
@@ -46,6 +52,7 @@ describe('pay()', () => {
 
     expect(checkout.failure.value).toBe('errors.treasuryTokenAccountMissing')
     expect(buildInstructionMock).not.toHaveBeenCalled()
+    expect(sponsorPrepare).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
     expect(checkout.signature.value).toBeNull()
   })
@@ -61,66 +68,124 @@ describe('pay()', () => {
       expect.anything(),
       expect.anything()
     )
-    expect(execute).toHaveBeenCalledTimes(1)
-    expect(checkout.signature.value).toBe('SIGNATURE')
+    expect(sponsorSettle).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
   })
 })
 
-describe('who pays the settle', () => {
-  it('lets the relayer pay even when the wallet could', async () => {
-    getSponsor.mockResolvedValueOnce({
-      available: true,
-      address: sponsor,
-      needs_lamports: 3_944_360,
-      per_wallet_daily: 10
-    })
-    const checkout = checkoutFor(quoteFor(false))
+/**
+ * The invariant: while a relayer is available, it is the fee payer and the
+ * sponsor of every wallet payment, however much SOL the wallet holds. A funded
+ * wallet paying its own way would have the buyer front what the platform pays.
+ */
+describe('the platform pays the settle', () => {
+  it.each([
+    ['usdc', mint],
+    ['eurc', eurcMint]
+  ] as const)('hands a %s invoice to the relayer even when the wallet holds plenty of SOL', async (currency, tokenMint) => {
+    walletLamports.value = 10_000_000_000
+    const checkout = checkoutFor(quoteFor(false, currency, tokenMint), currency, tokenMint)
 
     await checkout.pay()
 
-    // The relayer's key is the fee payer and the instruction's sponsor; the
-    // buyer signs its half and nothing is sent from this device. The wallet's
-    // own balance is not consulted: paying from Payvand's fee is the point.
-    expect(execute).not.toHaveBeenCalled()
-    expect(signTransactions).toHaveBeenCalledTimes(1)
-    expect(buildInstructionMock).toHaveBeenCalledWith(
-      'settle_token_payment',
-      expect.anything(),
-      expect.objectContaining({ sponsor })
-    )
-    expect(sponsorSettle).toHaveBeenCalledTimes(1)
-    expect(sponsorSettle.mock.calls[0]![0]).toMatchObject({
-      transaction: 'BASE64_WIRE',
+    expect(sponsorPrepare).toHaveBeenCalledTimes(1)
+    expect(sponsorPrepare.mock.calls[0]![0]).toMatchObject({
       buyer: payer,
       seller,
       reference,
-      mint,
+      mint: tokenMint,
       amount: 1_500_000
+    })
+    // The page's own copy of the settle names the relayer as sponsor, and the
+    // prepared bytes are checked against it before the wallet sees them.
+    expect(buildInstructionMock).toHaveBeenCalledWith(
+      'settle_token_payment',
+      expect.anything(),
+      expect.objectContaining({ sponsor, mint: tokenMint })
+    )
+    expect(preparedSettleMatchesMock).toHaveBeenCalledWith(preparedWire, sponsor, expect.anything())
+    // The wallet signs the relayer-signed bytes and sends nothing itself.
+    expect(signTransactions).toHaveBeenCalledWith([preparedWire])
+    expect(execute).not.toHaveBeenCalled()
+    expect(sponsorSettle.mock.calls[0]![0]).toMatchObject({
+      transaction: 'BASE64_WIRE',
+      buyer: payer,
+      mint: tokenMint
     })
     expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
     expect(checkout.failure.value).toBe('')
   })
 
-  it('pays its own fee and rents when no relayer takes the payment', async () => {
+  it('hands a SOL invoice to the relayer even when the wallet could front it', async () => {
+    const price = 1_000_000_000
+    walletLamports.value = price + 1_000_000_000
+    const checkout = checkoutForSol(price)
+
+    await checkout.pay()
+
+    expect(sponsorPrepare.mock.calls[0]![0]).toMatchObject({ buyer: payer, mint: '', amount: price })
+    expect(buildInstructionMock).toHaveBeenCalledWith(
+      'settle_payment',
+      expect.objectContaining({ amount: price }),
+      expect.objectContaining({ sponsor })
+    )
+    expect(execute).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
+  })
+
+  it('lets a buyer holding no SOL at all pay a token invoice', async () => {
+    walletLamports.value = 0
     const checkout = checkoutFor(quoteFor(false))
 
     await checkout.pay()
 
-    // Asked first, refused, and the funded wallet pays exactly as it always
-    // did: the chain's answer is worth more than a client-side dead end.
-    expect(getSponsor).toHaveBeenCalledTimes(1)
+    expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
+    expect(checkout.failure.value).toBe('')
+  })
+
+  it('never opens the wallet on a prepared transaction that is not this invoice', async () => {
+    preparedSettleMatchesMock.mockImplementation(() => false)
+    const checkout = checkoutFor(quoteFor(false))
+
+    await checkout.pay()
+
+    expect(checkout.failure.value).toBe('errors.preparedMismatch')
+    expect(signTransactions).not.toHaveBeenCalled()
+    expect(sponsorSettle).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Only when no relayer will pay does the wallet pay its own way, as its own
+ * sponsor. The program refunds it both rents and its signature, and the
+ * compute-unit limit keeps the wallet from adding a priority price nothing
+ * refunds — so the buyer still spends exactly the price.
+ */
+describe('when no relayer will pay', () => {
+  it('lets a funded wallet pay its own way behind a compute-unit limit', async () => {
+    getSponsor.mockImplementation(async () => relayerUnavailable())
+    const checkout = checkoutFor(quoteFor(false))
+
+    await checkout.pay()
+
+    expect(sponsorPrepare).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalledTimes(1)
     expect(checkout.signature.value).toBe('SIGNATURE')
-    expect(sponsorSettle).not.toHaveBeenCalled()
-    expect(signTransactions).not.toHaveBeenCalled()
     expect(buildInstructionMock).toHaveBeenCalledWith(
       'settle_token_payment',
       expect.anything(),
       expect.objectContaining({ sponsor: payer })
     )
+    const compiled = compileWireTransactionMock.mock.calls[0]![0]
+    expect(compiled.payer).toBe(payer)
+    const [limit] = compiled.instruction as { programAddress: string, data: Uint8Array }[]
+    expect(limit!.programAddress).toBe('ComputeBudget111111111111111111111111111111')
+    expect(limit!.data[0]).toBe(2)
   })
 
-  it('refuses before a signature when there is no relayer and no SOL', async () => {
+  it('refuses before a signature when the wallet cannot front the records either', async () => {
+    getSponsor.mockImplementation(async () => relayerUnavailable())
     walletLamports.value = 0
 
     const checkout = checkoutFor(quoteFor(false))
@@ -132,96 +197,38 @@ describe('who pays the settle', () => {
     expect(checkout.signature.value).toBeNull()
     expect(execute).not.toHaveBeenCalled()
     expect(signTransactions).not.toHaveBeenCalled()
-    expect(buildInstructionMock).not.toHaveBeenCalled()
+  })
+
+  it('treats a relayer request that failed as no relayer', async () => {
+    getSponsor.mockRejectedValue(new Error('offline'))
+    const checkout = checkoutFor(quoteFor(false))
+
+    await checkout.pay()
+
+    expect(sponsorPrepare).not.toHaveBeenCalled()
+    expect(checkout.signature.value).toBe('SIGNATURE')
   })
 })
 
-/**
- * A sponsored settle is compiled with the relayer as fee payer, and the wallet
- * has nothing to simulate while that signature is empty, so a wallet that is
- * asked to sign one shows an estimate that has nothing to do with the price.
- * These are the two answers that keep that from happening on a payment the
- * wallet can make itself — and the refusal that stops a payment it cannot make
- * at all, which the chain would reject after the buyer had signed.
- */
 describe('a SOL price the wallet has to pay', () => {
-  const price = 1_000_000_000
-  const relayer = {
-    available: true,
-    address: sponsor,
-    needs_lamports: 3_944_360,
-    per_wallet_daily: 10
-  }
-
-  it('pays its own fee and rents when it can, so the preview is the price', async () => {
-    getSponsor.mockResolvedValueOnce(relayer)
-    walletLamports.value = price + 3_000_000
-
-    const checkout = checkoutForSol(price)
-    await checkout.pay()
-
-    // One signer, so the wallet simulates a payment it can actually price.
-    expect(execute).toHaveBeenCalledTimes(1)
-    expect(signTransactions).not.toHaveBeenCalled()
-    expect(sponsorSettle).not.toHaveBeenCalled()
-    expect(buildInstructionMock).toHaveBeenCalledWith(
-      'settle_payment',
-      expect.objectContaining({ amount: price }),
-      expect.objectContaining({ sponsor: payer })
-    )
-    expect(checkout.signature.value).toBe('SIGNATURE')
-  })
-
-  it('hands it to the relayer when it holds the price but not the rent', async () => {
-    getSponsor.mockResolvedValueOnce(relayer)
-    walletLamports.value = price
-
-    const checkout = checkoutForSol(price)
-    await checkout.pay()
-
-    expect(execute).not.toHaveBeenCalled()
-    expect(sponsorSettle).toHaveBeenCalledTimes(1)
-    expect(sponsorSettle.mock.calls[0]![0]).toMatchObject({
-      transaction: 'BASE64_WIRE',
-      buyer: payer,
-      seller,
-      reference,
-      mint: '',
-      amount: price
-    })
-    expect(buildInstructionMock).toHaveBeenCalledWith(
-      'settle_payment',
-      expect.anything(),
-      expect.objectContaining({ sponsor })
-    )
-    expect(checkout.signature.value).toBe('SPONSORED_SIGNATURE')
-  })
-
   it('refuses a price the wallet does not hold, before the wallet opens', async () => {
-    getSponsor.mockResolvedValueOnce(relayer)
     walletLamports.value = 5_500_000
 
-    const checkout = checkoutForSol(price)
+    const checkout = checkoutForSol(1_000_000_000)
     await checkout.pay()
 
     // A relayer covers the fee and the rents, never the price, so nothing can
     // be built: the buyer is told what the invoice costs instead.
     expect(checkout.failure.value).toBe('errors.walletShortOnPrice')
     expect(buildInstructionMock).not.toHaveBeenCalled()
+    expect(sponsorPrepare).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
     expect(signTransactions).not.toHaveBeenCalled()
-    expect(sponsorSettle).not.toHaveBeenCalled()
   })
 })
 
 describe('a send the API refuses', () => {
   it('shows the API reason instead of the bare status', async () => {
-    getSponsor.mockResolvedValueOnce({
-      available: true,
-      address: sponsor,
-      needs_lamports: 3_944_360,
-      per_wallet_daily: 10
-    })
     // `$fetch` rejects with the response body on `data`, which is where the
     // endpoint says what the chain or the policy objected to.
     sponsorSettle.mockRejectedValueOnce({

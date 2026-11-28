@@ -36,6 +36,7 @@ async fn history_rows_carry_the_name_and_receipt_lines() {
         status: PaymentStatus::Pending,
         created_at_unix: 1,
         settled_at_unix: 0,
+        fee: None,
     }];
 
     fill_invoice_meta(&state.db, &mut items).await;

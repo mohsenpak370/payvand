@@ -39,6 +39,27 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
             .await?;
         eprintln!("[db] migrate: added invoice_meta.items");
     }
+    // A sponsored settle is recorded when the relayer signs it, and
+    // `submitted_at` says it was also sent from here. Every row older than the
+    // column was written after the cluster accepted it, so it was submitted.
+    if !has_column(connection, "sponsored_settlements", "submitted_at").await? {
+        connection
+            .execute_batch(
+                "ALTER TABLE sponsored_settlements ADD COLUMN submitted_at INTEGER;
+                 UPDATE sponsored_settlements SET submitted_at = created_at;",
+            )
+            .await?;
+        eprintln!("[db] migrate: added sponsored_settlements.submitted_at");
+    }
+    // The fee a settlement charged its seller, from its `PaymentSettled` event.
+    // Rows stored before this keep NULL — unknown — and the profile shows an
+    // estimate for those; a later history read of the same settlement fills it.
+    if !has_column(connection, "settled_payments", "fee").await? {
+        connection
+            .execute("ALTER TABLE settled_payments ADD COLUMN fee INTEGER", ())
+            .await?;
+        eprintln!("[db] migrate: added settled_payments.fee");
+    }
     eprintln!("[db] migrate done");
     Ok(())
 }

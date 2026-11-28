@@ -20,6 +20,7 @@ async fn settlements_this_wallet_paid_are_listed_from_the_db() {
         payer: buyer,
         created_at: 10,
         settled_at: 20,
+        fee: None,
     };
     let endpoint = "https://feed-test.invalid";
     store_settlement(&db, endpoint, &receipt).await;
@@ -156,6 +157,7 @@ async fn settlements_a_session_key_paid_are_listed_for_its_wallet() {
         payer,
         created_at: settled_at - 60,
         settled_at,
+        fee: None,
     };
     let direct = receipt([0x64u8; 32], wallet, 100, "direct");
     let silent = receipt([0x65u8; 32], session_key, 200, "silent");
@@ -178,5 +180,55 @@ async fn settlements_a_session_key_paid_are_listed_for_its_wallet() {
         both.iter().any(|record| record.memo == "silent"),
         "the silent payment is in the page"
     );
+    let _ = std::fs::remove_file(path);
+}
+
+/// The fee is the one figure a re-quote cannot recover: a relayer-paid settle
+/// and a self-paid one charge the seller a signature's network fee apart. It is
+/// stored exactly as `PaymentSettled` logged it, a row without one stays
+/// unknown rather than becoming zero, and a later write that does not know it
+/// leaves a known fee in place.
+#[tokio::test]
+async fn the_logged_fee_is_kept_and_never_forgotten() {
+    let (db, path) = temp_db().await;
+    let buyer = Pubkey::from([0x71u8; 32]);
+    let endpoint = "https://fee-test.invalid";
+    let receipt = |invoice: u8, fee: Option<u64>| OnchainReceipt {
+        invoice: Pubkey::from([invoice; 32]),
+        seller: Pubkey::from([0x72u8; 32]),
+        reference: Pubkey::from([0x73u8; 32]),
+        mint: Pubkey::default(),
+        amount: 50_000_000,
+        memo: String::new(),
+        payer: buyer,
+        created_at: 10,
+        settled_at: 20,
+        fee,
+    };
+    store_settlements(
+        &db,
+        endpoint,
+        &[receipt(0x74, Some(10_000)), receipt(0x75, None)],
+    )
+    .await;
+    let fee_of = |records: &[PaymentRecord], invoice: u8| {
+        records
+            .iter()
+            .find(|record| record.id == Pubkey::from([invoice; 32]).to_string())
+            .expect("listed")
+            .fee
+    };
+    let paid = settlements_paid_by(&db, endpoint, "devnet", &buyer.to_string(), 10).await;
+    assert_eq!(fee_of(&paid, 0x74), Some(10_000));
+    assert_eq!(fee_of(&paid, 0x75), None, "unknown is not zero");
+
+    store_settlement(&db, endpoint, &receipt(0x74, None)).await;
+    let paid = settlements_paid_by(&db, endpoint, "devnet", &buyer.to_string(), 10).await;
+    assert_eq!(
+        fee_of(&paid, 0x74),
+        Some(10_000),
+        "a known fee is not overwritten"
+    );
+
     let _ = std::fs::remove_file(path);
 }

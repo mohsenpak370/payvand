@@ -11,11 +11,12 @@ async fn test_state() -> (AppState, std::path::PathBuf) {
     (AppState { db: Arc::new(db) }, path)
 }
 
-/// The caps are counted by the wallet that signs and by the deployment: a
-/// buyer with no account has the same daily bound as one with an account,
-/// which is what lets a printed code be sponsored.
+/// The deployment's cap counts every settle the relayer signed, however it
+/// reached the cluster; a wallet's cap counts only the ones this API submitted
+/// for it. A prepare names a wallet without proving it, so counting prepares
+/// against the wallet would let a stranger spend somebody else's allowance.
 #[tokio::test]
-async fn counts_are_per_wallet_and_global() {
+async fn the_global_cap_counts_signatures_and_a_wallet_cap_counts_submissions() {
     let (state, path) = test_state().await;
     assert_eq!(
         recent_count(&state, Some("buyer-wallet"))
@@ -26,7 +27,7 @@ async fn counts_are_per_wallet_and_global() {
     assert_eq!(recent_count(&state, None).await.expect("count"), 0);
 
     for index in 0..3 {
-        record(
+        record_signed(
             &state,
             None,
             "buyer-wallet",
@@ -37,11 +38,35 @@ async fn counts_are_per_wallet_and_global() {
         .await
         .expect("record with no account");
     }
+    // Signed, not yet sent by us: the deployment has spent three signatures,
+    // the wallet nothing.
+    assert_eq!(recent_count(&state, None).await.expect("count"), 3);
     assert_eq!(
         recent_count(&state, Some("buyer-wallet"))
             .await
             .expect("count"),
-        3
+        0
+    );
+    assert!(was_signed(&state, "signature-1").await.expect("lookup"));
+    assert!(!was_signed(&state, "signature-9").await.expect("lookup"));
+
+    mark_submitted(&state, "signature-1").await.expect("mark");
+    // A retried prepare that produced the same signature is one row.
+    record_signed(
+        &state,
+        None,
+        "buyer-wallet",
+        "devnet",
+        1_000_000,
+        "signature-1",
+    )
+    .await
+    .expect("idempotent");
+    assert_eq!(
+        recent_count(&state, Some("buyer-wallet"))
+            .await
+            .expect("count"),
+        1
     );
     assert_eq!(
         recent_count(&state, Some("other-wallet"))

@@ -108,7 +108,7 @@ pub(super) const SCHEMA: &[&str] = &[
     // chain keeps the only authoritative record — the marker — and this is a
     // cache: losing every row costs one history read, never correctness, which
     // is why nothing here is a foreign key or a source of truth.
-    "CREATE TABLE IF NOT EXISTS settled_payments (\n        invoice    TEXT NOT NULL,\n        endpoint   TEXT NOT NULL,\n        seller     TEXT NOT NULL,\n        reference  TEXT NOT NULL,\n        mint       TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        memo       TEXT NOT NULL,\n        payer      TEXT NOT NULL,\n        created_at INTEGER NOT NULL,\n        settled_at INTEGER NOT NULL,\n        PRIMARY KEY (invoice, endpoint)\n    )",
+    "CREATE TABLE IF NOT EXISTS settled_payments (\n        invoice    TEXT NOT NULL,\n        endpoint   TEXT NOT NULL,\n        seller     TEXT NOT NULL,\n        reference  TEXT NOT NULL,\n        mint       TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        memo       TEXT NOT NULL,\n        payer      TEXT NOT NULL,\n        created_at INTEGER NOT NULL,\n        settled_at INTEGER NOT NULL,\n        fee        INTEGER,\n        PRIMARY KEY (invoice, endpoint)\n    )",
     // A wallet belongs to at most one account.
     "CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_unique_idx \
      ON users(wallet) WHERE wallet IS NOT NULL",
@@ -125,15 +125,22 @@ pub(super) const SCHEMA: &[&str] = &[
     // amount the buyer agreed to is the amount `confirm` requires on chain,
     // whatever the rate has done since.
     "CREATE TABLE IF NOT EXISTS subscription_invoices (\n        payment_id TEXT PRIMARY KEY,\n        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n        currency   TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        created_at INTEGER NOT NULL\n    )",
-    // Every settlement the relayer paid the network fee for. The caps in
-    // `sponsor.rs` read this table, and a row is written only after the cluster
-    // accepted the transaction, so the count is spend rather than attempts. The
-    // signature is the id: one sponsored settle cannot be counted twice.
+    // Every settle the relayer signed as fee payer. The id is the relayer's own
+    // signature, which is also the transaction's id on chain, so one settle is
+    // one row however often it is retried.
+    //
+    // A row is written when the relayer signs (`POST /api/sponsor/prepare`, or a
+    // Solana Pay request), because from then on anyone holding the transaction
+    // can send it and spend the relayer's fee. `submitted_at` is set when this
+    // API sent it itself (`POST /api/sponsor/settle`). The deployment's cap
+    // counts every row — every signature handed out — and a wallet's cap counts
+    // only submitted ones, so a stranger naming somebody's wallet cannot use up
+    // that wallet's allowance. See `docs/payment-costs.md`.
     //
     // The wallet is the key the caps count, not the account: a buyer who scanned
     // a printed code has no account here, and the cap has to hold for them too.
     // `user_id` is what we happen to know about them, never a requirement.
-    "CREATE TABLE IF NOT EXISTS sponsored_settlements (\n        id         TEXT PRIMARY KEY,\n        wallet     TEXT NOT NULL,\n        user_id    TEXT,\n        cluster    TEXT NOT NULL,\n        amount     INTEGER NOT NULL,\n        created_at INTEGER NOT NULL\n    )",
+    "CREATE TABLE IF NOT EXISTS sponsored_settlements (\n        id           TEXT PRIMARY KEY,\n        wallet       TEXT NOT NULL,\n        user_id      TEXT,\n        cluster      TEXT NOT NULL,\n        amount       INTEGER NOT NULL,\n        created_at   INTEGER NOT NULL,\n        submitted_at INTEGER\n    )",
     // A browser's push subscription: one row per device, keyed by the endpoint
     // the push service gave it. `locale` is the copy the reminder is written
     // in, because a notification arrives outside the app where no i18n runs.

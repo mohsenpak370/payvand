@@ -90,14 +90,13 @@ export interface SponsorInfo {
   available: boolean
   /** The fee payer to name; null when there is no relayer at all. */
   address: string | null
-  /** Lamports a wallet needs before it can settle a token invoice itself. */
+  /** Lamports the relayer fronts for one settle, all refunded by that settle. */
   needs_lamports: number
   per_wallet_daily: number
 }
 
-export interface SponsoredSettleInput {
-  /** Base64 wire transaction: fee payer is the sponsor, buyer signature present. */
-  transaction: string
+/** The invoice a sponsored settle pays; the relayer builds the settle from it. */
+export interface SponsoredSettleFields {
   buyer: string
   seller: string
   reference: string
@@ -108,6 +107,19 @@ export interface SponsoredSettleInput {
   memo: string
   cluster: string
   endpoint?: string
+}
+
+/** The settle the relayer built and signed as fee payer; the buyer's slot is empty. */
+export interface SponsoredPrepared {
+  /** Base64 wire transaction, relayer signature in slot 0. */
+  transaction: string
+  /** The relayer's signature, which is the transaction's id once it lands. */
+  signature: string
+}
+
+export interface SponsoredSettleInput extends SponsoredSettleFields {
+  /** Base64 wire transaction: the prepared one, with the buyer's signature added. */
+  transaction: string
 }
 
 export interface CreatePaymentInput {
@@ -550,10 +562,10 @@ export function usePaymentApi() {
   }
 
   /**
-   * Whether a relayer will pay this payment's network fee and its two record
-   * rents, and the address to name as the fee payer when it will. Every token
-   * payment asks: Payvand's fee covers the network fee, so the payer needs no
-   * SOL of their own.
+   * Whether the relayer will pay this payment's network fee and its two record
+   * rents. Every wallet payment — SOL or token — asks: the platform pays those
+   * and the seller's proceeds repay them (`docs/payment-costs.md`), so the
+   * buyer pays the price and needs no SOL of their own.
    */
   async function getSponsor(wallet?: string): Promise<SponsorInfo> {
     // The wallet names whose daily allowance this is: a buyer without an account
@@ -563,9 +575,22 @@ export function usePaymentApi() {
   }
 
   /**
-   * Hands the buyer-signed transaction to the relayer. The transaction's fee
-   * payer is the sponsor and its message is the one the relayer rebuilds from
-   * these same fields; anything else is refused without a signature.
+   * Asks the relayer to build this invoice's settle and sign it as fee payer.
+   * The wallet signs what comes back — a transaction complete except for the
+   * buyer's signature, which it can simulate and preview as the price.
+   */
+  async function sponsorPrepare(body: SponsoredSettleFields): Promise<SponsoredPrepared> {
+    return await $fetch(`${base}/api/sponsor/prepare`, {
+      method: 'POST',
+      body,
+      headers: authHeaders()
+    })
+  }
+
+  /**
+   * Hands the prepared transaction back with the buyer's signature on it. The
+   * relayer sends it only if it is byte for byte the one it signed for these
+   * same fields.
    */
   async function sponsorSettle(
     body: SponsoredSettleInput
@@ -595,6 +620,7 @@ export function usePaymentApi() {
     reusableInvoice,
     getPayment,
     getSponsor,
+    sponsorPrepare,
     sponsorSettle,
     savePayment,
     listSavedPayments,

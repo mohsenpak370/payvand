@@ -622,6 +622,7 @@
     "noPrice": "This payment code has no price.",
     "detailsMismatch": "These details do not match the code. Ask the seller for a new link.",
     "unreadableLink": "Could not read this payment link.",
+    "preparedMismatch": "Payvand's server returned a payment that is not this invoice, so it was not sent to your wallet. Reload the page and try again.",
     "notSent": "The payment could not be sent.",
     "paymentNeedsSol": "This payment needs a little SOL for the Solana network fee, and Payvand could not cover it this time. Add SOL to your wallet and try again — on devnet, https://faucet.solana.com sends free test SOL.",
     "walletShortOnPrice": "This invoice costs {price} and your wallet does not hold that much. Add funds to the wallet and try again.",

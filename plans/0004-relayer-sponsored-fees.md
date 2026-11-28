@@ -41,6 +41,24 @@ At that increment, sponsorship was also behind `auth::require_user`, so a buyer
 who was not signed in fell back to paying the fee from their own wallet.
 *(Superseded 2026-11-26: sponsorship is anonymous and wallet-keyed now.)*
 
+Increment 4 (2026-11-28): **the relayer signs first, and pays for every wallet
+payment again.** `eba624a` (2026-11-27) had let a SOL wallet holding enough SOL
+pay its own way, to dodge the wallet's broken preview of a transaction whose fee
+payer had not signed; that moved the costs onto the buyer, against increment 3's
+rule. The preview problem is now solved by order instead: `POST
+/api/sponsor/prepare` builds `[compute-unit limit, settle]` and signs it as fee
+payer, the page checks it (`preparedSettleMatches`), the wallet signs a
+transaction complete but for its own signature, and `POST /api/sponsor/settle`
+sends it only if it is byte for byte what was signed. The byte-match tolerance
+for wallet-added compute-budget instructions and
+`SPONSOR_MAX_PRIORITY_FEE_LAMPORTS` are gone (nothing the relayer signs carries a
+price). Caps: the deployment cap counts every signature handed out; a wallet's
+cap counts settles this API submitted. The Solana Pay request now returns the
+relayer-signed settle too — its old hand-built `settle_payment` passed 5 of the
+program's 9 accounts and could not have settled. Quotes default to the relayer's
+two signatures. The whole policy is in `docs/payment-costs.md`. Still open: a
+devnet run with Phantom against the deployed API confirming the preview.
+
 Progress audited 2026-11-26 against `92010cb`: **the built feature is in and
 `0007` extended it from token invoices to SOL invoices; this plan stays In
 Progress for what is still unproven or unshipped.** Superseded since the

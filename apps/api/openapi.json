@@ -18,7 +18,7 @@
     { "name": "wallet", "description": "The signed-in account's transaction feed" },
     { "name": "saved", "description": "Payment links a buyer kept" },
     { "name": "solana-pay", "description": "Solana Pay transaction requests" },
-    { "name": "sponsor", "description": "The fee relayer for token invoices" },
+    { "name": "sponsor", "description": "The relayer that pays every wallet payment's network fee and rents" },
     { "name": "admin", "description": "Platform oversight — `ADMIN_EMAILS` only" },
     { "name": "misc", "description": "Health, configuration, the waiting list, the faucet and push" }
   ],
@@ -578,24 +578,23 @@
         "responses": { "200": { "description": "Its allowance and the treasury address" } }
       }
     },
-    "/api/sponsor/settle": {
+    "/api/sponsor/prepare": {
       "post": {
         "tags": ["sponsor"],
-        "summary": "Pay the fee and rents for a token invoice",
-        "description": "Signs only a transaction it has rebuilt byte for byte from the request.",
+        "summary": "Build an invoice's settle with the relayer paying, and sign it first",
+        "description": "The relayer is the fee payer and sponsor of every wallet payment. It builds the settle from these fields (a compute-unit limit and the settle, nothing else), signs it as fee payer and returns it with the buyer's slot empty. See docs/payment-costs.md.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["transaction", "buyer", "seller", "reference", "mint", "amount", "memo", "cluster"],
+                "required": ["buyer", "seller", "reference", "amount", "cluster"],
                 "properties": {
-                  "transaction": { "type": "string" },
                   "buyer": { "type": "string" },
                   "seller": { "type": "string" },
                   "reference": { "type": "string" },
-                  "mint": { "type": "string" },
+                  "mint": { "type": "string", "description": "Empty for a SOL invoice" },
                   "amount": { "type": "integer", "format": "int64" },
                   "memo": { "type": "string" },
                   "cluster": { "type": "string" },
@@ -605,7 +604,41 @@
             }
           }
         },
-        "responses": { "200": { "description": "The signed transaction, ready to send" }, "400": { "$ref": "#/components/responses/BadRequest" } }
+        "responses": {
+          "200": { "description": "`transaction` (base64, relayer-signed) and `signature` (the relayer's, the transaction id)" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "429": { "description": "No relayer available or a daily cap reached; the wallet pays its own way" }
+        }
+      }
+    },
+    "/api/sponsor/settle": {
+      "post": {
+        "tags": ["sponsor"],
+        "summary": "Send a prepared settle once the buyer signed it",
+        "description": "Sends only the transaction prepare built for the same fields, byte for byte, carrying the relayer's recorded signature and a valid buyer signature.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["transaction", "buyer", "seller", "reference", "amount", "cluster"],
+                "properties": {
+                  "transaction": { "type": "string", "description": "The prepared transaction, base64, with the buyer's signature added" },
+                  "buyer": { "type": "string" },
+                  "seller": { "type": "string" },
+                  "reference": { "type": "string" },
+                  "mint": { "type": "string", "description": "Empty for a SOL invoice" },
+                  "amount": { "type": "integer", "format": "int64" },
+                  "memo": { "type": "string" },
+                  "cluster": { "type": "string" },
+                  "endpoint": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "The transaction's signature" }, "400": { "$ref": "#/components/responses/BadRequest" } }
       }
     },
     "/api/shops": {

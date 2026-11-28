@@ -622,6 +622,7 @@
     "noPrice": "Dieser Zahlungscode hat keinen Preis.",
     "detailsMismatch": "Diese Angaben passen nicht zum Code. Bitte den Verkäufer um einen neuen Link.",
     "unreadableLink": "Dieser Zahlungslink konnte nicht gelesen werden.",
+    "preparedMismatch": "Der Payvand-Server hat eine Zahlung geliefert, die nicht zu dieser Rechnung passt, daher wurde sie nicht an deine Wallet gesendet. Lade die Seite neu und versuche es erneut.",
     "notSent": "Die Zahlung konnte nicht gesendet werden.",
     "paymentNeedsSol": "Diese Zahlung braucht ein wenig SOL für die Solana-Netzwerkgebühr, und Payvand konnte sie diesmal nicht übernehmen. Fülle SOL in deine Wallet und versuche es erneut — auf Devnet sendet https://faucet.solana.com kostenloses Test-SOL.",
     "walletShortOnPrice": "Diese Rechnung kostet {price}, und deine Wallet hält nicht so viel. Fülle die Wallet auf und versuche es erneut.",

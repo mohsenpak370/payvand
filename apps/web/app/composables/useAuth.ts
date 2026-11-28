@@ -32,6 +32,10 @@ export interface MyTransaction {
   status: 'pending' | 'settled' | 'missing'
   created_at_unix: number
   settled_at_unix: number
+  /** What the settlement charged the seller, in `amount`'s base units, as the
+   *  program logged it; null when unknown (unsettled, or stored before the fee
+   *  was kept), and the detail sheet then shows an estimate. */
+  fee?: number | null
 }
 
 export interface TransactionsResponse {

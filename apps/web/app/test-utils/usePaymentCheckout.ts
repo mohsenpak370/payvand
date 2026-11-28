@@ -2,7 +2,7 @@ import { address } from '@vue-solana/nuxt/kit'
 import { vi } from 'vitest'
 import { invoiceCosts, type InvoiceCosts } from '~/utils/invoiceCost'
 import { usePaymentCheckout } from '~/composables/usePaymentCheckout'
-import type { SponsoredSettleInput } from '~/composables/usePaymentApi'
+import type { SponsoredSettleFields, SponsoredSettleInput } from '~/composables/usePaymentApi'
 
 /**
  * Shared scaffolding for the `usePaymentCheckout` suites. The composable leans
@@ -24,22 +24,48 @@ const watch = (..._args: unknown[]) => {}
 export const seller = address('6dQgFZDTkhDMTZv9ftZe4ufU9jG5fvJEw6zpw6WCKjPz')
 export const payer = address('3rpBzUBbZPXFKhGywCRduD3hrREDjvDtaw2Mos2yUUPx')
 export const mint = address('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU')
+/** Circle's EURC on devnet: the other token an invoice can be priced in. */
+export const eurcMint = address('HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr')
 export const reference = address('A8yxpWod2xrPd6YbXnaKWCTkk2WduzQKdKPUANZFQpft')
 
 export const execute = vi.fn(async () => 'SIGNATURE')
 /** What the wallet signs when a relayer pays the fee; it hands the input back. */
 export const signTransactions = vi.fn(async (transactions: Uint8Array[]) => transactions)
-/** The relayer's own key, named as fee payer when the buyer cannot pay it. */
+/** The relayer's own key: fee payer and sponsor of every wallet payment. */
 export const sponsor = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')
-export const getSponsor = vi.fn(async () => ({
+/** The relayer as `GET /api/sponsor` reports it by default: available. */
+export const relayerAvailable = () => ({
+  available: true,
+  address: sponsor as string | null,
+  needs_lamports: 3_949_360,
+  per_wallet_daily: 10
+})
+/** No relayer will pay: none configured, or a daily cap reached. */
+export const relayerUnavailable = () => ({
   available: false,
   address: null as string | null,
-  needs_lamports: 3_944_360,
+  needs_lamports: 3_949_360,
   per_wallet_daily: 10
+})
+export const getSponsor = vi.fn(async () => relayerAvailable())
+/** The relayer-signed settle `POST /api/sponsor/prepare` returns. */
+export const sponsorPrepare = vi.fn(async (_body: SponsoredSettleFields) => ({
+  transaction: 'PREPARED_BASE64',
+  signature: 'RELAYER_SIGNATURE'
 }))
+/** The wire bytes the page decodes from the prepared transaction. */
+export const preparedWire = new Uint8Array([7, 7, 7])
+/** The page's own check of the prepared bytes; true unless a test says not. */
+export const preparedSettleMatchesMock = vi.fn(
+  (_wire: ArrayLike<number>, _relayer: string, _settle: unknown) => true
+)
 export const sponsorSettle = vi.fn(async (_body: SponsoredSettleInput) => ({
   signature: 'SPONSORED_SIGNATURE'
 }))
+/** The self-paid fallback's compile, so a test can read the instructions. */
+export const compileWireTransactionMock = vi.fn(
+  async (_params: { instruction: unknown, payer: string }) => new Uint8Array()
+)
 /** What the wallet holds, in lamports: a funded wallet by default. */
 export const walletLamports = { value: 5_000_000 }
 /** What the wallet holds in the invoice's token, in base units. */
@@ -60,8 +86,12 @@ export const buildInstructionMock = vi.fn(() => ({
 /** What the wallet reports about its own signer, per test. */
 export const wallet = { canSign: true }
 
-/** A 1.5 USDC invoice, priced the way the program prices one. */
-export function quoteFor(treasuryTokenAccountMissing: boolean): InvoiceCosts {
+/** A 1.5 USDC (or EURC) invoice, priced the way the program prices one. */
+export function quoteFor(
+  treasuryTokenAccountMissing: boolean,
+  currency: 'usdc' | 'eurc' = 'usdc',
+  tokenMint: string = mint
+): InvoiceCosts {
   return invoiceCosts({
     policy: {
       feeBpsBelow: 200,
@@ -71,12 +101,12 @@ export function quoteFor(treasuryTokenAccountMissing: boolean): InvoiceCosts {
       flatUsdcBaseUnits: 0,
       flatEurcBaseUnits: 0,
       usdcMint: mint,
-      eurcMint: mint,
+      eurcMint: eurcMint,
       feeMode: 'seller'
     },
-    mint,
+    mint: tokenMint,
     amount: 1_500_000,
-    currency: 'usdc',
+    currency,
     invoiceRent: 1_000_000,
     receiptRent: 1_000_000,
     treasuryTokenAccountMissing
@@ -84,7 +114,11 @@ export function quoteFor(treasuryTokenAccountMissing: boolean): InvoiceCosts {
 }
 
 /** An invoice with no code loaded, priced by `quoteFor`. */
-export function checkoutFor(quote: InvoiceCosts) {
+export function checkoutFor(
+  quote: InvoiceCosts,
+  currency: 'usdc' | 'eurc' = 'usdc',
+  tokenMint: string = mint
+) {
   const checkout = usePaymentCheckout()
   checkout.payload.value = {
     v: 1,
@@ -92,7 +126,7 @@ export function checkoutFor(quote: InvoiceCosts) {
     seller,
     reference,
     amount_lamports: 0,
-    options: [{ currency: 'usdc', mint, decimals: 6, amount: 1_500_000, payment_pda: reference }],
+    options: [{ currency, mint: tokenMint, decimals: 6, amount: 1_500_000, payment_pda: reference }],
     memo: '',
     name: 'Treasury preflight',
     cluster: 'devnet',
@@ -185,14 +219,20 @@ export function setupCheckout() {
   tokenFloatTopUpInstructions.mockImplementation(async () => [])
   signTransactions.mockClear()
   signTransactions.mockImplementation(async (transactions: Uint8Array[]) => transactions)
-  getSponsor.mockClear()
-  getSponsor.mockImplementation(async () => ({
-    available: false,
-    address: null,
-    needs_lamports: 3_944_360,
-    per_wallet_daily: 10
+  // `mockReset`, not `mockClear`: a `mockResolvedValueOnce` a test queued and
+  // never used must not answer the next test's call.
+  getSponsor.mockReset()
+  getSponsor.mockImplementation(async () => relayerAvailable())
+  sponsorPrepare.mockReset()
+  sponsorPrepare.mockImplementation(async () => ({
+    transaction: 'PREPARED_BASE64',
+    signature: 'RELAYER_SIGNATURE'
   }))
-  sponsorSettle.mockClear()
+  preparedSettleMatchesMock.mockReset()
+  preparedSettleMatchesMock.mockImplementation(() => true)
+  compileWireTransactionMock.mockReset()
+  compileWireTransactionMock.mockImplementation(async () => new Uint8Array())
+  sponsorSettle.mockReset()
   sponsorSettle.mockImplementation(async () => ({ signature: 'SPONSORED_SIGNATURE' }))
   walletLamports.value = 5_000_000
   walletTokens.value = 5_000_000
@@ -206,14 +246,15 @@ export function setupCheckout() {
   vi.stubGlobal('onBeforeUnmount', () => {})
   vi.stubGlobal('appT', (key: string) => key)
   vi.stubGlobal('buildInstruction', buildInstructionMock)
-  vi.stubGlobal('compileWireTransaction', async () => ({}))
-  vi.stubGlobal('compileTransactionForSigning', async () => ({}))
-  vi.stubGlobal('signableWireTransaction', () => new Uint8Array())
+  vi.stubGlobal('compileWireTransaction', compileWireTransactionMock)
+  vi.stubGlobal('wireFromBase64', () => preparedWire)
+  vi.stubGlobal('preparedSettleMatches', preparedSettleMatchesMock)
   vi.stubGlobal('base64WireTransaction', () => 'BASE64_WIRE')
   vi.stubGlobal('usePaymentApi', () => ({
     getPayment: async () => null,
     validateDiscount: async () => null,
     getSponsor,
+    sponsorPrepare,
     sponsorSettle
   }))
   // The balance read is the one chain call the sponsored branch makes before it

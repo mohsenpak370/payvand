@@ -1,4 +1,4 @@
-import { address, type Address } from '@vue-solana/nuxt/kit'
+import { address, type Address, type Instruction } from '@vue-solana/nuxt/kit'
 import type { ComputedRef, Ref } from 'vue'
 import type { InvoiceCosts } from '~/utils/invoiceCost'
 import {
@@ -118,6 +118,88 @@ export function useCheckoutPayment(deps: {
     }
   }
 
+  /**
+   * Sends a wallet payment's settle with Payvand paying for it. This is the one
+   * rule of every wallet payment, SOL or token (`docs/payment-costs.md`):
+   *
+   * 1. The relayer pays. The API builds the settle with the relayer as fee
+   *    payer and sponsor and signs it first; this page checks it is exactly
+   *    `settleFor(relayer)` before the wallet sees it; the wallet signs a
+   *    transaction complete except for its own signature — so it can simulate
+   *    it and preview the price — and the API sends it. The program refunds the
+   *    relayer and charges the seller in that same transaction.
+   * 2. Only when no relayer will pay (none configured, or a daily cap reached)
+   *    does the wallet pay its own way, as its own sponsor. The program refunds
+   *    it both rents and its signature in the same instruction, and the
+   *    compute-unit limit keeps the wallet from adding a priority price nothing
+   *    refunds, so the buyer still spends exactly the price. It only needs the
+   *    lamports to front that for a moment; without them the refusal comes
+   *    before a signature.
+   *
+   * The wallet is never the fee payer while a relayer is available: that would
+   * have the buyer front what the platform pays.
+   */
+  async function settleThroughRelayer(input: {
+    payerAddress: Address
+    /** The wallet's lamports when already read (SOL path), or null. */
+    held: number | null
+    quote: InvoiceCosts
+    /** Empty for a SOL invoice. */
+    mint: string
+    amount: number
+    memo: string
+    seller: Address
+    reference: Address
+    settleFor: (sponsor: Address) => Promise<Instruction>
+  }): Promise<string> {
+    const current = payload.value!
+    const relayer = await relayerAddress(input.payerAddress)
+    if (relayer) {
+      const fields = {
+        buyer: input.payerAddress,
+        seller: input.seller,
+        reference: input.reference,
+        mint: input.mint,
+        amount: input.amount,
+        memo: input.memo,
+        cluster: current.cluster,
+        endpoint: current.endpoint
+      }
+      const instruction = await input.settleFor(relayer)
+      const prepared = await api.sponsorPrepare(fields)
+      const wire = wireFromBase64(prepared.transaction)
+      // The bytes the buyer signs came from a server: they have to be this
+      // invoice's settle and nothing else before any wallet prompt opens.
+      if (!preparedSettleMatches(wire, relayer, instruction)) {
+        throw new Error(appT('errors.preparedMismatch'))
+      }
+      const [signed] = await signTransactions([wire])
+      return (await api.sponsorSettle({
+        ...fields,
+        transaction: base64WireTransaction(signed!)
+      })).signature
+    }
+
+    // No relayer: the wallet fronts the rents and its one signature for the
+    // length of the transaction. `sponsorshipFee` is quoted for the relayer's
+    // two signatures, so it covers the wallet's one with room to spare.
+    const advances = input.quote.invoiceRent + input.quote.receiptRent + input.quote.sponsorshipFee
+    const extra = input.mint ? 0 : input.amount
+    const held = input.held ?? Number(
+      (await client.rpc.getBalance(input.payerAddress, { commitment: 'confirmed' }).send()).value
+    )
+    if (held < extra + advances) throw new Error(appT('errors.paymentNeedsSol'))
+    const wire = await compileWireTransaction({
+      instruction: [computeUnitLimitInstruction(), await input.settleFor(input.payerAddress)],
+      payer: input.payerAddress,
+      rpc: client.rpc
+    })
+    return await execute(wire, {
+      confirm: true,
+      confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
+    })
+  }
+
   /** 0..1 while the allowance button is held, 0 when it is not. */
   const holdProgress = ref(0)
   const holding = ref(false)
@@ -216,81 +298,39 @@ export function useCheckoutPayment(deps: {
             memo
           })
         } else {
-          // A relayer pays the fee and fronts the two records, never the price:
-          // a wallet that does not hold the price cannot pay this invoice at
-          // all, whatever it sends. Saying so before the wallet opens is what
-          // keeps it from signing a transaction the chain refuses — which a
-          // wallet with nothing to simulate reports as a meaningless estimate.
+          // The relayer pays the fee and fronts the two records, never the
+          // price: a wallet that does not hold the price cannot pay this
+          // invoice at all, whatever it sends. Saying so before the wallet
+          // opens is what keeps it from signing a transaction the chain refuses.
           const held = Number(
             (await client.rpc.getBalance(payerAddress, { commitment: 'confirmed' }).send()).value
           )
           if (held < amount) throw new Error(shortOnPrice(option, amount))
 
-          // Same rule as a token payment: the relayer fronts the two records and
-          // the signature, and the price repays it in the settled instruction.
-          // The wallet pays its own way whenever it can afford to, because a
-          // sponsored settle is compiled with the relayer as fee payer and the
-          // wallet's preview cannot then show the price it is charged. A relayer
-          // is for a wallet that holds the price but not the fee and the rents:
-          // the refusal below names what is missing, and `sponsorshipFee` is the
-          // policy's own figure for this path's signature — the same one the
-          // program charges and refunds.
-          const advances = amount
-            + quote.invoiceRent
-            + quote.receiptRent
-            + quote.sponsorshipFee
-          const relayer = await relayerAddress(payerAddress)
-          const sponsored = Boolean(relayer) && held < advances
-          if (!sponsored && held < advances) throw new Error(appT('errors.paymentNeedsSol'))
-          const feePayer = sponsored && relayer ? relayer : payerAddress
-
-          const instruction = buildInstruction(
-            'settle_payment',
-            { amount, memo },
-            {
-              payer: payerAddress,
-              payment,
-              seller,
-              receipt: await derivePaymentReceiptPda(payment),
-              reference,
-              config: await deriveConfigPda(),
-              treasury: await deriveTreasuryPda(),
-              sponsor: feePayer
-            }
-          )
-
-          if (sponsored) {
-            // The relayer submits it as fee payer; the wallet's slot is empty and
-            // the endpoint compares this transaction with the settlement it
-            // rebuilt before it signs anything.
-            const transaction = await compileTransactionForSigning({
-              // Named so the wallet adds no budget of its own: an injected
-              // priority fee is the relayer's money and a message the endpoint
-              // never compared.
-              instruction: [computeUnitLimitInstruction(), instruction],
-              payer: feePayer,
-              rpc: client.rpc
-            })
-            const [signed] = await signTransactions([signableWireTransaction(transaction, feePayer)])
-            sent = (await api.sponsorSettle({
-              transaction: base64WireTransaction(signed!),
-              buyer: payerAddress,
-              seller,
-              reference,
-              // No mint: the relayer rebuilds `settle_payment` for this one.
-              mint: '',
-              amount,
-              memo,
-              cluster: current.cluster,
-              endpoint: current.endpoint
-            })).signature
-          } else {
-            const wire = await compileWireTransaction({ instruction, payer: feePayer, rpc: client.rpc })
-            sent = await execute(wire, {
-              confirm: true,
-              confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
-            })
-          }
+          sent = await settleThroughRelayer({
+            payerAddress,
+            held,
+            quote,
+            mint: '',
+            amount,
+            memo,
+            seller,
+            reference,
+            settleFor: async sponsor => buildInstruction(
+              'settle_payment',
+              { amount, memo },
+              {
+                payer: payerAddress,
+                payment,
+                seller,
+                receipt: await derivePaymentReceiptPda(payment),
+                reference,
+                config: await deriveConfigPda(),
+                treasury: await deriveTreasuryPda(),
+                sponsor
+              }
+            )
+          })
         }
       } else {
         const mint = address(option.mint)
@@ -316,91 +356,48 @@ export function useCheckoutPayment(deps: {
             memo
           })
         } else {
-          // The price is in the token, so the wallet has to hold it whether or
-          // not a relayer pays the fee: an account with less than the price can
-          // only end in a signature the chain refuses.
+          // The price is in the token, so the wallet has to hold it whoever
+          // pays the fee: an account with less than the price can only end in a
+          // signature the chain refuses.
           const heldTokens = await tokenBalance(client, payerAddress, mint).catch(() => {
             throw new Error(appT('errors.balanceUnreadable'))
           })
           if (heldTokens < amount) throw new Error(shortOnPrice(option, amount))
 
           // The fee leaves the buyer's account for the treasury's own token
-          // account and the pool refunds the record rents, so the price is all
-          // the buyer spends. The seller's account is theirs to have opened.
-          //
-          // Settling fronts two things before the same transaction refunds
-          // them: the network fee and the two record rents. The fee Payvand
-          // takes is what pays for it, so every token payment asks the relayer
-          // first — a buyer holding no SOL at all can then pay, and the wallet
-          // is never asked for lamports it does not need. Only a payment no
-          // relayer will take falls back to the wallet fronting them itself.
-          const relayer = await relayerAddress(payerAddress)
-          const feePayer = relayer ?? payerAddress
-          if (!relayer) {
-            // Nothing will sponsor this one, so the wallet has to hold what a
-            // settle fronts, and the refusal says what is missing rather than
-            // letting the wallet fail after the buyer approved it. The signature
-            // is the policy's figure for this path, as in the SOL branch.
-            const advances = quote.invoiceRent + quote.receiptRent + quote.sponsorshipFee
-            const held = Number(
-              (await client.rpc.getBalance(payerAddress, { commitment: 'confirmed' }).send()).value
+          // account and the treasury refunds the record rents in SOL, so the
+          // price is all the buyer spends. The seller's account is theirs to
+          // have opened.
+          sent = await settleThroughRelayer({
+            payerAddress,
+            held: null,
+            quote,
+            mint,
+            amount,
+            memo,
+            seller,
+            reference,
+            settleFor: async sponsor => buildInstruction(
+              'settle_token_payment',
+              { amount, memo },
+              {
+                payer: payerAddress,
+                payment,
+                seller,
+                seller_token_account: await deriveAssociatedTokenAddress(seller, mint),
+                payer_token_account: await deriveAssociatedTokenAddress(payerAddress, mint),
+                mint,
+                receipt: await derivePaymentReceiptPda(payment),
+                reference,
+                config: await deriveConfigPda(),
+                treasury: await deriveTreasuryPda(),
+                treasury_token_account: await deriveTreasuryTokenAccount(mint),
+                // The key that pays the network fee and advances both record
+                // rents, and gets the treasury's refund of them.
+                sponsor
+              }
             )
-            if (held < advances) throw new Error(appT('errors.paymentNeedsSol'))
-          }
-
-          const instruction = buildInstruction(
-            'settle_token_payment',
-            { amount, memo },
-            {
-              payer: payerAddress,
-              payment,
-              seller,
-              seller_token_account: await deriveAssociatedTokenAddress(seller, mint),
-              payer_token_account: await deriveAssociatedTokenAddress(payerAddress, mint),
-              mint,
-              receipt: await derivePaymentReceiptPda(payment),
-              reference,
-              config: await deriveConfigPda(),
-              treasury: await deriveTreasuryPda(),
-              treasury_token_account: await deriveTreasuryTokenAccount(mint),
-              // The key that pays the network fee and advances both record
-              // rents, and gets the pool's refund of them.
-              sponsor: feePayer
-            }
-          )
-
-          if (relayer) {
-            // The buyer signs the transaction the relayer will submit, and the
-            // relayer's own slot is left empty: the endpoint rebuilds this
-            // settlement, compares it, and only then signs its half.
-            const transaction = await compileTransactionForSigning({
-              // As on the SOL path, the limit is named so the wallet adds no
-              // priority fee of its own to a transaction the relayer pays for.
-              instruction: [computeUnitLimitInstruction(), instruction],
-              payer: feePayer,
-              rpc: client.rpc
-            })
-            // The fee payer's slot is empty on purpose, and the wallet hands
-            // back these same bytes with the buyer's signature on them.
-            const [signed] = await signTransactions([signableWireTransaction(transaction, feePayer)])
-            sent = (await api.sponsorSettle({
-              transaction: base64WireTransaction(signed!),
-              buyer: payerAddress,
-              seller,
-              reference,
-              mint,
-              amount,
-              memo,
-              cluster: current.cluster,
-              endpoint: current.endpoint
-            })).signature
-          } else {
-            const wire = await compileWireTransaction({ instruction, payer: feePayer, rpc: client.rpc })
-            sent = await execute(wire, {
-              confirm: true,
-              confirmation: { commitment: 'confirmed', timeoutMs: 120_000 }
-            })
-          }
+          })
         }
       }
       signature.value = sent

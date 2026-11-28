@@ -126,6 +126,15 @@ pub struct PaymentRecord {
     pub settled_by: Option<String>,
     pub created_at_unix: i64,
     pub settled_at_unix: i64,
+    /// What the settlement charged the seller, in the paid option's base units,
+    /// as the program logged it; `None` on an unsettled invoice and on a
+    /// settlement whose event was not read.
+    ///
+    /// Never serialized: the public payment record reports no split (plan 0002,
+    /// revision 15, pinned by `a_settled_record_claims_no_split`). The wallet's
+    /// own transaction list is where it is shown, as `MyTransaction::fee`.
+    #[serde(skip)]
+    pub fee: Option<u64>,
 }
 
 /// How many addresses one watch request may carry — the seller's screen only

@@ -1,3 +1,15 @@
+## Payment costs: read before touching a settle path
+
+Who pays for a payment is product policy, and it has been broken before by a
+change that looked like a UX fix. The buyer pays the price only; the platform's
+relayer is the fee payer and sponsor of every wallet payment, SOL or token, while
+one is available; the seller repays the network fee and the permanent receipt's
+rent; closed accounts' rent is charged to nobody. The full flow, the invariants
+and the tests that pin them are in `docs/payment-costs.md`. Read it before
+changing the program's settle instructions, `apps/api/src/sponsor*`,
+`useCheckoutPayment.ts`, `usePaymentProgram.ts` or `invoiceCost.ts`, and update
+it in the same change.
+
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel
 

@@ -287,6 +287,7 @@ async fn invoice_rows(
             settled_by: None,
             created_at_unix: created_at,
             settled_at_unix: 0,
+            fee: None,
         });
     }
     records

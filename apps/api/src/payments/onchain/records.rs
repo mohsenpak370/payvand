@@ -55,6 +55,7 @@ pub(crate) fn pending_record(pubkey: Pubkey, cluster: String, endpoint: String) 
         settled_by: None,
         created_at_unix: 0,
         settled_at_unix: 0,
+        fee: None,
     }
 }
 
@@ -96,6 +97,7 @@ pub(crate) fn record_from_chain(
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
         created_at_unix: payment.created_at,
         settled_at_unix: payment.settled_at,
+        fee: None,
     }
 }
 
@@ -128,6 +130,7 @@ pub(crate) fn marker_record(
         settled_by: None,
         created_at_unix: 0,
         settled_at_unix: marker.settled_at,
+        fee: None,
     }
 }
 
@@ -183,6 +186,7 @@ pub(crate) fn receipt_record(
         settled_by: (receipt.payer != Pubkey::default()).then(|| receipt.payer.to_string()),
         created_at_unix: receipt.created_at,
         settled_at_unix: receipt.settled_at,
+        fee: receipt.fee,
     }
 }
 
@@ -226,6 +230,7 @@ pub(crate) fn token_record_from_chain(
         settled_by: (payment.payer != Pubkey::default()).then(|| payment.payer.to_string()),
         created_at_unix: payment.created_at,
         settled_at_unix: payment.settled_at,
+        fee: None,
     }
 }
 

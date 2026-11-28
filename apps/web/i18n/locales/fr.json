@@ -622,6 +622,7 @@
     "noPrice": "Ce code de paiement n'a pas de prix.",
     "detailsMismatch": "Ces informations ne correspondent pas au code. Demandez un nouveau lien au vendeur.",
     "unreadableLink": "Impossible de lire ce lien de paiement.",
+    "preparedMismatch": "Le serveur de Payvand a renvoyé un paiement qui ne correspond pas à cette facture : il n’a donc pas été envoyé à votre portefeuille. Rechargez la page puis réessayez.",
     "notSent": "Le paiement n'a pas pu être envoyé.",
     "paymentNeedsSol": "Ce paiement a besoin d’un peu de SOL pour les frais de réseau Solana, et Payvand n’a pas pu les couvrir cette fois. Ajoutez du SOL à votre portefeuille puis réessayez — sur devnet, https://faucet.solana.com envoie des SOL de test gratuits.",
     "walletShortOnPrice": "Cette facture coûte {price} et votre portefeuille n’en contient pas autant. Ajoutez des fonds au portefeuille et réessayez.",

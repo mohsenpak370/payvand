@@ -1,4 +1,17 @@
-//! The sponsored settlements the daily caps are counted from, in libSQL.
+//! The sponsored settles the daily caps are counted from, in libSQL.
+//!
+//! A row is written the moment the relayer signs a settle as fee payer
+//! ([`record_signed`]), because a transaction carrying the relayer's signature
+//! can be sent by whoever holds it — this API is only one way to the cluster.
+//! `submitted_at` is set when this API sent it ([`mark_submitted`]).
+//!
+//! The two caps read different rows on purpose:
+//!
+//! - the deployment's cap counts every signature handed out, so it bounds what
+//!   the relayer can be made to spend however its transactions reach the chain;
+//! - a wallet's cap counts only settles this API submitted for it, which needs
+//!   the wallet's own signature — so naming somebody else's wallet in a prepare
+//!   request cannot use up their allowance.
 
 use crate::auth;
 use crate::payments::ApiResult;
@@ -7,9 +20,9 @@ use crate::AppState;
 /// A rolling day, so a cap cannot be gamed at midnight.
 const DAY_SECS: i64 = 24 * 60 * 60;
 
-/// Sponsored settlements in the last rolling day, for one account or the whole
-/// deployment. `user_id` is the account because that is what a session proves;
-/// the wallet a sponsored payment pays from is named in the row.
+/// Sponsored settles in the last rolling day: for one wallet, the ones this API
+/// submitted for it; for the whole deployment (`None`), every one the relayer
+/// signed.
 pub(super) async fn recent_count(state: &AppState, wallet: Option<&str>) -> ApiResult<i64> {
     let connection = state.db.connect().map_err(auth::internal)?;
     let since = auth::unix_now() - DAY_SECS;
@@ -18,7 +31,7 @@ pub(super) async fn recent_count(state: &AppState, wallet: Option<&str>) -> ApiR
             connection
                 .query(
                     "SELECT COUNT(*) FROM sponsored_settlements \
-                     WHERE wallet = ?1 AND created_at > ?2",
+                     WHERE wallet = ?1 AND created_at > ?2 AND submitted_at IS NOT NULL",
                     (wallet, since),
                 )
                 .await
@@ -40,9 +53,9 @@ pub(super) async fn recent_count(state: &AppState, wallet: Option<&str>) -> ApiR
     Ok(count)
 }
 
-/// Records a settlement whose transaction the cluster has accepted, so the caps
-/// count what was actually sponsored rather than what was attempted.
-pub(super) async fn record(
+/// Records a settle the relayer has just signed as fee payer. `signature` is
+/// the relayer's, which is the transaction's id once it lands.
+pub(super) async fn record_signed(
     state: &AppState,
     user_id: Option<&str>,
     wallet: &str,
@@ -53,9 +66,9 @@ pub(super) async fn record(
     let connection = state.db.connect().map_err(auth::internal)?;
     connection
         .execute(
-            "INSERT INTO sponsored_settlements \
-             (id, wallet, user_id, cluster, amount, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR IGNORE INTO sponsored_settlements \
+             (id, wallet, user_id, cluster, amount, created_at, submitted_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)",
             (
                 signature.to_string(),
                 wallet.to_string(),
@@ -67,6 +80,34 @@ pub(super) async fn record(
                 amount as i64,
                 auth::unix_now(),
             ),
+        )
+        .await
+        .map_err(auth::internal)?;
+    Ok(())
+}
+
+/// Whether the relayer signed this settle here — the only settles
+/// `POST /api/sponsor/settle` will submit.
+pub(super) async fn was_signed(state: &AppState, signature: &str) -> ApiResult<bool> {
+    let connection = state.db.connect().map_err(auth::internal)?;
+    let mut rows = connection
+        .query(
+            "SELECT 1 FROM sponsored_settlements WHERE id = ?1",
+            [signature],
+        )
+        .await
+        .map_err(auth::internal)?;
+    Ok(rows.next().await.map_err(auth::internal)?.is_some())
+}
+
+/// Marks a signed settle as sent by this API, which is what a wallet's own cap
+/// counts.
+pub(super) async fn mark_submitted(state: &AppState, signature: &str) -> ApiResult<()> {
+    let connection = state.db.connect().map_err(auth::internal)?;
+    connection
+        .execute(
+            "UPDATE sponsored_settlements SET submitted_at = ?2 WHERE id = ?1",
+            (signature.to_string(), auth::unix_now()),
         )
         .await
         .map_err(auth::internal)?;

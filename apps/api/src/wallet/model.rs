@@ -86,6 +86,11 @@ pub struct MyTransaction {
     pub status: PaymentStatus,
     pub created_at_unix: i64,
     pub settled_at_unix: i64,
+    /// What the settlement charged the seller, in `amount`'s base units, as the
+    /// program logged it; `null` when it is not known (an unsettled invoice, or
+    /// a settlement stored before the fee was kept), in which case the app shows
+    /// an estimate.
+    pub fee: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
