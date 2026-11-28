@@ -559,8 +559,10 @@ on startup.
 | `SUBSCRIPTION_RATES_URL`        | api          | Coinbase        | EUR/SOL and EUR/USD price feed the subscription quotes use; CoinGecko is the built-in fallback, and setting this URL replaces both |
 | `FAUCET_KEYPAIR`                | api          | —               | Treasury that sends the devnet starter tokens; a solana CLI `id.json` array or base58. Unset disables claiming |
 | `SPONSOR_KEYPAIR`               | api          | —               | The relayer: fee payer and sponsor of every wallet payment (`docs/payment-costs.md`); a solana CLI `id.json` array or base58. Unset means every buyer pays its own way |
-| `SPONSOR_DAILY_TOTAL`           | api          | `200`           | Relayer signatures handed out per rolling 24 h, deployment-wide |
-| `SPONSOR_DAILY_PER_WALLET`      | api          | `10`            | Relayer-paid settles submitted per wallet per rolling 24 h |
+| `SPONSOR_DAILY_LOSSES_PER_WALLET` | api        | `3`             | Relayer-paid settles one wallet may have fail on chain per rolling 24 h before the relayer stops paying for it; payments that worked never count |
+| `SPONSOR_IN_FLIGHT_PER_WALLET`  | api          | `3`             | Relayer-signed settles one wallet may have waiting to land |
+| `SPONSOR_IN_FLIGHT_TOTAL`       | api          | `500`           | Relayer-signed settles the deployment may have waiting to land |
+| `SPONSOR_DAILY_LOSS_LAMPORTS`   | api          | `50000000`      | Emergency stop: lamports the relayer may lose to failed settles per rolling 24 h before it pays for nobody (logged as an error) |
 | `FAUCET_SOL_LAMPORTS`           | api          | `1000000000`    | Lamports of SOL a claim sends (1 SOL)      |
 | `FAUCET_TOKEN_BASE_UNITS`       | api          | `10000000`      | Base units of USDC and EURC a claim sends (10 tokens) |
 

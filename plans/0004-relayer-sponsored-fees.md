@@ -52,8 +52,11 @@ transaction complete but for its own signature, and `POST /api/sponsor/settle`
 sends it only if it is byte for byte what was signed. The byte-match tolerance
 for wallet-added compute-budget instructions and
 `SPONSOR_MAX_PRIORITY_FEE_LAMPORTS` are gone (nothing the relayer signs carries a
-price). Caps: the deployment cap counts every signature handed out; a wallet's
-cap counts settles this API submitted. The Solana Pay request now returns the
+price). No limit counts a payment that worked: every settle is dry-run before
+the relayer signs it, each signature's outcome (landed, failed, expired) is
+resolved once it can no longer land, and the limits count only failures —
+three per wallet a day, with a deployment-wide 0.05 SOL/day emergency stop.
+`SPONSOR_DAILY_TOTAL` and `SPONSOR_DAILY_PER_WALLET` are gone. The Solana Pay request now returns the
 relayer-signed settle too — its old hand-built `settle_payment` passed 5 of the
 program's 9 accounts and could not have settled. Quotes default to the relayer's
 two signatures. The whole policy is in `docs/payment-costs.md`. Still open: a

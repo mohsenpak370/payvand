@@ -29,27 +29,50 @@ use super::model::{
 };
 use super::params::Params;
 use super::relayer::{cap_from_env, sponsor_keypair, unavailable, SPONSORED_LAMPORTS};
-use super::store::{mark_submitted, recent_count, record_signed, was_signed};
+use super::store::{
+    in_flight, losses, mark_submitted, record_signed, set_outcome, unresolved, was_signed, Outcome,
+    LOSS_PER_FAILURE,
+};
 
-fn per_wallet_cap() -> u32 {
-    cap_from_env("SPONSOR_DAILY_PER_WALLET", 10)
+/// The relayer's limits. None of them counts a payment that worked: a settle
+/// that lands refunds the relayer in the same transaction, so it costs nothing,
+/// and a cap on those would only stop good payments. What they bound is the one
+/// real loss — a relayer-signed settle that lands and fails, whose fee nothing
+/// refunds — and the exposure that has not resolved yet. See
+/// `docs/payment-costs.md`, "Limits".
+struct Limits {
+    /// Failed settles one wallet may cause in a rolling day before the relayer
+    /// stops paying for that wallet (it can still pay its own way).
+    losses_per_wallet: i64,
+    /// Settles one wallet may have in flight (signed, not yet resolvable).
+    in_flight_per_wallet: i64,
+    /// Settles the whole deployment may have in flight.
+    in_flight_total: i64,
+    /// The emergency stop: lamports the relayer may lose in a rolling day
+    /// across every wallet before it pays for nobody. Only a sustained attack
+    /// from many wallets reaches it; it is logged as an error when it trips.
+    daily_loss_lamports: i64,
 }
 
-fn total_cap() -> u32 {
-    cap_from_env("SPONSOR_DAILY_TOTAL", 200)
+fn limits() -> Limits {
+    Limits {
+        losses_per_wallet: i64::from(cap_from_env("SPONSOR_DAILY_LOSSES_PER_WALLET", 3)),
+        in_flight_per_wallet: i64::from(cap_from_env("SPONSOR_IN_FLIGHT_PER_WALLET", 3)),
+        in_flight_total: i64::from(cap_from_env("SPONSOR_IN_FLIGHT_TOTAL", 500)),
+        daily_loss_lamports: i64::from(cap_from_env("SPONSOR_DAILY_LOSS_LAMPORTS", 50_000_000)),
+    }
 }
 
-/// What the client needs before it builds anything: whether a sponsor exists,
-/// which address it pays from, and whether this wallet still has its daily
-/// allowance. Readable without a session, because the buyer may not have one;
-/// with no wallet named at all it answers for the deployment.
+/// What the client needs before it builds anything: whether the relayer will pay
+/// for this wallet, and which address it pays from. Readable without a session,
+/// because the buyer may not have one; with no wallet named at all it answers
+/// for the deployment.
 pub async fn info(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<InfoQuery>,
 ) -> ApiResult<Json<InfoResponse>> {
     let user = auth::optional_user(&state.db, &headers).await;
-    let per_wallet = per_wallet_cap();
     let sponsor = sponsor_keypair();
     let wallet = query
         .wallet
@@ -58,31 +81,142 @@ pub async fn info(
         .filter(|wallet| !wallet.is_empty())
         .map(str::to_owned)
         .or_else(|| user.and_then(|user| user.wallet));
-    let mut available = sponsor.is_some() && recent_count(&state, None).await? < total_cap() as i64;
-    if available {
-        if let Some(wallet) = wallet.as_deref() {
-            available = recent_count(&state, Some(wallet)).await? < per_wallet as i64;
-        }
-    }
+    let available = sponsor.is_some() && check_limits(&state, wallet.as_deref()).await.is_ok();
     Ok(Json(InfoResponse {
         available,
         address: sponsor.as_ref().map(|key| key.pubkey().to_string()),
         needs_lamports: SPONSORED_LAMPORTS,
-        per_wallet_daily: per_wallet,
+        per_wallet_daily: u32::try_from(limits().losses_per_wallet).unwrap_or(u32::MAX),
     }))
 }
 
-/// Both daily caps, checked before the relayer signs anything: once it has, the
-/// transaction can reach the cluster without us.
-async fn ensure_within_caps(state: &AppState, wallet: &str) -> ApiResult<()> {
-    let per_wallet = per_wallet_cap();
-    if recent_count(state, Some(wallet)).await? >= per_wallet as i64 {
-        return Err(ApiError::TooManyRequests(format!(
-            "This wallet has used today's {per_wallet} sponsored payments. Add a little SOL to it to keep paying."
-        )));
+/// Asks the cluster what became of settles that can no longer land, so the
+/// limits count real losses and not unknowns. Best effort and bounded: one
+/// status batch per cluster, at most 256 settles a call; whatever is left is
+/// counted as lost until a later call resolves it.
+async fn resolve_outcomes(state: &AppState) {
+    let pending = match unresolved(state, 256).await {
+        Ok(pending) => pending,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "sponsored settles could not be listed for resolution"
+            );
+            return;
+        }
+    };
+    let mut by_cluster: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (signature, cluster) in pending {
+        by_cluster.entry(cluster).or_default().push(signature);
     }
-    if recent_count(state, None).await? >= total_cap() as i64 {
+    for (cluster, ids) in by_cluster {
+        let Ok(endpoint) = resolve_endpoint(None, &cluster) else {
+            continue;
+        };
+        let signatures: Vec<Signature> = ids.iter().filter_map(|id| id.parse().ok()).collect();
+        let rpc = solana_rpc_client::nonblocking::rpc_client::RpcClient::new(endpoint);
+        let statuses = match rpc.get_signature_statuses_with_history(&signatures).await {
+            Ok(statuses) => statuses.value,
+            Err(error) => {
+                tracing::info!(%error, %cluster, "sponsored settle outcomes were not readable");
+                continue;
+            }
+        };
+        for (signature, status) in signatures.iter().zip(statuses) {
+            // Past its blockhash's life, a settle the cluster has no record of
+            // can never land: the buyer never sent it.
+            let outcome = match status {
+                None => Outcome::Expired,
+                Some(status) if status.err.is_some() => Outcome::Failed,
+                Some(_) => Outcome::Landed,
+            };
+            if outcome == Outcome::Failed {
+                tracing::warn!(%signature, %cluster, "a relayer-signed settle failed on chain");
+            }
+            let _ = set_outcome(state, &signature.to_string(), outcome).await;
+        }
+    }
+}
+
+/// The limits, checked before the relayer signs anything: once it has, the
+/// transaction can reach the cluster without us. `None` checks only the
+/// deployment-wide ones.
+async fn check_limits(state: &AppState, wallet: Option<&str>) -> ApiResult<()> {
+    let limits = limits();
+    let lost = losses(state, None).await? * LOSS_PER_FAILURE;
+    if lost >= limits.daily_loss_lamports {
+        tracing::error!(
+            lost,
+            limit = limits.daily_loss_lamports,
+            "the relayer's daily loss limit is reached: it pays for nobody until it rolls over"
+        );
         return Err(unavailable());
+    }
+    if in_flight(state, None).await? >= limits.in_flight_total {
+        return Err(ApiError::TooManyRequests(
+            "Payvand is paying for many payments right now. Try again in a minute.".into(),
+        ));
+    }
+    let Some(wallet) = wallet else {
+        return Ok(());
+    };
+    if losses(state, Some(wallet)).await? >= limits.losses_per_wallet {
+        return Err(ApiError::TooManyRequests(
+            "Payvand stopped paying the network fee for this wallet today, because several of its payments failed on chain. Add a little SOL to the wallet to pay from it.".into(),
+        ));
+    }
+    if in_flight(state, Some(wallet)).await? >= limits.in_flight_per_wallet {
+        return Err(ApiError::TooManyRequests(
+            "This wallet has other payments waiting to be signed. Finish or close them, or try again in a few minutes.".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The settle run as a dry run before the relayer signs it. Without signatures
+/// (the cluster is told not to check them), at the blockhash it will carry:
+/// a settle that would fail now — the buyer lacks the price, the invoice is
+/// already paid, the treasury cannot refund — is refused here, before there is
+/// anything for anyone to send and fail.
+async fn dry_run(endpoint: &str, message: &VersionedMessage) -> ApiResult<()> {
+    use solana_rpc_client_api::config::RpcSimulateTransactionConfig;
+    let signers = usize::from(message.header().num_required_signatures);
+    let transaction = VersionedTransaction {
+        signatures: vec![Signature::default(); signers],
+        message: message.clone(),
+    };
+    let rpc = solana_rpc_client::nonblocking::rpc_client::RpcClient::new(endpoint.to_owned());
+    let result = rpc
+        .simulate_transaction_with_config(
+            &transaction,
+            RpcSimulateTransactionConfig {
+                sig_verify: false,
+                replace_recent_blockhash: false,
+                commitment: Some(solana_commitment_config::CommitmentConfig::confirmed()),
+                ..RpcSimulateTransactionConfig::default()
+            },
+        )
+        .await
+        .map_err(|error| {
+            tracing::info!(%error, "a sponsored settle's dry run did not answer");
+            ApiError::Internal("The network did not answer. Try again.".into())
+        })?;
+    if let Some(error) = result.value.err {
+        // The program's own words, when it said any: `InvoiceTooSmall`,
+        // `AlreadySettled`, an SPL "insufficient funds".
+        let reason = result
+            .value
+            .logs
+            .unwrap_or_default()
+            .into_iter()
+            .rev()
+            .find(|line| line.contains("Error") || line.contains("insufficient"))
+            .unwrap_or_else(|| format!("{error:?}"));
+        tracing::info!(%reason, "a sponsored settle failed its dry run");
+        return Err(bad(format!(
+            "This payment would be refused by the network, so it was not sent: {reason}"
+        )));
     }
     Ok(())
 }
@@ -150,8 +284,9 @@ fn read_params(fields: &super::model::SettleFields) -> ApiResult<Params> {
 /// No session and no buyer signature: the buyer may have scanned a printed code
 /// and own no account, and the transaction this returns cannot do anything until
 /// the buyer's wallet signs it. What the relayer risks by signing first is the
-/// fee of a transaction that then fails on chain, which nothing refunds; the
-/// deployment's daily cap counts every signature handed out, which bounds it.
+/// fee of a transaction that then fails on chain, which nothing refunds. The dry
+/// run refuses a settle that would fail now, and the limits bound the rest —
+/// none of them counts a payment that worked.
 pub async fn prepare(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -160,11 +295,13 @@ pub async fn prepare(
     let user = auth::optional_user(&state.db, &headers).await;
     let sponsor = sponsor_keypair().ok_or_else(unavailable)?;
     let params = read_params(&request)?;
-    ensure_within_caps(&state, &params.buyer.to_string()).await?;
+    resolve_outcomes(&state).await;
+    check_limits(&state, Some(&params.buyer.to_string())).await?;
 
     let endpoint = resolve_endpoint(request.endpoint.as_deref(), &request.cluster)?;
     let blockhash = latest_blockhash(&endpoint).await?;
     let message = expected_message(&params, &sponsor.pubkey(), blockhash)?;
+    dry_run(&endpoint, &message).await?;
     let (transaction, signature) = sign_and_record(
         &state,
         user.as_ref().map(|user| user.id.as_str()),
@@ -344,11 +481,12 @@ pub struct SolanaPaySettle<'a> {
 
 /// The SOL settle a Solana Pay wallet signs and sends itself, with the relayer as
 /// fee payer and its signature already on it — legacy wire bytes, or `None` when
-/// no relayer will pay (none configured, or a cap reached), in which case the
-/// caller hands the wallet its own self-paid settle instead.
+/// no relayer will pay (none configured, a limit reached, or the settle failed
+/// its dry run), in which case the caller hands the wallet its own self-paid
+/// settle instead.
 ///
-/// The wallet sends this one, not us, so it is never marked submitted: it counts
-/// toward the deployment's cap only.
+/// The wallet sends this one, not us, so it is never marked submitted; its
+/// outcome is resolved like any other signed settle.
 pub async fn solana_pay_settle(state: &AppState, request: &SolanaPaySettle<'_>) -> Option<Vec<u8>> {
     let sponsor = sponsor_keypair()?;
     let params = Params {
@@ -359,13 +497,18 @@ pub async fn solana_pay_settle(state: &AppState, request: &SolanaPaySettle<'_>) 
         amount: request.amount,
         memo: request.memo.to_owned(),
     };
-    if ensure_within_caps(state, &params.buyer.to_string())
+    resolve_outcomes(state).await;
+    if check_limits(state, Some(&params.buyer.to_string()))
         .await
         .is_err()
     {
         return None;
     }
     let message = legacy_message(&params, &sponsor.pubkey(), request.blockhash);
+    let endpoint = resolve_endpoint(None, request.cluster).ok()?;
+    // A settle that would fail is not signed; the wallet then gets the
+    // self-paid one, which its own preview will show failing.
+    dry_run(&endpoint, &message).await.ok()?;
     let (transaction, _) =
         sign_and_record(state, None, &sponsor, &params, request.cluster, message)
             .await

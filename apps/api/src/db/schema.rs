@@ -131,16 +131,17 @@ pub(super) const SCHEMA: &[&str] = &[
     //
     // A row is written when the relayer signs (`POST /api/sponsor/prepare`, or a
     // Solana Pay request), because from then on anyone holding the transaction
-    // can send it and spend the relayer's fee. `submitted_at` is set when this
-    // API sent it itself (`POST /api/sponsor/settle`). The deployment's cap
-    // counts every row — every signature handed out — and a wallet's cap counts
-    // only submitted ones, so a stranger naming somebody's wallet cannot use up
-    // that wallet's allowance. See `docs/payment-costs.md`.
+    // can send it. `outcome` is filled once it can no longer land: `landed` and
+    // `expired` cost nothing and no limit counts them; `failed` is the one loss
+    // (the fee of a transaction that failed on chain), and the limits count only
+    // those. `submitted_at` says this API sent it itself. See
+    // `docs/payment-costs.md`.
     //
-    // The wallet is the key the caps count, not the account: a buyer who scanned
-    // a printed code has no account here, and the cap has to hold for them too.
-    // `user_id` is what we happen to know about them, never a requirement.
-    "CREATE TABLE IF NOT EXISTS sponsored_settlements (\n        id           TEXT PRIMARY KEY,\n        wallet       TEXT NOT NULL,\n        user_id      TEXT,\n        cluster      TEXT NOT NULL,\n        amount       INTEGER NOT NULL,\n        created_at   INTEGER NOT NULL,\n        submitted_at INTEGER\n    )",
+    // The wallet is the key the limits count, not the account: a buyer who
+    // scanned a printed code has no account here, and the limit has to hold for
+    // them too. `user_id` is what we happen to know about them, never a
+    // requirement.
+    "CREATE TABLE IF NOT EXISTS sponsored_settlements (\n        id           TEXT PRIMARY KEY,\n        wallet       TEXT NOT NULL,\n        user_id      TEXT,\n        cluster      TEXT NOT NULL,\n        amount       INTEGER NOT NULL,\n        created_at   INTEGER NOT NULL,\n        submitted_at INTEGER,\n        outcome      TEXT\n    )",
     // A browser's push subscription: one row per device, keyed by the endpoint
     // the push service gave it. `locale` is the copy the reminder is written
     // in, because a notification arrives outside the app where no i18n runs.

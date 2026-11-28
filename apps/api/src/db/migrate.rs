@@ -42,6 +42,17 @@ pub async fn migrate_connection(connection: &libsql::Connection) -> Result<(), D
     // A sponsored settle is recorded when the relayer signs it, and
     // `submitted_at` says it was also sent from here. Every row older than the
     // column was written after the cluster accepted it, so it was submitted.
+    // What became of a signed settle: landed, failed or expired. Every row
+    // older than the column was written after the cluster accepted it.
+    if !has_column(connection, "sponsored_settlements", "outcome").await? {
+        connection
+            .execute_batch(
+                "ALTER TABLE sponsored_settlements ADD COLUMN outcome TEXT;
+                 UPDATE sponsored_settlements SET outcome = 'landed';",
+            )
+            .await?;
+        eprintln!("[db] migrate: added sponsored_settlements.outcome");
+    }
     if !has_column(connection, "sponsored_settlements", "submitted_at").await? {
         connection
             .execute_batch(

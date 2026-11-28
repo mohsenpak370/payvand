@@ -582,7 +582,7 @@
       "post": {
         "tags": ["sponsor"],
         "summary": "Build an invoice's settle with the relayer paying, and sign it first",
-        "description": "The relayer is the fee payer and sponsor of every wallet payment. It builds the settle from these fields (a compute-unit limit and the settle, nothing else), signs it as fee payer and returns it with the buyer's slot empty. See docs/payment-costs.md.",
+        "description": "The relayer is the fee payer and sponsor of every wallet payment. It builds the settle from these fields (a compute-unit limit and the settle, nothing else), dry-runs it, signs it as fee payer and returns it with the buyer's slot empty. A settle that would fail is refused with the network's reason (400). See docs/payment-costs.md.",
         "requestBody": {
           "required": true,
           "content": {
@@ -607,7 +607,7 @@
         "responses": {
           "200": { "description": "`transaction` (base64, relayer-signed) and `signature` (the relayer's, the transaction id)" },
           "400": { "$ref": "#/components/responses/BadRequest" },
-          "429": { "description": "No relayer available or a daily cap reached; the wallet pays its own way" }
+          "429": { "description": "No relayer available, or a limit reached for this wallet or the deployment" }
         }
       }
     },

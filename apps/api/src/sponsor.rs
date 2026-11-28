@@ -19,9 +19,10 @@
 //! signed settle from `solana_pay_settle` and sends it itself.
 //!
 //! No session is needed: a buyer who scanned a printed code has no account, and
-//! the buyer's own signature is what authorises the payment. Spend is bounded
-//! here, not by the client: a rolling 24-hour cap per wallet and one for the
-//! deployment, both in libSQL (see `store`).
+//! the buyer's own signature is what authorises the payment. The relayer's
+//! risk is bounded here, not by the client: every settle is dry-run before it is
+//! signed, and the limits count only settles that failed on chain — never a
+//! payment that worked (see `store` and `docs/payment-costs.md`).
 //!
 //! This file is the public surface. Implementation and unit tests live in the
 //! `sponsor/` directory:
@@ -31,8 +32,8 @@
 //! - `params`: validating the settle a request names
 //! - `message`: building the one settle message the relayer will sign
 //! - `diagnostics`: the fields a refusal logs
-//! - `store`: the signed settles the daily caps count
-//! - `relayer`: the keypair, program id and caps from the environment
+//! - `store`: the signed settles, their outcomes, and what the limits count
+//! - `relayer`: the keypair and program id from the environment
 //! - `model`: the request and response bodies
 
 mod diagnostics;

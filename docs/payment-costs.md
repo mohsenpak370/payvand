@@ -95,7 +95,8 @@ token. A seller is never charged SOL, and needs none to be paid in a token.
 
 ### Self-paid fallback (no relayer available)
 
-When the relayer cannot pay (no `SPONSOR_KEYPAIR`, or a daily cap reached), the
+When the relayer cannot pay (no `SPONSOR_KEYPAIR`, or a limit reached for this
+wallet or the deployment), the
 wallet is its own sponsor and the only signer. The program refunds it the two
 rents and `network × 1` in the same instruction, and the seller is charged one
 signature's network fee instead of two. The buyer still ends at exactly
@@ -106,7 +107,7 @@ wallet does need enough SOL to front the rents for the length of the
 transaction. Without it, the checkout refuses with `errors.paymentNeedsSol`
 before any signature.
 
-This path exists so a payment is not lost when the relayer is down or capped.
+This path exists so a payment is not lost when the relayer is down or limited.
 It must never be chosen while a relayer is available.
 
 ### Allowance payments (session key)
@@ -162,23 +163,56 @@ signature to verify. A wallet that changed the transaction (for example by
 adding a priority fee) has also broken the relayer's signature, so the
 transaction is refused before it reaches the cluster.
 
-## Caps and what the relayer risks
+## Limits: what the relayer risks, and what stops it
 
 A signed transaction cannot be altered, so the relayer cannot be made to pay for
-anything but this settle. And a settle that lands refunds it in full. The only
-real loss is the base fee of a relayer-signed transaction that fails on chain
-(about 10 000 lamports), because a prepared transaction can be sent to the
-cluster without going through `settle`. Two caps bound that, both over a rolling
-24 hours in `sponsored_settlements`:
+anything but this settle. Each signed settle ends one of three ways:
 
-- `SPONSOR_DAILY_TOTAL` (default 200) counts **every signature `prepare` or
-  Solana Pay handed out**. This is the bound on the relayer's exposure.
-- `SPONSOR_DAILY_PER_WALLET` (default 10) counts **only settles this API
-  submitted** for the wallet. A prepare names a wallet without proving it holds
-  it, so counting prepares here would let a stranger use up somebody else's
-  allowance.
+| Outcome | What it cost the relayer | Counted by a limit? |
+| --- | --- | --- |
+| **Landed**: the payment went through | nothing; the program refunded it in the same transaction | **never** |
+| **Expired**: never sent (the buyer closed the wallet prompt) | nothing; it can no longer land once its blockhash is about 90 s old | **never** |
+| **Failed**: sent, and failed on chain | the base fee of both signatures, 10 000 lamports; nothing refunds it | yes |
 
-`POST /api/sponsor/prepare` and `/settle` are also throttled per caller
+So no limit counts payments that worked. A cap on those would only stop good
+payments, so there isn't one.
+
+**Fewer failures to begin with.** `prepare` (and the Solana Pay request) dry-run
+the settle against the cluster before the relayer signs it. A settle that would
+fail now is refused, with the program's reason, and nothing is signed: for
+example, the buyer lacks the price, the invoice is already paid, or the treasury
+cannot refund. `settle` sends with the cluster's preflight check as well. What
+is left is a buyer who changes something in the seconds between signing and
+sending, such as moving their tokens away. Doing that costs them a transaction
+fee of their own.
+
+**How outcomes are known.** Every signature is recorded when the relayer signs
+(`sponsored_settlements`). Once it is old enough that it can no longer land
+(`RESOLVE_AFTER_SECS`, 180 s), the next `prepare` asks the cluster for its status
+and records `landed`, `failed` or `expired` (`resolve_outcomes`). A row that old
+with no answer yet counts as failed until it is resolved, so a cluster outage
+cannot hide losses.
+
+**The limits**, each over a rolling 24 hours:
+
+| Setting | Default | Scope | When it is reached |
+| --- | --- | --- | --- |
+| `SPONSOR_DAILY_LOSSES_PER_WALLET` | 3 | one wallet | the relayer stops paying **for that wallet only**; it can still pay its own way, and everyone else is unaffected |
+| `SPONSOR_IN_FLIGHT_PER_WALLET` | 3 | one wallet | that wallet waits until its earlier prepared payments land or expire, so one wallet cannot hold many signed transactions to fail at once |
+| `SPONSOR_IN_FLIGHT_TOTAL` | 500 | deployment | new payments wait a minute; 500 settles signed within 3 minutes is far above normal volume |
+| `SPONSOR_DAILY_LOSS_LAMPORTS` | 50 000 000 (0.05 SOL, 5 000 failures) | deployment | **the emergency stop**: the relayer pays for nobody until the day rolls over, and it is logged as an error |
+
+The emergency stop is the one limit that affects good payments, and it has to
+exist: an attacker using many fresh wallets gets past every per-wallet limit,
+and without a deployment-wide bound the relayer's loss would have no ceiling.
+It is set in lamports and far above what normal use produces, so only a
+sustained attack reaches it, and each failure that attack causes also costs the
+attacker a fee. When it trips, buyers with SOL still pay their own way through
+the fallback, which the program refunds the same way. Alert on its log line
+(`the relayer's daily loss limit is reached`) and raise it, or investigate,
+when it fires.
+
+`POST /api/sponsor/prepare` and `/settle` are also throttled per caller address
 (`throttle.rs`), and `settle` per wallet (6 a minute).
 
 ## Invariants and the tests that pin them
@@ -189,7 +223,8 @@ cluster without going through `settle`. Two caps bound that, both over a rolling
 | 2 | The buyer's wallet only ever signs a relayer settle the page verified | `preparedSettleMatches` | `preparedSettleMatches` in `usePaymentProgram.test.ts`; `never opens the wallet on a prepared transaction that is not this invoice` |
 | 3 | The relayer signs exactly `[compute-unit limit, settle]`, never a priority price | `expected_message` / `legacy_message` (`sponsor/message.rs`) | `the_relayer_signs_a_limit_and_never_a_priority_price` |
 | 4 | The relayer sends only the transaction it prepared, fully and validly signed | `check_prepared` | `sponsor::handler::tests` |
-| 5 | Every relayer signature is recorded before it leaves the API, and the deployment cap counts it | `sign_and_record`, `store.rs` | `the_global_cap_counts_signatures_and_a_wallet_cap_counts_submissions` |
+| 5 | Every relayer signature is recorded before it leaves the API, and no limit ever counts a settle that landed or expired: only failures | `sign_and_record`, `store.rs` (`losses`) | `only_failed_settles_are_losses`; `in_flight_is_only_what_may_still_land` |
+| 5a | The relayer signs nothing that fails its dry run | `dry_run` (`sponsor/handler.rs`) | needs a cluster: covered by the devnet run, not a unit test |
 | 6 | The self-paid fallback names a compute-unit limit, so the buyer's net stays `− amount` | `settleThroughRelayer`, `self_paid_solana_pay_settle` | `lets a funded wallet pay its own way behind a compute-unit limit`; `the_self_paid_solana_pay_settle_is_the_programs_settle` |
 | 7 | The sponsor is refunded both rents and `network × signatures` in the same instruction, and the refund goes to the sponsor, never to the payer | `settle_split`, `token_split` | `apps/contracts/programs/payvand/tests/settle.rs` |
 | 8 | The seller is charged the permanent receipt's rent and the network fee (or the rate, if larger), never the invoice account's rent | `fee_for_signatures`, the two splits | `tests/settle.rs`; `invoiceCost.test.ts` |
