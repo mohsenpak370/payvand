@@ -101,6 +101,13 @@ pub(crate) struct OnchainReceipt {
     pub(crate) payer: Pubkey,
     pub(crate) created_at: i64,
     pub(crate) settled_at: i64,
+    /// The fee the settlement charged the seller, as `PaymentSettled` logged
+    /// it, in the invoice's currency. `None` when it is not known: a row stored
+    /// before the fee was kept, or a settlement read from somewhere other than
+    /// its event. A relayer-paid settle and a self-paid one differ by a
+    /// signature's network fee, so this is the only exact figure — a re-quote is
+    /// an estimate (`docs/payment-costs.md`).
+    pub(crate) fee: Option<u64>,
 }
 
 /// The marker's exact size: discriminator, invoice, `settled_at` — 48 bytes,
@@ -140,7 +147,7 @@ pub(crate) fn decode_payment_settled(data: &[u8]) -> Option<OnchainReceipt> {
     }
 
     let amount = reader.u64()?;
-    reader.u64()?; // fee: the treasury's share, not part of a status record
+    let fee = reader.u64()?;
     reader.u64()?; // seller_proceeds: what the seller keeps after the fee
     let payer = reader.pubkey()?;
     let seller = reader.pubkey()?;
@@ -160,6 +167,7 @@ pub(crate) fn decode_payment_settled(data: &[u8]) -> Option<OnchainReceipt> {
         // Filled from the transaction's own block time by the caller.
         created_at: 0,
         settled_at: 0,
+        fee: Some(fee),
     })
 }
 

@@ -69,6 +69,7 @@ pub(super) fn match_transactions(
                 status: record.status,
                 created_at_unix: record.created_at_unix,
                 settled_at_unix: record.settled_at_unix,
+                fee: record.fee,
             })
         })
         .collect();

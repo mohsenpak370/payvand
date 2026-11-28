@@ -22,14 +22,15 @@ pub(super) fn mint_label(params: &Params) -> String {
         .unwrap_or_else(|| "SOL".into())
 }
 
-/// The shape of a settle message: its account count, the instruction's account
-/// count, and the instruction data's length. A different buyer token account or
+/// The shape of a settle message: its account count, the settle instruction's
+/// account count, and its data's length. The settle is the last instruction —
+/// the compute-unit limit comes before it. A different buyer token account or
 /// a different price each change one of the three, which is what makes a refusal
 /// readable without the transaction itself.
 pub(super) fn shape(message: &VersionedMessage) -> (usize, usize, usize) {
     match message {
         VersionedMessage::V0(message) => {
-            let instruction = message.instructions.first();
+            let instruction = message.instructions.last();
             (
                 message.account_keys.len(),
                 instruction.map_or(0, |instruction| instruction.accounts.len()),

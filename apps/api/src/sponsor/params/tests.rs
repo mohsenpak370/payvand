@@ -3,8 +3,7 @@ use solana_sdk::pubkey::Pubkey;
 
 #[test]
 fn a_mint_outside_the_list_is_refused() {
-    let mut request = SettleRequest {
-        transaction: String::new(),
+    let mut request = SettleFields {
         buyer: Pubkey::new_from_array([1; 32]).to_string(),
         seller: Pubkey::new_from_array([2; 32]).to_string(),
         reference: Pubkey::new_from_array([3; 32]).to_string(),

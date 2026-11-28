@@ -6,7 +6,7 @@ use solana_sdk::pubkey::Pubkey;
 
 use crate::payments::{bad, currency_for_mint, ApiResult};
 
-use super::model::SettleRequest;
+use super::model::SettleFields;
 
 fn key(address: &str, what: &str) -> ApiResult<Pubkey> {
     Pubkey::from_str(address.trim())
@@ -27,10 +27,9 @@ pub(super) struct Params {
 impl Params {
     /// Everything a request may name, checked against what the program will
     /// accept: a known stablecoin mint for the cluster, a positive price, a
-    /// memo the invoice can hold, and real keys. Nothing here trusts the
-    /// transaction the caller sent; it is only ever compared with the message
-    /// these fields rebuild.
-    pub(super) fn read(request: &SettleRequest) -> ApiResult<Self> {
+    /// memo the invoice can hold, and real keys. The settle the relayer signs is
+    /// built from these fields alone, never from bytes a caller sent.
+    pub(super) fn read(request: &SettleFields) -> ApiResult<Self> {
         if request.amount == 0 {
             return Err(bad("The price must be greater than zero."));
         }

@@ -19,15 +19,17 @@ export function useCheckoutCosts(
   async function refreshCosts(): Promise<InvoiceCosts | null> {
     const option = selected.value
     try {
-      // One signature: this figure is what the payment costs the wallet when it
-      // pays its own way, which is the only case the checkout shows it. A
-      // settlement a relayer fee-pays carries two, and there the fee line reads
-      // that the fee is included in the price instead — `estimateInvoiceCosts`
-      // takes `signatures: 2` from a caller that knows a relayer will submit.
+      // Two signatures: the relayer pays for every wallet payment and the
+      // program charges the seller the network fee of both (the relayer's and
+      // the buyer's), so the seller's proceeds and the smallest payable amount
+      // are the relayer path's. A wallet that has to pay its own way carries one
+      // and is charged a signature less — this quote is the larger of the two,
+      // so the guard on the price never lets through an amount the chain
+      // refuses. See `docs/payment-costs.md`.
       const quote = await estimateInvoiceCosts(payableAmount.value, option.currency, {
         mint: option.mint || undefined,
         seller: payload.value?.seller ? address(payload.value.seller) : undefined,
-        signatures: 1,
+        signatures: 2,
         // The code's cluster, not this page's: pricing an invoice on another
         // cluster from the policy here would quote a fee the program will not
         // charge.

@@ -47,11 +47,22 @@ const detailOpen = computed({
 async function openDetail(item: MyTransaction) {
   selected.value = item
   detailFee.value = null
+  const unit = currencySymbol(item.currency)
+  // The fee the program logged when this payment settled is the only exact
+  // figure: a relayer-paid settle and one a wallet or an allowance paid itself
+  // charge the seller a signature's network fee apart, and a re-quote can only
+  // assume one of them (`docs/payment-costs.md`).
+  if (item.fee !== null && item.fee !== undefined) {
+    detailFee.value = `${formatTokenAmount(item.fee, item.decimals)} ${unit}`
+    return
+  }
   try {
     const mint = item.currency === 'sol'
       ? undefined
       : (mintForCurrency(item.currency, props.transactions?.cluster ?? '') ?? undefined)
-    // The row's own cluster: a payment listed from another one carries that
+    // A settlement stored before its fee was kept: re-quoted at today's policy
+    // and the relayer's two signatures, and marked as the estimate it is. The
+    // row's own cluster: a payment listed from another one carries that
     // cluster's fee, not this page's.
     const quote = await estimateInvoiceCosts(item.amount, item.currency, {
       mint,
@@ -59,7 +70,7 @@ async function openDetail(item: MyTransaction) {
     })
     // The list may have moved on while the quote read the chain.
     if (selected.value?.id === item.id) {
-      detailFee.value = `${formatTokenAmount(quote.fee, item.decimals)} ${currencySymbol(item.currency)}`
+      detailFee.value = `≈ ${formatTokenAmount(quote.fee, item.decimals)} ${unit}`
     }
   } catch {
     detailFee.value = null

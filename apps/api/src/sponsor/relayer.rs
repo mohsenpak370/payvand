@@ -11,10 +11,11 @@ use crate::payments::ApiError;
 /// The deployed program, overridable for a local cluster.
 const DEFAULT_PROGRAM_ID: &str = "4grKZpw6G2zmxv62iKzr8vCJU2g3oAArpcJEeTFimq3J";
 
-/// What a sponsored settle fronts: the 262-byte token invoice's rent, the
-/// 48-byte marker's, and the one signature the relayer pays for. The client asks
-/// for a sponsor only below this, so a funded wallet keeps its own path.
-pub const SPONSORED_LAMPORTS: u64 = 2_714_400 + 1_224_960 + 5_000;
+/// What the relayer fronts for one token settle: the 262-byte invoice's rent,
+/// the 48-byte marker's, and the base fee of the settle's two signatures (the
+/// relayer's and the buyer's). The same transaction refunds all of it — see
+/// `docs/payment-costs.md`.
+pub const SPONSORED_LAMPORTS: u64 = 2_714_400 + 1_224_960 + 2 * 5_000;
 
 /// What the endpoint answers with while it is not configured: the client shows
 /// it instead of a wallet prompt that would fail on chain.
@@ -36,20 +37,6 @@ pub(super) fn cap_from_env(name: &str, fallback: u32) -> u32 {
 /// of 64 bytes, or the same bytes base58 encoded. Absent means no sponsorship.
 pub(super) fn sponsor_keypair() -> Option<Keypair> {
     crate::keypair_from_env("SPONSOR_KEYPAIR")
-}
-
-/// The most priority fee a sponsored settle will pay, in lamports.
-///
-/// The sponsor is the fee payer and the program repays it the policy's network
-/// fee and the two rents, so a priority fee is its own money: a wallet that adds
-/// one (Phantom does by default) spends it, and this is what bounds that spend.
-/// The client names its own compute-unit limit so Phantom stays out of the way;
-/// this cap is for a wallet that adds one anyway.
-pub(super) fn max_priority_fee() -> u64 {
-    std::env::var("SPONSOR_MAX_PRIORITY_FEE_LAMPORTS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .unwrap_or(100_000)
 }
 
 pub(super) fn program_id() -> Pubkey {

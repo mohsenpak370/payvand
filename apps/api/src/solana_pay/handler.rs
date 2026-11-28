@@ -13,7 +13,6 @@ use crate::AppState;
 
 use super::invoice::{decode_invoice, format_lamports};
 use super::model::{AccountQuery, AccountRequest, RequestInfo, TransactionRequest};
-use super::wire::{settle_payment_transaction, SettlePaymentRequest};
 
 /// `GET /api/solana-pay/{token}` — wallet metadata for the payment.
 pub async fn info(
@@ -84,7 +83,6 @@ pub async fn transaction(
     // the program derives a different invoice per price, so this pays exactly
     // what the buyer's screen shows.
     let payable = invoice.payable_lamports(&state.db).await?;
-    let payment = invoice.address_for(payable)?;
 
     // Only known clusters, never the endpoint carried in the token: a code is
     // just data handed to us by a stranger, and this fetch must not become a
@@ -96,15 +94,25 @@ pub async fn transaction(
         ApiError::Internal("The network did not return a blockhash. Try again.".into())
     })?;
 
-    let wire = settle_payment_transaction(SettlePaymentRequest {
-        payer,
-        payment,
+    // Payvand pays the network fee and fronts the records, as on every wallet
+    // payment: the relayer signs the settle as fee payer first, and the wallet
+    // adds its signature and sends it. The program refunds the relayer and
+    // charges the seller in the same transaction (`docs/payment-costs.md`).
+    // Only when no relayer will pay does the wallet get a settle it pays for
+    // itself — refunded the same way, so the buyer still spends the price.
+    let settle = crate::sponsor::SolanaPaySettle {
+        buyer: payer,
         seller: invoice.seller()?,
         reference: invoice.reference()?,
         amount: payable,
         memo: &invoice.memo,
-        blockhash: blockhash.to_bytes(),
-    });
+        cluster: &invoice.cluster,
+        blockhash,
+    };
+    let wire = match crate::sponsor::solana_pay_settle(&state, &settle).await {
+        Some(wire) => wire,
+        None => crate::sponsor::self_paid_solana_pay_settle(&settle)?,
+    };
 
     Ok(Json(TransactionRequest {
         transaction: STANDARD.encode(wire),

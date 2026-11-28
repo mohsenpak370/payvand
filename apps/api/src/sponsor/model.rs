@@ -2,11 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The invoice a sponsored settle pays, as the buyer's page knows it. The relayer
+/// builds the whole settlement from these fields and nothing else.
 #[derive(Debug, Deserialize)]
-pub struct SettleRequest {
-    /// The buyer-signed wire transaction, base64. Its fee payer is the sponsor
-    /// and its message must be exactly the one this module rebuilds.
-    pub transaction: String,
+pub struct SettleFields {
     pub buyer: String,
     pub seller: String,
     pub reference: String,
@@ -21,6 +20,30 @@ pub struct SettleRequest {
     pub endpoint: Option<String>,
 }
 
+/// `POST /api/sponsor/prepare` — the invoice to build a settle for.
+pub type PrepareRequest = SettleFields;
+
+/// The settle the relayer built and signed as fee payer, base64 wire bytes. The
+/// buyer's slot is empty; the wallet signs it and the page sends it back to
+/// `POST /api/sponsor/settle` unchanged.
+#[derive(Debug, Serialize)]
+pub struct PrepareResponse {
+    pub transaction: String,
+    /// The relayer's signature, which is the transaction's id once it lands.
+    pub signature: String,
+}
+
+/// `POST /api/sponsor/settle` — the prepared transaction with the buyer's
+/// signature added, and the invoice it was prepared for.
+#[derive(Debug, Deserialize)]
+pub struct SettleRequest {
+    /// The fully signed wire transaction, base64. Its message must be the one
+    /// `prepare` built for these fields, byte for byte.
+    pub transaction: String,
+    #[serde(flatten)]
+    pub fields: SettleFields,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SettleResponse {
     pub signature: String,
@@ -30,7 +53,8 @@ pub struct SettleResponse {
 pub struct InfoResponse {
     pub available: bool,
     pub address: Option<String>,
-    /// Lamports a wallet needs before it can settle a token invoice itself.
+    /// Lamports the relayer fronts for one settle — both record rents and the
+    /// two signatures — all of which the same transaction refunds to it.
     pub needs_lamports: u64,
     pub per_wallet_daily: u32,
 }

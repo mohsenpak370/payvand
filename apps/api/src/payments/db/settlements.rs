@@ -49,7 +49,7 @@ pub async fn settlements_paid_by_any(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at \
+        "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at, fee \
          FROM settled_payments WHERE endpoint = ?1 AND payer IN ({placeholders}) \
          ORDER BY settled_at DESC LIMIT {}",
         limit.min(MAX_WATCH_PDAS * 4)
@@ -90,6 +90,7 @@ pub async fn settlements_paid_by_any(
         let payer = row.get::<String>(6).unwrap_or_default();
         let created_at = row.get::<i64>(7).unwrap_or(0);
         let settled_at = row.get::<i64>(8).unwrap_or(0);
+        let fee = stored_fee(&row);
         records.push(receipt_record(
             OnchainReceipt {
                 invoice,
@@ -101,6 +102,7 @@ pub async fn settlements_paid_by_any(
                 payer: Pubkey::from_str(&payer).unwrap_or_default(),
                 created_at,
                 settled_at,
+                fee,
             },
             cluster.to_string(),
             endpoint.to_string(),
@@ -166,7 +168,7 @@ pub(crate) async fn stored_settlements(
     let read = connection
         .query(
             &format!(
-                "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at \
+                "SELECT invoice, seller, reference, mint, amount, memo, payer, created_at, settled_at, fee \
                  FROM settled_payments WHERE endpoint = ?1 AND invoice IN ({placeholders})"
             ),
             params,
@@ -202,7 +204,16 @@ fn receipt_from_row(row: &libsql::Row, invoice: Pubkey) -> Option<OnchainReceipt
         payer: Pubkey::from_str(&row.get::<String>(6).ok()?).ok()?,
         created_at: row.get::<i64>(7).ok()?,
         settled_at: row.get::<i64>(8).ok()?,
+        fee: stored_fee(row),
     })
+}
+
+/// The `fee` column: NULL on a row stored before the fee was kept.
+fn stored_fee(row: &libsql::Row) -> Option<u64> {
+    row.get::<Option<i64>>(9)
+        .ok()
+        .flatten()
+        .and_then(|fee| u64::try_from(fee).ok())
 }
 
 /// Remembers one settlement in the database, so the history read that produced
@@ -234,22 +245,15 @@ pub(crate) async fn store_settlements(
     };
 
     let mut rows = Vec::with_capacity(settled.len());
-    let mut params: Vec<libsql::Value> = Vec::with_capacity(settled.len() * 10);
+    const COLUMNS: usize = 11;
+    let mut params: Vec<libsql::Value> = Vec::with_capacity(settled.len() * COLUMNS);
     for (index, receipt) in settled.iter().enumerate() {
-        let at = index * 10;
-        rows.push(format!(
-            "(?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{}, ?{})",
-            at + 1,
-            at + 2,
-            at + 3,
-            at + 4,
-            at + 5,
-            at + 6,
-            at + 7,
-            at + 8,
-            at + 9,
-            at + 10
-        ));
+        let at = index * COLUMNS;
+        let placeholders = (1..=COLUMNS)
+            .map(|column| format!("?{}", at + column))
+            .collect::<Vec<_>>()
+            .join(", ");
+        rows.push(format!("({placeholders})"));
         params.extend([
             libsql::Value::Text(receipt.invoice.to_string()),
             libsql::Value::Text(endpoint.to_owned()),
@@ -261,6 +265,10 @@ pub(crate) async fn store_settlements(
             libsql::Value::Text(receipt.payer.to_string()),
             libsql::Value::Integer(receipt.created_at),
             libsql::Value::Integer(receipt.settled_at),
+            match receipt.fee {
+                Some(fee) => libsql::Value::Integer(fee as i64),
+                None => libsql::Value::Null,
+            },
         ]);
     }
 
@@ -268,13 +276,14 @@ pub(crate) async fn store_settlements(
         .execute(
             &format!(
                 "INSERT INTO settled_payments \
-                    (invoice, endpoint, seller, reference, mint, amount, memo, payer, created_at, settled_at) \
+                    (invoice, endpoint, seller, reference, mint, amount, memo, payer, created_at, settled_at, fee) \
                  VALUES {} \
                  ON CONFLICT(invoice, endpoint) DO UPDATE SET \
                     seller = excluded.seller, reference = excluded.reference, \
                     mint = excluded.mint, amount = excluded.amount, \
                     memo = excluded.memo, payer = excluded.payer, \
-                    created_at = excluded.created_at, settled_at = excluded.settled_at",
+                    created_at = excluded.created_at, settled_at = excluded.settled_at, \
+                    fee = COALESCE(excluded.fee, settled_payments.fee)",
                 rows.join(", ")
             ),
             params,

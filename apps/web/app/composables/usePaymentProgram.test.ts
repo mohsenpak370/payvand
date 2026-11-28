@@ -5,7 +5,9 @@ import {
   COMPUTE_BUDGET_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   buildInstruction,
-  computeUnitLimitInstruction
+  compileWireTransaction,
+  computeUnitLimitInstruction,
+  preparedSettleMatches
 } from './usePaymentProgram'
 
 /**
@@ -109,5 +111,55 @@ describe('buildInstruction', () => {
 
       expect(built.accounts![index]?.address, instruction.name).toBe(TOKEN_PROGRAM_ID)
     }
+  })
+})
+
+/**
+ * The page's own check on the bytes the relayer asks the buyer to sign
+ * (`docs/payment-costs.md`). The API's builder is Rust and this one is Kit, so
+ * the check reads meaning, not bytes: fee payer, the two instructions, and the
+ * settle's program, data and accounts in order.
+ */
+describe('preparedSettleMatches', () => {
+  const relayer = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')
+  const rpc = {
+    getLatestBlockhash: () => ({
+      send: async () => ({
+        value: {
+          blockhash: '11111111111111111111111111111111' as never,
+          lastValidBlockHeight: 1000n
+        }
+      })
+    })
+  }
+  const settle = (amount = 1_000_000) => buildInstruction(
+    'settle_payment',
+    { amount, memo: '' },
+    { ...settleAccounts(), sponsor: relayer }
+  )
+  const prepared = async (
+    instruction: ReturnType<typeof buildInstruction>[],
+    feePayer: Address = relayer
+  ) => compileWireTransaction({ instruction, payer: feePayer, rpc: rpc as never })
+
+  it('accepts the relayer-paid settle this page built', async () => {
+    const wire = await prepared([computeUnitLimitInstruction(), settle()])
+    expect(preparedSettleMatches(wire, relayer, settle())).toBe(true)
+  })
+
+  it('refuses another price, another fee payer, a missing limit or anything extra', async () => {
+    const other = await prepared([computeUnitLimitInstruction(), settle(999_999)])
+    expect(preparedSettleMatches(other, relayer, settle())).toBe(false)
+
+    const buyerPays = await prepared([computeUnitLimitInstruction(), settle()], payer)
+    expect(preparedSettleMatches(buyerPays, relayer, settle())).toBe(false)
+
+    const noLimit = await prepared([settle()])
+    expect(preparedSettleMatches(noLimit, relayer, settle())).toBe(false)
+
+    const extra = await prepared([computeUnitLimitInstruction(), settle(), computeUnitLimitInstruction(1)])
+    expect(preparedSettleMatches(extra, relayer, settle())).toBe(false)
+
+    expect(preparedSettleMatches(new Uint8Array([1, 2, 3]), relayer, settle())).toBe(false)
   })
 })

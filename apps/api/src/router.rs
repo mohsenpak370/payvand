@@ -43,6 +43,7 @@ pub(crate) const ROUTES: &[&str] = &[
     "/api/solana-pay/{token}",
     "/api/saved-payments",
     "/api/sponsor",
+    "/api/sponsor/prepare",
     "/api/sponsor/settle",
     "/api/faucet",
     "/api/admin/stats",
@@ -179,6 +180,7 @@ fn integration_routes() -> Router<AppState> {
         // asks before it builds anything; `settle` signs only a message it has
         // rebuilt byte for byte.
         .route("/api/sponsor", get(sponsor::info))
+        .route("/api/sponsor/prepare", post(sponsor::prepare))
         .route("/api/sponsor/settle", post(sponsor::settle))
         // Devnet starter tokens for a newly linked wallet: the balance check
         // and the one claim per account, from the deployment's own treasury.

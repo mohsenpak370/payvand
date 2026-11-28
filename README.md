@@ -372,22 +372,37 @@ there the costs arrive as a flat in the currency (`flat_usdc_base_units`,
 `network_fee_eurc_base_units`). A SOL seller hands the receipt's rent over out of
 the price directly, so the rate has the rent taken off instead.
 
+**Who pays.** The buyer pays the price and nothing else; Payvand pays the
+network fee and fronts every account's rent inside the settle transaction; the
+seller repays the costs that stay — the network fee and the permanent receipt's
+rent — out of what they receive; and the invoice account, which closes in the
+same transaction, costs nobody anything. The full money flow per path, the
+transaction flow and the rules that must not be broken are in
+[`docs/payment-costs.md`](docs/payment-costs.md).
+
+**The relayer pays for every wallet payment, SOL or token.** Its key
+(`SPONSOR_KEYPAIR`) is the fee payer and the program's `sponsor`; the API builds
+the settle, signs it first (`POST /api/sponsor/prepare`), the page checks it is
+this invoice's, the buyer's wallet signs a transaction that only lacks its own
+signature — so it can preview the price — and the API sends it
+(`POST /api/sponsor/settle`). The wallet pays its own way only when no relayer
+is available, and is refunded in the same instruction.
+
 **The network fee is per signature.** `network_fee_lamports` and its two token
-equivalents are what one signature costs. A settlement that a relayer fee-pays
-carries two — the payer's and the relayer's — and one that pays its own way
-carries a single signature, so `fee_for_signatures` multiplies the policy figure
-by the count the path actually uses, and the settlement charges the seller and
-refunds the sponsor that same figure. Priority fees above the base fee remain the
-relayer's own cost, so the endpoint prices them and refuses to sign above
-`SPONSOR_MAX_PRIORITY_FEE_LAMPORTS` (100,000 by default); a sponsored transaction
-names a compute-unit limit so a wallet adds no price of its own.
+equivalents are what one signature costs. A relayer-paid settlement carries two
+— the relayer's and the buyer's — and the fallback and allowance paths carry
+one, so `fee_for_signatures` multiplies the policy figure by the count the path
+uses, and the settlement charges the seller and refunds the sponsor that same
+figure. Nothing the relayer signs carries a priority price: it signs exactly a
+compute-unit limit and the settle, and refuses to send a transaction a wallet
+changed.
 
 | Who | Pays | Ends up with |
 | --- | --- | --- |
-| Buyer | the price, and nothing else in either currency; Payvand's relayer pays the network fee and fronts both record rents, and a buyer pays them itself only when no relayer takes the payment | out exactly `amount`, and the receipt on chain |
+| Buyer | the price, and nothing else in either currency | out exactly `amount`, and the receipt on chain |
 | Seller | the larger of the rate and the record plus the network fee, out of the price | `amount − max(rate, costs)` |
 | Relayer (sponsor) | the transaction's signatures and both record rents, for the length of the transaction | whole: the refund is `invoice rent + receipt rent + network fee × signatures` |
-| Treasury | the network fee it recharges | `fee − network fee × signatures` |
+| Treasury | the network fee and the receipt's rent on token payments, repaid in the token | `fee − network fee × signatures` on SOL; `fee_t` in the token less those SOL costs on tokens |
 
 A SOL settlement does it in one instruction with a required trailing `sponsor`:
 the sponsor funds the invoice account and the receipt and pays the signatures;
@@ -410,18 +425,12 @@ have its account for a mint opened before an invoice in that mint can settle —
 `pnpm treasury:open --mint <mint>`; the checkout reads the account and refuses
 to let anyone sign before it exists.
 
-That network fee is the one thing a wallet must hold SOL for, and on a token
-invoice it can be someone else's. `settle_token_payment` takes a `sponsor`: it
-advances the invoice's rent and the receipt's and receives the treasury's refund
-of both, so its net cost is the network fee it signs for, and the buyer's wallet
-ends where it began. The fee Payvand takes is what pays for it, so the checkout
-asks the relayer for every token payment and a USDC-only buyer can pay with an
-empty SOL balance; a wallet fronts the fee itself only when no relayer will take
-the payment. The
-refund goes to the sponsor and never to the buyer on purpose: a sponsor that
-funded the buyer's wallet would leave it holding both rents, 3,939,360 lamports
-per settlement at mainnet's rate, which is a faucet. A SOL invoice cannot be
-sponsored this way — the buyer's own lamports are the payment.
+On a token invoice the relayer's SOL comes back from the treasury:
+`settle_token_payment` refunds the sponsor both rents and the network fee, and
+the treasury takes the same costs back in the token through `fee_t`. The refund
+goes to the sponsor and never to the buyer on purpose: a sponsor that funded the
+buyer's wallet would leave it holding both rents, 3,939,360 lamports per
+settlement at mainnet's rate, which is a faucet.
 
 A budget payment is the same ledger with the pot in place of the wallet: the pot
 pays exactly the price, and a float fronts the temporary rents and is reimbursed
@@ -549,6 +558,9 @@ on startup.
 | `PLATFORM_SELLER`               | api          | —               | Wallet that sells the shops subscription; unset disables buying one |
 | `SUBSCRIPTION_RATES_URL`        | api          | Coinbase        | EUR/SOL and EUR/USD price feed the subscription quotes use; CoinGecko is the built-in fallback, and setting this URL replaces both |
 | `FAUCET_KEYPAIR`                | api          | —               | Treasury that sends the devnet starter tokens; a solana CLI `id.json` array or base58. Unset disables claiming |
+| `SPONSOR_KEYPAIR`               | api          | —               | The relayer: fee payer and sponsor of every wallet payment (`docs/payment-costs.md`); a solana CLI `id.json` array or base58. Unset means every buyer pays its own way |
+| `SPONSOR_DAILY_TOTAL`           | api          | `200`           | Relayer signatures handed out per rolling 24 h, deployment-wide |
+| `SPONSOR_DAILY_PER_WALLET`      | api          | `10`            | Relayer-paid settles submitted per wallet per rolling 24 h |
 | `FAUCET_SOL_LAMPORTS`           | api          | `1000000000`    | Lamports of SOL a claim sends (1 SOL)      |
 | `FAUCET_TOKEN_BASE_UNITS`       | api          | `10000000`      | Base units of USDC and EURC a claim sends (10 tokens) |
 

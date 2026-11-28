@@ -34,6 +34,7 @@ fn payment_fixture(
         settled_by: settled_by.map(str::to_string),
         created_at_unix: created,
         settled_at_unix: settled,
+        fee: None,
     }
 }
 

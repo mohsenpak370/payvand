@@ -28,9 +28,11 @@ fn throttle_for(path: &str) -> Option<Throttle> {
         // rather than by guessing, and it is cheap to answer either way.
         "/api/discounts/use" => ("discount-use", 30, rate_limit::MINUTE),
         "/api/waitlist" => ("waitlist", 10, rate_limit::HOUR),
-        // The relayer takes a settle from anyone whose signature matches, so the
-        // only protection in front of its SOL is a caller's pace. The handler
-        // bounds each wallet; this bounds each address, whatever wallet it names.
+        // The relayer signs a settle for anyone who names an invoice, before any
+        // wallet has signed, so the only protection in front of that signature
+        // is a caller's pace and the deployment's daily cap. This bounds each
+        // address, whatever wallet it names.
+        "/api/sponsor/prepare" => ("sponsor-prepare", 30, rate_limit::MINUTE),
         "/api/sponsor/settle" => ("sponsor-settle", 30, rate_limit::MINUTE),
         // One claim per account is the handler's rule; this is the floor under
         // a script that retries, and it keeps the treasury from being probed.

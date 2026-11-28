@@ -132,6 +132,7 @@ pub fn create_payment(request: CreatePaymentRequest) -> ApiResult<PaymentRecord>
         settled_by: None,
         created_at_unix: 0,
         settled_at_unix: 0,
+        fee: None,
     })
 }
 

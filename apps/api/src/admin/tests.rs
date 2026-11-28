@@ -590,6 +590,7 @@ fn payment_fixture(id: &str, created: i64, settled: i64) -> PaymentRecord {
         settled_by: (settled > 0).then(|| "Payer111111".into()),
         created_at_unix: created,
         settled_at_unix: settled,
+        fee: None,
     }
 }
 
